@@ -3,83 +3,42 @@ module CuThunderboltExt
 using Thunderbolt
 
 import CUDA:
-    CUDA, CuArray, CuVector, CUSPARSE,
-    threadIdx, blockIdx, blockDim, @cuda,
-    CUDABackend, launch_configuration
+    CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
+    threadIdx, blockIdx, blockDim, @cuda, @cushow,
+    CUDABackend, launch_configuration, device, cu,cudaconvert
 
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
     SparseMatrixCSR, SparseMatrixCSC,
     AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
-    AbstractPointwiseSolverCache,
-    GPUDofHandlerData, GPUSubDofHandlerData, GPUDofHandler,
-    GPUGrid
+    AbstractPointwiseSolverCache,assemble_element!,
+    LinearOperator,QuadratureRuleCollection,
+    AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
+    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
+    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator
+
+import Thunderbolt.FerriteUtils:
+    StaticInterpolationValues,StaticCellValues, allocate_device_mem,
+    CellIterator, mem_size, cellmem,ncells,celldofsview,
+    DeviceDofHandlerData, DeviceSubDofHandler, DeviceDofHandler, DeviceGrid,
+    cellfe, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
+    FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache,
+    FeCellMem, KeCellMem, KeFeCellMem,NoCellMem,AbstractMemShape
+
 
 import Ferrite:
-    AbstractDofHandler
+    AbstractDofHandler,get_grid,CellIterator,get_node_coordinate,getcoordinates,get_coordinate_eltype,getcells,
+    get_node_ids,get_coordinate_type,nnodes
 
+import StaticArrays:
+    SVector,MVector
+    
 import Adapt:
-    Adapt, adapt_structure, adapt
+    Adapt, adapt_structure, adapt, @adapt_structure
+
 
 # ---------------------- Generic part ------------------------
-function _convert_subdofhandler_to_gpu(cell_dofs, cell_dof_soffset, sdh::SubDofHandler)
-    GPUSubDofHandler(
-        cell_dofs,
-        cell_dofs_offset,
-        adapt(typeof(cell_dofs), collect(sdh.cellset)),
-        Tuple(sym for sym in sdh.field_names),
-        Tuple(sym for sym in sdh.field_n_components),
-        sdh.ndofs_per_cell.x,
-    )
-end
-
-function Adapt.adapt_structure(to::Type{CUDABackend}, dh::DofHandler{sdim}) where sdim
-    grid             = adapt_structure(to, dh.grid)
-    # field_names      = Tuple(sym for sym in dh.field_names)
-    IndexType        = eltype(dh.cell_dofs)
-    IndexVectorType  = CuVector{IndexType}
-    cell_dofs        = adapt(IndexVectorType, dh.cell_dofs)
-    cell_dofs_offset = adapt(IndexVectorType, dh.cell_dofs_offset)
-    cell_to_sdh      = adapt(IndexVectorType, dh.cell_to_subdofhandler)
-    subdofhandlers   = Tuple(i->_convert_subdofhandler_to_gpu(cell_dofs, cell_dofs_offset, sdh) for sdh in dh.subdofhandlers)
-    gpudata = GPUDofHandlerData(
-        grid,
-        subdofhandlers,
-        # field_names,
-        cell_dofs,
-        cell_dofs_offset,
-        cell_to_sdh,
-        dh.ndofs.x,
-    )
-    return GPUDofHandler(dh, gpudata)
-end
-
-
-
-function Adapt.adapt_structure(to::Type{CUDABackend}, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
-    node_type = typeof(first(grid.nodes))
-    cells = Adapt.adapt_structure(to, grid.cells)
-    nodes = Adapt.adapt_structure(to, grid.nodes)
-    #TODO subdomain info
-    return GPUGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
-end
-
-# function Thunderbolt.setup_operator(protocol::Thunderbolt.AnalyticalTransmembraneStimulationProtocol, solver::Thunderbolt.AbstractSolver, dh::GPUDofHandler, field_name::Symbol, qr)
-#     ip = dh.dh.subdofhandlers[1].field_interpolations[1]
-#     ip_g = Ferrite.geometric_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
-#     qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
-#     cv = CellValues(qr, ip, ip_g) # TODO replace with GPUCellValues
-#     return PEALinearOperator(
-#         zeros(ndofs(dh)),
-#         AnalyticalCoefficientElementCache(
-#             protocol.f,
-#             protocol.nonzero_intervals,
-#             cv,
-#         ),
-#         dh,
-#     )
-# end
 
 # Pointwise cuda solver wrapper
 function _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache::AbstractPointwiseSolverCache)
@@ -99,8 +58,8 @@ function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction,
     return true
 end
 
-_allocate_matrix(dh::GPUDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
-_allocate_matrix(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
+_allocate_matrix(dh::DeviceDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
+_allocate_matrix(dh::DeviceDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
 
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where T = CUDA.zeros(T, solution_size(f))
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where T                  = CUDA.zeros(T, ndofs(dh))
@@ -120,5 +79,10 @@ Thunderbolt.__add_to_vector!(b::CuVector, a::Vector) = b .+= CuVector(a)
 function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector}
     return CuVector(v)
 end
+
+include("cuda/cuda_operator.jl")
+include("cuda/cuda_memalloc.jl")
+include("cuda/cuda_adapt.jl")
+include("cuda/cuda_iterator.jl")
 
 end

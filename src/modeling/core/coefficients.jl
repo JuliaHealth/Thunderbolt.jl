@@ -36,7 +36,7 @@ function _create_field_coefficient_cache(coefficient::FieldCoefficient{<:Vec{<:A
     return FieldCoefficientCache(coefficient.elementwise_data, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache, qp::QuadraturePoint, t) where T
+function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint, t) where T
     @unpack elementwise_data, cv = cache
     val = zero(T)
     cellidx = cellid(geometry_cache)
@@ -62,7 +62,7 @@ function setup_coefficient_cache(coefficient::ConstantCoefficient, qr::Quadratur
     return coefficient
 end
 
-evaluate_coefficient(coeff::ConstantCoefficient, cell_cache, qp, t) = coeff.val
+evaluate_coefficient(coeff::ConstantCoefficient, ::FerriteUtils.AnyCellCache, qp, t) = coeff.val
 
 
 """
@@ -90,7 +90,7 @@ function setup_coefficient_cache(coefficient::ConductivityToDiffusivityCoefficie
     )
 end
 
-function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache, qp::QuadraturePoint, t)
+function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint, t)
     κ  = evaluate_coefficient(coeff.conductivity_tensor_cache, cell_cache, qp, t)
     Cₘ = evaluate_coefficient(coeff.capacitance_cache, cell_cache, qp, t)
     χ  = evaluate_coefficient(coeff.χ_cache, cell_cache, qp, t)
@@ -155,7 +155,7 @@ function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:Cart
     return CartesianCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::CellCache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
+function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
     @unpack cv = coeff
     x          = zero(Vec{sdim, T})
     coords     = getcoordinates(geometry_cache) 
@@ -181,7 +181,7 @@ function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCo
     return LVCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::CellCache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
+function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
     @unpack cv, cs = coeff
     @unpack dh     = cs
     x1 = zero(T)
@@ -213,7 +213,7 @@ function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVC
     return BiVCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {T}
+function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint{<:Any,T}, t) where {T}
     @unpack cv, cs = cc
     @unpack dh     = cs
     dofs = celldofsview(dh, cellid(cell_cache))
@@ -260,7 +260,7 @@ function setup_coefficient_cache(coefficient::SpectralTensorCoefficient, qr::Qua
     )
 end
 
-function evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache, qp::QuadraturePoint, t)
+function evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint, t)
     M = evaluate_coefficient(coeff.eigenvector_cache, cell_cache, qp, t)
     λ = evaluate_coefficient(coeff.eigenvalue_cache, cell_cache, qp, t)
     return _eval_st_coefficient(M, λ) # Dispatches can be found e.g. in modeling/microstructure.jl
@@ -286,7 +286,9 @@ function setup_coefficient_cache(coefficient::SpatiallyHomogeneousDataField, qr:
     return coefficient
 end
 
-function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::CellCache, qp::QuadraturePoint, t)
+Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::FerriteUtils.AnyCellCache, ::QuadraturePoint, t) = _evaluate_coefficient(coeff, t)
+  
+function _evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, t)
     @unpack timings, data = coeff
     i = 1
     tᵢ = timings[1]

@@ -23,7 +23,7 @@ end
 
 duplicate_for_parallel(cache::AnalyticalCoefficientCache) = AnalyticalCoefficientCache(cache.f, duplicate_for_parallel(cache.coordinate_system_cache))
 
-@inline function evaluate_coefficient(coeff::F, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficientCache, T}
+@inline function evaluate_coefficient(coeff::F, cell_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficientCache, T}
     x = evaluate_coefficient(coeff.coordinate_system_cache, cell_cache, qp, t)
     return coeff.f(x, t)
 end
@@ -41,7 +41,7 @@ struct AnalyticalCoefficientElementCache{CoefficientCacheType <: AnalyticalCoeff
 end
 duplicate_for_parallel(ec::AnalyticalCoefficientElementCache) = AnalyticalCoefficientElementCache(duplicate_for_parallel(ec.cc), ec.nonzero_intervals, ec.cv)
 
-@inline function assemble_element!(bₑ::AbstractVector, geometry_cache::CellCache, element_cache::AnalyticalCoefficientElementCache, time)
+@inline function assemble_element!(bₑ::AbstractVector, geometry_cache::FerriteUtils.AnyCellCache, element_cache::AnalyticalCoefficientElementCache, time)
     _assemble_element!(bₑ, geometry_cache, getcoordinates(geometry_cache), element_cache::AnalyticalCoefficientElementCache, time)
 end
 
@@ -58,6 +58,21 @@ end
         # Evaluate all basis functions
         @inbounds for j ∈ 1:getnbasefunctions(cv)
             δu = shape_value(cv, qpi, j)
+            bₑ[j] += fx * δu * dΩ
+        end
+    end
+end
+
+@inline function _assemble_element!(bₑ, geometry_cache::FerriteUtils.DeviceCellCache, coords, element_cache::AnalyticalCoefficientElementCache, time) 
+    @unpack cc, cv = element_cache
+    for qv in FerriteUtils.QuadratureValuesIterator(cv, coords)
+        dΩ = FerriteUtils.getdetJdV(qv)
+        idx = qv.idx
+        ξ = qv.ξ
+        qp = QuadraturePoint(idx, ξ)
+        @inbounds for j ∈ 1:getnbasefunctions(cv)
+            fx =  evaluate_coefficient(cc, geometry_cache, qp, time) 
+            δu = FerriteUtils.shape_value(qv, j)
             bₑ[j] += fx * δu * dΩ
         end
     end

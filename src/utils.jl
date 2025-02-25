@@ -37,17 +37,29 @@ end
 
 # TODO remove these once they are merged
 module FerriteUtils
+using Ferrite
+import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
+import Adapt
+
+include("ferrite-addons/gpu/device_dofhandler.jl")
+include("ferrite-addons/gpu/device_grid.jl")
 include("ferrite-addons/PR883.jl")
+include("ferrite-addons/gpu/device_memalloc.jl")
+include("ferrite-addons/gpu/device_iterator.jl")
+include("ferrite-addons/gpu/adapt.jl")
+
 end
 
 include("ferrite-addons/collections.jl")
 include("ferrite-addons/quadrature_iterator.jl")
 
-function celldofsview(dh::DofHandler, i::Int)
+
+function celldofsview(dh::Ferrite.AbstractDofHandler, i::Integer) 
     ndofs = ndofs_per_cell(dh, i)
     offset = dh.cell_dofs_offset[i]
     return @views dh.cell_dofs[offset:(offset+ndofs-1)]
 end
+
 
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
