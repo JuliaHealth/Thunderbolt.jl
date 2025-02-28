@@ -105,6 +105,7 @@ end
 
 
 function partition_gs!(A::SparseMatrixCSC, b, x, part::CSCPartition, sweep::Sweep)
+    # TODO: add D_L1
     # Determine the ordering of owned rows based on sweep direction.
     owned = collect(part.owned_rows)
     local_rows = sweep isa BackwardSweep ? reverse(owned) : owned
@@ -141,13 +142,7 @@ L1GaussSeidel(f::ForwardSweep) = L1GaussSeidel(f, 1)
 L1GaussSeidel(b::BackwardSweep) = L1GaussSeidel(b, 1)
 L1GaussSeidel(s::SymmetricSweep) = L1GaussSeidel(s, 1)
 
-"""
-    (s::L1GaussSeidel)(PS, x, b)
 
-Apply the L1 Gauss–Seidel smoother to a partitioned CSC matrix.
-For each partition, a local block update is performed over the owned rows,
-using the extra column indices for assembling the residual.
-"""
 function (s::L1GaussSeidel{S})(PS::PartitionedSparseMatrixCSC, x, b) where {S<:Sweep}
     for k in 1:s.iter
         for part in PS.partitions
