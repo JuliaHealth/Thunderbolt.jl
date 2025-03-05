@@ -1,6 +1,6 @@
 name = "Thunderbolt"
 uuid = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
-version = "0.0.1-DEV"
+version = "0.0.1"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
