@@ -4,7 +4,7 @@ import Downloads
 const directory = joinpath(@__DIR__, "src", "tutorials")
 mkpath(directory)
 
-assets_url_base = "https://raw.githubusercontent.com/termi-official/Thunderbolt.jl/gh-pages/assets/"
+assets_url_base = "https://raw.githubusercontent.com/JuliaHealth/Thunderbolt.jl/gh-pages/assets/"
 for (file, url) in [
         "spiral-wave.gif" => assets_url_base * "spiral-wave-lts-amr.gif",
         "contracting-left-ventricle.gif" => assets_url_base * "contracting-biv-simple.gif",
