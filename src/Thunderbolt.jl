@@ -21,7 +21,7 @@ include("solver/operator_splitting.jl")
 solution_size(f::GenericSplitFunction) = OS.function_size(f)
 
 @reexport using Ferrite
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
+import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
 import Ferrite: vertices, edges, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
@@ -52,6 +52,7 @@ include("utils.jl")
 
 include("mesh/meshes.jl")
 
+include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
@@ -124,14 +125,14 @@ export
     # Generic models
     ODEProblem,
     TransientDiffusionModel,
-    TransientDiffusionFunction,
+    AffineODEFunction,
     # Local API
     PointwiseODEProblem,
     PointwiseODEFunction,
     # Mechanics
-    StructuralModel,
+    QuasiStaticModel,
     QuasiStaticProblem,
-    QuasiStaticNonlinearFunction,
+    QuasiStaticFunction,
     PK1Model,
     PrestressedMechanicalModel,
     # Passive material models

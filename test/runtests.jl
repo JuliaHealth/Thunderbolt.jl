@@ -71,7 +71,7 @@ include("test_mesh.jl")
 include("test_coefficients.jl")
 include("test_microstructures.jl")
 
-include("integration/test_passive_structure.jl") # TODO make this a tutorial
+include("integration/test_passive_structure.jl")
 include("integration/test_solid_mechanics.jl")
 include("integration/test_electrophysiology.jl")
 include("integration/test_ecg.jl")

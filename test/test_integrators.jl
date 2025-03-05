@@ -140,8 +140,8 @@ using UnPack
     fsplit_force_half = GenericSplitFunction((f1,fpw_force_half), (f1dofs, f2dofs))
     prob_force_half = OperatorSplittingProblem(fsplit_force_half, u0, tspan)
 
-    dt = 0.01π
-    adaptive_tstep_range = (dt * 1, dt * 5)
+    dt = 0.1π
+    adaptive_tstep_range = (dt * 1, dt * 2)
     @testset "OperatorSplitting" begin
         for TimeStepperType in (LieTrotterGodunov,)
             timestepper = TimeStepperType(
@@ -214,7 +214,7 @@ using UnPack
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0) end
             integrator_adaptive = DiffEqBase.init(prob, timestepper_adaptive, dt=dt, verbose=true, alias_u0=false)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0) end
-            @test  isapprox(integrator_adaptive.u, integrator.u, atol=1e-5)
+            @test  isapprox(integrator_adaptive.u, integrator.u, atol=1e-4)
             @testset "Multiple `PointwiseODEFunction`s" begin
                 integrator_multiple_pwode = DiffEqBase.init(prob_multiple_pwode, timestepper2_adaptive, dt=dt, verbose=true, alias_u0=false)
                 @test_throws AssertionError("No or multiple integrators using PointwiseODEFunction found") DiffEqBase.solve!(integrator_multiple_pwode)

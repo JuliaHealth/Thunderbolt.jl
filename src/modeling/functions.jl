@@ -24,7 +24,7 @@ Supertype for all functions coming from PDE discretizations with blocked structu
 """
 abstract type AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunction end
 solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))
-num_blocks(::AbstractSemidiscreteBlockedFunction) = length(blocksizes)
+num_blocks(f::AbstractSemidiscreteBlockedFunction) = length(blocksizes(f))
 
 
 """
@@ -58,65 +58,41 @@ Adapt.@adapt_structure PointwiseODEFunction
 
 solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
 
-# TODO translate into AffineODEFunction and use ODEFunction
-struct TransientDiffusionFunction{DTF, ST, DH} <: AbstractSemidiscreteFunction
-    diffusion_tensor_field::DTF
+struct AffineODEFunction{MI, BI, ST, DH} <: AbstractSemidiscreteFunction
+    mass_term::MI
+    bilinear_term::BI
     source_term::ST
     dh::DH
 end
 
-solution_size(f::TransientDiffusionFunction) = ndofs(f.dh)
+solution_size(f::AffineODEFunction) = ndofs(f.dh)
 
-struct SteadyDiffusionFunction{DTF, ST, DH, CH} <: AbstractSemidiscreteFunction
-    diffusion_tensor_field::DTF
+struct AffineSteadyStateFunction{BI, ST, DH, CH} <: AbstractSemidiscreteFunction
+    bilinear_term::BI
     source_term::ST
     dh::DH
     ch::CH
 end
 
-solution_size(f::SteadyDiffusionFunction) = ndofs(f.dh)
+solution_size(f::AffineSteadyStateFunction) = ndofs(f.dh)
 
 abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 
 """
-    QuasiStaticNonlinearFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+    QuasiStaticFunction{...}
 
-A discrete problem with time dependent terms and no time derivatives w.r.t. any solution variable.
-Abstractly written we want to solve the problem F(u, t) = 0 on some time interval [t₁, t₂].
+A discrete nonlinear (possibly multi-level) problem with time dependent terms.
+Abstractly written we want to solve the problem G(u, q, t) = 0, L(u, q, dₜq, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticNonlinearFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractQuasiStaticFunction
+struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler, LVH <: InternalVariableHandler} <: AbstractQuasiStaticFunction
     dh::DH
     ch::CH
-    constitutive_model::CM
-    face_models::FACE
+    lvh::LVH
+    integrator::I
 end
 
-solution_size(f::QuasiStaticNonlinearFunction) = ndofs(f.dh)
+solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
 
-# """
-#     QuasiStaticODEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
-
-# A problem with time dependent terms and time derivatives only w.r.t. internal solution variable.
-
-# TODO implement.
-# """
-# struct QuasiStaticODEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractSemidiscreteODEFunction
-#     dh::DH
-#     ch::CH
-#     constitutive_model::CM
-#     face_models::FACE
-# end
-
-# """
-#     QuasiStaticDAEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
-
-# A problem with time dependent terms and time derivatives only w.r.t. internal solution variable which can't be expressed as an ODE.
-
-# TODO implement.
-# """
-# struct QuasiStaticDAEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractSemidiscreteDAEFunction
-#     dh::DH
-#     ch::CH
-#     constitutive_model::CM
-#     face_models::FACE
-# end
+# TODO fill me
+gather_internal_variable_infos(model::QuasiStaticModel) = gather_internal_variable_infos(model.material_model)
+gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]

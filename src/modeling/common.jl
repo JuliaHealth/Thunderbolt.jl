@@ -1,20 +1,20 @@
 # Common modeling primitives are found here
-abstract type SteadyStateInternalVariable end
+"""
+This described anything that is possibly condensed at element level.
+"""
+abstract type AbstractInternalModel end
 
-struct EmptyInternalVariableModel <: SteadyStateInternalVariable
+struct EmptyInternalModel <: AbstractInternalModel
 end
 
-struct EmptyInternalVariableCache
+struct EmptyInternalCache
 end
 
-struct EmptyInternalVariable
-end
+setup_internal_cache(::EmptyInternalModel, ::QuadratureRule, ::SubDofHandler) = EmptyInternalCache()
 
-setup_internal_model_cache(::EmptyInternalVariableModel, ::QuadratureRule, ::SubDofHandler) = EmptyInternalVariableCache()
-
-function state(model_cache::EmptyInternalVariableCache, geometry_cache, qp::QuadraturePoint, time)
-    return EmptyInternalVariable()
-end
+# function state(model_cache::EmptyInternalCache, geometry_cache, qp::QuadraturePoint, time)
+#     return EmptyInternal()
+# end
 
 abstract type AbstractSourceTerm end
 
@@ -30,3 +30,4 @@ include("core/weak_boundary_conditions.jl")
 abstract type AbstractBilinearIntegrator end
 include("core/mass.jl")
 include("core/diffusion.jl")
+include("core/nonlinear.jl")

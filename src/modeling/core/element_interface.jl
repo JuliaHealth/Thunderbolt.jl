@@ -3,10 +3,12 @@ Supertype for all caches to integrate over volumes.
 
 Interface:
 
-    setup_element_cache(model, qr, ip, sdh)
+    setup_element_cache(model, qr, sdh)
 
 """
 abstract type AbstractVolumetricElementCache end
+
+# setup_element_cache(model, qr, sdh) = setup_element_cache(model, qr, Ferrite.getfieldinterpolation(sdh,1), sdh) # FIXME
 
 @doc raw"""
     assemble_element!(Kₑ::AbstractMatrix, cell::CellCache, element_cache::AbstractVolumetricElementCache, time)
@@ -49,10 +51,12 @@ Supertype for all caches to integrate over surfaces.
 
 Interface:
 
-    setup_boundary_cache(model, qr, ip, sdh)
+    setup_boundary_cache(model, qr, sdh)
 
 """
 abstract type AbstractSurfaceElementCache end
+
+# setup_boundary_cache(model, qr, sdh) = setup_boundary_cache(model, qr, Ferrite.getfieldinterpolation(sdh,1), sdh) # FIXME
 
 @doc raw"""
     assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)

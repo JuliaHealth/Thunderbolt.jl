@@ -144,7 +144,6 @@ struct PressureTransfer3D0D{TP } <: AbstractTransferOperator
 end
 
 function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::PressureTransfer3D0D)
-    @info "Here"
     f = inner_integrator.f
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
     for (chamber_idx,chamber) ∈ enumerate(sync.tying.chambers)
