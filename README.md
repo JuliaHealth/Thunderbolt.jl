@@ -64,10 +64,16 @@ $ julia --project=. liveserver.jl
 ```
 Now you can view the documentation at https://localhost:8000 . All further information will be provided there.
 
+## How to Cite
+
+If you use this package, please cite our repository.
+
+> Dennis Ogiermann. **Thunderbolt.jl v0.0.1**. [2025]. GitHub repository. https://github.com/termi-official/Thunderbolt.jl
+
 ## Community Standards
 
 Please keep in mind that we are part of the Julia community and adhere to the [Julia Community Standards](https://julialang.org/community/standards/).
 
 ## Acknowledgement
 
-This framework is primarily developed at the [chair of continuum mechanics at Ruhr-University Bochum under Prof. Dr.-Ing. Daniel Balzani](https://www.lkm.ruhr-uni-bochum.de/).
+This framework is primarily developed at the [chair of continuum mechanics at Ruhr University Bochum under Prof. Dr.-Ing. Daniel Balzani](https://www.lkm.ruhr-uni-bochum.de/).
