@@ -97,7 +97,7 @@ weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
 mechanical_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions)
 
 # !!! tip
-#     A full list of all models can be found in the [API reference](https://JuliaHealth.github.io/Thunderbolt.jl/dev/api-reference/models/#Solid-Mechanics).
+#     A full list of all models can be found in the [API reference](api-reference/models/#Solid-Mechanics).
 
 # We now need to transform the space-time problem into a time-dependent problem by discretizing it spatially.
 # This can be accomplished by the function semidiscretize, which takes a model and the disretization technique.
