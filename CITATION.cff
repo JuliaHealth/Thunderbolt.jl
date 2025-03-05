@@ -8,7 +8,7 @@ authors:
     given-names: Dennis
     orcid: https://orcid.org/0000-0002-2659-0809
   - name: Thunderbolt.jl contributors
-    website: https://github.com/termi-official/Thunderbolt.jl/graphs/contributors
-repository-code: https://github.com/termi-official/Thunderbolt.jl
-url: https://github.com/termi-official/Thunderbolt.jl
+    website: https://github.com/JuliaHealth/Thunderbolt.jl/graphs/contributors
+repository-code: https://github.com/JuliaHealth/Thunderbolt.jl
+url: https://github.com/JuliaHealth/Thunderbolt.jl
 license: MIT

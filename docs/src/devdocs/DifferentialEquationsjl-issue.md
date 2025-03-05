@@ -2,7 +2,7 @@
 
 https://github.com/SciML/DifferentialEquations.jl/issues/997
 
-My personal roadmap is to publish [Thunderbolt.jl](https://github.com/termi-official/Thunderbolt.jl/) soon, which is a multiphysics framework which tries to be close to the design of the libraries in the DifferentialEquations.jl ecosystem, and to upstream relevant parts (after cleaning up and settling the design). 
+My personal roadmap is to publish [Thunderbolt.jl](https://github.com/JuliaHealth/Thunderbolt.jl/) soon, which is a multiphysics framework which tries to be close to the design of the libraries in the DifferentialEquations.jl ecosystem, and to upstream relevant parts (after cleaning up and settling the design). 
 
 In Thunderbolt.jl I approach the outlined problems as follows (in the spoiler because likely not relevant for most readers). I put it here to see what problems come if we follow one approach deeper into the PDE rabbit hole (multiphysics/coupled problems). I hope that we can learn something about the interface design from this description.
 

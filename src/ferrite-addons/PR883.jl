@@ -143,7 +143,7 @@ use heap allocated buffers, e.g. by only saving the cell and coordinates during 
 and then calculating all values for each element in the iterator. 
 
 References: 
-https://github.com/termi-official/Thunderbolt.jl/pull/53/files#diff-2b486be5a947c02ef2a38ff3f82af3141193af0b6f01ed9d5129b914ed1d84f6
+https://github.com/JuliaHealth/Thunderbolt.jl/pull/53/files#diff-2b486be5a947c02ef2a38ff3f82af3141193af0b6f01ed9d5129b914ed1d84f6
 https://github.com/Ferrite-FEM/Ferrite.jl/compare/master...kam/StaticValues2
 =#
 

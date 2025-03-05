@@ -105,7 +105,7 @@ end
 # Deploy built documentation
 if !liveserver
     @timeit dto "deploydocs" deploydocs(
-        repo = "github.com/termi-official/Thunderbolt.jl.git",
+        repo = "github.com/JuliaHealth/Thunderbolt.jl.git",
         push_preview=true,
         versions = [
             "stable" => "v^",
