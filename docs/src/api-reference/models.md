@@ -2,7 +2,7 @@
 DocTestSetup = :(using Thunderbolt)
 ```
 
-# Models
+# [Models](@id models-api)
 
 ## Coefficient
 
