@@ -136,22 +136,16 @@ end
 
 num_states(model::RDQ20MFModel) = 20
 
-function rhs_fast!(dRU, uRU::AbstractArray{T}, λ, Ca, t, p::RDQ20MFModel) where T
-    dT_L = @MMatrix zeros(T,2,2)
-    dT_R = @MMatrix zeros(T,2,2)
-    ΦT_L = @MArray zeros(T,2,2,2,2)
-    ΦT_C = @MArray zeros(T,2,2,2,2)
-    ΦT_R = @MArray zeros(T,2,2,2,2)
-    ΦC_C = @MArray zeros(T,2,2,2,2)
-    dC = @MMatrix zeros(T,2,2)
-    dT = @MArray zeros(T,2,2,2,2)
-
+function rhs_fast!(dRU, uRU::SArray{Tuple{2,2,2,2}}, λ, Ca, t, p::RDQ20MFModel)
     # Initialize helper rates
     sarcomere_length = p.SL₀*λ
-    dC[1,1] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * Ca
-    dC[1,2] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * Ca
-    dC[2,1] = p.Koff
-    dC[2,2] = p.Koff / p.μ
+    dC1 = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * Ca
+    dC = @SMatrix [
+        dC1     dC1;
+        p.Koff  p.Koff / p.μ
+    ]
+
+    dT = @MArray zeros(typeof(p.Q * p.Kbasic * p.γ / p.µ),2,2,2,2)
     @inbounds for TL ∈ 1:2, TR ∈ 1:2
         permissive_neighbors = TL + TR - 2
         dT[TL,2,TR,1] = p.Kbasic * p.γ^(2-permissive_neighbors);
@@ -162,48 +156,29 @@ function rhs_fast!(dRU, uRU::AbstractArray{T}, λ, Ca, t, p::RDQ20MFModel) where
 
     # Update RU
     ## Compute fluxes associated with center unit
-    @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
-        ΦT_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT[TL,TC,TR,CC]
-        ΦC_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dC[CC,TC]
-    end
+    ΦT_C = @SArray [uRU[TL,TC,TR,CC] * dT[TL,TC,TR,CC] for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
+    ΦC_C = @SArray [uRU[TL,TC,TR,CC] * dC[CC,TC] for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
 
+    ## Sum probabilities over CC
+    suRU4  = sum(uRU;  dims=4)
+    sΦT_C4 = sum(ΦT_C; dims=4)
+    
     ## Compute rates associated with left unit
-    @inbounds for TL ∈ 1:2, TC ∈ 1:2
-        flux_tot = 0.0
-        prob_tot = 0.0
-        for TR ∈ 1:2, CC ∈ 1:2
-            flux_tot += ΦT_C[TL,TC,TR,CC]
-            prob_tot += uRU[TL,TC,TR,CC]
-        end
-        if prob_tot > 1e-12
-            dT_L[TL,TC] = flux_tot / prob_tot
-        else
-            dT_L[TL,TC] = 0.0;
-        end
-    end
+    flux_tot_L = sum(sΦT_C4; dims=3)
+    prob_tot_L = sum(suRU4;  dims=3)
+    dT_L = @SMatrix [prob_tot_L[TL,TC,1,1] > 1e-12 ? flux_tot_L[TL,TC,1,1] / prob_tot_L[TL,TC,1,1] : 0.0 for TL ∈ 1:2, TC ∈ 1:2]
 
     ## Compute rates associated with right unit
-    @inbounds for TR ∈ 1:2, TC ∈ 1:2
-        flux_tot = 0.0
-        prob_tot = 0.0
-        for TL ∈ 1:2, CC ∈ 1:2
-            flux_tot += ΦT_C[TL,TC,TR,CC]
-            prob_tot += uRU[TL,TC,TR,CC]
-        end
-        if prob_tot > 1e-12
-            dT_R[TR,TC] = flux_tot / prob_tot;
-        else
-            dT_R[TR,TC] = 0.0;
-        end
-    end
+    flux_tot_R = sum(sΦT_C4; dims=1)
+    prob_tot_R = sum(suRU4;  dims=1)
+    dT_R = @SMatrix [prob_tot_R[1,TC,TR,1] > 1e-12 ? flux_tot_R[1,TC,TR,1] / prob_tot_R[1,TC,TR,1] : 0.0 for TR ∈ 1:2, TC ∈ 1:2]
 
     ## Compute fluxes associated with external units
-    @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
-        ΦT_L[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT_L[TC,TL]
-        ΦT_R[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT_R[TC,TR]
-    end
+    ## TODO investigate why the indices of dT_L and dT_R are flipped
+    ΦT_L = @SArray [uRU[TL,TC,TR,CC] * dT_L[TC,TL] for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
+    ΦT_R = @SArray [uRU[TL,TC,TR,CC] * dT_R[TC,TR]  for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
 
-    # Store RU rates
+    ## Store RU rates
     @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         dRU[TL,TC,TR,CC] = 
             -ΦT_L[TL,TC,TR,CC] + ΦT_L[3 - TL,TC,TR,CC] -
@@ -212,7 +187,57 @@ function rhs_fast!(dRU, uRU::AbstractArray{T}, λ, Ca, t, p::RDQ20MFModel) where
              ΦC_C[TL,TC,TR,CC] + ΦC_C[TL,TC,TR,3 - CC]
     end
 
-    return dRU
+    return nothing
+end
+
+function rhs_fast(uRU::SArray{Tuple{2,2,2,2}}, λ, Ca, t, p::RDQ20MFModel)
+    # Initialize helper rates
+    sarcomere_length = p.SL₀*λ
+    dC1 = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * Ca
+    dC = @SMatrix [
+        dC1     dC1;
+        p.Koff  p.Koff / p.μ
+    ]
+
+    dT = @MArray zeros(typeof(p.Q * p.Kbasic * p.γ / p.µ),2,2,2,2)
+    @inbounds for TL ∈ 1:2, TR ∈ 1:2
+        permissive_neighbors = TL + TR - 2
+        dT[TL,2,TR,1] = p.Kbasic * p.γ^(2-permissive_neighbors);
+        dT[TL,2,TR,2] = p.Kbasic * p.γ^(2-permissive_neighbors);
+        dT[TL,1,TR,1] = p.Q * p.Kbasic * p.γ^permissive_neighbors / p.μ;
+        dT[TL,1,TR,2] = p.Q * p.Kbasic * p.γ^permissive_neighbors;
+    end
+
+    # Update RU
+    ## Compute fluxes associated with center unit
+    ΦT_C = @SArray [uRU[TL,TC,TR,CC] * dT[TL,TC,TR,CC] for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
+    ΦC_C = @SArray [uRU[TL,TC,TR,CC] * dC[CC,TC] for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
+
+    ## Sum probabilities over CC
+    suRU4  = sum(uRU;  dims=4)
+    sΦT_C4 = sum(ΦT_C; dims=4)
+
+    ## Compute rates associated with left unit
+    flux_tot_L = sum(sΦT_C4; dims=3)
+    prob_tot_L = sum(suRU4;  dims=3)
+    dT_L = @SMatrix [prob_tot_L[TL,TC,1,1] > 1e-12 ? flux_tot_L[TL,TC,1,1] / prob_tot_L[TL,TC,1,1] : 0.0 for TL ∈ 1:2, TC ∈ 1:2]
+
+    ## Compute rates associated with right unit
+    flux_tot_R = sum(sΦT_C4; dims=1)
+    prob_tot_R = sum(suRU4;  dims=1)
+    dT_R = @SMatrix [prob_tot_R[1,TC,TR,1] > 1e-12 ? flux_tot_R[1,TC,TR,1] / prob_tot_R[1,TC,TR,1] : 0.0 for TR ∈ 1:2, TC ∈ 1:2]
+
+    ## Compute fluxes associated with external units
+    ΦT_L = @SArray [uRU[TL,TC,TR,CC] * dT_L[TC,TL] for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
+    ΦT_R = @SArray [uRU[TL,TC,TR,CC] * dT_R[TC,TR]  for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
+
+    ## Return RU rates
+    return @SArray [
+        -ΦT_L[TL,TC,TR,CC] + ΦT_L[3 - TL,TC,TR,CC] -
+         ΦT_C[TL,TC,TR,CC] + ΦT_C[TL,3 - TC,TR,CC] -
+         ΦT_R[TL,TC,TR,CC] + ΦT_R[TL,TC,3 - TR,CC] -
+         ΦC_C[TL,TC,TR,CC] + ΦC_C[TL,TC,TR,3 - CC]
+    for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2]
 end
 
 function rhs_fast_dλ!(dRU, uRU::AbstractArray{T}, λ, Ca, t, p::RDQ20MFModel) where T
@@ -243,7 +268,7 @@ end
 function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
     # Direct translation from https://github.com/FrancescoRegazzoni/cardiac-activation/blob/master/models_cpp/model_RDQ20_MF.cpp
     uRU_flat = @view u[1:16]
-    uRU = reshape(uRU_flat, (2,2,2,2))
+    uRU = SArray{Tuple{2,2,2,2}}(reshape(uRU_flat, (2,2,2,2)))
     uXB = @view u[17:20]
 
     dRU_flat = @view du[1:16]
@@ -251,8 +276,6 @@ function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
     dXB = @view du[17:20]
 
     rhs_fast!(dRU, uRU, λ, Ca, t, p)
-
-    permissivity = 0.0
 
     dT = @MArray zeros(2,2,2,2)
     @inbounds for TL ∈ 1:2, TR ∈ 1:2
@@ -265,6 +288,7 @@ function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
 
     flux_PN = 0.0
     flux_NP = 0.0
+    permissivity = 0.0
     @inbounds for TL ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         permissivity += uRU[TL,2,TR,CC]
         flux_PN += uRU[TL,2,TR,CC] * dT[TL,2,TR,CC]
