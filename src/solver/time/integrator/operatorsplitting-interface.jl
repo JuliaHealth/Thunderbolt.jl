@@ -1,4 +1,4 @@
-struct DummyODESolution <: SciMLBase.AbstractODESolution{Float64, 2, Vector{Float64}}
+struct DummyODESolution <: SciMLBase.AbstractODESolution{Float64,2,Vector{Float64}}
     retcode::SciMLBase.ReturnCode.T
 end
 DummyODESolution() = DummyODESolution(SciMLBase.ReturnCode.Default)
@@ -15,15 +15,15 @@ function OS.build_subintegrator_tree_with_cache(
     t0, dt, tf,
     tstops, saveat, d_discontinuities, callback,
     adaptive, verbose,
-    save_end = false,
-    controller = nothing,
+    save_end=false,
+    controller=nothing,
 )
     uprev = @view uprevouter[solution_indices]
-    u     = @view uouter[solution_indices]
+    u = @view uouter[solution_indices]
 
     dt > zero(dt) || error("dt must be positive")
     _dt = dt
-    tdir = tf > t0 ? 1.0 : -1.0
+    tdir = tf > t0 ? one(dt) : -one(dt)
     tType = typeof(dt)
 
     if tstops isa AbstractArray || tstops isa Tuple || tstops isa Number
@@ -41,8 +41,8 @@ function OS.build_subintegrator_tree_with_cache(
     cache = setup_solver_cache(f, alg, t0; uprev=uprev, u=u)
 
     # Setup solution buffers
-    uType                = typeof(u)
-    uBottomEltype        = OrdinaryDiffEqCore.recursive_bottom_eltype(u)
+    uType = typeof(u)
+    uBottomEltype = OrdinaryDiffEqCore.recursive_bottom_eltype(u)
     uBottomEltypeNoUnits = OrdinaryDiffEqCore.recursive_unitless_bottom_eltype(u)
 
     # Setup callbacks
@@ -54,8 +54,8 @@ function OS.build_subintegrator_tree_with_cache(
         #     callback_cache = SciMLBase.CallbackCache(u, max_len_cb, uBottomEltypeReal,
         #         uBottomEltypeReal)
         # else
-            callback_cache = SciMLBase.CallbackCache(max_len_cb, uBottomEltypeReal,
-                uBottomEltypeReal)
+        callback_cache = SciMLBase.CallbackCache(max_len_cb, uBottomEltypeReal,
+            uBottomEltypeReal)
         # end
     else
         callback_cache = nothing
@@ -107,19 +107,19 @@ function OS.build_subintegrator_tree_with_cache(
         adaptive ? controller : nothing,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = zero(tType),
-            dtmax = tType(tf-t0),
-            verbose = verbose,
-            adaptive = adaptive,
+            dtmin=zero(tType),
+            dtmax=tType(tf - t0),
+            verbose=verbose,
+            adaptive=adaptive,
             # maxiters = maxiters,
-            callback = callbacks_internal,
-            save_end = save_end,
-            tstops = tstops_internal,
-            saveat = saveat_internal,
-            d_discontinuities = d_discontinuities_internal,
-            tstops_cache = tstops,
-            saveat_cache = saveat,
-            d_discontinuities_cache = d_discontinuities,
+            callback=callbacks_internal,
+            save_end=save_end,
+            tstops=tstops_internal,
+            saveat=saveat_internal,
+            d_discontinuities=d_discontinuities_internal,
+            tstops_cache=tstops,
+            saveat_cache=saveat,
+            d_discontinuities_cache=d_discontinuities,
         ),
         false,
         0,
