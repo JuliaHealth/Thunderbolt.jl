@@ -6,11 +6,11 @@ end
 
 IntegratorStats() = IntegratorStats(0, 0)
 
-Base.@kwdef mutable struct IntegratorOptions{tType,F1,F2,F3,F4,F5,progressMonitorType,SType,tstopsType,saveatType,discType,tcache,savecache,disccache}
+Base.@kwdef mutable struct IntegratorOptions{tType,fType,F1,F2,F3,F4,F5,progressMonitorType,SType,tstopsType,saveatType,discType,tcache,savecache,disccache}
     force_dtmin::Bool = false
     dtmin::tType = eps(tType)
     dtmax::tType = Inf
-    #failfactor::tType = 4.0
+    failfactor::fType = 4.0
     verbose::Bool = false
     adaptive::Bool = false # Redundant with the dispatch on SciMLBase.isadaptive below (alg adaptive + controller not nothing)
     maxiters::Int = 1000000
