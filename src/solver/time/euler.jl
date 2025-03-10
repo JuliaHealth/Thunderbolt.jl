@@ -149,7 +149,7 @@ mutable struct ForwardEulerSolverCache{VT,VTrate,VTprev,F} <: AbstractTimeSolver
     rhs!::F
 end
 
-function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t::Float64, Δt::Float64)
+function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t, Δt)
     @unpack rate, du, uₙ, rhs! = solver_cache
     Δtsub = Δt/rate
     for i ∈ 1:rate
