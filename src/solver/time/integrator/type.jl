@@ -4,13 +4,13 @@ mutable struct IntegratorStats
     # TODO inner solver stats
 end
 
-IntegratorStats() = IntegratorStats(0,0)
+IntegratorStats() = IntegratorStats(0, 0)
 
-Base.@kwdef mutable struct IntegratorOptions{tType, F1, F2, F3, F4, F5, progressMonitorType, SType, tstopsType, saveatType, discType, tcache, savecache, disccache}
+Base.@kwdef mutable struct IntegratorOptions{tType,fType,F1,F2,F3,F4,F5,progressMonitorType,SType,tstopsType,saveatType,discType,tcache,savecache,disccache}
     force_dtmin::Bool = false
     dtmin::tType = eps(tType)
     dtmax::tType = Inf
-    failfactor::tType = 4.0
+    failfactor::fType = 4.0
     verbose::Bool = false
     adaptive::Bool = false # Redundant with the dispatch on SciMLBase.isadaptive below (alg adaptive + controller not nothing)
     maxiters::Int = 1000000
@@ -57,7 +57,7 @@ mutable struct ThunderboltTimeIntegrator{
     callbackcacheType,
     solType,
     controllerType,
-}  <: SciMLBase.DEIntegrator{algType, true, uType, tType}
+} <: SciMLBase.DEIntegrator{algType,true,uType,tType}
     alg::algType
     const f::fType # Right hand side
     u::uType # Current local solution
@@ -95,7 +95,7 @@ end
 
 # Interpolation
 function (integrator::ThunderboltTimeIntegrator)(tmp, t)
-    OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
+    OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.t - integrator.dt, integrator.t)
 end
 
 # CommonSolve interface
@@ -118,26 +118,26 @@ function SciMLBase.__init(
     alg::AbstractSolver,
     args...;
     dt,
-    saveat = (),
-    tstops = (),
-    d_discontinuities = (),
-    ts_init = (),
-    ks_init = (),
-    save_end = nothing,
-    save_everystep = false,
-    save_idxs = nothing,
-    callback = nothing,
-    advance_to_tstop = false,
-    adaptive = SciMLBase.isadaptive(alg),
-    verbose = false,
-    alias_u0 = true,
+    saveat=(),
+    tstops=(),
+    d_discontinuities=(),
+    ts_init=(),
+    ks_init=(),
+    save_end=nothing,
+    save_everystep=false,
+    save_idxs=nothing,
+    callback=nothing,
+    advance_to_tstop=false,
+    adaptive=SciMLBase.isadaptive(alg),
+    verbose=false,
+    alias_u0=true,
     # alias_du0 = false,
-    controller = nothing,
-    maxiters = 1000000,
-    dense = save_everystep &&
-                    !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem),
-    dtmin = nothing,
-    dtmax = nothing,
+    controller=nothing,
+    maxiters=1000000,
+    dense=save_everystep &&
+              !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem),
+    dtmin=nothing,
+    dtmax=nothing,
     kwargs...,
 )
     (; f, u0, p) = prob
@@ -151,7 +151,7 @@ function SciMLBase.__init(
     dtchangeable = DiffEqBase.isadaptive(alg)
 
     dtmin = dtmin === nothing ? tType(0.0) : tType(dtmin)
-    dtmax = dtmax === nothing ? tType(tf-t0) : tType(dtmax)
+    dtmax = dtmax === nothing ? tType(tf - t0) : tType(dtmax)
 
     if tstops isa AbstractArray || tstops isa Tuple || tstops isa Number
         _tstops = nothing
@@ -168,9 +168,9 @@ function SciMLBase.__init(
     save_end = save_end === nothing ? save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
 
     # Setup solution buffers
-    u  = setup_u(prob, alg, alias_u0)
-    uType                = typeof(u)
-    uBottomEltype        = OrdinaryDiffEqCore.recursive_bottom_eltype(u)
+    u = setup_u(prob, alg, alias_u0)
+    uType = typeof(u)
+    uBottomEltype = OrdinaryDiffEqCore.recursive_bottom_eltype(u)
     uBottomEltypeNoUnits = OrdinaryDiffEqCore.recursive_unitless_bottom_eltype(u)
 
     # Setup callbacks
@@ -206,12 +206,12 @@ function SciMLBase.__init(
 
     sol = SciMLBase.build_solution(
         prob, alg, ts, uType[],
-        dense = dense, k = ks, saved_subsystem = saved_subsystem,
-        calculate_error = false
+        dense=dense, k=ks, saved_subsystem=saved_subsystem,
+        calculate_error=false
     )
 
     # Setup algorithm cache
-    cache = init_cache(prob, alg; dt = dt, u = u)
+    cache = init_cache(prob, alg; dt=dt, u=u)
 
     # Setup controller
     if controller === nothing && adaptive
@@ -236,19 +236,19 @@ function SciMLBase.__init(
         adaptive ? controller : nothing,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = dtmin,
-            dtmax = dtmax,
-            verbose = verbose,
-            adaptive = adaptive,
-            maxiters = maxiters,
-            callback = callbacks_internal,
-            save_end = save_end,
-            tstops = tstops_internal,
-            saveat = saveat_internal,
-            d_discontinuities = d_discontinuities_internal,
-            tstops_cache = tstops,
-            saveat_cache = saveat,
-            d_discontinuities_cache = d_discontinuities,
+            dtmin=dtmin,
+            dtmax=dtmax,
+            verbose=verbose,
+            adaptive=adaptive,
+            maxiters=maxiters,
+            callback=callbacks_internal,
+            save_end=save_end,
+            tstops=tstops_internal,
+            saveat=saveat_internal,
+            d_discontinuities=d_discontinuities_internal,
+            tstops_cache=tstops,
+            saveat_cache=saveat,
+            d_discontinuities_cache=d_discontinuities,
         ),
         false,
         0,
