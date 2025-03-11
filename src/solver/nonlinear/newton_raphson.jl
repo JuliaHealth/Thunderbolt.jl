@@ -68,6 +68,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
     cache.iter = -1
     Δu = linear_solver_cache.u
     residualnormprev = 0.0
+    incrementnormprev = 0.0
     resize!(Θks, 0)
     while true
         cache.iter += 1
@@ -100,10 +101,11 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         eliminate_constraints_from_increment!(Δu, f, cache)
 
         u .-= Δu # Current guess
+        incrementnorm = norm(Δu)
 
         if cache.iter > 0
-            Θk = residualnorm/residualnormprev
-            if residualnormprev ≈ 0.0
+            Θk = min(residualnorm/residualnormprev, incrementnorm/incrementnormprev)
+            if residualnormprev ≈ 0.0 || incrementnormprev ≈ 0.0
                 push!(Θks, 0.0)
             else
                 push!(Θks, Θk)
@@ -119,7 +121,8 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
             end
         end
 
-        residualnormprev = residualnorm
+        residualnormprev  = residualnorm
+        incrementnormprev = incrementnorm
     end
     nonlinear_finalize_monitor(cache, t, f, monitor)
     return true
