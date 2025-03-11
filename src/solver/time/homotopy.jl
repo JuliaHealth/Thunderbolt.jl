@@ -99,7 +99,6 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Homo
 end
 
 function perform_step!(f::AbstractSemidiscreteFunction, solver_cache::HomotopyPathSolverCache, t, Δt)
-    solver_cache.uₙ₋₁ .= solver_cache.uₙ
     update_constraints!(f, solver_cache, t + Δt)
     if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t + Δt) # TODO remove ,,t'' here. But how?
         return false
