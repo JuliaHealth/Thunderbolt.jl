@@ -95,7 +95,7 @@ assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCach
     end
 end
 #
-is_facet_in_cache(fi::FacetIndex, cell, cache::CompositeSurfaceElementCache) = is_facet_in_cache(fi, cell, cache.inner_caches[1])
+is_facet_in_cache(fi::FacetIndex, cell, cache::CompositeSurfaceElementCache) = true # We check again for the inner caches
 
 
 
