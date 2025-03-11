@@ -346,3 +346,46 @@ end
 function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_stretch)
     model.a_XB * (state[17] + state[19]) * fraction_single_overlap(model, sarcomere_stretch)
 end
+
+function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp, time) where dim
+    f  = coefficients.f
+    Ca = coefficients.Ca
+    λ = f ⋅ F ⋅ f
+
+    # Concept only for now.
+    function solve_internal_timestep(material::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, λ, Q, Qprev)
+        @unpack Δt = state_cache
+        #     dsdt = sarcomere_rhs(s,λ,t)
+        # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
+
+        # TODO preallocate
+        dQ = zeros(20)
+        R  = zeros(20)
+        J  = zeros(20,20)
+        dλdt = 0.0
+        function residual!(R, Q)
+            sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, t, material.contraction_model)
+            R .= (Q .- Qprev) .- ds
+            return nothing
+        end
+        for newton_iter in 1:10
+            ForwardDiff.jacobian!(J, residual!, R, Q)
+            residual!(R, Q)
+            ΔQ = J \ R
+            Q .-= ΔQ
+            @info qp, norm(R), norm(ΔQ)
+            if norm(R) < 1e-8
+                break
+            else
+                error("Local Newton did not converge")
+            end
+        end
+    end
+
+    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
+    Q = solve_internal_timestep(material_model, state_cache, λ, Qflat, Qprevflat)
+    Qflat .= Q
+    _store_local_state!(state_cache, geometry_cache, qp)
+
+    return Q, zero(Tensor{4,3,Float64,3^4})
+end
