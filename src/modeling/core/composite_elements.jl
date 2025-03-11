@@ -70,28 +70,36 @@ end
 assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_face!(Kₑ, cell, surface_cache.inner_caches, local_facet_index, time)
 @unroll function assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_face!(Kₑ, cell, local_facet_index, inner_cache, time)
+        if is_facet_in_cache(FacetIndex(cellid(cell), local_facet_index), cell, inner_cache)
+            assemble_face!(Kₑ, cell, local_facet_index, inner_cache, time)
+        end
     end
 end
 # Update element matrix in nonlinear operators
 assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_face!(Kₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
 @unroll function assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_face!(Kₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        if is_facet_in_cache(FacetIndex(cellid(cell), local_facet_index), cell, inner_cache)
+            assemble_face!(Kₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        end
     end
 end
 # Update element matrix and residual in nonlinear operators
 assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_face!(Kₑ, residualₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
 @unroll function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_face!(Kₑ, residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        if is_facet_in_cache(FacetIndex(cellid(cell), local_facet_index), cell, inner_cache)
+            assemble_face!(Kₑ, residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        end
     end
 end
 # Update residual in nonlinear operators
 assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_face!(residualₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
 @unroll function assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_face!(residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        if is_facet_in_cache(FacetIndex(cellid(cell), local_facet_index), cell, inner_cache)
+            assemble_face!(residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        end
     end
 end
 #
