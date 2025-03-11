@@ -482,3 +482,39 @@ function assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell,
         assemble_face_pressure_qp!(residualₑ, uₑ, p, qp, fv)
     end
 end
+
+# We can use this to debug weak BCs for their consistency
+struct ConsistencyCheckWeakBoundaryCondition{BC} <: AbstractWeakBoundaryCondition
+    bc::BC
+    Δ::Float64
+    boundary_name::String
+end
+
+function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, cache::SimpleFacetCache{<:ConsistencyCheckWeakBoundaryCondition}, time)
+    Kₑfd = copy(Kₑ)
+    K1 = zero(Kₑ)
+    uₑfd = copy(uₑ)
+    residualₑfd = zero(residualₑ)
+    residualₑref = zero(residualₑ)
+    @unpack mp, fv = cache
+    @unpack Δ = mp
+
+    inner_cache = SimpleFacetCache(mp.bc, fv)
+    assemble_face!(Kₑ, residualₑ, uₑ, cell, local_face_index, inner_cache, time)
+    assemble_face!(residualₑref, uₑ, cell, local_face_index, inner_cache, time)
+    for i in 1:getnbasefunctions(fv)
+        fill!(residualₑfd, 0.0)
+        uₑfd    .= uₑ
+        uₑfd[i] += Δ
+        assemble_face!(residualₑfd, uₑfd, cell, local_face_index, inner_cache, time)
+        residualₑfd .-= residualₑref
+        residualₑfd /= Δ
+        Kₑfd[:,i] .+= residualₑfd
+    end
+
+    if maximum(abs.(Kₑfd .- Kₑ)) > Δ
+        @warn "Inconsistent element $(cellid(cell)) face $(local_face_index)! Jacobian difference: $(maximum(abs.(Kₑfd .- Kₑ)))"
+        @info uₑ, Kₑfd[:,end], Kₑ[:,end]
+        error()
+    end
+end

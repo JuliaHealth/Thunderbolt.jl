@@ -136,8 +136,12 @@ end
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
-    result = all(Θks .≤ Θreject)
-    return result
+    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+        result = all(Θks .≤ Θreject)
+        return result
+    else
+        return all(isfinite.(Θks))
+    end
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     # Reset solution
@@ -182,8 +186,12 @@ end
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
-    result = all(Θks .≤ Θreject)
-    return result
+    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+        result = all(Θks .≤ Θreject)
+        return result
+    else
+        return all(isfinite.(Θks))
+    end
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
     # Reset solution
@@ -231,8 +239,12 @@ end
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::ExperimentalDiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
-    result = all(Θks .≤ Θreject)
-    return result
+    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+        result = all(Θks .≤ Θreject)
+        return result
+    else
+        return all(isfinite.(Θks))
+    end
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::ExperimentalDiscreteContinuationController)
     # Reset solution

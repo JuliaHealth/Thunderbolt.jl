@@ -12,6 +12,7 @@ Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType} <: AbstractNo
     max_iter::Int = 100
     inner_solver::solverType = LinearSolve.KrylovJL_GMRES()
     monitor::MonitorType = DefaultProgressMonitor()
+    enforce_monotonic_convergence::Bool = false
 end
 
 mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, NewtonType <: NewtonRaphsonSolver{T}, InnerSolverCacheType} <: AbstractNonlinearSolverCache
@@ -70,24 +71,29 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
     resize!(Θks, 0)
     while true
         cache.iter += 1
-        residual .= 0.0
+        fill!(residual, 0.0)
         @timeit_debug "update operator" update_linearization!(op, residual, u, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
         linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
 
         residualnorm = residual_norm(cache, f)
-        if residualnorm < cache.parameters.tol && cache.iter > 1 # Do at least two iterations to get a sane convergence estimate
+        if residualnorm < cache.parameters.tol
+            if cache.iter == 1
+                push!(Θks, 0.0)
+            end
             break
         elseif cache.iter > cache.parameters.max_iter
+            push!(Θks,Inf)
             @debug "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm" _group=:nlsolve
             return false
         elseif any(isnan.(residualnorm))
+            push!(Θks,Inf)
             @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
             return false
         end
 
         @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
-        nonlinear_step_monitor(cache, t, f, cache.parameters.monitor)
+        nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
         solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
@@ -96,9 +102,13 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         u .-= Δu # Current guess
 
         if cache.iter > 0
-            Θk =residualnorm/residualnormprev
-            push!(Θks, isnan(Θk) ? Inf : Θk)
-            if Θk ≥ 1.0
+            Θk = residualnorm/residualnormprev
+            if residualnormprev ≈ 0.0
+                push!(Θks, 0.0)
+            else
+                push!(Θks, Θk)
+            end
+            if cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0
                 @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
                 return false
             end
