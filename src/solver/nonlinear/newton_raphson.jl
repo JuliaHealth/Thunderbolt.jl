@@ -110,7 +110,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
             else
                 push!(Θks, Θk)
             end
-            if cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0
+            if (cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0) || incrementnormprev > 1000incrementnorm
                 @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
                 return false
             end
