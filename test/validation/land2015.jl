@@ -42,12 +42,10 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
     pressure_profile_coefficient = TimeFunctionCoefficient(
         pressure_profile,
     )
-    bcs = PressureFieldBC(pressure_profile_coefficient, "bottom")
-    # bcs = Thunderbolt.ConsistencyCheckWeakBoundaryCondition(
-    #     PressureFieldBC(pressure_profile_coefficient, "bottom"),
-    #     1e-7,
-    #     "bottom",
-    # )
+    bcs = Thunderbolt.ConsistencyCheckWeakBoundaryCondition(
+        PressureFieldBC(pressure_profile_coefficient, "bottom"),
+        1e-7,
+    )
     quasistaticform = semidiscretize(
         StructuralModel(:displacement, constitutive_model, (bcs,)),
         spatial_discretization_method,

@@ -486,25 +486,55 @@ function assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell,
     end
 end
 
+
 # We can use this to debug weak BCs for their consistency
 struct ConsistencyCheckWeakBoundaryCondition{BC} <: AbstractWeakBoundaryCondition
     bc::BC
     Δ::Float64
-    boundary_name::String
 end
 
-function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, cache::SimpleFacetCache{<:ConsistencyCheckWeakBoundaryCondition}, time)
-    Kₑfd = copy(Kₑ)
-    uₑfd = copy(uₑ)
-    residualₑfd = zero(residualₑ)
-    residualₑref = zero(residualₑ)
-    @unpack mp, fv = cache
-    @unpack Δ = mp
+struct ConsistencyCheckWeakBoundaryConditionCache{IC}
+    inner_cache::IC
+    Kₑfd::Matrix{Float64}
+    uₑfd::Vector{Float64}
+    residualₑfd::Vector{Float64}
+    residualₑref::Vector{Float64}
+    Δ::Float64
+end
+@inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, face_cache::ConsistencyCheckWeakBoundaryConditionCache) = is_facet_in_cache(facet, cell, face_cache.inner_cache)
+@inline getboundaryname(face_cache::ConsistencyCheckWeakBoundaryConditionCache) = getboundaryname(face_cache.inner_cache)
 
-    inner_cache = SimpleFacetCache(mp.bc, fv)
+function setup_boundary_cache(face_model::ConsistencyCheckWeakBoundaryCondition, qr::FacetQuadratureRule, ip::Interpolation, sdh::SubDofHandler)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    return SimpleFacetCache(face_model, FacetValues(qr, ip, ip_geo))
+end
+
+function setup_boundary_cache(ccc::ConsistencyCheckWeakBoundaryCondition, qr::FacetQuadratureRule, ip::Interpolation, sdh::SubDofHandler)
+    N = ndofs_per_cell(sdh)
+    return ConsistencyCheckWeakBoundaryConditionCache(
+        setup_boundary_cache(ccc.bc, qr, ip, sdh),
+        zeros(N, N),
+        zeros(N),
+        zeros(N),
+        zeros(N),
+        ccc.Δ,
+    )
+end
+
+function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, cache::ConsistencyCheckWeakBoundaryConditionCache, time)
+    (; Δ, inner_cache, Kₑfd, uₑfd, residualₑfd, residualₑref) = cache
+
+    # The incoming element matrix might be non-empty, so we need to start by storing the offset.
+    Kₑfd .= Kₑ
+
+    # The actual assembly is happening here
     assemble_face!(Kₑ, residualₑ, uₑ, cell, local_face_index, inner_cache, time)
+
+    # Now we get a fresh reference state to pull the differences
+    fill!(residualₑref, 0.0)
     assemble_face!(residualₑref, uₑ, cell, local_face_index, inner_cache, time)
-    for i in 1:getnbasefunctions(fv)
+    # Here we actually compute teh finite difference
+    for i in 1:length(uₑfd)
         fill!(residualₑfd, 0.0)
         uₑfd    .= uₑ
         uₑfd[i] += Δ
@@ -514,9 +544,9 @@ function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ:
         Kₑfd[:,i] .+= residualₑfd
     end
 
+    # Finally we check for consistency
     if maximum(abs.(Kₑfd .- Kₑ)) > Δ
         @warn "Inconsistent element $(cellid(cell)) face $(local_face_index)! Jacobian difference: $(maximum(abs.(Kₑfd .- Kₑ)))"
         @info uₑ
-        error()
     end
 end
