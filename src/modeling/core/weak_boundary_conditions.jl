@@ -342,10 +342,12 @@ function assemble_face_pressure_qp!(Kₑ::AbstractMatrix, residualₑ::AbstractV
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    neumann_term = p * J * cofF
+    # @info qp, J, cofF ⋅ n₀
+    neumann_term = p * J * cofF ⋅ n₀
+    # neumann_term = p * n₀
     for i in 1:ndofs_face
         δuᵢ = shape_value(fv, qp, i)
-        residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
+        residualₑ[i] += neumann_term ⋅ δuᵢ * dΓ
 
         for j in 1:ndofs_face
             ∇δuⱼ = shape_gradient(fv, qp, j)
@@ -356,7 +358,7 @@ function assemble_face_pressure_qp!(Kₑ::AbstractMatrix, residualₑ::AbstractV
             δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
             δJ = J * tr(∇δuⱼ ⋅ invF)
             δJcofF = δJ * cofF + J * δcofF
-            Kₑ[i, j] += -p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+            Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end
@@ -369,11 +371,11 @@ function assemble_face_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector, 
 
     ∇u = function_gradient(fv, qp, uₑ)
     F = one(∇u) + ∇u
-    
+
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    # neumann_term = p * J * cofF
+    # neumann_term = p * J * cofF ⋅ n₀
     for i in 1:ndofs_face
         δuᵢ = shape_value(fv, qp, i)
 
@@ -386,7 +388,7 @@ function assemble_face_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector, 
             δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
             δJ = J * tr(∇δuⱼ ⋅ invF)
             δJcofF = δJ * cofF + J * δcofF
-            Kₑ[i, j] += -p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+            Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end
@@ -403,10 +405,11 @@ function assemble_face_pressure_qp!(residualₑ::AbstractVector, uₑ::AbstractV
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    neumann_term = p * J * cofF
+    neumann_term = p * J * cofF ⋅ n₀
+    # neumann_term = p * n₀
     for i in 1:ndofs_face
         δuᵢ = shape_value(fv, qp, i)
-        residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
+        residualₑ[i] += neumann_term ⋅ δuᵢ * dΓ
     end
 end
 
@@ -492,7 +495,6 @@ end
 
 function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, cache::SimpleFacetCache{<:ConsistencyCheckWeakBoundaryCondition}, time)
     Kₑfd = copy(Kₑ)
-    K1 = zero(Kₑ)
     uₑfd = copy(uₑ)
     residualₑfd = zero(residualₑ)
     residualₑref = zero(residualₑ)
@@ -514,7 +516,7 @@ function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ:
 
     if maximum(abs.(Kₑfd .- Kₑ)) > Δ
         @warn "Inconsistent element $(cellid(cell)) face $(local_face_index)! Jacobian difference: $(maximum(abs.(Kₑfd .- Kₑ)))"
-        @info uₑ, Kₑfd[:,end], Kₑ[:,end]
+        @info uₑ
         error()
     end
 end
