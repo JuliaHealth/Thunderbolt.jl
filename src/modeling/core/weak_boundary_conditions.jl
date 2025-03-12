@@ -356,7 +356,7 @@ function assemble_face_pressure_qp!(Kₑ::AbstractMatrix, residualₑ::AbstractV
             δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
             δJ = J * tr(∇δuⱼ ⋅ invF)
             δJcofF = δJ * cofF + J * δcofF
-            Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+            Kₑ[i, j] += -p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end
@@ -386,7 +386,7 @@ function assemble_face_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector, 
             δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
             δJ = J * tr(∇δuⱼ ⋅ invF)
             δJcofF = δJ * cofF + J * δcofF
-            Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+            Kₑ[i, j] += -p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end

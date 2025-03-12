@@ -88,7 +88,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
                 Thunderbolt.assemble_face_pressure_qp!(J2, r2, u2, p, qp, fv)
                 r2 -= r
                 r2 /= Δ
-                Jfd[:,i] .+= r2
+                Jfd[:,i] .-= r2
             end
             @info norm(J)
             @info norm(Jfd)
