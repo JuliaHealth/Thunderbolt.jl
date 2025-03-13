@@ -504,11 +504,6 @@ end
 @inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, face_cache::ConsistencyCheckWeakBoundaryConditionCache) = is_facet_in_cache(facet, cell, face_cache.inner_cache)
 @inline getboundaryname(face_cache::ConsistencyCheckWeakBoundaryConditionCache) = getboundaryname(face_cache.inner_cache)
 
-function setup_boundary_cache(face_model::ConsistencyCheckWeakBoundaryCondition, qr::FacetQuadratureRule, ip::Interpolation, sdh::SubDofHandler)
-    ip_geo = geometric_subdomain_interpolation(sdh)
-    return SimpleFacetCache(face_model, FacetValues(qr, ip, ip_geo))
-end
-
 function setup_boundary_cache(ccc::ConsistencyCheckWeakBoundaryCondition, qr::FacetQuadratureRule, ip::Interpolation, sdh::SubDofHandler)
     N = ndofs_per_cell(sdh)
     return ConsistencyCheckWeakBoundaryConditionCache(
