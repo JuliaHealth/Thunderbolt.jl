@@ -39,12 +39,17 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::HomotopyPat
         _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
     end
 
-    HomotopyPathSolverCache(
+    solver_cache = HomotopyPathSolverCache(
         inner_solver_cache,
         _u,
         _uprev,
         vtype(undef, solution_size(f)),
     )
+
+    # Make sure the initial state is consistent
+    perform_step!(f, solver_cache, t₀, 0.0) || error("Initial guess is not consistent with the model or the problem is not well-posed!")
+
+    return solver_cache
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::HomotopyPathSolver, t₀;
@@ -88,7 +93,7 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Homo
         end
     end
 
-    HomotopyPathSolverCache(
+    solver_cache = HomotopyPathSolverCache(
         inner_solver_cache,
         _u,
         _uprev,
@@ -96,10 +101,14 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Homo
             vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
         ]),
     )
+    
+    # Make sure the initial state is consistent
+    perform_step!(f, solver_cache, t₀, 0.0) || error("Initial guess is not consistent with the model or the problem is not well-posed!")
+
+    return solver_cache
 end
 
 function perform_step!(f::AbstractSemidiscreteFunction, solver_cache::HomotopyPathSolverCache, t, Δt)
-    solver_cache.uₙ₋₁ .= solver_cache.uₙ
     update_constraints!(f, solver_cache, t + Δt)
     if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t + Δt) # TODO remove ,,t'' here. But how?
         return false
@@ -136,8 +145,12 @@ end
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
-    result = all(Θks .≤ Θreject)
-    return result
+    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+        result = all(Θks .≤ Θreject)
+        return result
+    else
+        return all(isfinite.(Θks))
+    end
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     # Reset solution
@@ -182,8 +195,12 @@ end
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
-    result = all(Θks .≤ Θreject)
-    return result
+    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+        result = all(Θks .≤ Θreject)
+        return result
+    else
+        return all(isfinite.(Θks))
+    end
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
     # Reset solution
@@ -231,8 +248,12 @@ end
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::ExperimentalDiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
-    result = all(Θks .≤ Θreject)
-    return result
+    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+        result = all(Θks .≤ Θreject)
+        return result
+    else
+        return all(isfinite.(Θks))
+    end
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::ExperimentalDiscreteContinuationController)
     # Reset solution
