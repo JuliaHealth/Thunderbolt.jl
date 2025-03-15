@@ -5,31 +5,17 @@ abstract type AbstractNonlinearSolverCache end
 
 abstract type AbstractTimeSolverCache end
 
+# Nonlinear
 function setup_operator(f::NullFunction, solver::AbstractSolver)
     return NullOperator{Float64,solution_size(f),solution_size(f)}()
 end
 
-function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
-    @unpack dh, constitutive_model, face_models = f
-    @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
-
-    displacement_symbol = first(dh.field_names)
-
-    intorder = default_quadrature_order(f, displacement_symbol)::Int
-    qr = QuadratureRuleCollection(intorder)
-    qr_face = FacetQuadratureRuleCollection(intorder)
-
-    return AssembledNonlinearOperator(
-        dh, displacement_symbol, constitutive_model, qr, face_models, qr_face
-    )
-end
-
-function setup_operator(::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qr)
+# Linear
+function setup_operator(::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc)
     check_subdomains(dh)
     LinearNullOperator{Float64, ndofs(dh)}()
 end
-
-function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc)
+function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc)
     return PEALinearOperator(
         zeros(ndofs(dh)),
         qrc,
@@ -38,18 +24,18 @@ function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, so
     )
 end
 
-function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection)
+# Bilinear
+function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+    setup_assembled_operator(integrator, solver.system_matrix_type, dh)
+end
+function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
     A  = create_system_matrix(system_matrix_type, dh)
     A_ = allocate_matrix(dh) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
-        integrator, qrc,
+        integrator,
         dh,
     )
-end
-
-function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc)
-    setup_assembled_operator(integrator, solver.system_matrix_type, dh, field_name, qrc)
 end
 
 # function setup_operator(problem::QuasiStaticProblem, relevant_coupler, solver::AbstractNonlinearSolver)
@@ -118,9 +104,4 @@ end
 
 function create_system_vector(::Type{<:Vector{T}}, dh::DofHandler) where T
     return zeros(T, ndofs(dh))
-end
-
-function create_quadrature_rule(f::AbstractSemidiscreteFunction, solver::AbstractSolver, field_name::Symbol)
-    intorder = default_quadrature_order(f, field_name)
-    return QuadratureRuleCollection(intorder)
 end

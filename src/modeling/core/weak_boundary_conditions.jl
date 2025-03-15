@@ -1,7 +1,7 @@
-function setup_boundary_cache(boundary_models::Tuple, qr::FacetQuadratureRule, ip, ip_geo)
+function setup_boundary_cache(boundary_models::Tuple, qr::FacetQuadratureRule, sdh::SubDofHandler)
     length(boundary_models) == 0 && return EmptySurfaceElementCache()
     return CompositeSurfaceElementCache(
-        ntuple(i->setup_boundary_cache(boundary_models[i], qr, ip, ip_geo), length(boundary_models))
+        ntuple(i->setup_boundary_cache(boundary_models[i], qr, sdh), length(boundary_models))
     )
 end
 
@@ -83,7 +83,10 @@ end
 @inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, face_cache::SimpleFacetCache) = facet ∈ getfacetset(cell.grid, getboundaryname(face_cache))
 @inline getboundaryname(face_cache::SimpleFacetCache) = face_cache.mp.boundary_name
 
-function setup_boundary_cache(face_model::AbstractWeakBoundaryCondition, qr::FacetQuadratureRule, ip::Interpolation, sdh::SubDofHandler)
+function setup_boundary_cache(face_model::AbstractWeakBoundaryCondition, qr::FacetQuadratureRule, sdh::SubDofHandler)
+    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    field_name = first(sdh.dh.field_names)
+    ip         = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
     return SimpleFacetCache(face_model, FacetValues(qr, ip, ip_geo))
 end

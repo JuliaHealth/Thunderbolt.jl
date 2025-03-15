@@ -63,8 +63,6 @@ odeform = semidiscretize(
 u₀ = zeros(Float32, OS.function_size(odeform))
 steady_state_initializer!(u₀, odeform)
 
-# io = ParaViewWriter("spiral-wave-test")
-
 timestepper = #Thunderbolt.ReactionTangentController(
     OS.LieTrotterGodunov((
         BackwardEulerSolver(
@@ -87,19 +85,20 @@ integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 TimerOutputs.enable_debug_timings(Thunderbolt)
 step!(integrator) # precompile for benchmark below
 
+io = ParaViewWriter("Niederer-Test")
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    # dh = odeform.functions[1].dh
-    # φ = u[odeform.dof_ranges[1]]
-    # @info t,norm(u)
+    dh = odeform.functions[1].dh
+    φ = u[odeform.solution_indices[1]]
+    @info t,norm(u)
     # sflat = ....?
-    # store_timestep!(io, t, dh.grid) do file
-    #     Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
-    #     # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
-    #     # for sidx in 1:Thunderbolt.num_states(ionic_model)
-    #     #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
-    #     # end
-    # end
+    store_timestep!(io, t, dh.grid) do file
+        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+        # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
+        # for sidx in 1:Thunderbolt.num_states(ionic_model)
+        #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
+        # end
+    end
 end
 TimerOutputs.print_timer()
 # TimerOutputs.disable_debug_timings(Thunderbolt)

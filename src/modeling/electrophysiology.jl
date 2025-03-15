@@ -146,7 +146,10 @@ struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T,
     nonzero_intervals::VectorType # Helper for sparsity in time
 end
 
-function setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, ip, sdh::SubDofHandler)
+function setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, sdh::SubDofHandler)
+    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    field_name = first(sdh.dh.field_names)
+    ip          = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
     AnalyticalCoefficientElementCache(
         setup_coefficient_cache(protocol.f, qr, sdh),

@@ -1,43 +1,11 @@
-
-# TODO where to put this?
-function construct_qvector(::Type{StorageType}, ::Type{IndexType}, mesh::SimpleMesh, qrc::QuadratureRuleCollection, subdomains::Vector{String} = [""]) where {StorageType, IndexType}
-    num_points = 0
-    num_cells  = 0
-    for subdomain in subdomains
-        for (celltype, cellset) in pairs(mesh.volumetric_subdomains[subdomain].data)
-            qr = getquadraturerule(qrc, getcells(mesh, first(cellset).idx))
-            num_points += getnquadpoints(qr)*length(cellset)
-            num_cells  += length(cellset)
-        end
-    end
-    data    = zeros(eltype(StorageType), num_points)
-    offsets = zeros(num_cells+1)
-
-    offsets[1]        = 1
-    next_point_offset = 1
-    next_cell         = 1
-    for subdomain in subdomains
-        for (celltype, cellset) in pairs(mesh.volumetric_subdomains[subdomain].data)
-            qr = getquadraturerule(qrc, getcells(mesh, first(cellset).idx))
-            for cellidx in cellset
-                next_point_offset += getnquadpoints(qr)
-                next_cell += 1
-                offsets[next_cell] = next_point_offset
-            end
-        end
-    end
-
-    return DenseDataRange(StorageType(data), IndexType(offsets))
-end
-
-function compute_quadrature_fluxes!(fluxdata, qrc, dh, u, field_name, integrator)
+function compute_quadrature_fluxes!(fluxdata, dh, u, field_name, integrator)
     grid = get_grid(dh)
     sdim = getspatialdim(grid)
     for sdh in dh.subdofhandlers
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
         firstcell   = getcells(grid, first(sdh.cellset))
         ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr  = getquadraturerule(qrc, firstcell)
+        element_qr  = getquadraturerule(integrator.qrc, firstcell)
         cv = CellValues(element_qr, ip, ip_geo)
         _compute_quadrature_fluxes_on_subdomain!(fluxdata,sdh,cv,u,integrator)
     end
@@ -85,12 +53,12 @@ struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
 end
 
 function Plonsey1964ECGGaussCache(op::AssembledBilinearOperator, φₘ::AbstractVector{T}) where T
-    @unpack element_qrc, dh, integrator = op
+    @unpack dh, integrator = op
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
-    κ∇φₘ = construct_qvector(Vector{Vec{sdim,T}}, Vector{Int64}, grid, op.element_qrc)
-    compute_quadrature_fluxes!(κ∇φₘ, element_qrc, dh, φₘ, dh.field_names[1], integrator)
+    κ∇φₘ = construct_qvector(Vector{Vec{sdim,T}}, Vector{Int64}, grid, integrator.qrc)
+    compute_quadrature_fluxes!(κ∇φₘ, dh, φₘ, dh.field_names[1], integrator)
     Plonsey1964ECGGaussCache(κ∇φₘ, op)
 end
 
@@ -114,7 +82,7 @@ function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
         ip          = Ferrite.getfieldinterpolation(sdh, first(dh.field_names))
         firstcell   = getcells(grid, first(sdh.cellset))
         ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr  = getquadraturerule(op.element_qrc, firstcell)
+        element_qr  = getquadraturerule(op.integrator.qrc, firstcell)
         cv = CellValues(element_qr, ip, ip_geo)
         # Function barrier
         φₑ += _evaluate_ecg_inner!(κ∇φₘ, method, x, κₜ, sdh, cv)
@@ -160,11 +128,11 @@ end
 
 function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector{T}) where T
     @unpack op = cache
-    @unpack element_qrc, dh, integrator = op
+    @unpack dh, integrator = op
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
     fill!(cache.κ∇φₘ.data, zero(eltype(cache.κ∇φₘ)))
-    compute_quadrature_fluxes!(cache.κ∇φₘ, element_qrc, dh, φₘ, dh.field_names[1], integrator)
+    compute_quadrature_fluxes!(cache.κ∇φₘ, dh, φₘ, dh.field_names[1], integrator)
 end
 
 """
@@ -222,7 +190,7 @@ function PoissonECGReconstructionCache(
 end
 
 function PoissonECGReconstructionCache(
-    heart_fun::TransientDiffusionFunction,
+    heart_fun::AffineODEFunction,
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
     torso_diffusion_tensor_field, # κ - diffusion tensor description for heart and torso on torso grid
@@ -265,20 +233,24 @@ function PoissonECGReconstructionCache(
     )
 
     heart_op = setup_assembled_operator(
-        BilinearDiffusionIntegrator(heart_diffusion_tensor_field),
+        BilinearDiffusionIntegrator(
+            heart_diffusion_tensor_field,
+            qrc,
+            extracellular_potential_symbol,
+        ),
         system_matrix_type,
         heart_dh,
-        extracellular_potential_symbol,
-        qrc
     )
     update_operator!(heart_op, 0.) # Trigger assembly
 
     torso_op = setup_assembled_operator(
-        BilinearDiffusionIntegrator(torso_diffusion_tensor_field),
+        BilinearDiffusionIntegrator(
+            torso_diffusion_tensor_field,
+            qrc,
+            extracellular_potential_symbol,
+        ),
         system_matrix_type,
         torso_dh,
-        extracellular_potential_symbol,
-        qrc
     )
     update_operator!(torso_op, 0.) # Trigger assembly
 
@@ -301,8 +273,8 @@ function PoissonECGReconstructionCache(
 end
 
 function PoissonECGReconstructionCache(
-    heart_fun::TransientDiffusionFunction,
-    torso_fun::SteadyDiffusionFunction,
+    heart_fun::AffineODEFunction,
+    torso_fun::AffineSteadyStateFunction,
     heart_op::AssembledBilinearOperator,
     torso_op::AssembledBilinearOperator,
     transfer_op::AbstractTransferOperator,
@@ -408,7 +380,7 @@ function Geselowitz1989ECGLeadCache(
 end
 
 function Geselowitz1989ECGLeadCache(
-    heart_fun::TransientDiffusionFunction,
+    heart_fun::AffineODEFunction,
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
     full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
@@ -436,7 +408,7 @@ function Geselowitz1989ECGLeadCache(
 end
 
 function Geselowitz1989ECGLeadCache(
-    heart_fun::TransientDiffusionFunction,
+    heart_fun::AffineODEFunction,
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
     full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
@@ -447,24 +419,26 @@ function Geselowitz1989ECGLeadCache(
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
+    lead_field_sym       = :Z,
 )
+    tmpsym = heart_fun.bilinear_term.sym
     lead_field_model = SteadyDiffusionModel(
         full_diffusion_tensor_field,
         NoStimulationProtocol(), #ConstantCoefficient(NaN), # FIXME Poisoning to detecte if we accidentally touch these
-        :Z
+        lead_field_sym
     )
 
     source_model = SteadyDiffusionModel(
         heart_diffusion_tensor_field,
         NoStimulationProtocol(), #ConstantCoefficient(NaN), # FIXME Poisoning to detecte if we accidentally touch these
-        :ϕₘ
+        tmpsym
     )
 
     lead_field_fun = semidiscretize(
         lead_field_model,
         FiniteElementDiscretization(
-            Dict(:Z => ipc),
-            [Dirichlet(:Z, ground, (x,t) -> 0.0)]
+            Dict(lead_field_sym => ipc),
+            [Dirichlet(lead_field_sym, ground, (x,t) -> 0.0)]
         ),
         torso_grid
     )
@@ -473,27 +447,31 @@ function Geselowitz1989ECGLeadCache(
     sourcefun = semidiscretize(
         source_model,
         FiniteElementDiscretization(
-            Dict(:ϕₘ => ipc),
+            Dict(tmpsym => ipc),
             Dirichlet[]
         ),
         get_grid(heart_fun.dh)
     )
 
     ϕₘ_op = setup_assembled_operator(
-        BilinearDiffusionIntegrator(heart_diffusion_tensor_field),
+        BilinearDiffusionIntegrator(
+            heart_diffusion_tensor_field,
+            qrc,
+            tmpsym,
+        ),
         system_matrix_type,
         sourcefun.dh,
-        :ϕₘ,
-        qrc
     )
     update_operator!(ϕₘ_op, 0.) # Trigger assembly
 
     lead_op = setup_assembled_operator(
-        BilinearDiffusionIntegrator(full_diffusion_tensor_field),
+        BilinearDiffusionIntegrator(
+            full_diffusion_tensor_field,
+            qrc,
+            lead_field_sym,
+        ),
         system_matrix_type,
         lead_field_fun.dh,
-        :Z,
-        qrc
     )
     update_operator!(lead_op, 0.) # Trigger assembly
 
@@ -516,18 +494,20 @@ function Geselowitz1989ECGLeadCache(
         electrode_positions;
         linear_solver,
         solution_vector_type,
+        lead_field_sym,
     )
 end
 
 function Geselowitz1989ECGLeadCache(
-    heart_fun::TransientDiffusionFunction,
-    lead_fun::SteadyDiffusionFunction,
+    heart_fun::AffineODEFunction,
+    lead_fun::AffineSteadyStateFunction,
     lead_op::AssembledBilinearOperator,
     source_op::AssembledBilinearOperator,
     transfer_op,
     electrode_positions::AbstractVector{Vector{VertexIndex}};
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
+    lead_field_sym       = :Z,
 )
     lead_dh  = lead_op.dh
     length(lead_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
@@ -542,9 +522,9 @@ function Geselowitz1989ECGLeadCache(
     @views for (i, electrode_set) in enumerate(electrode_positions)
         @assert length(electrode_set) ≥ 2 "Electrode set $i has too few electrodes ($(length(electrode_set))<2)"
         current_rhs = lead_rhs[i,:]
-        _add_electrode!(current_rhs, lead_dh, electrode_set[1], 1.0)
+        _add_electrode!(current_rhs, lead_dh, electrode_set[1], 1.0, lead_field_sym)
         for j in 2:length(electrode_set)
-            _add_electrode!(current_rhs, lead_dh, electrode_set[j], -1.0/(length(electrode_set)-1))
+            _add_electrode!(current_rhs, lead_dh, electrode_set[j], -1.0/(length(electrode_set)-1), lead_field_sym)
         end
         leadprob = LinearSolve.LinearProblem(
             lead_op.A, current_rhs; u0=Z[i,:]
@@ -556,8 +536,8 @@ function Geselowitz1989ECGLeadCache(
     return Geselowitz1989ECGLeadCache(source_op, transfer_op, ∇Njκ∇φₘ_h, ∇Njκ∇φₘ_t, Z, electrode_positions)
 end
 
-function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::VertexIndex, weight) where {T<:Number}
-    local_dof = Ferrite.vertexdof_indices(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :Z))[electrode[2]][1]::Int
+function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::VertexIndex, weight, lead_field_sym::Symbol) where {T<:Number}
+    local_dof = Ferrite.vertexdof_indices(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], lead_field_sym))[electrode[2]][1]::Int
     global_dof = celldofs(dh, electrode[1])[local_dof]::Int
     f[global_dof] = -weight
     return nothing
