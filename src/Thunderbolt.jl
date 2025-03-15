@@ -38,6 +38,8 @@ import LinearSolve
 
 import Base: *, +, -
 
+import ForwardDiff
+
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
         compose, ODESystem, Differential

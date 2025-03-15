@@ -313,6 +313,7 @@ function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:Quasi
     n_ivs_per_qp = local_function_size(wrapper.f.material_model)
     return GenericFirstOrderRateIndependentMaterialStateCache(
         wrapper.f,
+        setup_internal_cache(wrapper.f.material_model, qr, sdh),
         wrapper.u,
         wrapper.uprev,
         wrapper.Δt,

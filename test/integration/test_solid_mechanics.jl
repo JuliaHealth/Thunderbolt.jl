@@ -4,44 +4,41 @@ struct TestCalciumHatField end
 Thunderbolt.setup_coefficient_cache(coeff::TestCalciumHatField, ::QuadratureRule, ::SubDofHandler) = coeff
 Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache::CellCache, qp::QuadraturePoint, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
 
-# function test_solve_contractile_cuboid(mesh, constitutive_model, subdomains = [""])
-#     tspan = (0.0,300.0)
-#     Δt = 100.0
+function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, subdomains = [""])
+    tspan = (0.0,300.0)
+    Δt = 100.0
 
-#     # Clamp three sides
-#     dbcs = [
-#         Dirichlet(:d, getfacetset(mesh, "left"), (x,t) -> [0.0], [1])
-#         Dirichlet(:d, getfacetset(mesh, "front"), (x,t) -> [0.0], [2])
-#         Dirichlet(:d, getfacetset(mesh, "bottom"), (x,t) -> [0.0], [3])
-#         Dirichlet(:d, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
-#     ]
+    # Clamp three sides
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x,t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x,t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x,t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    ]
 
-#     quasistaticform = semidiscretize(
-#         QuasiStaticModel(:d, constitutive_model, (
-#             NormalSpringBC(0.0, "right"),
-#             ConstantPressureBC(0.0, "back"),
-#             PressureFieldBC(ConstantCoefficient(0.0),"top")
-#         )),
-#         FiniteElementDiscretization(
-#             Dict(:d => LagrangeCollection{1}()^3),
-#             dbcs,
-#             subdomains,
-#         ),
-#         mesh
-#     )
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(:d, constitutive_model, (
+            NormalSpringBC(0.0, "right"),
+            ConstantPressureBC(0.0, "back"),
+            PressureFieldBC(ConstantCoefficient(0.0),"top")
+        )),
+        FiniteElementDiscretization(
+            Dict(:d => LagrangeCollection{1}()^3),
+            dbcs,
+            subdomains,
+        ),
+        mesh
+    )
 
-#     problem = QuasiStaticProblem(quasistaticform, tspan)
+    problem = QuasiStaticProblem(quasistaticform, tspan)
 
-#     # Create sparse matrix and residual vector
-#     timestepper = HomotopyPathSolver(
-#         NewtonRaphsonSolver(;max_iter=10)
-#     )
-#     integrator = init(problem, timestepper, dt=Δt, verbose=true)
-#     u₀ = copy(integrator.u)
-#     solve!(integrator)
-#     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
-#     @test integrator.u ≉ u₀
-# end
+    # Create sparse matrix and residual vector
+    integrator = init(problem, timestepper, dt=Δt, verbose=true)
+    u₀ = copy(integrator.u)
+    solve!(integrator)
+    @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
+    @test integrator.u ≉ u₀
+end
 
 # function test_solve_contractile_ideal_lv(mesh, constitutive_model)
 #     tspan = (0.0,300.0)
@@ -81,48 +78,63 @@ Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache::CellCac
 #     @test integrator.u ≉ u₀
 # end
 
-# # Smoke tests that things do not crash and that things do at least something
-# @testset "Contracting cuboid" begin
-#     mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+# Smoke tests that things do not crash and that things do at least something
+@testset "Contracting cuboid" begin
+    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
-#     microstructure_model = ConstantCoefficient(OrthotropicMicrostructure(
-#         Vec((1.0, 0.0, 0.0)),
-#         Vec((0.0, 1.0, 0.0)),
-#         Vec((0.0, 0.0, 1.0)),
-#     ))
+    microstructure_model = ConstantCoefficient(OrthotropicMicrostructure(
+        Vec((1.0, 0.0, 0.0)),
+        Vec((0.0, 1.0, 0.0)),
+        Vec((0.0, 0.0, 1.0)),
+    ))
+    timestepper = BackwardEulerSolver(;
+        inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
+            # global_newton=NewtonRaphsonSolver(),
+            # local_newton=NewtonRaphsonSolver(),
+        )
+    )
+    test_solve_contractile_cuboid(mesh, ActiveStressModel(
+        HolzapfelOgden2009Model(),
+        SimpleActiveStress(),
+        Thunderbolt.RDQ20MFModel(;calcium_field=TestCalciumHatField()),
+        microstructure_model
+    ), timestepper)
 
-#     test_solve_contractile_cuboid(mesh, ExtendedHillModel(
-#         HolzapfelOgden2009Model(),
-#         ActiveMaterialAdapter(LinearSpringModel()),
-#         GMKActiveDeformationGradientModel(),
-#         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
-#         microstructure_model
-#     ))
+    timestepper = HomotopyPathSolver(
+        NewtonRaphsonSolver(;max_iter=10)
+    )
+    test_solve_contractile_cuboid(mesh, ExtendedHillModel(
+        HolzapfelOgden2009Model(),
+        ActiveMaterialAdapter(LinearSpringModel()),
+        GMKActiveDeformationGradientModel(),
+        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        microstructure_model
+    ))
 
-#     test_solve_contractile_cuboid(mesh, GeneralizedHillModel(
-#         LinYinPassiveModel(),
-#         ActiveMaterialAdapter(LinYinActiveModel()),
-#         GMKIncompressibleActiveDeformationGradientModel(),
-#         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
-#         microstructure_model
-#     ))
+    test_solve_contractile_cuboid(mesh, GeneralizedHillModel(
+        LinYinPassiveModel(),
+        ActiveMaterialAdapter(LinYinActiveModel()),
+        GMKIncompressibleActiveDeformationGradientModel(),
+        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        microstructure_model
+    ))
 
-#     test_solve_contractile_cuboid(mesh, ActiveStressModel(
-#         HumphreyStrumpfYinModel(),
-#         SimpleActiveStress(),
-#         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
-#         microstructure_model
-#     ))
+    test_solve_contractile_cuboid(mesh, ActiveStressModel(
+        HumphreyStrumpfYinModel(),
+        SimpleActiveStress(),
+        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        microstructure_model
+    ))
 
-#     mesh = to_mesh(generate_mixed_dimensional_grid_3D())
+    # mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 
-#     test_solve_contractile_cuboid(mesh, ActiveStressModel(
-#         HumphreyStrumpfYinModel(),
-#         SimpleActiveStress(),
-#         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
-#         microstructure_model
-#     ), ["Ventricle"])
-# end
+    # test_solve_contractile_cuboid(mesh, ActiveStressModel(
+    #     HumphreyStrumpfYinModel(),
+    #     SimpleActiveStress(),
+    #     PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+    #     microstructure_model
+    # ), ["Ventricle"])
+end
 
 # @testset "Idealized LV" begin
 #     grid = generate_ideal_lv_mesh(5,5,3)

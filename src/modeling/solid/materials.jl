@@ -210,20 +210,13 @@ end
 setup_internal_cache(material_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(material_model.contraction_model, qr, sdh)
 setup_internal_cache(material_model::Union{<:ElastodynamicsModel{<:ActiveStressModel}, <:ElastodynamicsModel{<:ExtendedHillModel}, <:ElastodynamicsModel{<:GeneralizedHillModel}}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(material_model.rhs.contraction_model, qr, sdh)
 
-# Some debug materials
-Base.@kwdef struct LinearMaxwellMaterial{T} <: AbstractMaterialModel
-    E₀::T
-    E₁::T
-    μ::T
-    η₁::T
-    ν::T
-end
-
+# TODO add "condensated" info
 # TODO this actually belongs to the multi-level newton file :)
 # Dual (global cache and element-level cache) use for now to make it non-allocating.
-struct GenericFirstOrderRateIndependentMaterialStateCache{LocalModelType, QType, QType2, T, LVH} <: RateIndependentMaterialStateCache
+struct GenericFirstOrderRateIndependentMaterialStateCache{LocalModelType, LocalModelCacheType, QType, QType2, T, LVH} <: RateIndependentMaterialStateCache
     # The actual model
     model::LocalModelType
+    model_cache::LocalModelCacheType
     # Internal state at t and tprev
     # TODO play around with using a Qvector here and throw out lvh
     Q::QType
@@ -237,12 +230,68 @@ struct GenericFirstOrderRateIndependentMaterialStateCache{LocalModelType, QType,
     localQprev::QType2
 end
 
+function state(model_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp::QuadraturePoint, time)
+    return state(model_cache.model, geometry_cache, qp, time)
+end
+
+function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp, time) where dim
+    f  = coefficients.f
+    Ca = 0.0#coefficients.Ca
+    λ = f ⋅ F ⋅ f
+
+    # Concept only for now.
+    function solve_internal_timestep(material::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, λ, Q, Qprev)
+        @unpack Δt = state_cache
+        #     dsdt = sarcomere_rhs(s,λ,t)
+        # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
+
+        # TODO preallocate
+        dQ = zeros(20)
+        R  = zeros(20)
+        J  = zeros(20,20)
+        dλdt = 0.0
+        function residual!(R, Q)
+            sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material.contraction_model)
+            R .= (Q .- Qprev) .- ds
+            return nothing
+        end
+        for newton_iter in 1:10
+            ForwardDiff.jacobian!(J, residual!, R, Q)
+            residual!(R, Q)
+            ΔQ = J \ R
+            Q .-= ΔQ
+            @info qp, norm(R), norm(ΔQ)
+            if norm(R) < 1e-8
+                break
+            else
+                error("Local Newton did not converge")
+            end
+        end
+    end
+
+    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
+    Q = solve_internal_timestep(material_model, state_cache, λ, Qflat, Qprevflat)
+    Qflat .= Q
+    _store_local_state!(state_cache, geometry_cache, qp)
+
+    return Q, zero(Tensor{4,3,Float64,3^4})
+end
+
+# Some debug materials
+Base.@kwdef struct LinearMaxwellMaterial{T} <: AbstractMaterialModel
+    E₀::T
+    E₁::T
+    μ::T
+    η₁::T
+    ν::T
+end
+
 local_function_size(model::QuasiStaticModel) = local_function_size(model.material_model)
 function local_function_size(model::AbstractMaterialModel)
     return _compute_local_function_size(0, gather_internal_variable_infos(model))
 end
 
-function _compute_local_function_size(total, lvis::Tuple)
+function _compute_local_function_size(total, lvis::Base.AbstractVecOrTuple)
     for lvi in lvis
         total += _compute_local_function_size(total, lvi)
     end
@@ -356,5 +405,9 @@ function setup_coefficient_cache(m::LinearMaxwellMaterial, qr::QuadratureRule, s
 end
 
 function gather_internal_variable_infos(model::LinearMaxwellMaterial)
-    return (InternalVariableInfo(:εᵛ, 6),) # TODO iterator and dimension info
+    return (InternalVariableInfo(:εᵛ, 6),) # TODO dimension info
+end
+
+function gather_internal_variable_infos(model::ActiveStressModel)
+    return (InternalVariableInfo(:s, -1),) # TODO how to query this?
 end
