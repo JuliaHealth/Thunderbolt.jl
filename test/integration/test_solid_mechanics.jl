@@ -31,6 +31,7 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, su
     )
 
     problem = QuasiStaticProblem(quasistaticform, tspan)
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
 
     # Create sparse matrix and residual vector
     integrator = init(problem, timestepper, dt=Δt, verbose=true)
@@ -78,15 +79,50 @@ end
 #     @test integrator.u ≉ u₀
 # end
 
+struct OrthotropicMicrostructureWithCaModel{MS, CA}
+    ms::MS
+    ca::CA
+end
+
+struct OrthotropicMicrostructureWithCaCache{MS, CA}
+    ms::MS
+    ca::CA
+end
+
+function Thunderbolt.setup_coefficient_cache(m::OrthotropicMicrostructureWithCaModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return OrthotropicMicrostructureWithCaCache(
+        Thunderbolt.setup_coefficient_cache(m.ms, qr, sdh),
+        Thunderbolt.setup_coefficient_cache(m.ca, qr, sdh),
+    )
+end
+
+struct OrthotropicMicrostructureWithCa{T} <: Thunderbolt.AbstractOrthotropicMicrostructure
+    f::Vec{3,T}
+    s::Vec{3,T}
+    n::Vec{3,T}
+    Ca::T
+end
+
+function Thunderbolt.evaluate_coefficient(cc, gc, qp, t)
+    fsn = Thunderbolt.evaluate_coefficient(cc.ms, gc, qp, t)
+    ca  = Thunderbolt.evaluate_coefficient(cc.ca, gc, qp, t)
+    return OrthotropicMicrostructureWithCa(
+        fsn.f, fsn.s, fsn.n, ca
+    )
+end
+
 # Smoke tests that things do not crash and that things do at least something
 @testset "Contracting cuboid" begin
-    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    mesh = generate_mesh(Hexahedron, (1, 1, 1), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
-    microstructure_model = ConstantCoefficient(OrthotropicMicrostructure(
-        Vec((1.0, 0.0, 0.0)),
-        Vec((0.0, 1.0, 0.0)),
-        Vec((0.0, 0.0, 1.0)),
-    ))
+    microstructure_model = OrthotropicMicrostructureWithCaModel(
+        ConstantCoefficient(OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        )),
+        TestCalciumHatField(),
+    )
     timestepper = BackwardEulerSolver(;
         inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
             # global_newton=NewtonRaphsonSolver(),
@@ -109,7 +145,7 @@ end
         GMKActiveDeformationGradientModel(),
         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
         microstructure_model
-    ))
+    ), timestepper)
 
     test_solve_contractile_cuboid(mesh, GeneralizedHillModel(
         LinYinPassiveModel(),
@@ -117,14 +153,14 @@ end
         GMKIncompressibleActiveDeformationGradientModel(),
         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
         microstructure_model
-    ))
+    ), timestepper)
 
     test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HumphreyStrumpfYinModel(),
         SimpleActiveStress(),
         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
         microstructure_model
-    ))
+    ), timestepper)
 
     # mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 

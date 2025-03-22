@@ -146,7 +146,7 @@ function setup_contraction_model_cache(contraction_model::RDQ20MFModel, qr::Quad
 end
 
 
-function initial_state!(u::AbstractVector, model::RDQ20MFModel)
+function default_initial_condition!(u::AbstractVector, model::RDQ20MFModel)
     u[1] = 1.0
     u[2:end] .= 0.0
 end
@@ -363,3 +363,9 @@ end
 function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_stretch)
     model.a_XB * (state[17] + state[19]) * fraction_single_overlap(model, sarcomere_stretch)
 end
+
+function gather_internal_variable_infos(model::RDQ20MFModel)
+    return InternalVariableInfo(:s, 20)
+end
+
+𝓝(state, mp::RDQ20MFModel) = state[18] + state[20]

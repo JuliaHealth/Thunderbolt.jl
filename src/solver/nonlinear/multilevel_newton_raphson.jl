@@ -33,6 +33,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
     cache.iter = -1
     Δu = linear_solver_cache.u
     residualnormprev = 0.0
+    Θ1prev = length(Θks) > 0 ? first(Θks) : 0.0
     resize!(Θks, 0)
     while true
         cache.iter += 1
@@ -62,8 +63,13 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
         u[1:ndofs(op.dh)] .-= Δu # Current guess
 
         if cache.iter > 0
+            # In this case we might be unablet to estimate the convergence rate, because we are too close to the solution
+            if residualnormprev < cache.parameters.tol && residualnorm < cache.parameters.tol
+                push!(Θks, Θ1prev^2)
+                break
+            end
             Θk = residualnorm/residualnormprev
-            push!(Θks, isnan(Θk) ? Inf : Θk)
+            push!(Θks, isnan(Θk) ? 0.0 : Θk)
             if Θk ≥ 1.0
                 @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
                 return false

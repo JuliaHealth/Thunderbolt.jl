@@ -92,6 +92,23 @@ struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHa
 end
 
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
+function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
+    fill!(u, 0.0)
+    ivs = gather_internal_variable_infos(f.integrator.volume_model)
+    ivsize_per_qp = sum([iv.size for iv in ivs])
+    offset = 1
+    uq = @view u[(ndofs(f.dh)+1):end]
+    for sdh in f.lvh.dh.subdofhandlers
+        qr = getquadraturerule(f.integrator.qrc, sdh)
+        for cell in CellIterator(sdh)
+            for qp in QuadratureIterator(qr)
+                q = @view uq[offset:(offset+ivsize_per_qp-1)]
+                default_initial_condition!(q, f.integrator.volume_model.material_model)
+                offset += ivsize_per_qp
+            end
+        end
+    end
+end
 
 # TODO fill me
 gather_internal_variable_infos(model::QuasiStaticModel) = gather_internal_variable_infos(model.material_model)

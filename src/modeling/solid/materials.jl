@@ -2,6 +2,8 @@
 
 abstract type AbstractMaterialModel end
 
+default_initial_condition!(uq, ::AbstractMaterialModel) = error("Initial condition setup not implemented yet.")
+
 function material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, coefficient_cache, ::EmptyInternalCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
     return stress_and_tangent(material_model, F, coefficients, EmptyInternalModel())
@@ -37,6 +39,8 @@ struct PrestressedMechanicalModelCoefficientCache{T1, T2}
     inner_cache::T1
     prestress_cache::T2
 end
+
+default_initial_condition!(uq, model::PrestressedMechanicalModel) = default_initial_condition!(uq, model.inner_model)
 
 function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler)
     PrestressedMechanicalModelCoefficientCache(
@@ -83,6 +87,8 @@ PK1Model(material, coefficient_field) = PK1Model(material, EmptyInternalModel(),
 function setup_coefficient_cache(m::PK1Model, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_coefficient_cache(m.coefficient_field, qr, sdh)
 end
+
+default_initial_condition!(uq, model::PK1Model) = default_initial_condition!(uq, model.internal_model)
 
 setup_internal_cache(material_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(material_model.internal_model, qr, sdh)
 
@@ -190,6 +196,8 @@ struct ActiveStressModel{Mat, ASMod, CMod, MS} <: AbstractMaterialModel
     microstructure_model::MS
 end
 
+default_initial_condition!(uq, model::ActiveStressModel) = default_initial_condition!(uq, model.contraction_model)
+
 function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
@@ -236,7 +244,7 @@ end
 
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp, time) where dim
     f  = coefficients.f
-    Ca = 0.0#coefficients.Ca
+    Ca = coefficients.Ca
     λ = f ⋅ F ⋅ f
 
     # Concept only for now.
@@ -246,13 +254,13 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
         # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
 
         # TODO preallocate
-        dQ = zeros(20)
         R  = zeros(20)
         J  = zeros(20,20)
         dλdt = 0.0
         function residual!(R, Q)
+            dQ = zeros(eltype(Q), 20) # TODO preallocate
             sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material.contraction_model)
-            R .= (Q .- Qprev) .- ds
+            R .= (Q .- Qprev) .- dQ
             return nothing
         end
         for newton_iter in 1:10
@@ -260,13 +268,15 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
             residual!(R, Q)
             ΔQ = J \ R
             Q .-= ΔQ
-            @info qp, norm(R), norm(ΔQ)
+            @info norm(R), norm(ΔQ)
+            # @info qp, norm(R), norm(ΔQ)
             if norm(R) < 1e-8
                 break
-            else
+            elseif newton_iter == 10
                 error("Local Newton did not converge")
             end
         end
+        return Q
     end
 
     Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
@@ -409,5 +419,5 @@ function gather_internal_variable_infos(model::LinearMaxwellMaterial)
 end
 
 function gather_internal_variable_infos(model::ActiveStressModel)
-    return (InternalVariableInfo(:s, -1),) # TODO how to query this?
+    return (gather_internal_variable_infos(model.contraction_model),) # TODO how to query this?
 end

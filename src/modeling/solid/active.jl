@@ -83,7 +83,9 @@ Base.@kwdef struct SimpleActiveStress{TD}
     Tmax::TD = 1.0
 end
 
-∂(sas::SimpleActiveStress, Caᵢ, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
+# FIXME
+∂(sas::SimpleActiveStress, Caᵢ::AbstractFloat, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
+∂(sas::SimpleActiveStress, Caᵢ::AbstractVector, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * 1.0 * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
 
 
 @doc raw"""
