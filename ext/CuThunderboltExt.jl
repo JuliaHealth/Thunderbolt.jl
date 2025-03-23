@@ -16,7 +16,8 @@ import Thunderbolt:
     LinearOperator,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
     setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
-    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator
+    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator,
+    CudaL1PrecBuilder,build_l1prec,AbstractPartitioning,L1Preconditioner, ldiv!
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,
@@ -84,5 +85,6 @@ include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
 include("cuda/cuda_iterator.jl")
+include("cuda/cuda_preconditioner.jl")
 
 end

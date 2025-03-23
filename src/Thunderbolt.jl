@@ -92,6 +92,7 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
+include("solver/linear/preconditioner.jl")
 
 # TODO put exports into the individual submodules above!
 export
