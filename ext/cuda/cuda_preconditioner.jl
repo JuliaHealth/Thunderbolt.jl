@@ -58,7 +58,6 @@ function _ldiv!(y::Vector , P::L1Preconditioner{CudaPartitioning{Ti}}) where {Ti
     @unpack partitioning, A = P
     @unpack threads, blocks, size_A = partitioning
     cy  = y |> cu
-    @show threads, blocks
     CUDA.@sync CUDA.@cuda threads=threads blocks=blocks _l1prec_kernel!(cy, A)
     copyto!(y, cy)
     return nothing
@@ -76,8 +75,6 @@ struct DeviceDiagonalCache{Ti,Tv}
     idx::Ti # diagonal index
     b::Tv # partition diagonal value
     d::Tv # off-partition absolute sum
-    #Ωⁱ:: ViewVectorType # := {j ∈ Ωₖ : i ∈ Ωₖ}
-    #ΩⁱUΩⁱₒ:: ViewVectorType # all column values at row i
 end
 
 function _build_diagonal_iterator(A::MatrixType) where {MatrixType}
@@ -105,10 +102,14 @@ function Base.iterate(iterator::DeviceDiagonalIterator, state)
 end
 
 function _makecache(iterator::DeviceDiagonalIterator, idx,k)
+    #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
+    #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
+    # bₖᵢ := Aᵢᵢ
+    # dₖᵢ := ∑_{j ∈ Ωⁱₒ} |Aᵢⱼ|
     @unpack A ,n_threads= iterator
     part_start_idx = (k - Int32(1)) * n_threads + Int32(1)
     part_end_idx = min(part_start_idx + n_threads - Int32(1), size(A, 1))
-    @cushow A |> typeof
+    
     b = zero(eltype(A))
     d = zero(eltype(A))
 
