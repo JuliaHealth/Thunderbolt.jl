@@ -125,13 +125,13 @@ end
     )
     timestepper = BackwardEulerSolver(;
         inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
-            # global_newton=NewtonRaphsonSolver(),
+        newton=NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization()),
             # local_newton=NewtonRaphsonSolver(),
         )
     )
     test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HolzapfelOgden2009Model(),
-        SimpleActiveStress(),
+        SimpleActiveStress(;Tmax=1.0),
         Thunderbolt.RDQ20MFModel(;calcium_field=TestCalciumHatField()),
         microstructure_model
     ), timestepper)

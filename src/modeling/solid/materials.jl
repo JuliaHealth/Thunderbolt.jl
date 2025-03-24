@@ -166,7 +166,7 @@ end
 function stress_and_tangent(model::ExtendedHillModel, F::Tensor{2}, coefficients, cell_state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(cell_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
-    N = 𝓝(cell_state, model.contraction_model)
+    N = 𝓝(cell_state, F, coefficients, model.contraction_model)
 
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
@@ -208,11 +208,12 @@ function stress_and_tangent(model::ActiveStressModel, F::Tensor{2}, coefficients
               Ψ(F_ad, coefficients, model.material_model),
         F, :all)
 
-    ∂2 = Tensors.gradient(
-        F_ad -> ∂(model.active_stress_model, cell_state, F_ad, coefficients),
-    F)
-    N = 𝓝(cell_state, model.contraction_model)
-    return ∂Ψ∂F + N*∂(model.active_stress_model, cell_state, F, coefficients), ∂²Ψ∂F² + N*∂2
+    ∂2, P2 = Tensors.gradient(
+        F_ad -> 𝓝(cell_state, F, coefficients, model.contraction_model) * ∂(model.active_stress_model, cell_state, F_ad, coefficients),
+    F, :all)
+    # N = 𝓝(cell_state, F, coefficients, model.contraction_model)
+    # return ∂Ψ∂F + N*∂(model.active_stress_model, cell_state, F, coefficients), ∂²Ψ∂F² + N*∂2
+    return ∂Ψ∂F + P2, ∂²Ψ∂F² + ∂2
 end
 
 setup_internal_cache(material_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(material_model.contraction_model, qr, sdh)
@@ -243,9 +244,9 @@ function state(model_cache::GenericFirstOrderRateIndependentMaterialStateCache, 
 end
 
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp, time) where dim
-    f  = coefficients.f
+    f  = F ⋅ coefficients.f
     Ca = coefficients.Ca
-    λ = f ⋅ F ⋅ f
+    λ = √(f ⋅ f)
 
     # Concept only for now.
     function solve_internal_timestep(material::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, λ, Q, Qprev)

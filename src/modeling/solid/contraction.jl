@@ -62,7 +62,7 @@ end
 
 update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache, time, cell, cv) = nothing
 
-𝓝(Ca, mp::PelceSunLangeveld1995Model) = Ca
+𝓝(state, F, coefficients, mp::PelceSunLangeveld1995Model) = coefficients.Ca
 
 """
 TODO remove explicit calcium field dependence
@@ -89,7 +89,7 @@ end
 
 update_contraction_model_cache!(cache::ConstantStretchCache, time, cell, cv) = nothing
 
-𝓝(Ca, mp::ConstantStretchModel) = Ca
+𝓝(state, F, coefficients, mp::PelceSunLangeveld1995Model) = coefficients.Ca
 
 @doc raw"""
 Mean-field variant of the sarcomere model presented by [RegDedQua:2020:bdm](@citet).
@@ -368,4 +368,8 @@ function gather_internal_variable_infos(model::RDQ20MFModel)
     return InternalVariableInfo(:s, 20)
 end
 
-𝓝(state, mp::RDQ20MFModel) = state[18] + state[20]
+function 𝓝(state, F, coefficients, model::RDQ20MFModel)
+    f = F ⋅ coefficients.f
+    sarcomere_stretch = √(f ⋅ f)
+    return model.a_XB * (state[18] + state[20]) * fraction_single_overlap(model, sarcomere_stretch)
+end
