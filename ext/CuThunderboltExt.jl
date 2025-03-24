@@ -1,6 +1,7 @@
 module CuThunderboltExt
 
 using Thunderbolt
+using LinearSolve
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,

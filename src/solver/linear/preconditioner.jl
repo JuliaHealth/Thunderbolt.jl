@@ -11,10 +11,8 @@ struct L1Preconditioner{Partitioning,MatrixType}
 end
 
 
-ldiv!(::AbstractVector, ::L1Preconditioner{AbstractPartitioning}, ::AbstractVector) = 
+LinearSolve.ldiv!(::VectorType, ::L1Preconditioner{Partitioning}, ::VectorType) where {VectorType <: AbstractVector, Partitioning} = 
     error("Not implemented")
-
-LinearSolve.ldiv!(y::AbstractVector, P::L1Preconditioner{Partitioning}, x::AbstractVector) where {Partitioning} = ldiv!(y,P,x)
 
 abstract type AbstractL1PrecBuilder end
 struct CudaL1PrecBuilder <: AbstractL1PrecBuilder end
