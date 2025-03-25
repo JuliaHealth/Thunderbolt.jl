@@ -11,7 +11,7 @@ import CUDA:
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
-    SparseMatrixCSR, SparseMatrixCSC,
+    SparseMatrixCSR, SparseMatrixCSC, AbstractSparseMatrix,
     AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,QuadratureRuleCollection,
@@ -81,6 +81,11 @@ Thunderbolt.__add_to_vector!(b::CuVector, a::Vector) = b .+= CuVector(a)
 function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector}
     return CuVector(v)
 end
+
+CUDA.CUSPARSE.CuSparseMatrixCSR{T}(Mat::SparseMatrixCSR) where {T} =
+           CUDA.CUSPARSE.CuSparseMatrixCSR{T}(CuVector{Cint}(Mat.rowptr), CuVector{Cint}(Mat.colval),
+                                CuVector{T}(Mat.nzval), size(Mat))
+
 
 include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")

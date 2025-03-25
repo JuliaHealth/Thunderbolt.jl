@@ -8,7 +8,7 @@ struct CudaPartitioning{Ti} <: AbstractPartitioning
     size_A::Ti
 end
 
-function Thunderbolt.build_l1prec(::CudaL1PrecBuilder, A::SparseMatrixCSC;
+function Thunderbolt.build_l1prec(::CudaL1PrecBuilder, A::AbstractSparseMatrix;
     n_threads::Union{Integer,Nothing}=nothing, n_blocks::Union{Integer,Nothing}=nothing)
     if CUDA.functional()
         # Raise error if invalid thread or block count is provided
@@ -24,10 +24,10 @@ function Thunderbolt.build_l1prec(::CudaL1PrecBuilder, A::SparseMatrixCSC;
     end
 end
 
-(builder::CudaL1PrecBuilder)(A::SparseMatrixCSC;
+(builder::CudaL1PrecBuilder)(A::AbstractSparseMatrix;
     n_threads::Union{Integer,Nothing}=nothing, n_blocks::Union{Integer,Nothing}=nothing) = build_l1prec(builder, A; n_threads=n_threads, n_blocks=n_blocks)
 
-function _build_cuda_l1prec(A::SparseMatrixCSC, n_threads::Union{Integer,Nothing}, n_blocks::Union{Integer,Nothing})
+function _build_cuda_l1prec(A::AbstractSparseMatrix, n_threads::Union{Integer,Nothing}, n_blocks::Union{Integer,Nothing})
     # Determine threads and blocks if not provided
     # blocks -> number of partitions
     # threads -> number of diagonals per partition
@@ -35,9 +35,14 @@ function _build_cuda_l1prec(A::SparseMatrixCSC, n_threads::Union{Integer,Nothing
     threads = isnothing(n_threads) ? convert(Int32, min(size_A, 256)) : convert(Int32, n_threads)
     blocks = isnothing(n_blocks) ? _calculate_nblocks(threads, size_A) : convert(Int32, n_blocks)
     partitioning = CudaPartitioning(threads, blocks, size_A)
-    cuda_A = CUSPARSE.CuSparseMatrixCSC(A)
+    cuda_A = _cuda_A(A)
     return L1Preconditioner(partitioning, cuda_A)
 end
+
+_cuda_A(A::SparseMatrixCSC) = CUSPARSE.CuSparseMatrixCSC(A)
+_cuda_A(A::SparseMatrixCSR) = CUSPARSE.CuSparseMatrixCSR(A)
+_cuda_A(A::CUSPARSE.CuSparseMatrixCSC) = A
+_cuda_A(A::CUSPARSE.CuSparseMatrixCSR) = A
 
 # TODO: should x & b be CuArrays? or leave them as AbstractVector?
 function LinearSolve.ldiv!(y::VectorType, P::L1Preconditioner{CudaPartitioning{Ti}}, x::VectorType) where {Ti, VectorType <: AbstractVector}
@@ -103,7 +108,7 @@ function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatr
     n_threads = blockDim().x
     @unpack A = iterator
     part_start_idx = (k - Int32(1)) * n_threads + Int32(1)
-    part_end_idx = min(part_start_idx + n_threads - Int32(1), size(A, 1))
+    part_end_idx = min(part_start_idx + n_threads - Int32(1), size(A, 2))
     
     b = zero(eltype(A))
     d = zero(eltype(A))
@@ -130,6 +135,37 @@ function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatr
     end
 
     return DeviceDiagonalCache(k, idx,b, d)
+end
+
+function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatrixCSR{Tv,Ti,1}}, idx,k) where {Tv,Ti}
+    #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
+    #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
+    # bₖᵢ := Aᵢᵢ
+    # dₖᵢ := ∑_{j ∈ Ωⁱₒ} |Aᵢⱼ|
+    n_threads = blockDim().x
+    @unpack A = iterator  # A is in CSR format
+    part_start_idx = (k - Int32(1)) * n_threads + Int32(1)
+    part_end_idx = min(part_start_idx + n_threads - Int32(1), size(A, 2)) 
+
+    b = zero(eltype(A))
+    d = zero(eltype(A))
+
+    # CSR format traversal: fixed row, iterate over columns in that row
+    row_start = A.rowPtr[idx]
+    row_end = A.rowPtr[idx + 1] - 1
+
+    for i in row_start:row_end
+        col = A.colVal[i]
+        v = A.nzVal[i]
+
+        if col == idx
+            b = v
+        elseif col < part_start_idx || col > part_end_idx
+            d += abs(v)
+        end
+    end
+
+    return DeviceDiagonalCache(k, idx, b, d)
 end
 
 function _l1prec_kernel!(y, A)
