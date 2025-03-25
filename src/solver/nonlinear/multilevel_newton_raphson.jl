@@ -70,10 +70,10 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
             end
             Θk = residualnorm/residualnormprev
             push!(Θks, isnan(Θk) ? 0.0 : Θk)
-            # if Θk ≥ 1.0
-            #     @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
-            #     return false
-            # end
+            if Θk ≥ 1.0
+                @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
+                return false
+            end
 
             # Late out on second iteration
             if residualnorm < cache.parameters.tol

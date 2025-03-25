@@ -44,6 +44,14 @@ function compute_λᵃ(Ca, mp::PelceSunLangeveld1995Model)
     return 1.0 / (1.0 + f(Ca)*(1.0/λᵃₘₐₓ - 1.0))
 end
 
+function gather_internal_variable_infos(model::PelceSunLangeveld1995Model)
+    return InternalVariableInfo(:s, 0)
+end
+
+function default_initial_condition!(u::AbstractVector, model::PelceSunLangeveld1995Model)
+    return nothing
+end
+
 """
 """
 struct PelceSunLangeveld1995Cache{CF} <: TrivialInternalMaterialStateCache
@@ -341,6 +349,7 @@ function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
 end
 
 function fraction_single_overlap(model::RDQ20MFModel, λ)
+    # return 0.5
     SL = λ*model.SL₀
     LMh = (model.LM - model.LB) * 0.5;
     if (SL > model.LA && SL <= model.LM)
@@ -371,5 +380,5 @@ end
 function 𝓝(state, F, coefficients, model::RDQ20MFModel)
     f = F ⋅ coefficients.f
     sarcomere_stretch = √(f ⋅ f)
-    return model.a_XB * (state[18] + state[20]) * fraction_single_overlap(model, sarcomere_stretch)
+    return (state[18] + state[20]) * fraction_single_overlap(model, sarcomere_stretch)
 end

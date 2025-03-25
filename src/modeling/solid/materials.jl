@@ -209,10 +209,8 @@ function stress_and_tangent(model::ActiveStressModel, F::Tensor{2}, coefficients
         F, :all)
 
     ∂2, P2 = Tensors.gradient(
-        F_ad -> 𝓝(cell_state, F, coefficients, model.contraction_model) * ∂(model.active_stress_model, cell_state, F_ad, coefficients),
+        F_ad -> 𝓝(cell_state, F_ad, coefficients, model.contraction_model) * active_stress(model.active_stress_model, F_ad, coefficients),
     F, :all)
-    # N = 𝓝(cell_state, F, coefficients, model.contraction_model)
-    # return ∂Ψ∂F + N*∂(model.active_stress_model, cell_state, F, coefficients), ∂²Ψ∂F² + N*∂2
     return ∂Ψ∂F + P2, ∂²Ψ∂F² + ∂2
 end
 
@@ -244,48 +242,87 @@ function state(model_cache::GenericFirstOrderRateIndependentMaterialStateCache, 
 end
 
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp, time) where dim
-    f  = F ⋅ coefficients.f
+    function computeλ(F)
+        f  = F ⋅ coefficients.f
+        return √(f ⋅ f)
+    end
     Ca = coefficients.Ca
-    λ = √(f ⋅ f)
 
-    # Concept only for now.
-    function solve_internal_timestep(material::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, λ, Q, Qprev)
+    # Frozen variables
+    dλdF, λ = Tensors.gradient(computeλ, F, :all)
+    dλdt = 0.0 # TODO query
+
+    # Local solve
+    function solve_internal_timestep(material::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, λ, dλdt, Q, Qprev)
         @unpack Δt = state_cache
         #     dsdt = sarcomere_rhs(s,λ,t)
         # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
 
-        # TODO preallocate
-        R  = zeros(20)
-        J  = zeros(20,20)
-        dλdt = 0.0
-        function residual!(R, Q)
-            dQ = zeros(eltype(Q), 20) # TODO preallocate
-            sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material.contraction_model)
-            R .= (Q .- Qprev) .- dQ
+        function local_residual!(R, Q, λ, dλdt)
+            dQ = zeros(eltype(Q), length(Q)) # TODO preallocate during setup
+            sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
+            R .= (Q .- Qprev) ./ state_cache.Δt .- dQ
             return nothing
         end
+
+        function local_residual_jac_wrap!(R, Q)
+            return local_residual!(R, Q, λ, dλdt)
+        end
+
+        # TODO preallocate during setup
+        R  = zeros(length(Q))
+        J  = zeros(length(Q),length(Q))
         for newton_iter in 1:10
-            ForwardDiff.jacobian!(J, residual!, R, Q)
-            residual!(R, Q)
+            ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
+            local_residual!(R, Q, λ, dλdt)
             ΔQ = J \ R
             Q .-= ΔQ
-            @info norm(R), norm(ΔQ)
-            # @info qp, norm(R), norm(ΔQ)
-            if norm(R) < 1e-8
+            # @info qp.i, norm(R), norm(ΔQ)
+            if norm(R) < 1e-16
                 break
             elseif newton_iter == 10
                 error("Local Newton did not converge")
             end
         end
-        return Q
+        ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
+        return Q, J
     end
 
     Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
-    Q = solve_internal_timestep(material_model, state_cache, λ, Qflat, Qprevflat)
+    Q, J = solve_internal_timestep(material_model, state_cache, λ, dλdt, Qflat, Qprevflat)
     Qflat .= Q
     _store_local_state!(state_cache, geometry_cache, qp)
 
-    return Q, zero(Tensor{4,3,Float64,3^4})
+    # Solve corrector problem
+    # function local_residual_rhs_wrap!(R, λ)
+    #     dQ = zeros(eltype(λ), 20) # TODO preallocate during setup
+    #     sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
+    #     # R .= (Q .- Qprev) .- dQ
+    #     R .= (Q .- Qprevflat) .- dQ
+    #     return nothing
+    # end
+    function local_residual_rhs_wrap(λ)
+        dQ = zeros(eltype(λ), length(Q)) # TODO preallocate during setup
+        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
+        # R .= (Q .- Qprev) .- dQ
+        return (Q .- Qprevflat) ./ state_cache.Δt .- dQ
+        return nothing
+    end
+    ∂fₗ∂λ = zeros(length(Q))
+    ForwardDiff.derivative!(∂fₗ∂λ, local_residual_rhs_wrap, λ)
+    dQdλ = - J \ ∂fₗ∂λ
+
+    # Hotfix
+    # dQdF = [dQdλ[i] * dλdF for i in 1:20]
+    # Pa(F, Q) = 𝓝(Q, F, coefficients, material_model.contraction_model) * active_stress(material_model.active_stress_model, Q, F, coefficients)
+    # dfgdQ = [Pa...]
+    # dfgdQ = zeros(Tensor{2,3,Float64,3^2}, 20)
+    # dfgdQ[18] = dfgdQ[20] = material_model.contraction_model.a_XB * fraction_single_overlap(material_model.contraction_model, λ) * active_stress(material_model.active_stress_model, Q, F, coefficients)
+    # return Q, zero(Tensor{4,3,Float64,3^4})
+
+    # dfgdQ = material_model.contraction_model.a_XB * fraction_single_overlap(material_model.contraction_model, λ) * active_stress(material_model.active_stress_model, F, coefficients)
+    dfgdQ = active_stress(material_model.active_stress_model, F, coefficients) * fraction_single_overlap(material_model.contraction_model, λ)
+    return Q, -(dQdλ[18] + dQdλ[20]) * dfgdQ ⊗ dλdF
 end
 
 # Some debug materials
@@ -413,6 +450,10 @@ end
 
 function setup_coefficient_cache(m::LinearMaxwellMaterial, qr::QuadratureRule, sdh::SubDofHandler)
     return NoMicrostructureModel() # FIXME what should we do here? :)
+end
+
+function setup_internal_cache(material_model::LinearMaxwellMaterial, qr::QuadratureRule, sdh::SubDofHandler)
+    return nothing # FIXME what should we do here? :)
 end
 
 function gather_internal_variable_infos(model::LinearMaxwellMaterial)

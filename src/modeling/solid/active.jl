@@ -83,9 +83,7 @@ Base.@kwdef struct SimpleActiveStress{TD}
     Tmax::TD = 1.0
 end
 
-# FIXME
-∂(sas::SimpleActiveStress, Caᵢ::AbstractFloat, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
-∂(sas::SimpleActiveStress, Caᵢ::AbstractVector, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * 1.0 * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
+active_stress(sas::SimpleActiveStress, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
 
 
 @doc raw"""
@@ -100,7 +98,7 @@ Base.@kwdef struct PiersantiActiveStress{TD}
     pn::TD = 0.0
 end
 
-∂(sas::PiersantiActiveStress, Caᵢ, F::Tensor{2, dim}, coeff::AbstractOrthotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (sas.pf*(F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f) + sas.ps*(F ⋅ coeff.s) ⊗ coeff.s / norm(F ⋅ coeff.s) + sas.pn * (F ⋅ coeff.n) ⊗ coeff.n / norm(F ⋅ coeff.n))
+active_stress(sas::PiersantiActiveStress, F::Tensor{2, dim}, coeff::AbstractOrthotropicMicrostructure) where {dim} = sas.Tmax * (sas.pf*(F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f) + sas.ps*(F ⋅ coeff.s) ⊗ coeff.s / norm(F ⋅ coeff.s) + sas.pn * (F ⋅ coeff.n) ⊗ coeff.n / norm(F ⋅ coeff.n))
 
 
 @doc raw"""
@@ -119,12 +117,12 @@ Base.@kwdef struct Guccione1993ActiveModel
     B::Float64      = 3.8   #1/µm
 end
 
-function ∂(sas::Guccione1993ActiveModel, Caᵢ, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim}
+function active_stress(sas::Guccione1993ActiveModel, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim}
     @unpack l₀, Ca₀, lR, Ca₀max, Tmax, B = sas
     f = F ⋅ coeff.f
     λf = norm(f)
     l = lR*λf
     ECa₅₀² = Ca₀max^2/(exp(B*(l - l₀)) - 1.0)
-    T₀ = Tmax * Ca₀^2 / (Ca₀^2 + ECa₅₀²) * Caᵢ
+    T₀ = Tmax * Ca₀^2 / (Ca₀^2 + ECa₅₀²)
     return  T₀ * (f / λf) ⊗ coeff.f # We normalize here the fiber direction, as T₀ should contain all the active stress associated with the direction
 end

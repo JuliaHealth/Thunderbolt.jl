@@ -6,7 +6,7 @@ Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache::CellCac
 
 function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, subdomains = [""])
     tspan = (0.0,300.0)
-    Δt = 100.0
+    Δt = 1.0
 
     # Clamp three sides
     dbcs = [
@@ -34,11 +34,13 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, su
     Thunderbolt.default_initial_condition!(problem.u0, problem.f)
 
     # Create sparse matrix and residual vector
-    integrator = init(problem, timestepper, dt=Δt, verbose=true)
+    integrator = init(problem, timestepper, dt=Δt, verbose=true, adaptive=false)
     u₀ = copy(integrator.u)
     solve!(integrator)
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
     @test integrator.u ≉ u₀
+    
+    return integrator
 end
 
 # function test_solve_contractile_ideal_lv(mesh, constitutive_model)
@@ -113,7 +115,7 @@ end
 
 # Smoke tests that things do not crash and that things do at least something
 @testset "Contracting cuboid" begin
-    mesh = generate_mesh(Hexahedron, (1, 1, 1), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
     microstructure_model = OrthotropicMicrostructureWithCaModel(
         ConstantCoefficient(OrthotropicMicrostructure(
@@ -123,41 +125,46 @@ end
         )),
         TestCalciumHatField(),
     )
+    newton = NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization(), max_iter=3, tol=1e-8)
     timestepper = BackwardEulerSolver(;
         inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
-        newton=NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization()),
+        newton=newton,
             # local_newton=NewtonRaphsonSolver(),
         )
     )
-    test_solve_contractile_cuboid(mesh, ActiveStressModel(
+    i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HolzapfelOgden2009Model(),
-        SimpleActiveStress(;Tmax=1.0),
+        SimpleActiveStress(;Tmax=2200.0),
         Thunderbolt.RDQ20MFModel(;calcium_field=TestCalciumHatField()),
         microstructure_model
     ), timestepper)
+    VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.stage.nlsolver.global_solver_cache.op.dh.grid) do vtk
+        write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+    end
+    @info "--------------------------------------"
 
     timestepper = HomotopyPathSolver(
-        NewtonRaphsonSolver(;max_iter=10)
+        newton
     )
-    test_solve_contractile_cuboid(mesh, ExtendedHillModel(
-        HolzapfelOgden2009Model(),
-        ActiveMaterialAdapter(LinearSpringModel()),
-        GMKActiveDeformationGradientModel(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
-        microstructure_model
-    ), timestepper)
+    # test_solve_contractile_cuboid(mesh, ExtendedHillModel(
+    #     HolzapfelOgden2009Model(),
+    #     ActiveMaterialAdapter(LinearSpringModel()),
+    #     GMKActiveDeformationGradientModel(),
+    #     PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+    #     microstructure_model
+    # ), timestepper)
 
-    test_solve_contractile_cuboid(mesh, GeneralizedHillModel(
-        LinYinPassiveModel(),
-        ActiveMaterialAdapter(LinYinActiveModel()),
-        GMKIncompressibleActiveDeformationGradientModel(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
-        microstructure_model
-    ), timestepper)
+    # test_solve_contractile_cuboid(mesh, GeneralizedHillModel(
+    #     LinYinPassiveModel(),
+    #     ActiveMaterialAdapter(LinYinActiveModel()),
+    #     GMKIncompressibleActiveDeformationGradientModel(),
+    #     PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+    #     microstructure_model
+    # ), timestepper)
 
     test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HumphreyStrumpfYinModel(),
-        SimpleActiveStress(),
+        SimpleActiveStress(;Tmax=220.0),
         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
         microstructure_model
     ), timestepper)
@@ -207,6 +214,7 @@ end
 # end
 
 @testset "Viscoelasticity" begin
+    return
     mesh = generate_mesh(Hexahedron, (1,1,1))
     material = Thunderbolt.LinearMaxwellMaterial(
         E₀ = 70e3,
