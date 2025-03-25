@@ -89,7 +89,7 @@ end
 
 update_contraction_model_cache!(cache::ConstantStretchCache, time, cell, cv) = nothing
 
-𝓝(state, F, coefficients, mp::PelceSunLangeveld1995Model) = coefficients.Ca
+𝓝(state, F, coefficients, mp::ConstantStretchModel) = coefficients.Ca
 
 @doc raw"""
 Mean-field variant of the sarcomere model presented by [RegDedQua:2020:bdm](@citet).
