@@ -64,10 +64,8 @@ function _ldiv!(y::Vector , P::L1Preconditioner{CudaPartitioning{Ti}}) where {Ti
 end
 
 # TODO: consider creating unified iterator for both CPU and GPU.
-struct DeviceDiagonalIterator{MatrixType,Ti}
+struct DeviceDiagonalIterator{MatrixType}
     A::MatrixType
-    n_blocks::Ti
-    n_threads::Ti
 end
 
 struct DeviceDiagonalCache{Ti,Tv}
@@ -77,13 +75,7 @@ struct DeviceDiagonalCache{Ti,Tv}
     d::Tv # off-partition absolute sum
 end
 
-function _build_diagonal_iterator(A::MatrixType) where {MatrixType}
-    n_blocks = gridDim().x
-    n_threads = blockDim().x
-    return DeviceDiagonalIterator(A, n_blocks, n_threads)
-end
-
-DiagonalIterator(A::MatrixType) where {MatrixType} = _build_diagonal_iterator(A)
+DiagonalIterator(A::MatrixType) where {MatrixType} = DeviceDiagonalIterator(A)
 
 function Base.iterate(iterator::DeviceDiagonalIterator)
     idx = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x # diagonal index
@@ -93,26 +85,30 @@ function Base.iterate(iterator::DeviceDiagonalIterator)
 end
 
 function Base.iterate(iterator::DeviceDiagonalIterator, state)
-    @unpack n_blocks, n_threads = iterator
+    n_blocks = gridDim().x
+    n_threads = blockDim().x
     idx,k = state
     k += n_blocks # partition index
-    idx = (k - Int32(1)) * blockDim().x + threadIdx().x # diagonal index
+    stride = n_blocks * n_threads
+    idx = idx + stride # diagonal index
     idx <= size(iterator.A, 1) || return nothing
     return (_makecache(iterator,idx,k), (idx,k))
 end
 
-function _makecache(iterator::DeviceDiagonalIterator, idx,k)
+function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1}}, idx,k) where {Tv,Ti}
     #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
     #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
     # bₖᵢ := Aᵢᵢ
     # dₖᵢ := ∑_{j ∈ Ωⁱₒ} |Aᵢⱼ|
-    @unpack A ,n_threads= iterator
+    n_threads = blockDim().x
+    @unpack A = iterator
     part_start_idx = (k - Int32(1)) * n_threads + Int32(1)
     part_end_idx = min(part_start_idx + n_threads - Int32(1), size(A, 1))
     
     b = zero(eltype(A))
     d = zero(eltype(A))
 
+    # specific to CSC format
     for col in 1:size(A, 2)
         col_start = A.colPtr[col]
         col_end = A.colPtr[col+1] - 1
@@ -137,9 +133,14 @@ function _makecache(iterator::DeviceDiagonalIterator, idx,k)
 end
 
 function _l1prec_kernel!(y, A)
+    # this kernel will loop over the corresponding diagonals in strided fashion.
+    # e.g. if n_threads = 4, n_blocks = 2, A is (100 x 100), and current global thread id = 5, 
+    # then the kernel will loop over the diagonals with stride:
+    # k (partition index) = k + n_blocks (i.e. 2, 4, 6, 8, 10, 12, 14)
+    # idx (diagonal index) = idx + n_blocks * n_threads (i.e. 5, 13, 21, 29, 37, 45, 53)
     for diagonal in DiagonalIterator(A)
         @unpack k, idx, b, d = diagonal
-        @cushow k,d
+        @cushow k,d #TODO: remove this line
         y[idx] = y[idx]/ (b + d)  
     end
     return nothing
