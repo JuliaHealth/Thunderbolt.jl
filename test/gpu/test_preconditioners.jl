@@ -21,17 +21,3 @@ P = cudal1prec(B; n_threads=2, n_blocks=1)
 LinearSolve.ldiv!(y, P, x)
 ## TODO: Add tests for the above code snippet
 
-
-
-abstract type AbstractMatrixSymmetry end
-
-struct SymmetricMatrix <: AbstractMatrixSymmetry end
-struct NonSymmetricMatrix <: AbstractMatrixSymmetry end
-
-struct DeviceDiagonalIterator{MatrixType, MatrixSymmetry <: AbstractMatrixSymmetry}
-    A::MatrixType
-end
-
-matrix_symmetry_type(A::AbstractSparseMatrix)  = isapprox(A, A',rtol=1e-12) ? SymmetricMatrix : NonSymmetricMatrix
-
-DiagonalIterator(A::MatrixType) where {MatrixType} = DeviceDiagonalIterator{MatrixType,matrix_symmetry(A)}(A)
