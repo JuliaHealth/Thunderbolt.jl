@@ -72,8 +72,7 @@ update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache, time, cell, c
 
 function 𝓝(state, F, coefficients, mp::PelceSunLangeveld1995Model)
     # @info state
-    @info state
-    return state^2
+    return state
 end
 
 """

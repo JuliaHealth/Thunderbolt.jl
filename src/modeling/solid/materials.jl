@@ -196,7 +196,7 @@ struct ActiveStressModel{Mat, ASMod, CMod, MS} <: AbstractMaterialModel
     microstructure_model::MS
 end
 
-default_initial_condition!(uq, model::ActiveStressModel) = default_initial_condition!(uq, model.contraction_model)
+default_initial_condition!(uq, model::Union{GeneralizedHillModel,ExtendedHillModel,ActiveStressModel}) = default_initial_condition!(uq, model.contraction_model)
 
 function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
