@@ -55,7 +55,8 @@ end
 function _ldiv!(y::CuVector , P::L1Preconditioner{CudaPartitioning{Ti}}) where {Ti}
     @unpack partitioning, A = P
     @unpack threads, blocks, size_A = partitioning
-    CUDA.@sync CUDA.@cuda threads=threads blocks=blocks _l1prec_kernel!(y, A)
+    issym = isapprox(A, A',rtol=1e-12)
+    CUDA.@sync CUDA.@cuda threads=threads blocks=blocks _l1prec_kernel!(y, A,issym)
     return nothing
 end
 
@@ -63,13 +64,19 @@ function _ldiv!(y::Vector , P::L1Preconditioner{CudaPartitioning{Ti}}) where {Ti
     @unpack partitioning, A = P
     @unpack threads, blocks, size_A = partitioning
     cy  = y |> cu
-    CUDA.@sync CUDA.@cuda threads=threads blocks=blocks _l1prec_kernel!(cy, A)
+    issym = isapprox(A, A',rtol=1e-12)
+    CUDA.@sync CUDA.@cuda threads=threads blocks=blocks _l1prec_kernel!(cy, A,issym)
     copyto!(y, cy)
     return nothing
 end
 
+abstract type AbstractMatrixSymmetry end
+
+struct SymmetricMatrix <: AbstractMatrixSymmetry end # important for the case of CSC format
+struct NonSymmetricMatrix <: AbstractMatrixSymmetry end
+
 # TODO: consider creating unified iterator for both CPU and GPU.
-struct DeviceDiagonalIterator{MatrixType}
+struct DeviceDiagonalIterator{MatrixType, MatrixSymmetry  <: AbstractMatrixSymmetry}
     A::MatrixType
 end
 
@@ -80,7 +87,8 @@ struct DeviceDiagonalCache{Ti,Tv}
     d::Tv # off-partition absolute sum
 end
 
-DiagonalIterator(A::MatrixType) where {MatrixType} = DeviceDiagonalIterator(A)
+DiagonalIterator(::Type{SymT}, A::MatrixType) where {SymT <: AbstractMatrixSymmetry, MatrixType} =
+    DeviceDiagonalIterator{MatrixType, SymT}(A)
 
 function Base.iterate(iterator::DeviceDiagonalIterator)
     idx = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x # diagonal index
@@ -100,7 +108,7 @@ function Base.iterate(iterator::DeviceDiagonalIterator, state)
     return (_makecache(iterator,idx,k), (idx,k))
 end
 
-function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1}}, idx,k) where {Tv,Ti}
+function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1},NonSymmetricMatrix}, idx,k) where {Tv,Ti}
     #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
     #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
     # bₖᵢ := Aᵢᵢ
@@ -137,6 +145,25 @@ function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatr
     return DeviceDiagonalCache(k, idx,b, d)
 end
 
+function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1},SymmetricMatrix}, idx,k) where {Tv,Ti}
+    #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
+    #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
+    # bₖᵢ := Aᵢᵢ
+    # dₖᵢ := ∑_{j ∈ Ωⁱₒ} |Aᵢⱼ|
+    n_threads = blockDim().x
+    @unpack A = iterator
+    part_start_idx = (k - Int32(1)) * n_threads + Int32(1)
+    part_end_idx = min(part_start_idx + n_threads - Int32(1), size(A, 2))
+    
+    b = zero(eltype(A))
+    d = zero(eltype(A))
+
+    # since matrix is symmetric, then both CSC and CSR are the same.
+    b,d = _diag_offpart_csr(A.colPtr, A.rowVal, A.nzVal, idx, part_start_idx, part_end_idx)
+
+    return DeviceDiagonalCache(k, idx,b, d)
+end
+
 function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatrixCSR{Tv,Ti,1}}, idx,k) where {Tv,Ti}
     #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
     #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
@@ -147,34 +174,43 @@ function _makecache(iterator::DeviceDiagonalIterator{CUSPARSE.CuSparseDeviceMatr
     part_start_idx = (k - Int32(1)) * n_threads + Int32(1)
     part_end_idx = min(part_start_idx + n_threads - Int32(1), size(A, 2)) 
 
-    b = zero(eltype(A))
-    d = zero(eltype(A))
-
-    # CSR format traversal: fixed row, iterate over columns in that row
-    row_start = A.rowPtr[idx]
-    row_end = A.rowPtr[idx + 1] - 1
-
-    for i in row_start:row_end
-        col = A.colVal[i]
-        v = A.nzVal[i]
-
-        if col == idx
-            b = v
-        elseif col < part_start_idx || col > part_end_idx
-            d += abs(v)
-        end
-    end
+    b,d = _diag_offpart_csr(A.rowPtr, A.colVal, A.nzVal, idx, part_start_idx, part_end_idx)
 
     return DeviceDiagonalCache(k, idx, b, d)
 end
 
-function _l1prec_kernel!(y, A)
+
+function _diag_offpart_csr(rowPtr, colVal, nzVal, idx::Integer, part_start::Integer, part_end::Integer)
+    Tv = eltype(nzVal)
+    b = zero(Tv)
+    d = zero(Tv)
+
+    row_start = rowPtr[idx]
+    row_end = rowPtr[idx + 1] - 1
+
+    for i in row_start:row_end
+        col = colVal[i]
+        v = nzVal[i]
+
+        if col == idx
+            b = v
+        elseif col < part_start || col > part_end
+            d += abs(v)
+        end
+    end
+
+    return b, d
+end
+
+
+function _l1prec_kernel!(y, A,issym)
     # this kernel will loop over the corresponding diagonals in strided fashion.
     # e.g. if n_threads = 4, n_blocks = 2, A is (100 x 100), and current global thread id = 5, 
     # then the kernel will loop over the diagonals with stride:
     # k (partition index) = k + n_blocks (i.e. 2, 4, 6, 8, 10, 12, 14)
     # idx (diagonal index) = idx + n_blocks * n_threads (i.e. 5, 13, 21, 29, 37, 45, 53)
-    for diagonal in DiagonalIterator(A)
+    symT = issym ? SymmetricMatrix : NonSymmetricMatrix
+    for diagonal in DiagonalIterator(symT,A)
         @unpack k, idx, b, d = diagonal
         @cushow k,d #TODO: remove this line
         y[idx] = y[idx]/ (b + d)  
