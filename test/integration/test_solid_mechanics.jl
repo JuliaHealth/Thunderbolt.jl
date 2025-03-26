@@ -57,8 +57,8 @@ end
 
 #     quasistaticform = semidiscretize(
 #         QuasiStaticModel(:d, constitutive_model, (
-#             NormalSpringBC(0.0, "Epicardium"),
-#             NormalSpringBC(0.0, "Base"),
+#             NormalSpringBC(0.1, "Epicardium"),
+#             NormalSpringBC(0.1, "Base"),
 #             PressureFieldBC(ConstantCoefficient(0.01),"Endocardium")
 #         )),
 #         FiniteElementDiscretization(
@@ -72,9 +72,9 @@ end
 
 #     # Create sparse matrix and residual vector
 #     timestepper = HomotopyPathSolver(
-#         NewtonRaphsonSolver(;max_iter=10, inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization())
+#         NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization(), max_iter=10, tol=1e-10)
 #     )
-#     integrator = init(problem, timestepper, dt=Δt, verbose=true, maxiters=15)
+#     integrator = init(problem, timestepper, dt=Δt, verbose=true, maxiters=25)
 #     u₀ = copy(integrator.u)
 #     solve!(integrator)
 #     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success

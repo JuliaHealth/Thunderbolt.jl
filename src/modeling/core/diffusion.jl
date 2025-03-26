@@ -40,8 +40,8 @@ function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::Su
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     qr = getquadraturerule(element_model.qrc, sdh)
     field_name = first(sdh.dh.field_names)
-    ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-    ip_geo = geometric_subdomain_interpolation(sdh)
+    ip         = Ferrite.getfieldinterpolation(sdh, field_name)
+    ip_geo     = geometric_subdomain_interpolation(sdh)
     BilinearDiffusionElementCache(setup_coefficient_cache(element_model.D, qr, sdh), CellValues(qr, ip, ip_geo))
 end
 

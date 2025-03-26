@@ -38,7 +38,7 @@ PressureFieldBC
 ## Solid Mechanics
 
 ```@docs
-StructuralModel
+QuasiStaticModel
 ExtendedHillModel
 GeneralizedHillModel
 ActiveStressModel

@@ -1,12 +1,10 @@
-#########################################################
-#  This file contains optimized backward Euler solvers  #
-#########################################################
+#####################################################################
+#  This file contains optimized forward and backward Euler solvers  #
+#####################################################################
 Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType, MonitorType} <: AbstractSolver
     inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
     system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR{Float64, Int64}
-    # mass operator info
-    # diffusion opeartor info
     # DO NOT USE THIS (will be replaced by proper logging system)
     monitor::MonitorType = DefaultProgressMonitor()
 end
@@ -346,7 +344,7 @@ mutable struct ForwardEulerSolverCache{VT,VTrate,VTprev,F} <: AbstractTimeSolver
     rhs!::F
 end
 
-function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t::Float64, Δt::Float64)
+function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t, Δt)
     @unpack rate, du, uₙ, rhs! = solver_cache
     Δtsub = Δt/rate
     for i ∈ 1:rate

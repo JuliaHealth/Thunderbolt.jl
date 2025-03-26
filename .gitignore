@@ -38,3 +38,5 @@ Manifest.toml
 # Documenter files
 docs/src/tutorials
 docs/src/howto
+
+.vscode
