@@ -5,8 +5,8 @@ Thunderbolt.setup_coefficient_cache(coeff::TestCalciumHatField, ::QuadratureRule
 Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache::CellCache, qp::QuadraturePoint, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
 
 function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, subdomains = [""])
-    tspan = (0.0,300.0)
-    Δt = 1.0
+    tspan = (0.0,500.0)
+    Δt = 100.0
 
     # Clamp three sides
     dbcs = [
@@ -39,7 +39,7 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, su
     solve!(integrator)
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
     @test integrator.u ≉ u₀
-    
+
     return integrator
 end
 
@@ -81,71 +81,43 @@ end
 #     @test integrator.u ≉ u₀
 # end
 
-struct OrthotropicMicrostructureWithCaModel{MS, CA}
-    ms::MS
-    ca::CA
-end
-
-struct OrthotropicMicrostructureWithCaCache{MS, CA}
-    ms::MS
-    ca::CA
-end
-
-function Thunderbolt.setup_coefficient_cache(m::OrthotropicMicrostructureWithCaModel, qr::QuadratureRule, sdh::SubDofHandler)
-    return OrthotropicMicrostructureWithCaCache(
-        Thunderbolt.setup_coefficient_cache(m.ms, qr, sdh),
-        Thunderbolt.setup_coefficient_cache(m.ca, qr, sdh),
-    )
-end
-
-struct OrthotropicMicrostructureWithCa{T} <: Thunderbolt.AbstractOrthotropicMicrostructure
-    f::Vec{3,T}
-    s::Vec{3,T}
-    n::Vec{3,T}
-    Ca::T
-end
-
-function Thunderbolt.evaluate_coefficient(cc, gc, qp, t)
-    fsn = Thunderbolt.evaluate_coefficient(cc.ms, gc, qp, t)
-    ca  = Thunderbolt.evaluate_coefficient(cc.ca, gc, qp, t)
-    return OrthotropicMicrostructureWithCa(
-        fsn.f, fsn.s, fsn.n, ca
-    )
-end
-
 # Smoke tests that things do not crash and that things do at least something
 @testset "Contracting cuboid" begin
     mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
-    microstructure_model = OrthotropicMicrostructureWithCaModel(
-        ConstantCoefficient(OrthotropicMicrostructure(
-            Vec((1.0, 0.0, 0.0)),
-            Vec((0.0, 1.0, 0.0)),
-            Vec((0.0, 0.0, 1.0)),
-        )),
-        TestCalciumHatField(),
+    microstructure_model = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
     )
-    newton = NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization(), max_iter=3, tol=1e-8)
-    timestepper = BackwardEulerSolver(;
-        inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
-        newton=newton,
-            # local_newton=NewtonRaphsonSolver(),
-        )
-    )
-    i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
-        HolzapfelOgden2009Model(),
-        SimpleActiveStress(;Tmax=2200.0),
-        Thunderbolt.RDQ20MFModel(;calcium_field=TestCalciumHatField()),
-        microstructure_model
-    ), timestepper)
-    VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.stage.nlsolver.global_solver_cache.op.dh.grid) do vtk
-        write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
-    end
-    @info "--------------------------------------"
 
-    timestepper = HomotopyPathSolver(
-        newton
-    )
+    # microstructure_model = OrthotropicMicrostructureWithCaModel(
+    #     ConstantCoefficient(OrthotropicMicrostructure(
+    #         Vec((1.0, 0.0, 0.0)),
+    #         Vec((0.0, 1.0, 0.0)),
+    #         Vec((0.0, 0.0, 1.0)),
+    #     )),
+    #     TestCalciumHatField(),
+    # )
+    newton = NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization(), max_iter=10, tol=1e-10)
+    # timestepper = BackwardEulerSolver(;
+    #     inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
+    #     newton=newton,
+    #         # local_newton=NewtonRaphsonSolver(),
+    #     )
+    # )
+    # i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
+    #     HolzapfelOgden2009Model(),
+    #     SimpleActiveStress(;Tmax=2200.0),
+    #     Thunderbolt.RDQ20MFModel(;calcium_field=TestCalciumHatField()),
+    #     microstructure_model
+    # ), timestepper)
+    # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.stage.nlsolver.global_solver_cache.op.dh.grid) do vtk
+    #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+    # end
+
+
+    timestepper = HomotopyPathSolver(newton)
     # test_solve_contractile_cuboid(mesh, ExtendedHillModel(
     #     HolzapfelOgden2009Model(),
     #     ActiveMaterialAdapter(LinearSpringModel()),
@@ -162,12 +134,15 @@ end
     #     microstructure_model
     # ), timestepper)
 
-    test_solve_contractile_cuboid(mesh, ActiveStressModel(
+    i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HumphreyStrumpfYinModel(),
-        SimpleActiveStress(;Tmax=220.0),
+        SimpleActiveStress(;Tmax=10.0),
         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
         microstructure_model
     ), timestepper)
+    VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
+        write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
+    end
 
     # mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 

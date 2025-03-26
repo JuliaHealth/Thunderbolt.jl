@@ -246,7 +246,7 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
         f  = F ⋅ coefficients.f
         return √(f ⋅ f)
     end
-    Ca = coefficients.Ca
+    Ca = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
 
     # Frozen variables
     dλdF, λ = Tensors.gradient(computeλ, F, :all)
