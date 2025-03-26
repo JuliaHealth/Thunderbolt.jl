@@ -5,7 +5,9 @@
     import Thunderbolt: CompositeVolumetricElementCache, CompositeSurfaceElementCache
 
     grid = generate_grid(Hexahedron, (1,1,1))
+    qrc  = QuadratureRuleCollection(3)
     qr   = QuadratureRule{RefHexahedron}(3)
+    qrcf = QuadratureRuleCollection(3)
     qrf  = FacetQuadratureRule{RefHexahedron}(3)
     ip   = Lagrange{RefHexahedron,1}()
 
@@ -68,16 +70,20 @@
     # No we check some examples for the implemented physics
     @testset "Scalar volumetric bilinear elements: $model" for model in (
         BilinearMassIntegrator(
-            ConstantCoefficient(1.0)
+            ConstantCoefficient(1.0),
+            qrc,
+            :u,
         ),
         BilinearDiffusionIntegrator(
-            ConstantCoefficient(one(Tensor{2,3}))
+            ConstantCoefficient(one(Tensor{2,3})),
+            qrc,
+            :u,
         )
     )
         Kₑ¹ = zeros(ndofs(dhs), ndofs(dhs))
         Kₑ² = zeros(ndofs(dhs), ndofs(dhs))
 
-        element_cache = setup_element_cache(model, qr, ip, sdhs)
+        element_cache = setup_element_cache(model, sdhs)
 
         assemble_element!(Kₑ¹, cell_cache_s, element_cache, 0.0)
         @test !iszero(Kₑ¹)
@@ -108,7 +114,7 @@
         Kₑ¹ = zeros(ndofs(dhv), ndofs(dhv))
         Kₑ² = zeros(ndofs(dhv), ndofs(dhv))
 
-        element_cache = setup_element_cache(model, qr, ipv, sdhv)
+        element_cache = setup_element_cache(QuasiStaticModel(:u, model, ()), qr, sdhv)
 
         assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, element_cache, 0.0)
         @test !iszero(Kₑ¹)
@@ -153,7 +159,7 @@
         Kₑ¹ = zeros(ndofs(dhv), ndofs(dhv))
         Kₑ² = zeros(ndofs(dhv), ndofs(dhv))
 
-        element_cache = setup_boundary_cache(model, qrf, ipv, sdhv)
+        element_cache = setup_boundary_cache(model, qrf, sdhv)
 
         for local_face_index in 1:nfacets(cell_cache_v)
             assemble_face!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, local_face_index, element_cache, 0.0)

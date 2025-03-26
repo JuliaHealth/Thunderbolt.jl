@@ -17,7 +17,7 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, subdomains = ["
     ]
 
     quasistaticform = semidiscretize(
-        StructuralModel(:d, constitutive_model, (
+        QuasiStaticModel(:d, constitutive_model, (
             NormalSpringBC(0.0, "right"),
             ConstantPressureBC(0.0, "back"),
             PressureFieldBC(ConstantCoefficient(0.0),"top")
@@ -34,7 +34,7 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, subdomains = ["
 
     # Create sparse matrix and residual vector
     timestepper = HomotopyPathSolver(
-        NewtonRaphsonSolver(;max_iter=10)
+        NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization(), max_iter=10, tol=1e-10)
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)
     u₀ = copy(integrator.u)
@@ -56,9 +56,9 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model)
     ]
 
     quasistaticform = semidiscretize(
-        StructuralModel(:d, constitutive_model, (
-            NormalSpringBC(0.0, "Epicardium"),
-            NormalSpringBC(0.0, "Base"),
+        QuasiStaticModel(:d, constitutive_model, (
+            NormalSpringBC(0.1, "Epicardium"),
+            NormalSpringBC(0.1, "Base"),
             PressureFieldBC(ConstantCoefficient(0.01),"Endocardium")
         )),
         FiniteElementDiscretization(
@@ -72,9 +72,10 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model)
 
     # Create sparse matrix and residual vector
     timestepper = HomotopyPathSolver(
-        NewtonRaphsonSolver(;max_iter=10)
+        # NewtonRaphsonSolver(;max_iter=10)
+        NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization(), max_iter=10, tol=1e-10)
     )
-    integrator = init(problem, timestepper, dt=Δt, verbose=true)
+    integrator = init(problem, timestepper, dt=Δt, verbose=true, maxiters=25)
     u₀ = copy(integrator.u)
     solve!(integrator)
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
@@ -130,9 +131,9 @@ end
     @test !any(isnan.(cs.u_apicobasal))
     @test !any(isnan.(cs.u_transmural))
     @test !any(isnan.(cs.u_rotational))
-    VTKGridFile("ideal-lv-cs-test-output.vtu", grid.grid) do vtk
-        vtk_coordinate_system(vtk, cs)
-    end
+    # VTKGridFile("ideal-lv-cs-test-output.vtu", grid.grid) do vtk
+    #     vtk_coordinate_system(vtk, cs)
+    # end
     microstructure_model = create_simple_microstructure_model(cs, LagrangeCollection{1}()^3)
 
     test_solve_contractile_ideal_lv(grid, ExtendedHillModel(
@@ -153,7 +154,7 @@ end
 
     test_solve_contractile_ideal_lv(grid, ActiveStressModel(
         HumphreyStrumpfYinModel(),
-        SimpleActiveStress(),
+        SimpleActiveStress(Tmax=1.0),
         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
         microstructure_model
     ))

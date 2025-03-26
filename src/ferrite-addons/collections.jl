@@ -29,6 +29,7 @@ A collection of fixed-order Lagrange interpolations across different cell types.
 struct LagrangeCollection{order} <: ScalarInterpolationCollection
 end
 
+getorder(::LagrangeCollection{order}) where order = order
 getinterpolation(lc::LagrangeCollection{order}, cell::AbstractCell{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = Lagrange{ref_shape, order}()
 getinterpolation(lc::LagrangeCollection{order}, ::Type{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = Lagrange{ref_shape, order}()
 
@@ -40,6 +41,7 @@ A collection of fixed-order Lagrange interpolations across different cell types.
 struct DiscontinuousLagrangeCollection{order} <: ScalarInterpolationCollection
 end
 
+getorder(::DiscontinuousLagrangeCollection{order}) where order = order
 getinterpolation(lc::DiscontinuousLagrangeCollection{order}, cell::AbstractCell{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = DiscontinuousLagrange{ref_shape, order}()
 getinterpolation(lc::DiscontinuousLagrangeCollection{order}, ::Type{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = DiscontinuousLagrange{ref_shape, order}()
 
@@ -58,6 +60,7 @@ end
 
 Base.:(^)(ip::ScalarInterpolationCollection, vdim::Int) = VectorizedInterpolationCollection{vdim}(ip)
 
+getorder(ipc::VectorizedInterpolationCollection) = getorder(ipc.base)
 getinterpolation(ipc::VectorizedInterpolationCollection{vdim, IPC}, cell::AbstractCell{ref_shape}) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape} = getinterpolation(ipc.base, cell)^vdim
 getinterpolation(ipc::VectorizedInterpolationCollection{vdim, IPC}, type::Type{ref_shape}) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape} = getinterpolation(ipc.base, type)^vdim
 

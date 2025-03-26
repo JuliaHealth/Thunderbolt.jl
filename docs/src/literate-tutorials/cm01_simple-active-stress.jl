@@ -94,7 +94,7 @@ active_stress_model = ActiveStressModel(
 weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
 
 # We finalize the mechanical model by assigning a symbol to identify the unknown solution field and connect the active stress model with the weak boundary conditions.
-mechanical_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions)
+mechanical_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions)
 
 # !!! tip
 #     A full list of all models can be found in the [API reference](@ref models-api).

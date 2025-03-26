@@ -1,6 +1,6 @@
 """
 """
-abstract type SteadyStateSarcomereModel <: SteadyStateInternalVariable end
+abstract type SteadyStateSarcomereModel <: AbstractInternalModel end
 
 """
 TODO citation pelce paper
