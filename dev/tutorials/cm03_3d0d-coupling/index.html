@@ -161,7 +161,7 @@ u0: 12-element Vector{Float64}:
  300.0
    0.0
    0.0
-   0.0</code></pre><div class="admonition is-todo"><header class="admonition-header">Todo</header><div class="admonition-body"><p>Once Thudnerbolt is compatible with OrdinaryDiffEq we should remove the namespacing here.</p></div></div><pre><code class="language-julia hljs">@time circ_sol_init = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">  0.050196 seconds (3.82 k allocations: 150.094 KiB)</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>We can visualize the last pressure-volume loop as follows with GLMakie</p><pre><code class="language-julia hljs">using GLMakie
+   0.0</code></pre><div class="admonition is-todo"><header class="admonition-header">Todo</header><div class="admonition-body"><p>Once Thudnerbolt is compatible with OrdinaryDiffEq we should remove the namespacing here.</p></div></div><pre><code class="language-julia hljs">@time circ_sol_init = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">  0.050224 seconds (3.82 k allocations: 150.094 KiB)</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>We can visualize the last pressure-volume loop as follows with GLMakie</p><pre><code class="language-julia hljs">using GLMakie
 f = Figure()
 axs = [
     Axis(f[1, 1], title=&quot;LV&quot;),
@@ -233,7 +233,7 @@ active_stress_model = ActiveStressModel(
     microstructure,
 )
 weak_boundary_conditions = (NormalSpringBC(1.0, &quot;Epicardium&quot;),)
-solid_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions);</code></pre><p>The solid model is now couple with the circuit model by adding a Lagrange multipliers constraining the 3D chamber volume to match the chamber volume in the 0D model.</p><pre><code class="language-julia hljs">p3D = LVc.p3D
+solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);</code></pre><p>The solid model is now couple with the circuit model by adding a Lagrange multipliers constraining the 3D chamber volume to match the chamber volume in the 0D model.</p><pre><code class="language-julia hljs">p3D = LVc.p3D
 V0D = LVc.V
 fluid_model = MTKLumpedCicuitModel(circ_sys, u0new, [p3D])
 coupler = LumpedFluidSolidCoupler(
@@ -348,38 +348,38 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     # TODO plot other chambers
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">[ Info: Volume 3D 65.20684075709728
 [ Info: Chamber 1 p=0.0, V0=62.76838109913676
-[ Info: Volume 3D 62.79453613488021
-[ Info: Chamber 1 p=-0.21290610068420607, V0=62.76838109913676
-[ Info: Volume 3D 62.76838382352828
-[ Info: Chamber 1 p=-0.21900946242117156, V0=62.76838109913676
+[ Info: Volume 3D 62.794403364087636
+[ Info: Chamber 1 p=-0.21209846863789478, V0=62.76838109913676
+[ Info: Volume 3D 62.768384814992885
+[ Info: Chamber 1 p=-0.21823108028152374, V0=62.76838109913676
 [ Info: Here
-[ Info: Volume 3D 62.76838382352828
-[ Info: Chamber 1 p=-0.21900946242117156, V0=63.71913428791775
-[ Info: Volume 3D 63.72325790273201
-[ Info: Chamber 1 p=-0.1300653386202737, V0=63.71913428791775
-[ Info: Volume 3D 63.7191343568169
-[ Info: Chamber 1 p=-0.13110536995747102, V0=63.71913428791775
+[ Info: Volume 3D 62.768384814992885
+[ Info: Chamber 1 p=-0.21823108028152374, V0=63.719031648637326
+[ Info: Volume 3D 63.72312522656397
+[ Info: Chamber 1 p=-0.12970988817529527, V0=63.719031648637326
+[ Info: Volume 3D 63.71903219285121
+[ Info: Chamber 1 p=-0.13068835048928915, V0=63.719031648637326
 [ Info: Here
-[ Info: Volume 3D 63.7191343568169
-[ Info: Chamber 1 p=-0.13110536995747102, V0=64.63728254252524
-[ Info: Volume 3D 64.64107739803448
-[ Info: Chamber 1 p=-0.046558084586085, V0=64.63728254252524
-[ Info: Volume 3D 64.63728259835733
-[ Info: Chamber 1 p=-0.047457247904440135, V0=64.63728254252524
+[ Info: Volume 3D 63.71903219285121
+[ Info: Chamber 1 p=-0.13068835048928915, V0=64.63712716985239
+[ Info: Volume 3D 64.64089338890005
+[ Info: Chamber 1 p=-0.04653161148033179, V0=64.63712716985239
+[ Info: Volume 3D 64.63712764690322
+[ Info: Chamber 1 p=-0.04737391507367394, V0=64.63712716985239
 [ Info: Here
-[ Info: Volume 3D 64.63728259835733
-[ Info: Chamber 1 p=-0.047457247904440135, V0=65.52415583881289
-[ Info: Volume 3D 65.52765168150975
-[ Info: Chamber 1 p=0.033168941294176586, V0=65.52415583881289
-[ Info: Volume 3D 65.52415588466307
-[ Info: Chamber 1 p=0.03238669745704338, V0=65.52415583881289
+[ Info: Volume 3D 64.63712764690322
+[ Info: Chamber 1 p=-0.04737391507367394, V0=65.52399288873923
+[ Info: Volume 3D 65.52746145447291
+[ Info: Chamber 1 p=0.03288908042070656, V0=65.52399288873923
+[ Info: Volume 3D 65.52399330858543
+[ Info: Chamber 1 p=0.032159963993909656, V0=65.52399288873923
 [ Info: Here
-[ Info: Volume 3D 65.52415588466307
-[ Info: Chamber 1 p=0.03238669745704338, V0=66.38099636964918
-[ Info: Volume 3D 66.38421982835794
-[ Info: Chamber 1 p=0.10949360300599427, V0=66.38099636964918
-[ Info: Volume 3D 66.3809964077994
-[ Info: Chamber 1 p=0.10880943038702472, V0=66.38099636964918
+[ Info: Volume 3D 65.52399330858543
+[ Info: Chamber 1 p=0.032159963993909656, V0=66.38086689056078
+[ Info: Volume 3D 66.38406450341803
+[ Info: Chamber 1 p=0.10892817825359877, V0=66.38086689056078
+[ Info: Volume 3D 66.38086726238755
+[ Info: Chamber 1 p=0.10829414793577397, V0=66.38086689056078
 [ Info: Here</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[3]</dt><dd><div>F. Regazzoni, M. Salvador, P. C. Africa, M. Fedele, L. Dedè and A. Quarteroni. <em>A cardiac electromechanical model coupled with a lumped-parameter model for closed-loop blood circulation</em>. <a href="https://doi.org/10.1016/j.jcp.2022.111083">Journal of Computational Physics <strong>457</strong>, 111083</a> (2022).</div></dd></dl></div><h2 id="mechanics-tutorial_3d0dcoupling-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_3d0dcoupling-plain-program">Plain program</a><a id="mechanics-tutorial_3d0dcoupling-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_3d0dcoupling-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="../cm03_3d0d-coupling.jl"><code>cm03_3d0d-coupling.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
 
 using CirculatorySystemModels
@@ -615,7 +615,7 @@ active_stress_model = ActiveStressModel(
     microstructure,
 )
 weak_boundary_conditions = (NormalSpringBC(1.0, &quot;Epicardium&quot;),)
-solid_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions);
+solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
 
 p3D = LVc.p3D
 V0D = LVc.V
@@ -719,4 +719,4 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     #     notify(plv)
     # end
     # TODO plot other chambers
-end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../cm02_prestress/">« CM02: Prestressing (WIP)</a><a class="docs-footer-nextpage" href="../cm04_pericardium/">CM04: Pericadium (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.8.1 on <span class="colophon-date" title="Wednesday 26 March 2025 21:12">Wednesday 26 March 2025</span>. Using Julia version 1.11.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../cm02_prestress/">« CM02: Prestressing (WIP)</a><a class="docs-footer-nextpage" href="../cm04_pericardium/">CM04: Pericadium (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.8.1 on <span class="colophon-date" title="Wednesday 26 March 2025 21:28">Wednesday 26 March 2025</span>. Using Julia version 1.11.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

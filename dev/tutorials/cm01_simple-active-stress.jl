@@ -47,7 +47,7 @@ active_stress_model = ActiveStressModel(
 
 weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
 
-mechanical_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions)
+mechanical_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions)
 
 spatial_discretization_method = FiniteElementDiscretization(
     Dict(:displacement => LagrangeCollection{1}()^3),

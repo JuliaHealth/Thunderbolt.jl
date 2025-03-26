@@ -233,7 +233,7 @@ active_stress_model = ActiveStressModel(
     microstructure,
 )
 weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
-solid_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions);
+solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
 
 p3D = LVc.p3D
 V0D = LVc.V
