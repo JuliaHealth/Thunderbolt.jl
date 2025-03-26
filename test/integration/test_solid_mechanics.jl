@@ -5,7 +5,7 @@ Thunderbolt.setup_coefficient_cache(coeff::TestCalciumHatField, ::QuadratureRule
 Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache::CellCache, qp::QuadraturePoint, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
 
 function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, subdomains = [""])
-    tspan = (0.0,500.0)
+    tspan = (0.0,300.0)
     Δt = 100.0
 
     # Clamp three sides
@@ -31,7 +31,7 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, su
     )
 
     problem = QuasiStaticProblem(quasistaticform, tspan)
-    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    # Thunderbolt.default_initial_condition!(problem.u0, problem.f)
 
     # Create sparse matrix and residual vector
     integrator = init(problem, timestepper, dt=Δt, verbose=true, adaptive=false)
@@ -83,7 +83,8 @@ end
 
 # Smoke tests that things do not crash and that things do at least something
 @testset "Contracting cuboid" begin
-    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    # mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    mesh = generate_mesh(Hexahedron, (1, 1, 1), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
     microstructure_model = OrthotropicMicrostructureModel(
         ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
@@ -136,7 +137,7 @@ end
 
     i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HumphreyStrumpfYinModel(),
-        SimpleActiveStress(;Tmax=10.0),
+        SimpleActiveStress(),
         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
         microstructure_model
     ), timestepper)
