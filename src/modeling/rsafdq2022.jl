@@ -22,7 +22,10 @@ end
 
 solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
 
-function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, ip, sdh)
+function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, sdh::SubDofHandler)
+    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    field_name = first(sdh.dh.field_names)
+    ip          = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
     RSAFDQ2022TyingCache(FacetValues(qr, ip, ip_geo), tying_info.chambers)
 end
@@ -131,7 +134,7 @@ end
 
 Generic description of the function associated with the RSAFDQModel.
 """
-struct RSAFDQ20223DFunction{MT <: QuasiStaticNonlinearFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
+struct RSAFDQ20223DFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
     structural_function::MT
     tying_info::TP
 end
@@ -141,7 +144,7 @@ getch(f::AbstractSemidiscreteFunction) = f.ch
 getch(f::AbstractSemidiscreteBlockedFunction) = error("Overlaod getch to get the constraint handler for a blocked function")
 getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 
-# struct RSAFDQ2022VolumeFunction{MT <: QuasiStaticNonlinearFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
+# struct RSAFDQ2022VolumeFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
 #     structural_function::MT
 #     tying_info::TP
 # end
@@ -151,7 +154,7 @@ getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 """
 The split model described by [RegSalAfrFedDedQar:2022:cem](@citet) alone.
 """
-struct RSAFDQ2022Model{SM <: StructuralModel, CM <: AbstractLumpedCirculatoryModel, CT <: LumpedFluidSolidCoupler}
+struct RSAFDQ2022Model{SM #=<: QuasiStaticModel =#, CM <: AbstractLumpedCirculatoryModel, CT <: LumpedFluidSolidCoupler}
     structural_model::SM
     circuit_model::CM
     coupler::CT

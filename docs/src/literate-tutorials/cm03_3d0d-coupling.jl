@@ -286,7 +286,7 @@ active_stress_model = ActiveStressModel(
     microstructure,
 )
 weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
-solid_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions);
+solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
 
 # The solid model is now couple with the circuit model by adding a Lagrange multipliers constraining the 3D chamber volume to match the chamber volume in the 0D model.
 p3D = LVc.p3D

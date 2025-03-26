@@ -40,13 +40,22 @@ function add_subdomain!(dh::DofHandler{<:Any, <:SimpleMesh}, name::String, appro
     cells = mesh.grid.cells
     haskey(mesh.volumetric_subdomains, name) || error("Volumetric Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.volumetric_subdomains))")
     for (celltype, cellset) in mesh.volumetric_subdomains[name].data
-        dh_solid_quad = SubDofHandler(dh, OrderedSet{Int}([idx.idx for idx in cellset]))
+        sdh = SubDofHandler(dh, OrderedSet{Int}([idx.idx for idx in cellset]))
         for ad in approxmations
-            # add!(dh_solid_quad, ad.sym, getinterpolation(ad.ipc, celltype))
-            add!(dh_solid_quad, ad.sym, getinterpolation(ad.ipc, cells[first(dh_solid_quad.cellset)]))
+            add!(sdh, ad.sym, getinterpolation(ad.ipc, cells[first(sdh.cellset)]))
         end
     end
 end
+
+function _compatible_cellset(dh::DofHandler, firstcell::Int)
+    for sdh in dh.subdofhandlers
+        if firstcell ∈ sdh.cellset
+            return sdh.cellset
+        end
+    end
+    error("Cell $firstcell not found.")
+end
+
 
 # function add_surface_subdomain!(dh::DofHandler{<:Any, <:SimpleMesh}, name::String, approxmations::Vector{ApproximationDescriptor})
 #     mesh = dh.grid

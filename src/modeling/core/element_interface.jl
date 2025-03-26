@@ -3,7 +3,7 @@ Supertype for all caches to integrate over volumes.
 
 Interface:
 
-    setup_element_cache(model, qr, ip, sdh)
+    setup_element_cache(model, qr, sdh)
 
 """
 abstract type AbstractVolumetricElementCache end
@@ -49,7 +49,7 @@ Supertype for all caches to integrate over surfaces.
 
 Interface:
 
-    setup_boundary_cache(model, qr, ip, sdh)
+    setup_boundary_cache(model, qr, sdh)
 
 """
 abstract type AbstractSurfaceElementCache end
