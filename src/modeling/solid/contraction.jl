@@ -71,7 +71,6 @@ end
 update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache, time, cell, cv) = nothing
 
 function 𝓝(state, F, coefficients, mp::PelceSunLangeveld1995Model)
-    # @info state
     return state
 end
 

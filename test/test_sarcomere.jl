@@ -16,7 +16,7 @@ using Thunderbolt, DelimitedFiles, Test
         # 1000x to translate from s to ms
         ts_data = 1000.0*reference_solution_data[:,tidx]
 
-        model = Thunderbolt.RDQ20MFModel()
+        model = Thunderbolt.RDQ20MFModel(;calcium_field=ConstantCoefficient(0.0))
         du = zeros(Thunderbolt.num_states(model))
         u  = zeros(Thunderbolt.num_states(model))
         u[1] = 1.0
