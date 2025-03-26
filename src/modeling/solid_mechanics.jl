@@ -1,16 +1,16 @@
 
 """
-    StructuralModel(mechanical_model, face_models)
+QuasiStaticModel(displacement_sym, mechanical_model, face_models)
 
-A generic model for structural problems.
+A generic model for quasi-static mechanical problems.
 """
-struct StructuralModel{MM, FM}
+struct QuasiStaticModel{MM #= <: AbstractMaterialModel =#, FM}
     displacement_symbol::Symbol
-    mechanical_model::MM
+    material_model::MM
     face_models::FM
 end
 
-get_field_variable_names(model::StructuralModel) = (model.displacement_symbol, )
+get_field_variable_names(model::QuasiStaticModel) = (model.displacement_symbol, )
 
 include("solid/energies.jl")
 include("solid/contraction.jl")

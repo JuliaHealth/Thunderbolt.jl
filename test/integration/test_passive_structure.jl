@@ -17,7 +17,7 @@ function test_solve_passive_structure(constitutive_model)
     ]
 
     quasistaticform = semidiscretize(
-        StructuralModel(:d, constitutive_model, ()),
+        QuasiStaticModel(:d, constitutive_model, ()),
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3),
             dbcs,
