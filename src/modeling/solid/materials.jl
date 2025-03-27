@@ -214,6 +214,10 @@ function stress_and_tangent(model::ActiveStressModel, F::Tensor{2}, coefficients
     return ∂Ψ∂F + P2, ∂²Ψ∂F² + ∂2
 end
 
+function gather_internal_variable_infos(model::ActiveStressModel)
+    return gather_internal_variable_infos(model.contraction_model)
+end
+
 setup_internal_cache(material_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(material_model.contraction_model, qr, sdh)
 setup_internal_cache(material_model::Union{<:ElastodynamicsModel{<:ActiveStressModel}, <:ElastodynamicsModel{<:ExtendedHillModel}, <:ElastodynamicsModel{<:GeneralizedHillModel}}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(material_model.rhs.contraction_model, qr, sdh)
 
@@ -458,8 +462,4 @@ end
 
 function gather_internal_variable_infos(model::LinearMaxwellMaterial)
     return InternalVariableInfo(:εᵛ, 6) # TODO dimension info
-end
-
-function gather_internal_variable_infos(model::ActiveStressModel)
-    return gather_internal_variable_infos(model.contraction_model)
 end
