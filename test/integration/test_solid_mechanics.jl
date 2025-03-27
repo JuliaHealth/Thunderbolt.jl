@@ -79,6 +79,8 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model)
     solve!(integrator)
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
     @test integrator.u ≉ u₀
+
+    return integrator
 end
 
 # Smoke tests that things do not crash and that things do at least something
@@ -102,7 +104,10 @@ end
     i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HolzapfelOgden2009Model(),
         SimpleActiveStress(;Tmax=2200.0),
-        Thunderbolt.RDQ20MFModel(;calcium_field=TestCalciumHatField()),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            Thunderbolt.RDQ20MFModel(),
+            TestCalciumHatField(),
+        ),
         microstructure_model
     ), timestepper)
     # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.stage.nlsolver.global_solver_cache.op.dh.grid) do vtk
@@ -115,7 +120,10 @@ end
         HolzapfelOgden2009Model(),
         ActiveMaterialAdapter(LinearSpringModel()),
         GMKActiveDeformationGradientModel(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            PelceSunLangeveld1995Model(),
+            TestCalciumHatField(),
+        ),
         microstructure_model
     ), timestepper)
 
@@ -123,14 +131,20 @@ end
         LinYinPassiveModel(),
         ActiveMaterialAdapter(LinYinActiveModel()),
         GMKIncompressibleActiveDeformationGradientModel(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            PelceSunLangeveld1995Model(),
+            TestCalciumHatField(),
+        ),
         microstructure_model
     ), timestepper)
 
     i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HumphreyStrumpfYinModel(),
         SimpleActiveStress(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            PelceSunLangeveld1995Model(),
+            TestCalciumHatField(),
+        ),
         microstructure_model
     ), timestepper)
     VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
@@ -142,7 +156,10 @@ end
     test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HumphreyStrumpfYinModel(),
         SimpleActiveStress(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            PelceSunLangeveld1995Model(),
+            TestCalciumHatField(),
+        ),
         microstructure_model
     ), timestepper, ["Ventricle"])
 end
@@ -159,7 +176,10 @@ end
         HolzapfelOgden2009Model(),
         ActiveMaterialAdapter(LinearSpringModel()),
         GMKActiveDeformationGradientModel(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            PelceSunLangeveld1995Model(),
+            TestCalciumHatField(),
+        ),
         microstructure_model
     ))
 
@@ -167,14 +187,20 @@ end
         LinYinPassiveModel(),
         ActiveMaterialAdapter(LinYinActiveModel()),
         GMKIncompressibleActiveDeformationGradientModel(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            PelceSunLangeveld1995Model(),
+            TestCalciumHatField(),
+        ),
         microstructure_model
     ))
 
     test_solve_contractile_ideal_lv(grid, ActiveStressModel(
         HumphreyStrumpfYinModel(),
         SimpleActiveStress(),
-        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            PelceSunLangeveld1995Model(),
+            TestCalciumHatField(),
+        ),
         microstructure_model
     ))
 

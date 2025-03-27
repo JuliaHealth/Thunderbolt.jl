@@ -1,113 +1,158 @@
-"""
-TODO wrap the existing models into this one
-"""
-abstract type SteadyStateSarcomereModel <: AbstractInternalModel end
+abstract type AbstractSarcomereModel <: AbstractInternalModel end
+abstract type AbstractSteadyStateSarcomereModel <: AbstractSarcomereModel end
+abstract type AbstractRateIndependentSarcomereModel <: AbstractSarcomereModel end
+abstract type AbstractRateDependentSarcomereModel <: AbstractSarcomereModel end
 
 abstract type AbstractInternalMaterialStateCache end
 
 # Material states without evolution equations. I.e. the states variables are at most a function of space (reference) and time.
 abstract type TrivialInternalMaterialStateCache <: AbstractInternalMaterialStateCache end
+struct EmptyTrivialInternalMaterialStateCache <: TrivialInternalMaterialStateCache end
 
-abstract type RateIndependentMaterialStateCache <: AbstractInternalMaterialStateCache end
 
-# Base.@kwdef struct SarcomereModel{ModelType, TCF, TSL}
-#     model::ModelType
-#     calcium_field::TCF
-#     sarcomere_length::TSL
-# end
+abstract type RateIndependentInternalMaterialStateCache <: AbstractInternalMaterialStateCache end
+struct EmptyRateIndependentInternalMaterialStateCache <: RateIndependentInternalMaterialStateCache end
 
-# Base.@kwdef struct RateDependentSarcomereModel{ModelType, TCF, TSL, TSV}
-#     model::ModelType
-#     calcium_field::TCF
-#     sarcomere_length::TSL
-#     sarcomere_velocity::TSV
-# end
+
+abstract type RateDependentInternalMaterialStateCache <: AbstractInternalMaterialStateCache end
+struct EmptyRateDependentMaterialStateCache <: RateDependentInternalMaterialStateCache end
+
+
+# Most models do not need additional scratch space for the evaluation
+function setup_contraction_model_cache(contraction_model::AbstractSteadyStateSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return EmptyTrivialInternalMaterialStateCache()
+end
+function setup_contraction_model_cache(contraction_model::AbstractRateIndependentSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return EmptyRateIndependentInternalMaterialStateCache()
+end
+function setup_contraction_model_cache(contraction_model::AbstractRateDependentSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return EmptyRateDependentMaterialStateCache()
+end
+
+# Some defaults
+function default_initial_condition!(u::AbstractVector, model::AbstractSteadyStateSarcomereModel)
+    return nothing
+end
+function gather_internal_variable_infos(model::AbstractSteadyStateSarcomereModel)
+    return nothing
+end
+function 𝓝(state, F, coefficients, mp::AbstractSteadyStateSarcomereModel)
+    return state
+end
+
+# Ignore rate dependency of a rate dependent model to emulate rate independency.
+struct RateIndependentSarcomereModelWrapper{T <: AbstractRateDependentSarcomereModel} <: AbstractRateIndependentSarcomereModel
+    model::T
+end
+function setup_contraction_model_cache(wrapper::RateIndependentSarcomereModelWrapper, qr::QuadratureRule, sdh::SubDofHandler)
+    @assert setup_contraction_model_cache(wrapper.model, qr, sdh) isa EmptyRateDependentInternalMaterialStateCache "Wrapping non-trivial material state caches not supported."
+    return EmptyRateIndependentInternalMaterialStateCache()
+end
+num_states(wrapper::RateIndependentSarcomereModelWrapper) = num_states(wrapper.model)
+
+# We use this for testing and fitting purposes
+Base.@kwdef struct StandaloneSarcomereModel{ModelType, CaF, SF, VF}
+    model::ModelType
+    calcium::CaF
+    fiber_stretch::SF
+    fiber_velocity::VF
+end
+function (model_wrapper::StandaloneSarcomereModel)(du, u, p, t)
+    λ    = model_wrapper.fiber_stretch(t)
+    dλdt = model_wrapper.fiber_velocity(t)
+    Ca   = model_wrapper.calcium(t)
+    sarcomere_rhs!(du, u, λ, dλdt, Ca, t, model_wrapper.model)
+end
+num_states(wrapper::StandaloneSarcomereModel) = num_states(wrapper.model)
+
+# Wrapper to mark a sarcomere model as an internal model
+Base.@kwdef struct CaDrivenInternalSarcomereModel{ModelType, CalciumFieldType} <: AbstractSarcomereModel
+    model::ModelType
+    calcium_field::CalciumFieldType
+end
+num_states(wrapper::CaDrivenInternalSarcomereModel) = num_states(wrapper.model)
+𝓝(state, F, coefficients, wrapper::CaDrivenInternalSarcomereModel) = 𝓝(state, F, coefficients, wrapper.model)
+compute_λᵃ(state, wrapper::CaDrivenInternalSarcomereModel) = compute_λᵃ(state, wrapper.model)
+sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, wrapper::CaDrivenInternalSarcomereModel) = sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, wrapper.model)
+gather_internal_variable_infos(wrapper::CaDrivenInternalSarcomereModel) = gather_internal_variable_infos(wrapper.model)
+default_initial_condition!(uq::AbstractVector, wrapper::CaDrivenInternalSarcomereModel) = default_initial_condition!(uq, wrapper.model)
+
+struct TrivialCaDrivenInternalSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: TrivialInternalMaterialStateCache
+    model::ModelType
+    model_cache::ModelCacheType
+    calcium_cache::CalciumCacheType
+end
+struct RateIndependentCaDrivenInternalSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: RateIndependentInternalMaterialStateCache
+    model::ModelType
+    model_cache::ModelCacheType
+    calcium_cache::CalciumCacheType
+end
+struct RateDependentCaDrivenInternalSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: RateDependentInternalMaterialStateCache
+    model::ModelType
+    model_cache::ModelCacheType
+    calcium_cache::CalciumCacheType
+end
+function setup_contraction_model_cache(wrapper::CaDrivenInternalSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return setup_contraction_model_cache_from_wrapper(wrapper.model, wrapper.calcium_field, qr, sdh)
+end
+function setup_contraction_model_cache_from_wrapper(model::AbstractSteadyStateSarcomereModel, calcium_field, qr::QuadratureRule, sdh::SubDofHandler)
+    return TrivialCaDrivenInternalSarcomereCache(
+        model,
+        setup_contraction_model_cache(model, qr, sdh),
+        setup_coefficient_cache(calcium_field, qr, sdh),
+    )
+end
+function setup_contraction_model_cache_from_wrapper(model::AbstractRateIndependentSarcomereModel, calcium_field, qr::QuadratureRule, sdh::SubDofHandler)
+    return RateIndependentCaDrivenInternalSarcomereCache(
+        model,
+        setup_contraction_model_cache(model, qr, sdh),
+        setup_coefficient_cache(calcium_field, qr, sdh),
+    )
+end
+function setup_contraction_model_cache_from_wrapper(model::AbstractRateDependentSarcomereModel, calcium_field, qr::QuadratureRule, sdh::SubDofHandler)
+    return RateDependentCaDrivenInternalSarcomereCache(
+        model,
+        setup_contraction_model_cache(model, qr, sdh),
+        setup_coefficient_cache(calcium_field, qr, sdh),
+    )
+end
+
+# Evalaute wrapped model's state
+function state(wrapper_cache::TrivialCaDrivenInternalSarcomereCache, geometry_cache, qp::QuadraturePoint, time)
+    return state(wrapper_cache, wrapper_cache.model, geometry_cache, qp, time)
+end
+# Should usually be just the calcium state
+function state(wrapper_cache::TrivialCaDrivenInternalSarcomereCache, model::AbstractSteadyStateSarcomereModel, geometry_cache, qp::QuadraturePoint, time)
+    return evaluate_coefficient(wrapper_cache.calcium_cache, geometry_cache, qp, time)
+end
 
 """
 TODO citation pelce paper
-
-TODO remove explicit calcium field dependence
 
 !!! warning
     It should be highlighted that this model directly gives the steady state
     for the active stretch.
 """
-Base.@kwdef struct PelceSunLangeveld1995Model{TD, CF} <: SteadyStateSarcomereModel
+Base.@kwdef struct PelceSunLangeveld1995Model{TD} <: AbstractSteadyStateSarcomereModel
     β::TD = 3.0
     λᵃₘₐₓ::TD = 0.7
-    calcium_field::CF
 end
-
+num_states(::PelceSunLangeveld1995Model) = 0
 function compute_λᵃ(Ca, mp::PelceSunLangeveld1995Model)
     @unpack β, λᵃₘₐₓ = mp
     f(c) = c > 0.0 ? 0.5 + atan(β*log(c))/π  : 0.0
     return 1.0 / (1.0 + f(Ca)*(1.0/λᵃₘₐₓ - 1.0))
 end
 
-function gather_internal_variable_infos(model::PelceSunLangeveld1995Model)
-    return nothing
-end
-
-function default_initial_condition!(u::AbstractVector, model::PelceSunLangeveld1995Model)
-    return nothing
-end
-
 """
+    Debug model applying a constant stretch state.
 """
-struct PelceSunLangeveld1995Cache{CF} <: TrivialInternalMaterialStateCache
-    calcium_cache::CF
-end
-
-function state(model_cache::PelceSunLangeveld1995Cache, geometry_cache, qp::QuadraturePoint, time)
-    return evaluate_coefficient(model_cache.calcium_cache, geometry_cache, qp, time)
-end
-
-function setup_contraction_model_cache(contraction_model::PelceSunLangeveld1995Model, qr::QuadratureRule, sdh::SubDofHandler)
-    return PelceSunLangeveld1995Cache(
-        setup_coefficient_cache(contraction_model.calcium_field, qr, sdh)
-    )
-end
-
-update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache, time, cell, cv) = nothing
-
-function 𝓝(state, F, coefficients, mp::PelceSunLangeveld1995Model)
-    return state
-end
-
-"""
-TODO remove explicit calcium field dependence
-"""
-Base.@kwdef struct ConstantStretchModel{TD, CF} <: SteadyStateSarcomereModel
+Base.@kwdef struct ConstantStretchModel{TD} <: AbstractSteadyStateSarcomereModel
     λ::TD = 1.0
-    calcium_field::CF
 end
+num_states(::ConstantStretchModel) = 0
 compute_λᵃ(Ca, mp::ConstantStretchModel) = mp.λ
 
-struct ConstantStretchCache{CF} <: TrivialInternalMaterialStateCache
-    calcium_cache::CF
-end
-
-function gather_internal_variable_infos(model::ConstantStretchModel)
-    return nothing
-end
-
-function default_initial_condition!(u::AbstractVector, model::ConstantStretchModel)
-    return nothing
-end
-
-function state(model_cache::ConstantStretchCache, geometry_cache, qp::QuadraturePoint, time)
-    return evaluate_coefficient(model_cache.calcium_cache, geometry_cache, qp, time)
-end
-
-function setup_contraction_model_cache(contraction_model::ConstantStretchModel, qr::QuadratureRule, sdh::SubDofHandler)
-    return ConstantStretchCache(
-        setup_coefficient_cache(contraction_model.calcium_field, qr, sdh)
-    )
-end
-
-update_contraction_model_cache!(cache::ConstantStretchCache, time, cell, cv) = nothing
-
-𝓝(state, F, coefficients, mp::ConstantStretchModel) = state
 
 @doc raw"""
 Mean-field variant of the sarcomere model presented by [RegDedQua:2020:bdm](@citet).
@@ -123,7 +168,7 @@ The default parameters for the model are taken from the same paper for human car
     dynamics with cooperative interactions'' there is a proposed evolution law for
     active stretches.
 """
-Base.@kwdef struct RDQ20MFModel{TD, TCF}
+Base.@kwdef struct RDQ20MFModel{TD} <: AbstractRateDependentSarcomereModel
     # Geoemtric parameters
     LA::TD = 1.25 # µm
     LM::TD = 1.65 # µm
@@ -145,30 +190,12 @@ Base.@kwdef struct RDQ20MFModel{TD, TCF}
     μ₁_fP::TD = 0.000778 # 1/ms
     # Upscaling parameter
     a_XB::TD = 22.894e3 # kPa
-    #
-    calcium_field::TCF
 end
-
-struct RDQ20MFCache{CF} <: RateIndependentMaterialStateCache
-    calcium_cache::CF
-end
-
-function state(model_cache::RDQ20MFModel, geometry_cache, qp::QuadraturePoint, time)
-    return evaluate_coefficient(model_cache.calcium_cache, geometry_cache, qp, time)
-end
-
-function setup_contraction_model_cache(contraction_model::RDQ20MFModel, qr::QuadratureRule, sdh::SubDofHandler)
-    return RDQ20MFCache(
-        setup_coefficient_cache(contraction_model.calcium_field, qr, sdh)
-    )
-end
-
 
 function default_initial_condition!(u::AbstractVector, model::RDQ20MFModel)
     u[1] = 1.0
     u[2:end] .= 0.0
 end
-
 num_states(model::RDQ20MFModel) = 20
 
 function rhs_fast!(dRU, uRU::SArray{Tuple{2,2,2,2}}, λ, Ca, t, p::RDQ20MFModel)

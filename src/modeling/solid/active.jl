@@ -28,9 +28,9 @@ See also [OgiBalPer:2023:aeg](@cite) for a further analysis.
 """
 struct GMKActiveDeformationGradientModel end
 
-function compute_Fᵃ(Ca, coeff::AbstractTransverselyIsotropicMicrostructure, contraction_model::SSSM, ::GMKActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
+function compute_Fᵃ(state, coeff::AbstractTransverselyIsotropicMicrostructure, contraction_model::AbstractSarcomereModel, ::GMKActiveDeformationGradientModel)
     f₀ = coeff.f
-    λᵃ = compute_λᵃ(Ca, contraction_model)
+    λᵃ = compute_λᵃ(state, contraction_model)
     Fᵃ = Tensors.unsafe_symmetric(one(SymmetricTensor{2, 3}) + (λᵃ - 1.0) * f₀ ⊗ f₀)
     return Fᵃ
 end
@@ -45,9 +45,9 @@ See also [OgiBalPer:2023:aeg](@cite) for a further analysis.
 """
 struct GMKIncompressibleActiveDeformationGradientModel end
 
-function compute_Fᵃ(Ca, coeff::AbstractOrthotropicMicrostructure, contraction_model::SSSM, ::GMKIncompressibleActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
+function compute_Fᵃ(state, coeff::AbstractOrthotropicMicrostructure, contraction_model::AbstractSarcomereModel, ::GMKIncompressibleActiveDeformationGradientModel)
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
-    λᵃ = compute_λᵃ(Ca, contraction_model)
+    λᵃ = compute_λᵃ(state, contraction_model)
     Fᵃ = λᵃ*f₀ ⊗ f₀ + 1.0/sqrt(λᵃ) * s₀ ⊗ s₀ + 1.0/sqrt(λᵃ) * n₀ ⊗ n₀
     return Fᵃ
 end
@@ -65,10 +65,10 @@ struct RLRSQActiveDeformationGradientModel{TD}
     sheetlet_part::TD
 end
 
-function compute_Fᵃ(Ca, coeff::AbstractOrthotropicMicrostructure, contraction_model::SSSM, Fᵃ_model::RLRSQActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
+function compute_Fᵃ(state, coeff::AbstractOrthotropicMicrostructure, contraction_model::AbstractSarcomereModel, Fᵃ_model::RLRSQActiveDeformationGradientModel)
     @unpack sheetlet_part = Fᵃ_model
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
-    λᵃ = compute_λᵃ(Ca, contraction_model)
+    λᵃ = compute_λᵃ(state, contraction_model)
     Fᵃ = λᵃ * f₀⊗f₀ + (1.0+sheetlet_part*(λᵃ-1.0))* s₀⊗s₀ + 1.0/((1.0+sheetlet_part*(λᵃ-1.0))*λᵃ) * n₀⊗n₀
     return Fᵃ
 end

@@ -15,7 +15,7 @@ function material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, c
     return stress_and_tangent(material_model, F, coefficients, Q)
 end
 
-function material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, coefficient_cache, state_cache::RateIndependentMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+function material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, coefficient_cache, state_cache::RateIndependentInternalMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
     Q, ∂P∂QdQdF  = solve_local_constraint(F, coefficients, material_model, state_cache, geometry_cache, qp, time)
     P, ∂P∂F      = stress_and_tangent(material_model, F, coefficients, Q)
@@ -51,7 +51,7 @@ end
 
 material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::EmptyInternalCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
 material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::TrivialInternalMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
-material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::RateIndependentMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
+material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::RateIndependentInternalMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
 function prestressed_material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
     Fᵉ = F ⋅ F₀inv
@@ -224,7 +224,7 @@ setup_internal_cache(material_model::Union{<:ElastodynamicsModel{<:ActiveStressM
 # TODO add "condensated" info
 # TODO this actually belongs to the multi-level newton file :)
 # Dual (global cache and element-level cache) use for now to make it non-allocating.
-struct GenericFirstOrderRateIndependentMaterialStateCache{LocalModelType, LocalModelCacheType, QType, QType2, T, LVH} <: RateIndependentMaterialStateCache
+struct GenericFirstOrderRateIndependentMaterialStateCache{LocalModelType, LocalModelCacheType, QType, QType2, T, LVH} <: RateIndependentInternalMaterialStateCache
     # The actual model
     model::LocalModelType
     model_cache::LocalModelCacheType
@@ -245,16 +245,26 @@ function state(model_cache::GenericFirstOrderRateIndependentMaterialStateCache, 
     return state(model_cache.model, geometry_cache, qp, time)
 end
 
+function _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_term_model, wrapper::CaDrivenInternalSarcomereModel)
+    return _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_term_model, wrapper.model)
+end
+
+function _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_term_model, sacromere_model::RDQ20MFModel)
+    dfgdQ = active_stress(active_term_model, F, coefficients) * fraction_single_overlap(sacromere_model, λ)
+    dQdF  = (dQdλ[18] + dQdλ[20]) * dfgdQ ⊗ dλdF
+    return -dQdF
+end
+
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp, time) where dim
     function computeλ(F)
         f  = F ⋅ coefficients.f
         return √(f ⋅ f)
     end
-    Ca = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
 
     # Frozen variables
     dλdF, λ = Tensors.gradient(computeλ, F, :all)
-    dλdt = 0.0 # TODO query
+    dλdt    = 0.0 # TODO query
+    Ca      = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
 
     # Local solve
     function solve_internal_timestep(material::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, λ, dλdt, Q, Qprev)
@@ -316,17 +326,7 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
     ForwardDiff.derivative!(∂fₗ∂λ, local_residual_rhs_wrap, λ)
     dQdλ = - J \ ∂fₗ∂λ
 
-    # Hotfix
-    # dQdF = [dQdλ[i] * dλdF for i in 1:20]
-    # Pa(F, Q) = 𝓝(Q, F, coefficients, material_model.contraction_model) * active_stress(material_model.active_stress_model, Q, F, coefficients)
-    # dfgdQ = [Pa...]
-    # dfgdQ = zeros(Tensor{2,3,Float64,3^2}, 20)
-    # dfgdQ[18] = dfgdQ[20] = material_model.contraction_model.a_XB * fraction_single_overlap(material_model.contraction_model, λ) * active_stress(material_model.active_stress_model, Q, F, coefficients)
-    # return Q, zero(Tensor{4,3,Float64,3^4})
-
-    # dfgdQ = material_model.contraction_model.a_XB * fraction_single_overlap(material_model.contraction_model, λ) * active_stress(material_model.active_stress_model, F, coefficients)
-    dfgdQ = active_stress(material_model.active_stress_model, F, coefficients) * fraction_single_overlap(material_model.contraction_model, λ)
-    return Q, -(dQdλ[18] + dQdλ[20]) * dfgdQ ⊗ dλdF
+    return Q, _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, material_model.active_stress_model, material_model.contraction_model)
 end
 
 # Some debug materials

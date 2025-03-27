@@ -1,7 +1,7 @@
 using Thunderbolt, DelimitedFiles, Test
 
 @testset "RDQ20MFModel" begin
-    @testset "Active value trajectories" begin
+    @testset "Comparison with original reference solution" failfast=true begin
         datapath = joinpath(@__DIR__, "data", "trajectories", "RDQ20-MF", "transient-test.csv")
         (reference_solution_data, header) = readdlm(datapath, ',', Float64, '\n'; header=true)
         header = header[:]
@@ -16,13 +16,8 @@ using Thunderbolt, DelimitedFiles, Test
         # 1000x to translate from s to ms
         ts_data = 1000.0*reference_solution_data[:,tidx]
 
-        model = Thunderbolt.RDQ20MFModel(;calcium_field=ConstantCoefficient(0.0))
-        du = zeros(Thunderbolt.num_states(model))
-        u  = zeros(Thunderbolt.num_states(model))
-        u[1] = 1.0
-
         dt = 1e-3
-        Tmax = 600.0
+        Tmax = ts_data[end]
 
         # Calcium transient
         c0 = 0.1
@@ -32,7 +27,7 @@ using Thunderbolt, DelimitedFiles, Test
         t0 = 10.0;  # ms
         β = (τ1 / τ2)^(-1 / (τ1 / τ2 - 1)) - (τ1 / τ2)^( -1 / (1 - τ2 / τ1))
 
-        Ca(t) = t < t0 ? c0 : c0 + ((cmax - c0) / β * (exp(-(t - t0) / τ1) - exp(-(t - t0) / τ2)))
+        calcium_fun(t) = t < t0 ? c0 : c0 + ((cmax - c0) / β * (exp(-(t - t0) / τ1) - exp(-(t - t0) / τ2)))
 
         # SL transient
         SL0 = 2.2;       # µm
@@ -42,32 +37,50 @@ using Thunderbolt, DelimitedFiles, Test
         SLτ0 = 50.0;    # ms
         SLτ1 = 20.0;    # ms
 
-        Sl(t) = (SL0 + (SL1 - SL0) * (max(0.0, 1.0 - exp((SLt0 - t) / SLτ0)) - max(0.0, 1.0 - exp((SLt1 - t) / SLτ1))))/SL0;
+        stretch_fun(t) = (SL0 + (SL1 - SL0) * (max(0.0, 1.0 - exp((SLt0 - t) / SLτ0)) - max(0.0, 1.0 - exp((SLt1 - t) / SLτ1))))/SL0;
+
+        sarcomere_model = Thunderbolt.RDQ20MFModel()
+        sarcomere_fun   = Thunderbolt.StandaloneSarcomereModel(
+            model          = sarcomere_model,
+            calcium        = calcium_fun,
+            fiber_stretch  = stretch_fun,
+            # This mirrors the original implementation. Using AD or forward differences yields a different trajectory.
+            fiber_velocity = t->(stretch_fun(t)-stretch_fun(t-dt))/dt,
+        )
+        du = zeros(Thunderbolt.num_states(sarcomere_model))
+        # Initial state for the test below
+        u  = zeros(Thunderbolt.num_states(sarcomere_model))
+        u[1] = 1.0 
 
         τ = 0.0:dt:Tmax
         for (i,t) ∈ enumerate(τ)
-            calcium = Ca(t)
-            sarcomere_stretch = Sl(t)
-            sarcomere_velocity = (sarcomere_stretch - Sl(t-dt))/dt
-            Thunderbolt.sarcomere_rhs!(du, u, sarcomere_stretch, sarcomere_velocity, calcium, 0.0, model)
-            u .+= dt*du
+            @testset let time = t
+                calcium            = sarcomere_fun.calcium(t)
+                sarcomere_stretch  = sarcomere_fun.fiber_stretch(t)
+                sarcomere_velocity = sarcomere_fun.fiber_velocity(t)
+                sarcomere_fun(du, u, nothing, t)
+                u .+= dt*du
 
-            closest_sol_idx = findfirst(tref -> t-dt/2 ≤ tref < t+dt/2, ts_data)
-            if closest_sol_idx !== nothing
-                @test calcium ≈ reference_solution_data[closest_sol_idx, CAidx] rtol=1e-3
-                # 1000x for ms -> s
-                @test 1000.0*sarcomere_velocity*model.SL₀ ≈ reference_solution_data[closest_sol_idx, dSLidx] rtol=1e-2
-                @test sarcomere_stretch*model.SL₀ ≈ reference_solution_data[closest_sol_idx, SLidx] rtol=1e-2
-                Ta = Thunderbolt.compute_active_tension(model, u, sarcomere_stretch)
-                @test Ta ≈ reference_solution_data[closest_sol_idx, Taidx] rtol=1e-3
-                As = Thunderbolt.compute_active_stiffness(model, u, sarcomere_stretch)
-                @test As ≈ reference_solution_data[closest_sol_idx, Asidx] rtol=1e-3
-                uref = @view reference_solution_data[closest_sol_idx, S0idx:(S0idx+19)]
-                urefRU = permutedims(reshape(uref[1:16], (2,2,2,2)), (4,3,2,1))
-                uRU    = reshape(u[1:16], (2,2,2,2))
-                @test uRU ≈ urefRU rtol=1e-3 
-                for i in 17:20
-                    @test u[i] ≈ uref[i] rtol=1e-3
+                closest_sol_idx = findfirst(tref -> t-dt/2 ≤ tref < t+dt/2, ts_data)
+                if closest_sol_idx !== nothing
+                    # Calcium input
+                    @test calcium ≈ reference_solution_data[closest_sol_idx, CAidx] rtol=1e-3
+                    # Solution comparison
+                    uref = @view reference_solution_data[closest_sol_idx, S0idx:(S0idx+19)]
+                    urefRU = permutedims(reshape(uref[1:16], (2,2,2,2)), (4,3,2,1))
+                    uRU    = reshape(u[1:16], (2,2,2,2))
+                    @test uRU ≈ urefRU rtol=1e-3 
+                    for i in 17:20
+                        @test u[i] ≈ uref[i] rtol=1e-3
+                    end
+                    # Derived quantities
+                    # 1000x for ms -> s
+                    @test 1000.0*sarcomere_velocity*sarcomere_model.SL₀ ≈ reference_solution_data[closest_sol_idx, dSLidx] rtol=1e-2
+                    @test sarcomere_stretch*sarcomere_model.SL₀ ≈ reference_solution_data[closest_sol_idx, SLidx] rtol=1e-2
+                    Ta = Thunderbolt.compute_active_tension(sarcomere_model, u, sarcomere_stretch)
+                    @test Ta ≈ reference_solution_data[closest_sol_idx, Taidx] rtol=1e-3
+                    As = Thunderbolt.compute_active_stiffness(sarcomere_model, u, sarcomere_stretch)
+                    @test As ≈ reference_solution_data[closest_sol_idx, Asidx] rtol=1e-3
                 end
             end
         end
