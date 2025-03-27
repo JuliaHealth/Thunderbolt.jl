@@ -35,7 +35,7 @@ calcium_field = AnalyticalCoefficient(
 )
 quasistaticform = semidiscretize(mechanical_model, spatial_discretization_method, mesh);</code></pre><p>The remaining code is very similar to how we use SciML solvers. We first define our time domain, initial time step length and some dt for visualization.</p><pre><code class="language-julia hljs">dt₀ = 10.0
 tspan = (0.0, 500.0)
-dtvis = 25.0;</code></pre><p>This speeds up the CI # hide tspan = (0.0, dtvis);   # hide</p><p>Then we setup the problem. Since we have no time dependence in our active stress model the correct problem here is a quasistatic problem.</p><pre><code class="language-julia hljs">problem = QuasiStaticProblem(quasistaticform, tspan);</code></pre><p>Next we define the time stepper. Since there are no time derivatives appearing in our formulation we have to opt for a homotopy path method, which solve the time depentent problems adaptively. As our non-linear solver we choose the standard Newton-Raphson method and a direct solver for the inner linear system. For the theory behind homotopy path methods we refer to <a href="../../topics/time-integration/#theory_homotopy-path-methods">the corresponding theory manual on homotopy path methods</a></p><pre><code class="language-julia hljs">timestepper = HomotopyPathSolver(
+dtvis = 25.0;</code></pre><p>This speeds up the CI # hide</p><p>Then we setup the problem. Since we have no time dependence in our active stress model the correct problem here is a quasistatic problem.</p><pre><code class="language-julia hljs">problem = QuasiStaticProblem(quasistaticform, tspan);</code></pre><p>Next we define the time stepper. Since there are no time derivatives appearing in our formulation we have to opt for a homotopy path method, which solve the time depentent problems adaptively. As our non-linear solver we choose the standard Newton-Raphson method and a direct solver for the inner linear system. For the theory behind homotopy path methods we refer to <a href="../../topics/time-integration/#theory_homotopy-path-methods">the corresponding theory manual on homotopy path methods</a></p><pre><code class="language-julia hljs">timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
         max_iter=10,
         inner_solver=LinearSolve.UMFPACKFactorization(),
@@ -48,26 +48,7 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
     end
 end;</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">[ Info: 0.0
-[ Info: 25.0
-[ Info: 50.0
-[ Info: 75.0
-[ Info: 100.0
-[ Info: 125.0
-[ Info: 150.0
-[ Info: 175.0
-[ Info: 200.0
-[ Info: 225.0
-[ Info: 250.0
-[ Info: 275.0
-[ Info: 300.0
-[ Info: 325.0
-[ Info: 350.0
-[ Info: 375.0
-[ Info: 400.0
-[ Info: 425.0
-[ Info: 450.0
-[ Info: 475.0
-[ Info: 500.0</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[1]</dt><dd><div>R. Chadwick. <em>Mechanics of the left ventricle</em>. Biophysical journal <strong>39</strong>, 279–288 (1982).</div></dd><dt>[2]</dt><dd><div>J. M. Guccione, L. K. Waldman and A. D. McCulloch. <em>Mechanics of Active Contraction in Cardiac Muscle: Part II—Cylindrical Models of the Systolic Left Ventricle</em>. <a href="https://doi.org/10.1115/1.2895474">Journal of Biomechanical Engineering <strong>115</strong>, 82–90</a> (1993).</div></dd></dl></div><h2 id="mechanics-tutorial_simple-active-stress-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_simple-active-stress-plain-program">Plain program</a><a id="mechanics-tutorial_simple-active-stress-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_simple-active-stress-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="../cm01_simple-active-stress.jl"><code>cm01_simple-active-stress.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
+[ Info: 25.0</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[1]</dt><dd><div>R. Chadwick. <em>Mechanics of the left ventricle</em>. Biophysical journal <strong>39</strong>, 279–288 (1982).</div></dd><dt>[2]</dt><dd><div>J. M. Guccione, L. K. Waldman and A. D. McCulloch. <em>Mechanics of Active Contraction in Cardiac Muscle: Part II—Cylindrical Models of the Systolic Left Ventricle</em>. <a href="https://doi.org/10.1115/1.2895474">Journal of Biomechanical Engineering <strong>115</strong>, 82–90</a> (1993).</div></dd></dl></div><h2 id="mechanics-tutorial_simple-active-stress-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_simple-active-stress-plain-program">Plain program</a><a id="mechanics-tutorial_simple-active-stress-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_simple-active-stress-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="../cm01_simple-active-stress.jl"><code>cm01_simple-active-stress.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
 
 mesh = generate_ideal_lv_mesh(11,2,5;
     inner_radius = 0.7,
@@ -127,6 +108,8 @@ dt₀ = 10.0
 tspan = (0.0, 500.0)
 dtvis = 25.0;
 
+tspan = (0.0, dtvis);   # hide
+
 problem = QuasiStaticProblem(quasistaticform, tspan);
 
 timestepper = HomotopyPathSolver(
@@ -145,4 +128,4 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     Thunderbolt.store_timestep!(io, t, dh.grid) do file
     Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
     end
-end;</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Overview</a><a class="docs-footer-nextpage" href="../cm02_prestress/">CM02: Prestressing (WIP) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.8.1 on <span class="colophon-date" title="Wednesday 5 March 2025 20:31">Wednesday 5 March 2025</span>. Using Julia version 1.11.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end;</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Overview</a><a class="docs-footer-nextpage" href="../cm02_prestress/">CM02: Prestressing (WIP) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.9.0 on <span class="colophon-date" title="Thursday 27 March 2025 14:47">Thursday 27 March 2025</span>. Using Julia version 1.11.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

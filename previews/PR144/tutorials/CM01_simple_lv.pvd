@@ -3,24 +3,5 @@
   <Collection>
     <DataSet timestep="0.0" part="0" file="CM01_simple_lv/0.0.vtu"/>
     <DataSet timestep="25.0" part="0" file="CM01_simple_lv/25.0.vtu"/>
-    <DataSet timestep="50.0" part="0" file="CM01_simple_lv/50.0.vtu"/>
-    <DataSet timestep="75.0" part="0" file="CM01_simple_lv/75.0.vtu"/>
-    <DataSet timestep="100.0" part="0" file="CM01_simple_lv/100.0.vtu"/>
-    <DataSet timestep="125.0" part="0" file="CM01_simple_lv/125.0.vtu"/>
-    <DataSet timestep="150.0" part="0" file="CM01_simple_lv/150.0.vtu"/>
-    <DataSet timestep="175.0" part="0" file="CM01_simple_lv/175.0.vtu"/>
-    <DataSet timestep="200.0" part="0" file="CM01_simple_lv/200.0.vtu"/>
-    <DataSet timestep="225.0" part="0" file="CM01_simple_lv/225.0.vtu"/>
-    <DataSet timestep="250.0" part="0" file="CM01_simple_lv/250.0.vtu"/>
-    <DataSet timestep="275.0" part="0" file="CM01_simple_lv/275.0.vtu"/>
-    <DataSet timestep="300.0" part="0" file="CM01_simple_lv/300.0.vtu"/>
-    <DataSet timestep="325.0" part="0" file="CM01_simple_lv/325.0.vtu"/>
-    <DataSet timestep="350.0" part="0" file="CM01_simple_lv/350.0.vtu"/>
-    <DataSet timestep="375.0" part="0" file="CM01_simple_lv/375.0.vtu"/>
-    <DataSet timestep="400.0" part="0" file="CM01_simple_lv/400.0.vtu"/>
-    <DataSet timestep="425.0" part="0" file="CM01_simple_lv/425.0.vtu"/>
-    <DataSet timestep="450.0" part="0" file="CM01_simple_lv/450.0.vtu"/>
-    <DataSet timestep="475.0" part="0" file="CM01_simple_lv/475.0.vtu"/>
-    <DataSet timestep="500.0" part="0" file="CM01_simple_lv/500.0.vtu"/>
   </Collection>
 </VTKFile>

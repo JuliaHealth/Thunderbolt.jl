@@ -115,7 +115,7 @@ dt₀ = 10.0
 tspan = (0.0, 500.0)
 dtvis = 25.0;
 # This speeds up the CI # hide
-# tspan = (0.0, dtvis);   # hide
+tspan = (0.0, dtvis);   # hide
 
 # Then we setup the problem.
 # Since we have no time dependence in our active stress model the correct problem here is a quasistatic problem.
