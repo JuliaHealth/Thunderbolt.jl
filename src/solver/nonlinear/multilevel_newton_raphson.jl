@@ -1,11 +1,13 @@
-struct GenericLocalNonlinearSolver <: AbstractNonlinearSolver
+Base.@kwdef struct GenericLocalNonlinearSolver <: AbstractNonlinearSolver
+    max_iters::Int = 10
+    tol::Float64 = 1e-16
 end
 
-struct GenericLocalNonlinearSolverCache{JacobianType, ResidualType, CorrectorType}
+struct GenericLocalNonlinearSolverCache{JacobianType, ResidualType, CorrectorRhsType}
+    params::GenericLocalNonlinearSolver
     J::JacobianType
     residual::ResidualType
-    corrector_rhs::CorrectorType
-    corrector::CorrectorType
+    rhs_corrector::CorrectorRhsType
 end
 
 """

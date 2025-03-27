@@ -223,7 +223,7 @@ setup_internal_cache(material_model::Union{<:ElastodynamicsModel{<:ActiveStressM
 
 # TODO this actually belongs to the multi-level newton file :)
 # Dual (global cache and element-level cache) use for now to make it non-allocating.
-struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{LocalModelType, LocalModelCacheType, QType, QType2, T, LVH} <: RateIndependentCondensationMaterialStateCache
+struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{LocalModelType, LocalModelCacheType, LocalSolverType, QType, QType2, T, LVH} <: RateIndependentCondensationMaterialStateCache
     # The actual model
     model::LocalModelType
     model_cache::LocalModelCacheType
@@ -233,7 +233,7 @@ struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{LocalModel
     Qprev::QType
     # t - tprev
     Δt::T
-    # local_solver::...?
+    local_solver_cache::LocalSolverType
     lvh::LVH
     # These are used locally
     localQ::QType2
@@ -274,7 +274,7 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
         function local_residual!(R, Q, λ, dλdt)
             dQ = zeros(eltype(Q), length(Q)) # TODO preallocate during setup
             sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
-            R .= (Q .- Qprev) ./ state_cache.Δt .- dQ
+            @.. R = (Q - Qprev) / state_cache.Δt - dQ
             return nothing
         end
 
@@ -282,16 +282,15 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
             return local_residual!(R, Q, λ, dλdt)
         end
 
-        # TODO preallocate during setup
-        R  = zeros(length(Q))
-        J  = zeros(length(Q),length(Q))
-        for newton_iter in 1:10
+        R  = state_cache.local_solver_cache.residual
+        J  = state_cache.local_solver_cache.J
+        for newton_iter in 1:state_cache.local_solver_cache.params.max_iters
             ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
             local_residual!(R, Q, λ, dλdt)
             ΔQ = J \ R
             Q .-= ΔQ
             # @info qp.i, norm(R), norm(ΔQ)
-            if norm(R) < 1e-16
+            if norm(R) < state_cache.local_solver_cache.params.tol
                 break
             elseif newton_iter == 10
                 error("Local Newton did not converge")
@@ -307,23 +306,16 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
     _store_local_state!(state_cache, geometry_cache, qp)
 
     # Solve corrector problem
-    # function local_residual_rhs_wrap!(R, λ)
-    #     dQ = zeros(eltype(λ), 20) # TODO preallocate during setup
-    #     sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
-    #     # R .= (Q .- Qprev) .- dQ
-    #     R .= (Q .- Qprevflat) .- dQ
-    #     return nothing
-    # end
-    function local_residual_rhs_wrap(λ)
+    function local_residual_rhs_wrap!(R, λ)
         dQ = zeros(eltype(λ), length(Q)) # TODO preallocate during setup
         sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
-        # R .= (Q .- Qprev) .- dQ
-        return (Q .- Qprevflat) ./ state_cache.Δt .- dQ
+        @.. R = (Q - Qprevflat) / state_cache.Δt - dQ
         return nothing
     end
-    ∂fₗ∂λ = zeros(length(Q))
-    ForwardDiff.derivative!(∂fₗ∂λ, local_residual_rhs_wrap, λ)
-    dQdλ = - J \ ∂fₗ∂λ
+    R     = state_cache.local_solver_cache.residual
+    ∂fₗ∂λ = state_cache.local_solver_cache.rhs_corrector
+    ForwardDiff.derivative!(∂fₗ∂λ, local_residual_rhs_wrap!, R, λ)
+    dQdλ = J \ -∂fₗ∂λ
 
     return Q, _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, material_model.active_stress_model, material_model.contraction_model)
 end

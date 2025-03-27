@@ -172,7 +172,7 @@ mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S, LVH} <: AbstractTimeDi
     const u::U
     const uprev::U
     Δt::T
-    const inner_solver::S
+    const local_solver_cache::S
     const lvh::LVH
 end
 
@@ -193,6 +193,14 @@ end
     @unpack volume_model, face_model = integrator
     @unpack local_solver, newton = solver
 
+    singleQsize = local_function_size(f)
+    local_solver_cache = GenericLocalNonlinearSolverCache(
+        solver.local_solver,
+        zeros(singleQsize, singleQsize),
+        zeros(singleQsize),
+        zeros(singleQsize),
+    )
+
     # Extract condensable parts
     Q     = @view wrapper.u[(ndofs(dh)+1):end]
     Qprev = @view wrapper.uprev[(ndofs(dh)+1):end]
@@ -201,7 +209,7 @@ end
         volume_model,
         Q, Qprev,
         0.0,
-        nothing, # inner_solver_cache.local_solver_cache,
+        local_solver_cache,
         f.lvh,
     )
     face_wrapper = BackwardEulerStageFunctionWrapper(
@@ -231,9 +239,8 @@ end
     newton_cache = NewtonRaphsonSolverCache(op, residual, newton, inner_cache, T[], 0)
 
     return MultiLevelNewtonRaphsonSolverCache(
-        # FIXME global_f and local_f :)
         newton_cache, # setup_solver_cache(G, solver.newton),
-        nothing, #setup_solver_cache(L, solver.local_newton), # FIXME pass
+        local_solver_cache, #setup_solver_cache(L, solver.local_newton), # FIXME pass
     )
 end
 
@@ -315,6 +322,7 @@ function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:Quasi
         wrapper.u,
         wrapper.uprev,
         wrapper.Δt,
+        wrapper.local_solver_cache,
         wrapper.lvh,
         zeros(n_ivs_per_qp),
         zeros(n_ivs_per_qp),

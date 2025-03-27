@@ -92,6 +92,10 @@ struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHa
 end
 
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
+function local_function_size(f::QuasiStaticFunction)
+    length(f.lvh.dh.subdofhandlers) == 0 && return 0
+    return sum(Ferrite.n_components.(f.lvh.dh.subdofhandlers[1].field_interpolations); init=0)
+end
 function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     fill!(u, 0.0)
     ndofs(f.lvh) == 0 && return # no internal variable
