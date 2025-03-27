@@ -120,8 +120,8 @@ end
 function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, sdh::SubDofHandler)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
-    ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-    ip_geo = geometric_subdomain_interpolation(sdh)
+    ip         = Ferrite.getfieldinterpolation(sdh, field_name)
+    ip_geo     = geometric_subdomain_interpolation(sdh)
     cv = CellValues(qr, ip, ip_geo)
     return QuasiStaticElementCache(
         model.material_model,
