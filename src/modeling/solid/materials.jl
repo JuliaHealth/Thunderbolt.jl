@@ -255,6 +255,12 @@ function _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_t
 end
 
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, geometry_cache, qp, time) where dim
+    # Early out if any of the previous local solves failed
+    if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+        Qflat, _ = _query_local_state(state_cache, geometry_cache, qp)
+        return Qflat, zero(Tensor{4,dim,Float64,4^dim})
+    end
+
     function computeλ(F)
         f  = F ⋅ coefficients.f
         return √(f ⋅ f)
@@ -284,24 +290,37 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
 
         R  = state_cache.local_solver_cache.residual
         J  = state_cache.local_solver_cache.J
+        rtol = min(state_cache.local_solver_cache.params.tol, state_cache.local_solver_cache.outer_tol)
         for newton_iter in 1:state_cache.local_solver_cache.params.max_iters
             ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
             local_residual!(R, Q, λ, dλdt)
             ΔQ = J \ R
             Q .-= ΔQ
-            # @info qp.i, norm(R), norm(ΔQ)
-            if norm(R) < state_cache.local_solver_cache.params.tol
+            residualnorm = norm(R)
+            if residualnorm < state_cache.local_solver_cache.params.tol
                 break
-            elseif newton_iter == 10
-                error("Local Newton did not converge")
+            elseif newton_iter == state_cache.local_solver_cache.params.max_iters
+                state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.MaxIters
+                @debug "Reached maximum local Newton iterations at cell $(cellid(geometry_cache)) qp $(qp.i). Aborting. ||r|| = $(residualnorm)" _group=:nlsolve
+                return Q, J
+            elseif isnan(residualnorm)
+                state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.ConvergenceFailure
+                @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
+                return Q, J
             end
         end
         ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
+        state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.Success
         return Q, J
     end
 
     Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     Q, J = solve_internal_timestep(material_model, state_cache, λ, dλdt, Qflat, Qprevflat)
+    # Abort if local solve failed
+    if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+        Qflat, _ = _query_local_state(state_cache, geometry_cache, qp)
+        return Qflat, zero(Tensor{4,dim,Float64,4^dim})
+    end
     Qflat .= Q
     _store_local_state!(state_cache, geometry_cache, qp)
 

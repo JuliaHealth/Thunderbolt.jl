@@ -199,6 +199,8 @@ end
         zeros(singleQsize, singleQsize),
         zeros(singleQsize),
         zeros(singleQsize),
+        Inf,
+        SciMLBase.ReturnCode.Default,
     )
 
     # Extract condensable parts

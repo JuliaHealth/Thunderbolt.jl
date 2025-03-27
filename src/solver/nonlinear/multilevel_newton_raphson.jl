@@ -1,13 +1,15 @@
 Base.@kwdef struct GenericLocalNonlinearSolver <: AbstractNonlinearSolver
     max_iters::Int = 10
-    tol::Float64 = 1e-16
+    tol::Float64 = 1e-4
 end
 
-struct GenericLocalNonlinearSolverCache{JacobianType, ResidualType, CorrectorRhsType}
-    params::GenericLocalNonlinearSolver
-    J::JacobianType
-    residual::ResidualType
-    rhs_corrector::CorrectorRhsType
+Base.@kwdef mutable struct GenericLocalNonlinearSolverCache{JacobianType, ResidualType, CorrectorRhsType}
+    const params::GenericLocalNonlinearSolver
+    const J::JacobianType
+    const residual::ResidualType
+    const rhs_corrector::CorrectorRhsType
+    outer_tol::Float64 = Inf
+    retcode::SciMLBase.ReturnCode.T = SciMLBase.ReturnCode.Default
 end
 
 """
@@ -37,14 +39,21 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
     residualnormprev = 0.0
     Θ1prev = length(Θks) > 0 ? first(Θks) : 0.0
     resize!(Θks, 0)
+    mlcache.local_solver_cache.outer_tol = Inf
     while true
         cache.iter += 1
         residual .= 0.0
         @timeit_debug "update operator" update_linearization!(op, residual, u, t)
+        # Check if local solve failed
+        if mlcache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+            @debug "Some local newton did not converge. Aborting. ||r|| = $residualnorm" _group=:nlsolve
+            return false
+        end
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
         linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
 
         residualnorm = residual_norm(cache, f)
+        mlcache.local_solver_cache.outer_tol = residualnorm
         if residualnorm < cache.parameters.tol && cache.iter > 1 # Do at least two iterations to get a sane convergence estimate
             break
         elseif cache.iter > cache.parameters.max_iter
