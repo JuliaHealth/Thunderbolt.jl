@@ -1,5 +1,7 @@
 using Thunderbolt, DelimitedFiles, Test
 
+@testset "Sarcomere Models" begin
+
 @testset "RDQ20MFModel" begin
     @testset "Comparison with original reference solution" failfast=true begin
         datapath = joinpath(@__DIR__, "data", "trajectories", "RDQ20-MF", "transient-test.csv")
@@ -85,4 +87,6 @@ using Thunderbolt, DelimitedFiles, Test
             end
         end
     end
+end
+
 end
