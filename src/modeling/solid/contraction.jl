@@ -15,7 +15,7 @@ struct EmptyRateIndependentCondensationMaterialStateCache <: RateIndependentCond
 
 
 abstract type RateDependentCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
-struct EmptyRateDependentMaterialStateCache <: RateDependentCondensationMaterialStateCache end
+struct EmptyRateDependentCondensationMaterialStateCache <: RateDependentCondensationMaterialStateCache end
 
 
 # Most models do not need additional scratch space for the evaluation
