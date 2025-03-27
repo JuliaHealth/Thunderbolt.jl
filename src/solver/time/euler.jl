@@ -309,7 +309,7 @@ end
 
 function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
     n_ivs_per_qp = local_function_size(wrapper.f.material_model)
-    return GenericFirstOrderRateIndependentMaterialStateCache(
+    return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         wrapper.f,
         setup_internal_cache(wrapper.f.material_model, qr, sdh),
         wrapper.u,

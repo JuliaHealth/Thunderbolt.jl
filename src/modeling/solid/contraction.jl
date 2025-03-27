@@ -3,30 +3,30 @@ abstract type AbstractSteadyStateSarcomereModel <: AbstractSarcomereModel end
 abstract type AbstractRateIndependentSarcomereModel <: AbstractSarcomereModel end
 abstract type AbstractRateDependentSarcomereModel <: AbstractSarcomereModel end
 
-abstract type AbstractInternalMaterialStateCache end
+abstract type AbstractCondensationMaterialStateCache end
 
 # Material states without evolution equations. I.e. the states variables are at most a function of space (reference) and time.
-abstract type TrivialInternalMaterialStateCache <: AbstractInternalMaterialStateCache end
-struct EmptyTrivialInternalMaterialStateCache <: TrivialInternalMaterialStateCache end
+abstract type TrivialCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
+struct EmptyTrivialCondensationMaterialStateCache <: TrivialCondensationMaterialStateCache end
 
 
-abstract type RateIndependentInternalMaterialStateCache <: AbstractInternalMaterialStateCache end
-struct EmptyRateIndependentInternalMaterialStateCache <: RateIndependentInternalMaterialStateCache end
+abstract type RateIndependentCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
+struct EmptyRateIndependentCondensationMaterialStateCache <: RateIndependentCondensationMaterialStateCache end
 
 
-abstract type RateDependentInternalMaterialStateCache <: AbstractInternalMaterialStateCache end
-struct EmptyRateDependentMaterialStateCache <: RateDependentInternalMaterialStateCache end
+abstract type RateDependentCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
+struct EmptyRateDependentMaterialStateCache <: RateDependentCondensationMaterialStateCache end
 
 
 # Most models do not need additional scratch space for the evaluation
 function setup_contraction_model_cache(contraction_model::AbstractSteadyStateSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
-    return EmptyTrivialInternalMaterialStateCache()
+    return EmptyTrivialCondensationMaterialStateCache()
 end
 function setup_contraction_model_cache(contraction_model::AbstractRateIndependentSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
-    return EmptyRateIndependentInternalMaterialStateCache()
+    return EmptyRateIndependentCondensationMaterialStateCache()
 end
 function setup_contraction_model_cache(contraction_model::AbstractRateDependentSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
-    return EmptyRateDependentMaterialStateCache()
+    return EmptyRateDependentCondensationMaterialStateCache()
 end
 
 # Some defaults
@@ -45,8 +45,8 @@ struct RateIndependentSarcomereModelWrapper{T <: AbstractRateDependentSarcomereM
     model::T
 end
 function setup_contraction_model_cache(wrapper::RateIndependentSarcomereModelWrapper, qr::QuadratureRule, sdh::SubDofHandler)
-    @assert setup_contraction_model_cache(wrapper.model, qr, sdh) isa EmptyRateDependentInternalMaterialStateCache "Wrapping non-trivial material state caches not supported."
-    return EmptyRateIndependentInternalMaterialStateCache()
+    @assert setup_contraction_model_cache(wrapper.model, qr, sdh) isa EmptyRateDependentCondensationMaterialStateCache "Wrapping non-trivial material state caches not supported."
+    return EmptyRateIndependentCondensationMaterialStateCache()
 end
 num_states(wrapper::RateIndependentSarcomereModelWrapper) = num_states(wrapper.model)
 
@@ -77,17 +77,17 @@ sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, wrapper::CaDrivenInternalSarcomereMod
 gather_internal_variable_infos(wrapper::CaDrivenInternalSarcomereModel) = gather_internal_variable_infos(wrapper.model)
 default_initial_condition!(uq::AbstractVector, wrapper::CaDrivenInternalSarcomereModel) = default_initial_condition!(uq, wrapper.model)
 
-struct TrivialCaDrivenInternalSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: TrivialInternalMaterialStateCache
+struct TrivialCaDrivenCondensationSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: TrivialCondensationMaterialStateCache
     model::ModelType
     model_cache::ModelCacheType
     calcium_cache::CalciumCacheType
 end
-struct RateIndependentCaDrivenInternalSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: RateIndependentInternalMaterialStateCache
+struct RateIndependentCaDrivenCondensationSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: RateIndependentCondensationMaterialStateCache
     model::ModelType
     model_cache::ModelCacheType
     calcium_cache::CalciumCacheType
 end
-struct RateDependentCaDrivenInternalSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: RateDependentInternalMaterialStateCache
+struct RateDependentCaDrivenCondensationSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: RateDependentCondensationMaterialStateCache
     model::ModelType
     model_cache::ModelCacheType
     calcium_cache::CalciumCacheType
@@ -96,21 +96,21 @@ function setup_contraction_model_cache(wrapper::CaDrivenInternalSarcomereModel, 
     return setup_contraction_model_cache_from_wrapper(wrapper.model, wrapper.calcium_field, qr, sdh)
 end
 function setup_contraction_model_cache_from_wrapper(model::AbstractSteadyStateSarcomereModel, calcium_field, qr::QuadratureRule, sdh::SubDofHandler)
-    return TrivialCaDrivenInternalSarcomereCache(
+    return TrivialCaDrivenCondensationSarcomereCache(
         model,
         setup_contraction_model_cache(model, qr, sdh),
         setup_coefficient_cache(calcium_field, qr, sdh),
     )
 end
 function setup_contraction_model_cache_from_wrapper(model::AbstractRateIndependentSarcomereModel, calcium_field, qr::QuadratureRule, sdh::SubDofHandler)
-    return RateIndependentCaDrivenInternalSarcomereCache(
+    return RateIndependentCaDrivenCondensationSarcomereCache(
         model,
         setup_contraction_model_cache(model, qr, sdh),
         setup_coefficient_cache(calcium_field, qr, sdh),
     )
 end
 function setup_contraction_model_cache_from_wrapper(model::AbstractRateDependentSarcomereModel, calcium_field, qr::QuadratureRule, sdh::SubDofHandler)
-    return RateDependentCaDrivenInternalSarcomereCache(
+    return RateDependentCaDrivenCondensationSarcomereCache(
         model,
         setup_contraction_model_cache(model, qr, sdh),
         setup_coefficient_cache(calcium_field, qr, sdh),
@@ -118,11 +118,11 @@ function setup_contraction_model_cache_from_wrapper(model::AbstractRateDependent
 end
 
 # Evalaute wrapped model's state
-function state(wrapper_cache::TrivialCaDrivenInternalSarcomereCache, geometry_cache, qp::QuadraturePoint, time)
+function state(wrapper_cache::TrivialCaDrivenCondensationSarcomereCache, geometry_cache, qp::QuadraturePoint, time)
     return state(wrapper_cache, wrapper_cache.model, geometry_cache, qp, time)
 end
 # Should usually be just the calcium state
-function state(wrapper_cache::TrivialCaDrivenInternalSarcomereCache, model::AbstractSteadyStateSarcomereModel, geometry_cache, qp::QuadraturePoint, time)
+function state(wrapper_cache::TrivialCaDrivenCondensationSarcomereCache, model::AbstractSteadyStateSarcomereModel, geometry_cache, qp::QuadraturePoint, time)
     return evaluate_coefficient(wrapper_cache.calcium_cache, geometry_cache, qp, time)
 end
 
