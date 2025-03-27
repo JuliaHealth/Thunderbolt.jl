@@ -45,7 +45,7 @@ function compute_λᵃ(Ca, mp::PelceSunLangeveld1995Model)
 end
 
 function gather_internal_variable_infos(model::PelceSunLangeveld1995Model)
-    return InternalVariableInfo(:s, 0)
+    return nothing
 end
 
 function default_initial_condition!(u::AbstractVector, model::PelceSunLangeveld1995Model)
@@ -85,6 +85,14 @@ compute_λᵃ(Ca, mp::ConstantStretchModel) = mp.λ
 
 struct ConstantStretchCache{CF} <: TrivialInternalMaterialStateCache
     calcium_cache::CF
+end
+
+function gather_internal_variable_infos(model::ConstantStretchModel)
+    return nothing
+end
+
+function default_initial_condition!(u::AbstractVector, model::ConstantStretchModel)
+    return nothing
 end
 
 function state(model_cache::ConstantStretchCache, geometry_cache, qp::QuadraturePoint, time)

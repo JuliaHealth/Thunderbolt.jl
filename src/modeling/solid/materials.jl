@@ -457,9 +457,9 @@ function setup_internal_cache(material_model::LinearMaxwellMaterial, qr::Quadrat
 end
 
 function gather_internal_variable_infos(model::LinearMaxwellMaterial)
-    return (InternalVariableInfo(:εᵛ, 6),) # TODO dimension info
+    return InternalVariableInfo(:εᵛ, 6) # TODO dimension info
 end
 
 function gather_internal_variable_infos(model::ActiveStressModel)
-    return (gather_internal_variable_infos(model.contraction_model),) # TODO how to query this?
+    return gather_internal_variable_infos(model.contraction_model)
 end

@@ -77,6 +77,19 @@ function Ferrite.reference_shape_value(ip::QuadratureInterpolation, ::Vec, i::In
     throw(ArgumentError("shape function evaluation for interpolation $ip not implemented yet"))
 end
 
+
+_add_ivh_subdomain_recursive!(sdh, ::Nothing, qr) = nothing
+
+function _add_ivh_subdomain_recursive!(sdh, ivi::InternalVariableInfo, qr)
+    add!(sdh, ivi.name, QuadratureInterpolation(qr)^ivi.size)
+end
+
+function _add_ivh_subdomain_recursive!(sdh, ivis::Base.AbstractVecOrTuple, qr)
+    for ivi in ivis
+        _add_ivh_subdomain_recursive!(sdh, ivi, qr)
+    end
+end
+
 function add_subdomain!(lvh::InternalVariableHandler, name::String, ivis #=::Vector{InternalVariableInfo}=#, qrc::QuadratureRuleCollection, compatible_dh::DofHandler)
     (; dh) = lvh
     mesh   = get_grid(dh)
@@ -85,9 +98,7 @@ function add_subdomain!(lvh::InternalVariableHandler, name::String, ivis #=::Vec
     for (celltype, cellset) in mesh.volumetric_subdomains[name].data
         sdh = SubDofHandler(dh, _compatible_cellset(compatible_dh, first(cellset).idx))
         qr = getquadraturerule(qrc, sdh)
-        for ivi in ivis
-            add!(sdh, ivi.name, QuadratureInterpolation(qr)^ivi.size)
-        end
+        _add_ivh_subdomain_recursive!(sdh, ivis, qr)
     end
 end
 
