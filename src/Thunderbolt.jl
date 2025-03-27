@@ -157,7 +157,7 @@ export
     CaDrivenInternalSarcomereModel,
     ConstantStretchModel,
     PelceSunLangeveld1995Model,
-    SteadyStateSarcomereModel,
+    RDQ20MFModel,
     # Active model
     ActiveMaterialAdapter,
     GMKActiveDeformationGradientModel,
