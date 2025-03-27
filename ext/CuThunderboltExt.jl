@@ -18,7 +18,9 @@ import Thunderbolt:
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
     setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
     convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator,
-    CudaL1PrecBuilder,build_l1prec,AbstractPartitioning,L1Preconditioner, ldiv!
+    CudaL1PrecBuilder,build_l1prec,AbstractPartitioning,L1Preconditioner, ldiv!,
+    DiagonalCache,AbstractDiagonalIterator,AbstractMatrixSymmetry,SymmetricMatrix,NonSymmetricMatrix,
+    diag_offpart_csr,diag_offpart_csc
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,
