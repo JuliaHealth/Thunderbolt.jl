@@ -195,11 +195,15 @@ end
 
     singleQsize = local_function_size(f)
     local_solver_cache = GenericLocalNonlinearSolverCache(
+        # Solver parameters
         solver.local_solver,
+        # Buffers
         zeros(singleQsize, singleQsize),
         zeros(singleQsize),
         zeros(singleQsize),
+        # Globally requested tolerance
         Inf,
+        # Local convergence 
         SciMLBase.ReturnCode.Default,
     )
 
@@ -319,13 +323,20 @@ end
 function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
     n_ivs_per_qp = local_function_size(wrapper.f.material_model)
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
+        # Pass the model
         wrapper.f,
+        # And some cache to speed up evaluation of f and associated coefficients
         setup_internal_cache(wrapper.f.material_model, qr, sdh),
+        # Pass global solution info
         wrapper.u,
         wrapper.uprev,
+        # Current time step length
         wrapper.Δt,
+        # Local nonlinear solver cache
         wrapper.local_solver_cache,
+        # This one holds information about the local dofs inside u and uprev
         wrapper.lvh,
+        # Buffer for Q and Qprev
         zeros(n_ivs_per_qp),
         zeros(n_ivs_per_qp),
     )

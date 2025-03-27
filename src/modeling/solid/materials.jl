@@ -240,10 +240,6 @@ struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{LocalModel
     localQprev::QType2
 end
 
-function state(model_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, geometry_cache, qp::QuadraturePoint, time)
-    return state(model_cache.model, geometry_cache, qp, time)
-end
-
 function _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_term_model, wrapper::CaDrivenInternalSarcomereModel)
     return _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_term_model, wrapper.model)
 end
