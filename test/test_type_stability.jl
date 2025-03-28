@@ -31,16 +31,19 @@
                 model = ActiveStressModel(
                     passive_spring,
                     PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
-                    PelceSunLangeveld1995Model(;calcium_field=ConstantCoefficient(1.0)),
+                    CaDrivenInternalSarcomereModel(
+                        PelceSunLangeveld1995Model(),
+                        ConstantCoefficient(1.0),
+                    ),
                     fsncoeff,
                 )
-                @test_opt Thunderbolt.material_routine(F, fsneval, Caᵢ, model)
+                @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
             end
         end
 
         contraction_model_set = [
-            ConstantStretchModel(;calcium_field=ConstantCoefficient(1.0)),
-            PelceSunLangeveld1995Model(;calcium_field=ConstantCoefficient(1.0)),
+            ConstantStretchModel(),
+            PelceSunLangeveld1995Model(),
         ]
         Fᵃmodel_set = [
             GMKActiveDeformationGradientModel(),
@@ -55,10 +58,13 @@
                             passive_spring,
                             ActiveMaterialAdapter(passive_spring),
                             Fᵃmodel,
-                            contraction_model,
+                            CaDrivenInternalSarcomereModel(
+                                contraction_model,
+                                ConstantCoefficient(1.0),
+                            ),
                             fsncoeff,
                         )
-                        @test_opt Thunderbolt.material_routine(F, fsneval, Caᵢ, model)
+                        @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
                     end
                 end
             end

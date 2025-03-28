@@ -6,7 +6,7 @@
 
     ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid)
 
-    cartesian_coefficient = CoordinateSystemCoefficient(CartesianCoordinateSystem(ring_grid))
+    cartesian_coefficient = CartesianCoordinateSystem(ring_grid)
     qr = getquadraturerule(qr_collection, getcells(ring_grid, 1))
 
     dh = DofHandler(ring_grid)
@@ -17,8 +17,7 @@
     cs_cache = Thunderbolt.setup_coefficient_cache(cartesian_coefficient, qr, sdh)
 
     @testset "Midmyocardial coordinate system" begin
-        csc = CoordinateSystemCoefficient(ring_cs)
-        cache2 = Thunderbolt.setup_coefficient_cache(csc, qr, sdh)
+        cache2 = Thunderbolt.setup_coefficient_cache(ring_cs, qr, sdh)
         for cellcache in CellIterator(ring_cs.dh)
             for qp in QuadratureIterator(qr)
                 x = evaluate_coefficient(cs_cache, cellcache, qp, 0.0)

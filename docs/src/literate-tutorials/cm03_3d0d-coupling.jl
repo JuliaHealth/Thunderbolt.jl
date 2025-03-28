@@ -276,9 +276,9 @@ function calcium_profile_function(x::LVCoordinate,t)
 end
 calcium_field = AnalyticalCoefficient(
     calcium_profile_function,
-    CoordinateSystemCoefficient(coordinate_system),
+    coordinate_system,
 )
-sarcomere_model = ConstantStretchModel(;calcium_field)
+sarcomere_model = CaDrivenInternalSarcomereModel(ConstantStretchModel(), calcium_field)
 active_stress_model = ActiveStressModel(
     passive_material_model,
     active_material_model,

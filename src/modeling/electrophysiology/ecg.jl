@@ -1,35 +1,3 @@
-
-# TODO where to put this?
-function construct_qvector(::Type{StorageType}, ::Type{IndexType}, mesh::SimpleMesh, qrc::QuadratureRuleCollection, subdomains::Vector{String} = [""]) where {StorageType, IndexType}
-    num_points = 0
-    num_cells  = 0
-    for subdomain in subdomains
-        for (celltype, cellset) in pairs(mesh.volumetric_subdomains[subdomain].data)
-            qr = getquadraturerule(qrc, getcells(mesh, first(cellset).idx))
-            num_points += getnquadpoints(qr)*length(cellset)
-            num_cells  += length(cellset)
-        end
-    end
-    data    = zeros(eltype(StorageType), num_points)
-    offsets = zeros(num_cells+1)
-
-    offsets[1]        = 1
-    next_point_offset = 1
-    next_cell         = 1
-    for subdomain in subdomains
-        for (celltype, cellset) in pairs(mesh.volumetric_subdomains[subdomain].data)
-            qr = getquadraturerule(qrc, getcells(mesh, first(cellset).idx))
-            for cellidx in cellset
-                next_point_offset += getnquadpoints(qr)
-                next_cell += 1
-                offsets[next_cell] = next_point_offset
-            end
-        end
-    end
-
-    return DenseDataRange(StorageType(data), IndexType(offsets))
-end
-
 function compute_quadrature_fluxes!(fluxdata, dh, u, field_name, integrator)
     grid = get_grid(dh)
     sdim = getspatialdim(grid)

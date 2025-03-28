@@ -105,17 +105,8 @@ function duplicate_for_parallel(cache::ConductivityToDiffusivityCoefficientCache
     )
 end
 
-"""
-    CoordinateSystemCoefficient(coordinate_system)
-
-Helper to obtain the location in some possibly problem-specific coordinate system, e.g. for analytical coefficients (see [`AnalyticalCoefficient`](@ref)).
-"""
-struct CoordinateSystemCoefficient{CS}
-    cs::CS
-end
-
 function compute_nodal_values(csc::CoordinateSystemCoefficient, dh::DofHandler, field_name::Symbol)
-    Tv = value_type(csc.cs)
+    Tv = value_type(csc)
     nodal_values = Vector{Tv}(UndefInitializer(), ndofs(dh))
     T = eltype(Tv)
     for sdh in dh.subdofhandlers
@@ -147,12 +138,12 @@ end
 
 duplicate_for_parallel(cache::CartesianCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:CartesianCoordinateSystem}, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(cs::CartesianCoordinateSystem, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
-    ip = getcoordinateinterpolation(coefficient.cs, cell)
+    ip = getcoordinateinterpolation(cs, cell)
     fv = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip) # We scalarize the interpolation again as an optimization step
     Nξs    = size(fv.Nξ)
-    return CartesianCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
+    return CartesianCoordinateSystemCache(cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
 function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
@@ -172,13 +163,13 @@ end
 
 duplicate_for_parallel(cache::LVCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCoordinateSystem}, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(cs::LVCoordinateSystem, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
-    ip = getcoordinateinterpolation(coefficient.cs, cell)
+    ip = getcoordinateinterpolation(cs, cell)
     ip_geo = ip^3
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
     Nξs    = size(fv.Nξ)
-    return LVCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
+    return LVCoordinateSystemCache(cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
 function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
@@ -204,13 +195,13 @@ end
 
 duplicate_for_parallel(cache::BiVCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, qr::QuadratureRule{<:Any,<:AbstractArray{T}}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(cs::BiVCoordinateSystem, qr::QuadratureRule{<:Any,<:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
-    ip = getcoordinateinterpolation(coefficient.cs, cell)
+    ip = getcoordinateinterpolation(cs, cell)
     ip_geo = ip^3
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
     Nξs    = size(fv.Nξ)
-    return BiVCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
+    return BiVCoordinateSystemCache(cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
 function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint{<:Any,T}, t) where {T}

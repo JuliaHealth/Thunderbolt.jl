@@ -10,7 +10,7 @@ cs = CartesianCoordinateSystem(grid)
 
 
 protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> cos(2π * t) * exp(-norm(x)^2), CoordinateSystemCoefficient(cs)),
+                AnalyticalCoefficient((x,t) -> cos(2π * t) * exp(-norm(x)^2), cs),
                 [SVector((0.f0, 1.f0))]
             )
 

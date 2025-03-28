@@ -1,9 +1,11 @@
+abstract type CoordinateSystemCoefficient end
+
 """
     CartesianCoordinateSystem(mesh)
 
 Standard cartesian coordinate system.
 """
-struct CartesianCoordinateSystem{sdim,T}
+struct CartesianCoordinateSystem{sdim,T} <: CoordinateSystemCoefficient
     function CartesianCoordinateSystem{sdim}() where sdim
         return new{sdim,Float32}()
     end
@@ -27,7 +29,7 @@ getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
 rotational coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
 """
-struct LVCoordinateSystem{T, DH <: AbstractDofHandler, IPC}
+struct LVCoordinateSystem{T, DH <: AbstractDofHandler, IPC} <: CoordinateSystemCoefficient
     dh::DH
     ip_collection::IPC # TODO special dof handler with type stable interpolation
     u_transmural::Vector{T}
@@ -307,7 +309,7 @@ end
 Universal ventricular coordinate, containing the transmural, apicobasal, rotational 
 and transventricular coordinates.
 """
-struct BiVCoordinateSystem{T, DH <: Ferrite.AbstractDofHandler}
+struct BiVCoordinateSystem{T, DH <: Ferrite.AbstractDofHandler} <: CoordinateSystemCoefficient
     dh::DH
     u_transmural::Vector{T}
     u_apicobasal::Vector{T}
