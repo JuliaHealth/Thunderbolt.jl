@@ -11,13 +11,13 @@ end
 
 SciMLBase.isadaptive(::BackwardEulerSolver) = false
 
-mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, StageType, MonitorType} <: AbstractTimeSolverCache
+mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, TmpType <: AbstractVector{T}, StageType, MonitorType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
     uₙ₋₁::SolutionType
     # # Temporary buffer for interpolations and stuff
-    tmp::SolutionType
+    tmp::TmpType
     # Utility to decide what kind of stage we solve (i.e. linear problem, full DAE or mass-matrix ODE)
     stage::StageType
     # DO NOT USE THIS (will be replaced by proper logging system)
