@@ -43,8 +43,8 @@ end
 
 grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((-1.0,-1.0,-0.2)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 addcellset!(grid, "", x->true) # FIXME
-addcellset!(grid, "inner", x->norm(x) ≤ 0.5)
-addcellset!(grid, "outer", x->norm(x) > 0.5)
+addcellset!(grid, "inner", x->x[3] ≤ 0.0)
+addcellset!(grid, "outer", x->x[3] ≥ 0.0)
 mesh = to_mesh(grid)
 
 u₁ = test_solve_passive_structure(
@@ -107,5 +107,56 @@ u₃ = test_solve_passive_structure(
         mesh
     )
 )
+
+@test u₃ ≉ u₁
+
+u₄ = test_solve_passive_structure(
+    mesh,
+    Thunderbolt.MultiMaterialModel(
+        (
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+        ),
+        ["inner", "outer"],
+        mesh
+    )
+)
+
+@test u₄ ≉ u₃
+@test u₄ ≈ u₁
+
+u₅ = test_solve_passive_structure(
+    mesh,
+    Thunderbolt.MultiMaterialModel(
+        (
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+        ),
+        [""],
+        mesh
+    )
+)
+
+@test u₅ ≈ u₁
 
 end
