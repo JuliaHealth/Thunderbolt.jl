@@ -103,8 +103,8 @@ import Tensors: Vec
 
     end
 
-    @testset "Cartesian CoordinateSystemCoefficient" begin
-        ccsc = CoordinateSystemCoefficient(CartesianCoordinateSystem(grid))
+    @testset "Cartesian Coordinate System" begin
+        ccsc = CartesianCoordinateSystem(grid)
         coeff_cache = setup_coefficient_cache(ccsc, qr, sdh)
         correct_vals = [Vec((-0.5f0,)), Vec((-0.45f0,)), Vec((0.5f0,)), Vec((0.55f0,))]
         Vals = correct_vals |> similar |> cu
@@ -118,7 +118,7 @@ import Tensors: Vec
     @testset "AnalyticalCoefficient" begin
         ac = AnalyticalCoefficient(
             (x, t) -> norm(x) + t,
-            CoordinateSystemCoefficient(CartesianCoordinateSystem(grid))
+            CartesianCoordinateSystem(grid)
         )
         coeff_cache = Thunderbolt.setup_coefficient_cache(ac, qr, sdh)
         correct_vals = [0.5f0, 0.45f0, 0.5f0, 0.55f0]

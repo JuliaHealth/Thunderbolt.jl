@@ -74,7 +74,7 @@ function calcium_profile_function(x::LVCoordinate,t)
 end
 calcium_field = AnalyticalCoefficient(
     calcium_profile_function,
-    CoordinateSystemCoefficient(coordinate_system),
+    coordinate_system,
 );
 
 # We will use for a very simple sarcomere model which is constant in the calcium concentration.

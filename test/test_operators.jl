@@ -82,7 +82,7 @@ using BlockArrays, SparseArrays
         @testset "Constant Cartesian" begin
             cs = CartesianCoordinateSystem(grid)
             protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> 1.0, CoordinateSystemCoefficient(cs)),
+                AnalyticalCoefficient((x,t) -> 1.0, cs),
                 [SVector((0.0, 1.0))]
             )
 
@@ -108,7 +108,7 @@ using BlockArrays, SparseArrays
         @testset "Quadratic Cartesian" begin
             cs = CartesianCoordinateSystem(grid)
             protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> norm(x)^2+1.0, CoordinateSystemCoefficient(cs)),
+                AnalyticalCoefficient((x,t) -> norm(x)^2+1.0, cs),
                 [SVector((0.0, 1.0))]
             )
 

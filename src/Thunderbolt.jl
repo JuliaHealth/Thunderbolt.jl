@@ -103,7 +103,6 @@ export
     FieldCoefficient,
     AnalyticalCoefficient,
     FieldCoefficient,
-    CoordinateSystemCoefficient,
     SpectralTensorCoefficient,
     SpatiallyHomogeneousDataField,
     evaluate_coefficient,
@@ -197,6 +196,7 @@ export
     # Coordinate system
     LVCoordinateSystem,
     LVCoordinate,
+    BiVCoordinateSystem,
     BiVCoordinate,
     CartesianCoordinateSystem,
     compute_lv_coordinate_system,

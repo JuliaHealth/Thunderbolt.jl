@@ -29,7 +29,7 @@ function (protocol::SimpleS1S2Protocol)(x,t)
 end
 
 # It is now possible to use the protocol as follows
-coordinate_system_coefficient = CoordinateSystemCoefficient(CartesianCoordinateSystem{3}()) # Or some cardiac coordinate system
+coordinate_system_coefficient = CartesianCoordinateSystem{3}() # Or some cardiac coordinate system
 stimulus_around_zero(x,t) = max(1.0-norm(x),0.0)
 stimulus_around_one(x,t)  = max(1.0-norm(x+one(x)),0.0)
 s1s2fun = SimpleS1S2Protocol(
