@@ -1,8 +1,8 @@
 # Operators
 
-## TLDT 
+## TLDR
 
-In Thunderbolt operator are the glue code to connect spatial finite element discretizations with time integration algorithms.
+In Thunderbolt ,,operators'' connect (spatial) finite element discretizations and time integration algorithms.
 
 ## More
 

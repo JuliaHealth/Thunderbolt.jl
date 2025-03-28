@@ -108,13 +108,12 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
         for cell in CellIterator(sdh)
             for qp in QuadratureIterator(qr)
                 q = @view uq[offset:(offset+ivsize_per_qp-1)]
-                default_initial_condition!(q, f.integrator.volume_model.material_model)
+                default_initial_state!(q, f.integrator.volume_model.material_model)
                 offset += ivsize_per_qp
             end
         end
     end
 end
 
-# TODO fill me
 gather_internal_variable_infos(model::QuasiStaticModel) = gather_internal_variable_infos(model.material_model)
 gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]

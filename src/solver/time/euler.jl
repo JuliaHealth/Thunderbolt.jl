@@ -176,14 +176,6 @@ mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S, LVH} <: AbstractTimeDi
     const lvh::LVH
 end
 
-function extract_global_function(f)
-    return f
-end
-
-function extract_local_function(f)
-    return f
-end
-
 # We unpack to dispatch per function class
 function setup_solver_cache(wrapper::BackwardEulerStageAnnotation, solver::AbstractNonlinearSolver)
     _setup_solver_cache(wrapper, wrapper.f, solver)
@@ -193,6 +185,7 @@ end
     @unpack volume_model, face_model = integrator
     @unpack local_solver, newton = solver
 
+    # TODO add an abstraction layer to autoamte the steps below
     singleQsize = local_function_size(f)
     local_solver_cache = GenericLocalNonlinearSolverCache(
         # Solver parameters
@@ -293,9 +286,9 @@ end
 function setup_element_cache(wrapper::AbstractTimeDiscretizationAnnotation{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
-    ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-    ip_geo = geometric_subdomain_interpolation(sdh)
-    cv = CellValues(qr, ip, ip_geo)
+    ip         = Ferrite.getfieldinterpolation(sdh, field_name)
+    ip_geo     = geometric_subdomain_interpolation(sdh)
+    cv         = CellValues(qr, ip, ip_geo)
     return QuasiStaticElementCache(
         wrapper.f.material_model,
         setup_coefficient_cache(wrapper.f.material_model, qr, sdh),

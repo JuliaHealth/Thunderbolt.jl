@@ -8,8 +8,6 @@ Interface:
 """
 abstract type AbstractVolumetricElementCache end
 
-# setup_element_cache(model, qr, sdh) = setup_element_cache(model, qr, Ferrite.getfieldinterpolation(sdh,1), sdh) # FIXME
-
 @doc raw"""
     assemble_element!(Kₑ::AbstractMatrix, cell::CellCache, element_cache::AbstractVolumetricElementCache, time)
 Main entry point for bilinear operators
@@ -55,8 +53,6 @@ Interface:
 
 """
 abstract type AbstractSurfaceElementCache end
-
-# setup_boundary_cache(model, qr, sdh) = setup_boundary_cache(model, qr, Ferrite.getfieldinterpolation(sdh,1), sdh) # FIXME
 
 @doc raw"""
     assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)

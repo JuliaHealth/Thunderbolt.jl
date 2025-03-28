@@ -66,7 +66,7 @@ A simple linear viscoelastic material model in 1D in weak form is:
 \end{aligned}
 ```
 
-Assuming we have a single 1D element $\Omega = [-1,1]$ with linear ansatz functions and Gauss-Legendre quadrature (i.e. 2 points) the Neumann conditon $\partial_x u(1,t) = 1$ and the Dirichlet condition $u(-1,t) = 0$, then applying a Galerkin semi-discretization yields the following linear DAE in mass matrix form:
+Assuming we have a single 1D element $\Omega = [-1,1]$ with linear ansatz functions and Gauss-Legendre quadrature (i.e. 2 points) the Neumann condition $\partial_x u(1,t) = 1$ and the Dirichlet condition $u(-1,t) = 0$, then applying a Galerkin semi-discretization yields the following linear DAE in mass matrix form:
 
 ```math
 \begin{aligned}

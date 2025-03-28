@@ -2,7 +2,7 @@
 
 abstract type AbstractMaterialModel end
 
-default_initial_condition!(uq, ::AbstractMaterialModel) = error("Initial condition setup not implemented yet.")
+default_initial_state!(uq, ::AbstractMaterialModel) = error("Initial condition setup not implemented yet.")
 
 function material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, coefficient_cache, ::EmptyInternalCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
@@ -40,7 +40,7 @@ struct PrestressedMechanicalModelCoefficientCache{T1, T2}
     prestress_cache::T2
 end
 
-default_initial_condition!(uq, model::PrestressedMechanicalModel) = default_initial_condition!(uq, model.inner_model)
+default_initial_state!(uq, model::PrestressedMechanicalModel) = default_initial_state!(uq, model.inner_model)
 
 function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler)
     PrestressedMechanicalModelCoefficientCache(
@@ -88,7 +88,7 @@ function setup_coefficient_cache(m::PK1Model, qr::QuadratureRule, sdh::SubDofHan
     return setup_coefficient_cache(m.coefficient_field, qr, sdh)
 end
 
-default_initial_condition!(uq, model::PK1Model) = default_initial_condition!(uq, model.internal_model)
+default_initial_state!(uq, model::PK1Model) = default_initial_state!(uq, model.internal_model)
 
 setup_internal_cache(material_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(material_model.internal_model, qr, sdh)
 
@@ -196,7 +196,7 @@ struct ActiveStressModel{Mat, ASMod, CMod, MS} <: AbstractMaterialModel
     microstructure_model::MS
 end
 
-default_initial_condition!(uq, model::Union{GeneralizedHillModel,ExtendedHillModel,ActiveStressModel}) = default_initial_condition!(uq, model.contraction_model)
+default_initial_state!(uq, model::Union{GeneralizedHillModel,ExtendedHillModel,ActiveStressModel}) = default_initial_state!(uq, model.contraction_model)
 
 function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)

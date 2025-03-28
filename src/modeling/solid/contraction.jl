@@ -30,7 +30,7 @@ function setup_contraction_model_cache(contraction_model::AbstractRateDependentS
 end
 
 # Some defaults
-function default_initial_condition!(u::AbstractVector, model::AbstractSteadyStateSarcomereModel)
+function default_initial_state!(Q::AbstractVector, model::AbstractSteadyStateSarcomereModel)
     return nothing
 end
 function gather_internal_variable_infos(model::AbstractSteadyStateSarcomereModel)
@@ -75,7 +75,7 @@ num_states(wrapper::CaDrivenInternalSarcomereModel) = num_states(wrapper.model)
 compute_λᵃ(state, wrapper::CaDrivenInternalSarcomereModel) = compute_λᵃ(state, wrapper.model)
 sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, wrapper::CaDrivenInternalSarcomereModel) = sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, wrapper.model)
 gather_internal_variable_infos(wrapper::CaDrivenInternalSarcomereModel) = gather_internal_variable_infos(wrapper.model)
-default_initial_condition!(uq::AbstractVector, wrapper::CaDrivenInternalSarcomereModel) = default_initial_condition!(uq, wrapper.model)
+default_initial_state!(Q::AbstractVector, wrapper::CaDrivenInternalSarcomereModel) = default_initial_state!(Q, wrapper.model)
 
 struct TrivialCaDrivenCondensationSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: TrivialCondensationMaterialStateCache
     model::ModelType
@@ -192,9 +192,12 @@ Base.@kwdef struct RDQ20MFModel{TD} <: AbstractRateDependentSarcomereModel
     a_XB::TD = 22.894e3 # kPa
 end
 
-function default_initial_condition!(u::AbstractVector, model::RDQ20MFModel)
-    u[1] = 1.0
-    u[2:end] .= 0.0
+function default_initial_state!(Q::AbstractVector, model::RDQ20MFModel)
+    # # This should always work fine
+    # Q[1] = 1.0
+    # Q[2:end] .= 0.0
+    # This is the state after one contraction cycle for the default parameters
+    Q .= [0.7451876573694929, 0.007517009301760875, 0.0010350369178622212, 0.0015046158115571504, 0.007517009301760875, 7.585301667185471e-5, 0.0015046158115571504, 0.0021881177060878326, 0.21148929223807816, 0.0021338710904123333, 0.0029375672075666608, 0.004271067937365375, 0.0021338710904123333, 2.1554465506341194e-5, 0.004271067937365375, 0.0062117927965376855, 0.0015658677556970083, 3.7308812267140636e-5, 0.004255024490691453, 0.00010138135740251573]
 end
 num_states(model::RDQ20MFModel) = 20
 
