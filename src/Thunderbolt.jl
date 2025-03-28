@@ -128,6 +128,7 @@ export
     ODEProblem,
     TransientDiffusionModel,
     AffineODEFunction,
+    default_initial_condition!,
     # Local API
     PointwiseODEProblem,
     PointwiseODEFunction,
@@ -211,6 +212,7 @@ export
     # Solver
     SchurComplementLinearSolver,
     NewtonRaphsonSolver,
+    MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,
     ForwardEulerSolver,
     BackwardEulerSolver,

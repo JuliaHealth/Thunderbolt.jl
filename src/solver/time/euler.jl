@@ -17,7 +17,7 @@ mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, St
     # Last solution buffer
     uₙ₋₁::SolutionType
     # # Temporary buffer for interpolations and stuff
-    # tmp::SolutionType
+    tmp::SolutionType
     # Utility to decide what kind of stage we solve (i.e. linear problem, full DAE or mass-matrix ODE)
     stage::StageType
     # DO NOT USE THIS (will be replaced by proper logging system)
@@ -127,7 +127,7 @@ function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t
     cache       = BackwardEulerSolverCache(
         u0, # u
         uprev,
-        # tmp,
+        copy(u0),
         BackwardEulerAffineODEStage(
             mass_operator,
             bilinear_operator,
@@ -269,7 +269,7 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::BackwardEul
     cache       = BackwardEulerSolverCache(
         _u,
         _uprev,
-        # tmp,
+        copy(_u),
         BackwardEulerStageCache(
             setup_solver_cache(BackwardEulerStageAnnotation(f, _u, _uprev), solver.inner_solver)
         ),
