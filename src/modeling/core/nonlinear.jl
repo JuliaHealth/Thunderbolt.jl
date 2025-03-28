@@ -1,5 +1,5 @@
 @doc raw"""
-    NonlinearIntegrator{CoefficientType}
+    NonlinearIntegrator
 
 Represents the integrand a the nonlinear form over some function space.
 """

@@ -1,9 +1,9 @@
 using Thunderbolt
+import Thunderbolt: to_mesh
 
-function test_solve_passive_structure(constitutive_model)
+function test_solve_passive_structure(mesh, constitutive_model)
     tspan = (0.0,1.0)
     Δt = 1.0
-    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
     # Clamp three sides
     dbcs = [
@@ -41,7 +41,14 @@ end
 
 @testset "Passive Structure" begin
 
+grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((-1.0,-1.0,-0.2)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+addcellset!(grid, "", x->true) # FIXME
+addcellset!(grid, "inner", x->x[3] ≤ 0.0)
+addcellset!(grid, "outer", x->x[3] ≥ 0.0)
+mesh = to_mesh(grid)
+
 u₁ = test_solve_passive_structure(
+    mesh,
     PK1Model(
         HolzapfelOgden2009Model(),
         ConstantCoefficient(OrthotropicMicrostructure(
@@ -54,6 +61,7 @@ u₁ = test_solve_passive_structure(
 @test !iszero(u₁)
 
 u₂ = test_solve_passive_structure(
+    mesh,
     PrestressedMechanicalModel(
         PK1Model(
             HolzapfelOgden2009Model(),
@@ -73,5 +81,82 @@ u₂ = test_solve_passive_structure(
 
 # The prestress should force a different solution
 @test u₁ ≉ u₂
+
+u₃ = test_solve_passive_structure(
+    mesh,
+    Thunderbolt.MultiMaterialModel(
+        (
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+            PK1Model(
+                Guccione1991PassiveModel(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+        ),
+        ["inner", "outer"],
+        mesh
+    )
+)
+
+@test u₃ ≉ u₁
+
+u₄ = test_solve_passive_structure(
+    mesh,
+    Thunderbolt.MultiMaterialModel(
+        (
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+        ),
+        ["inner", "outer"],
+        mesh
+    )
+)
+
+@test u₄ ≉ u₃
+@test u₄ ≈ u₁
+
+u₅ = test_solve_passive_structure(
+    mesh,
+    Thunderbolt.MultiMaterialModel(
+        (
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+        ),
+        [""],
+        mesh
+    )
+)
+
+@test u₅ ≈ u₁
 
 end
