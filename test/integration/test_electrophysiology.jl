@@ -25,7 +25,7 @@ using Thunderbolt
     end
 
     function solve_waveprop(mesh, coeff, subdomains, timestepper)
-        cs = CoordinateSystemCoefficient(CartesianCoordinateSystem(mesh))
+        cs = CartesianCoordinateSystem(mesh)
         model = MonodomainModel(
             ConstantCoefficient(1.0),
             ConstantCoefficient(1.0),
