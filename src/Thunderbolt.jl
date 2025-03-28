@@ -38,6 +38,8 @@ import LinearSolve
 
 import Base: *, +, -
 
+import ForwardDiff
+
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
         compose, ODESystem, Differential
@@ -52,6 +54,7 @@ include("utils.jl")
 
 include("mesh/meshes.jl")
 
+include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
@@ -125,6 +128,7 @@ export
     ODEProblem,
     TransientDiffusionModel,
     AffineODEFunction,
+    default_initial_condition!,
     # Local API
     PointwiseODEProblem,
     PointwiseODEFunction,
@@ -151,9 +155,10 @@ export
     LinearSpringModel,
     SimpleActiveSpring,
     # Contraction model
+    CaDrivenInternalSarcomereModel,
     ConstantStretchModel,
     PelceSunLangeveld1995Model,
-    SteadyStateSarcomereModel,
+    RDQ20MFModel,
     # Active model
     ActiveMaterialAdapter,
     GMKActiveDeformationGradientModel,
@@ -207,6 +212,7 @@ export
     # Solver
     SchurComplementLinearSolver,
     NewtonRaphsonSolver,
+    MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,
     ForwardEulerSolver,
     BackwardEulerSolver,

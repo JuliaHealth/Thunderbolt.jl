@@ -79,7 +79,7 @@ calcium_field = AnalyticalCoefficient(
 
 # We will use for a very simple sarcomere model which is constant in the calcium concentration.
 # Note that a using a sarcomere model which has evoluation equations or rate-dependent terms will require different solvers.
-sarcomere_model = ConstantStretchModel(;calcium_field);
+sarcomere_model = CaDrivenInternalSarcomereModel(ConstantStretchModel(), calcium_field);
 
 # Now we have everything set to describe our active stress model by passing all the model components into it.
 active_stress_model = ActiveStressModel(

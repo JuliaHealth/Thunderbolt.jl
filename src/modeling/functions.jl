@@ -84,10 +84,36 @@ abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 A discrete nonlinear (possibly multi-level) problem with time dependent terms.
 Abstractly written we want to solve the problem G(u, q, t) = 0, L(u, q, dₜq, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler} <: AbstractQuasiStaticFunction
+struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler, LVH <: InternalVariableHandler} <: AbstractQuasiStaticFunction
     dh::DH
     ch::CH
+    lvh::LVH
     integrator::I
 end
 
-solution_size(f::QuasiStaticFunction) = ndofs(f.dh)
+solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
+function local_function_size(f::QuasiStaticFunction)
+    length(f.lvh.dh.subdofhandlers) == 0 && return 0
+    return sum(Ferrite.n_components.(f.lvh.dh.subdofhandlers[1].field_interpolations); init=0)
+end
+function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
+    fill!(u, 0.0)
+    ndofs(f.lvh) == 0 && return # no internal variable
+    offset = 1
+    uq = @view u[(ndofs(f.dh)+1):end]
+    for sdh in f.lvh.dh.subdofhandlers
+        qr = getquadraturerule(f.integrator.qrc, sdh)
+        # ivsize_per_qp = sum(sdh.field_n_components; init=0) # FIXME broken...
+        ivsize_per_qp = sum(Ferrite.n_components.(sdh.field_interpolations); init=0)
+        for cell in CellIterator(sdh)
+            for qp in QuadratureIterator(qr)
+                q = @view uq[offset:(offset+ivsize_per_qp-1)]
+                default_initial_state!(q, f.integrator.volume_model.material_model)
+                offset += ivsize_per_qp
+            end
+        end
+    end
+end
+
+gather_internal_variable_infos(model::QuasiStaticModel) = gather_internal_variable_infos(model.material_model)
+gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]

@@ -10,11 +10,8 @@ end
 struct EmptyInternalCache
 end
 
-setup_internal_model_cache(::EmptyInternalModel, ::QuadratureRule, ::SubDofHandler) = EmptyInternalCache()
+setup_internal_cache(::EmptyInternalModel, ::QuadratureRule, ::SubDofHandler) = EmptyInternalCache()
 
-function state(model_cache::EmptyInternalCache, geometry_cache, qp::QuadraturePoint, time)
-    return nothing
-end
 
 abstract type AbstractSourceTerm end
 
