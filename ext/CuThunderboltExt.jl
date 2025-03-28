@@ -1,6 +1,7 @@
 module CuThunderboltExt
 
 using Thunderbolt
+using LinearSolve
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
@@ -10,13 +11,16 @@ import CUDA:
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
-    SparseMatrixCSR, SparseMatrixCSC,
+    SparseMatrixCSR, SparseMatrixCSC, AbstractSparseMatrix,
     AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
     setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
-    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator
+    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator,
+    CudaL1PrecBuilder,build_l1prec,AbstractPartitioning,L1Preconditioner, ldiv!,
+    DiagonalCache,AbstractDiagonalIterator,AbstractMatrixSymmetry,SymmetricMatrix,NonSymmetricMatrix,
+    diag_offpart_csr,diag_offpart_csc
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,
@@ -80,9 +84,15 @@ function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: V
     return CuVector(v)
 end
 
+CUDA.CUSPARSE.CuSparseMatrixCSR{T}(Mat::SparseMatrixCSR) where {T} =
+           CUDA.CUSPARSE.CuSparseMatrixCSR{T}(CuVector{Cint}(Mat.rowptr), CuVector{Cint}(Mat.colval),
+                                CuVector{T}(Mat.nzval), size(Mat))
+
+
 include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
 include("cuda/cuda_iterator.jl")
+include("cuda/cuda_preconditioner.jl")
 
 end
