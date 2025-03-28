@@ -36,7 +36,7 @@ calcium_field = AnalyticalCoefficient(
     CoordinateSystemCoefficient(coordinate_system),
 );
 
-sarcomere_model = ConstantStretchModel(;calcium_field);
+sarcomere_model = CaDrivenInternalSarcomereModel(ConstantStretchModel(), calcium_field);
 
 active_stress_model = ActiveStressModel(
     passive_material_model,
