@@ -303,7 +303,7 @@ function _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_t
 end
 
 # Local solve
-function solve_internal_timestep(material::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, λ, dλdt, Q, Qprev, Ca)
+function solve_internal_timestep(material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, λ, dλdt, Q, Qprev, Ca)
     @unpack Δt = state_cache
     #     dsdt = sarcomere_rhs(s,λ,t)
     # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
@@ -367,7 +367,7 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
     if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
         return Qflat, zero(Tensor{4,dim,Float64,4^dim})
     end
-    Qflat .= Q
+    # Qflat .= Q
     _store_local_state!(state_cache, geometry_cache, qp)
 
     # Solve corrector problem
@@ -407,7 +407,7 @@ function solve_local_constraint_state_only(F::Tensor{2,dim}, coefficients, mater
     if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
         return Qflat, zero(Tensor{4,dim,Float64,4^dim})
     end
-    Qflat .= Q
+    # Qflat .= Q
     _store_local_state!(state_cache, geometry_cache, qp)
 
     return Q
@@ -466,7 +466,7 @@ function _store_local_state!(state_cache::GenericFirstOrderRateIndependentConden
     return nothing
 end
 
-function solve_internal_timestep(material::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, ε, εᵛflat, εᵛprevflat)
+function solve_internal_timestep(material::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, ε::SymmetricTensor{2,dim}, εᵛflat, εᵛprevflat) where dim
     @unpack Δt = state_cache
     εᵛ₁ = SymmetricTensor{2,dim}(εᵛflat)
     εᵛ₀ = SymmetricTensor{2,dim}(εᵛprevflat)
