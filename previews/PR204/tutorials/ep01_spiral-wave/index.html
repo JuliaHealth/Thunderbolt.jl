@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>EP01: Spiral Wave · Thunderbolt.jl</title><meta name="title" content="EP01: Spiral Wave · Thunderbolt.jl"/><meta property="og:title" content="EP01: Spiral Wave · Thunderbolt.jl"/><meta property="twitter:title" content="EP01: Spiral Wave · Thunderbolt.jl"/><meta name="description" content="Documentation for Thunderbolt.jl."/><meta property="og:description" content="Documentation for Thunderbolt.jl."/><meta property="twitter:description" content="Documentation for Thunderbolt.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script><link href="../../assets/custom.css" rel="stylesheet" type="text/css"/><link href="../../assets/citations.css" rel="stylesheet" type="text/css"/></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.svg" alt="Thunderbolt.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Thunderbolt.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><input class="collapse-toggle" id="menuitem-2" type="checkbox" checked/><label class="tocitem" for="menuitem-2"><span class="docs-label">Tutorials</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../">Overview</a></li><li><input class="collapse-toggle" id="menuitem-2-2" type="checkbox"/><label class="tocitem" for="menuitem-2-2"><span class="docs-label">Continuum Mechanics</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../cm01_simple-active-stress/">CM01: Simple Active Stress</a></li><li><a class="tocitem" href="../cm02_prestress/">CM02: Prestressing (WIP)</a></li><li><a class="tocitem" href="../cm03_3d0d-coupling/">CM03: 0D Blood Circuit</a></li><li><a class="tocitem" href="../cm04_pericardium/">CM04: Pericadium (TODO)</a></li><li><a class="tocitem" href="../cm05_fourchambers/">CM05: Four Chamber (TODO)</a></li><li><a class="tocitem" href="../cm06_heartvalves/">CM06: Heart Valves (TODO)</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-2-3" type="checkbox" checked/><label class="tocitem" for="menuitem-2-3"><span class="docs-label">Electrophysiology</span><i class="docs-chevron"></i></label><ul class="collapsed"><li class="is-active"><a class="tocitem" href>EP01: Spiral Wave</a><ul class="internal"><li><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#Commented-Program"><span>Commented Program</span></a></li><li><a class="tocitem" href="#References"><span>References</span></a></li><li><a class="tocitem" href="#mechanics-tutorial_spiral-wave-plain-program"><span>Plain program</span></a></li></ul></li><li><a class="tocitem" href="../ep02_purkinje/">EP02: Purkinje Network (TODO)</a></li><li><a class="tocitem" href="../ep03_bidomain/">EP03: Defibrillation (TODO)</a></li><li><a class="tocitem" href="../ep04_geselowitz-ecg/">EP04: Monodomain ECG</a></li><li><a class="tocitem" href="../ep05_eikonal/">EP05: Eikonal Models (WIP)</a></li><li><a class="tocitem" href="../ep06_pacemaker/">EP06: Pacemakers (TODO)</a></li></ul></li></ul></li><li><input class="collapse-toggle" id="menuitem-3" type="checkbox"/><label class="tocitem" for="menuitem-3"><span class="docs-label">Topic Guides</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../topics/">Overview</a></li><li><a class="tocitem" href="../../topics/operators/">Operators</a></li><li><a class="tocitem" href="../../topics/couplers/">Couplers</a></li><li><a class="tocitem" href="../../topics/time-integration/">Time Integration</a></li><li><a class="tocitem" href="../../topics/nonlinear-solver/">Nonlinear Solver</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-4" type="checkbox"/><label class="tocitem" for="menuitem-4"><span class="docs-label">How-to guides</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../howto/">Overview</a></li><li><a class="tocitem" href="../../howto/benchmarking/">Benchmarking</a></li><li><a class="tocitem" href="../../howto/custom-ep-cell-model/">Adding EP Cell Models</a></li><li><a class="tocitem" href="../../howto/custom-stimulation-protocols/">Custom Stimulation Protocols</a></li><li><a class="tocitem" href="../../howto/custom-energies/">Adding Energies</a></li><li><a class="tocitem" href="../../howto/custom-sarcomere/">Adding Sarcomeres</a></li><li><a class="tocitem" href="../../howto/custom-elements/">Adding New Elements</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-5" type="checkbox"/><label class="tocitem" for="menuitem-5"><span class="docs-label">API Reference</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../api-reference/">Overview</a></li><li><a class="tocitem" href="../../api-reference/models/">Models</a></li><li><a class="tocitem" href="../../api-reference/mesh/">Mesh</a></li><li><a class="tocitem" href="../../api-reference/functions/">Functions</a></li><li><a class="tocitem" href="../../api-reference/problems/">Problems</a></li><li><a class="tocitem" href="../../api-reference/discretization/">Discretization</a></li><li><a class="tocitem" href="../../api-reference/operators/">Operators</a></li><li><a class="tocitem" href="../../api-reference/solver/">Solver</a></li><li><a class="tocitem" href="../../api-reference/utility/">Utility</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-6" type="checkbox"/><label class="tocitem" for="menuitem-6"><span class="docs-label">Developer Documentation</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../devdocs/">Overview</a></li><li><a class="tocitem" href="../../devdocs/element_interface/">Element Interface</a></li><li><a class="tocitem" href="../../devdocs/domain_management/">Domain management</a></li></ul></li><li><a class="tocitem" href="../../vroom/">Performance Tips</a></li><li><a class="tocitem" href="../../references/">References</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li><a class="is-disabled">Electrophysiology</a></li><li class="is-active"><a href>EP01: Spiral Wave</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>EP01: Spiral Wave</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaHealth/Thunderbolt.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaHealth/Thunderbolt.jl/blob/main/docs/src/literate-tutorials/ep01_spiral-wave.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="ep-tutorial_spiral-wave"><a class="docs-heading-anchor" href="#ep-tutorial_spiral-wave">Electrophysiology Tutorial 1: Simple Spiral Wave</a><a id="ep-tutorial_spiral-wave-1"></a><a class="docs-heading-anchor-permalink" href="#ep-tutorial_spiral-wave" title="Permalink"></a></h1><p><img src="../spiral-wave.gif" alt="Spiral Wave"/></p><p>This tutorial shows how to perform a simulation of electrophysiological behavior of cardiac tissue.</p><h2 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h2><p>The most widespread model of cardiac electrophysiology is the monodomain model. It can be defined on a domain <span>$\Omega$</span> as the system of partial differential equations</p><p class="math-container">\[\begin{aligned}
+  \chi C_{\textrm{m}} \partial_t \varphi &amp;= \nabla \cdot \boldsymbol{\kappa} \nabla \varphi - \chi I&#39;(\varphi, \boldsymbol{s}, t) &amp; \textrm{in} \: \Omega \, , \\
+  \partial_t \boldsymbol{s} &amp;= \mathbf{g}(\varphi, \boldsymbol{s}) &amp; \textrm{in}  \: \Omega \, , \\
+  0 &amp;= \boldsymbol{\kappa} \nabla \varphi \cdot \mathbf{n} &amp; \mathrm{on} \: \partial \Omega \, ,
+\end{aligned}\]</p><p>together with admissible initial conditions and a cellular ionic model to determine <span>$I&#39;$</span> and <span>$\mathbf{g}$</span>. <span>${\boldsymbol{\kappa}}$</span> denotes the conductivity tensor, <span>$\varphi$</span> is the transmembrane potential field, <span>$\chi$</span> is the volume to membrane surface ratio, <span>$C_{\mathrm{m}}$</span> is the membrane capacitance, and <span>$I&#39;(\varphi, \boldsymbol{s}, t) := I_{\textrm{ion}}(\varphi, \boldsymbol{s}) + I_{\textrm{stim}}(t)$</span> denotes the sum of the ionic current due to the cell model and the applied stimulus current, respectively.</p><p>In this tutorial we will apply a reaction-diffusion split to this model and solve it with an operator splitting solver. For some theory on operator splitting we refer to the <a href="../../topics/time-integration/#theory_operator-splitting">theory manual on operator splitting</a>.</p><h2 id="Commented-Program"><a class="docs-heading-anchor" href="#Commented-Program">Commented Program</a><a id="Commented-Program-1"></a><a class="docs-heading-anchor-permalink" href="#Commented-Program" title="Permalink"></a></h2><p>We start by loading Thunderbolt and LinearSolve to use a custom direct solver of our choice.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve</code></pre><p>We start by constructing a square domain for our simulation.</p><pre><code class="language-julia hljs">mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)));</code></pre><p>Here the first parameter is the element type and the second parameter is a tuple holding the number of subdivisions per dimension. The last two parameters are the corners defining the rectangular domain.</p><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>We can also load realistic geometries with external formats. For this simply use either FerriteGmsh.jl or one of the loader functions stated in the <a href="../../api-reference/mesh/#mesh-utility-api">mesh API</a>.</p></div></div><p>We now define the parameters appearing in the model. For simplciity we assume <span>$C_{\mathrm{m}} = \chi = 1.0$</span> and a homogeneous, anisotropic symmetric conductivity tensor.</p><pre><code class="language-julia hljs">Cₘ = ConstantCoefficient(1.0)
+χ  = ConstantCoefficient(1.0)
+κ  = ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)));</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>If the mesh is properly annotated, then we can generate (or even load) a cardiac coordinate system. Consult <a href="../../api-reference/mesh/#coordinate-system-api">coordinate system API documentation</a> for details. With this information we can <a href="../../api-reference/models/#microstructure-api">construct idealized microstructures</a> to define heterogeneous conductivity tensors e.g. as</p><pre><code class="language-julia hljs">microstructure = create_simple_microstructure_model(
+  coordinate_system,
+  LagrangeCollection{1}()^3;
+  endo_helix_angle = deg2rad(60.0),
+  epi_helix_angle = deg2rad(-60.0),
+)
+κ = SpectralTensorCoefficient(
+    microstructure,
+    ConstantCoefficient(SVector(κ₁, κ₂, κ₃))
+)</code></pre><p>where κ₁, κ₂, κ₃ are the eigenvalues for the fiber, sheet and normal direction.</p></div></div><p>The spiral wave will unfold due to the specific construction of the initial conditions, hence we do not need to apply a stimulus.</p><pre><code class="language-julia hljs">stimulation_protocol = NoStimulationProtocol();</code></pre><p>Now we choose a cell model. For simplicity we choose a neuronal electrophysiology model, which is a nice playground.</p><pre><code class="language-julia hljs">cell_model = Thunderbolt.FHNModel();</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>A full list of all models can be found in the <a href="api-reference/models/#Cells">API reference</a>. To implement a custom cell model please consult <a href="../../howto/custom-ep-cell-model/#how-to-custom-ep-cell-model">the how-to section</a>.</p></div></div><div class="admonition is-todo"><header class="admonition-header">Todo</header><div class="admonition-body"><p>The initializer API is not yet finished and hence we deconstruct stuff here manually. Please note that this method is quite fragile w.r.t. to many changes you can make in the code below.</p></div></div><p>Spiral wave initializer for the FitzHugh-Nagumo</p><pre><code class="language-julia hljs">function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    heatfun = f.functions[1]
+    heat_dofrange = f.solution_indices[1]
+    odefun = f.functions[2]
+    ionic_model = odefun.ode
+
+    φ₀ = @view u₀[heat_dofrange];
+    # TODO extraction these via utility functions
+    dh = heatfun.dh
+    s₀flat = @view u₀[(ndofs(dh)+1):end];
+    # Should not be reshape but some array of arrays fun, because in general (e.g. for heterogeneous tissues) we cannot reshape into a matrix
+    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
+
+    for cell in CellIterator(dh)
+        _celldofs = celldofs(cell)
+        φₘ_celldofs = _celldofs[dof_range(dh, :φₘ)]
+        # TODO query coordinate directly from the cell model
+        coordinates = getcoordinates(cell)
+        for (i, (x₁, x₂)) in zip(φₘ_celldofs,coordinates)
+            if x₁ &lt;= 1.25 &amp;&amp; x₂ &lt;= 1.25
+                φ₀[i] = 1.0
+            end
+            if x₂ &gt;= 1.25
+                s₀[i,1] = 0.1
+            end
+        end
+    end
+end;</code></pre><p>Now we put the components together by instantiating the monodomain model.</p><pre><code class="language-julia hljs">ep_model = MonodomainModel(
+    Cₘ,
+    χ,
+    κ,
+    stimulation_protocol,
+    cell_model,
+    :φₘ, :s,
+);</code></pre><p>We now annotate the model to be reaction-diffusion split. Special solvers need special forms for the model. However, the same solver can work with different forms. In the case of operator splitting users might choose to split the equations differently. Hence we leave it as a user option which split they prefer, or if they even want work on the full problem.</p><pre><code class="language-julia hljs">split_ep_model = ReactionDiffusionSplit(ep_model);</code></pre><div class="admonition is-todo"><header class="admonition-header">Todo</header><div class="admonition-body"><p>Show how to use solvers different that LTG (and implement them).</p></div></div><p>We now need to transform the space-time problem into a time-dependent problem by discretizing it spatially. This can be accomplished by the function semidiscretize, which takes a model and the disretization technique. Here we use a finite element discretization in space with first order Lagrange polynomials to discretize the displacement field.</p><div class="admonition is-danger"><header class="admonition-header">Danger</header><div class="admonition-body"><p>The discretization API does now play well with multiple domains right now and will be updated with a possible breaking change in future releases.</p></div></div><pre><code class="language-julia hljs">spatial_discretization_method = FiniteElementDiscretization(
+    Dict(:φₘ =&gt; LagrangeCollection{1}()),
+)
+odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh);</code></pre><p>We now allocate a solution vector and set the initial condition.</p><pre><code class="language-julia hljs">u₀ = zeros(Float32, OS.function_size(odeform))
+spiral_wave_initializer!(u₀, odeform);</code></pre><p>We proceed by defining the time integration algorithms for each subproblem. First, there is the heat problem, which we will solve with a low-storage backward Euler method</p><pre><code class="language-julia hljs">heat_timestepper = BackwardEulerSolver(
+    inner_solver=KrylovJL_CG(atol=1e-6, rtol=1e-5),
+);</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>On non-trivial geometries it is highly recommended to use a preconditioner. Please consult the <a href="https://docs.sciml.ai/LinearSolve/stable/basics/Preconditioners/">LinearSolve.jl docs</a> for details.</p></div></div><p>And then there is the reaction subproblem, which decouples locally into &quot;number of dofs in the discrete heat problem&quot; separate ODE. We will solve these locally adaptive with forward Euler steps.</p><pre><code class="language-julia hljs">cell_timestepper = AdaptiveForwardEulerSubstepper(;
+    reaction_threshold=0.1,
+);</code></pre><p>Now we can just instantiate the operator splitting algorithm of our choice. Since our time integrators are both first order in time we opt for the standard first order accurrate operator splitting technique by Lie-Trotter (or Godunov).</p><pre><code class="language-julia hljs">timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));</code></pre><p>The remaining code is very similar to how we use SciML solvers. We first define our time domain, initial time step length and some dt for visualization.</p><pre><code class="language-julia hljs">dt₀ = 10.0
+dtvis = 25.0;</code></pre><p>This speeds up the CI # hide</p><p>Then we setup the problem. We have a split function, so the correct problem is an OperatorSplittingProblem.</p><pre><code class="language-julia hljs">problem = OS.OperatorSplittingProblem(odeform, u₀, tspan);</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>If we want to solve the problem on the GPU, or if we want to use special matrix and vector formats, we just need to adjust the vector and matrix types. For example, if we want to problem to be solved on a CUDA GPU with 32 bit precision, then we need to adjust the types as follows.</p><pre><code class="nohighlight hljs">u₀gpu = CuVector(u₀)
+heat_timestepper = BackwardEulerSolver(
+  solution_vector_type=CuVector{Float32},
+  system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
+  inner_solver=KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
+)
+cell_timestepper = AdaptiveForwardEulerSubstepper(
+    solution_vector_type=CuVector{Float32},
+    reaction_threshold=0.1f0,
+)
+...
+problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)</code></pre></div></div><p>Now we initialize our time integrator as usual.</p><pre><code class="language-julia hljs">integrator = OS.init(problem, timestepper, dt=dt₀);</code></pre><div class="admonition is-todo"><header class="admonition-header">Todo</header><div class="admonition-body"><p>The post-processing API is not yet finished. Please revisit the tutorial later to see how to post-process the simulation online. Right now the solution is just exported into VTK, such that users can visualize the solution in e.g. ParaView.</p></div></div><p>And finally we solve the problem in time.</p><pre><code class="language-julia hljs">io = ParaViewWriter(&quot;EP01_spiral_wave&quot;)
+for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    (; dh) = odeform.functions[1]
+    φ = u[odeform.solution_indices[1]]
+    store_timestep!(io, t, dh.grid) do file
+        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+    end
+end;</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl></dl></div><h2 id="mechanics-tutorial_spiral-wave-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_spiral-wave-plain-program">Plain program</a><a id="mechanics-tutorial_spiral-wave-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_spiral-wave-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="ep01_spiral_wave.jl"><code>ep01_spiral_wave.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
+
+mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)));
+
+Cₘ = ConstantCoefficient(1.0)
+χ  = ConstantCoefficient(1.0)
+κ  = ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)));
+
+stimulation_protocol = NoStimulationProtocol();
+
+cell_model = Thunderbolt.FHNModel();
+
+function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    heatfun = f.functions[1]
+    heat_dofrange = f.solution_indices[1]
+    odefun = f.functions[2]
+    ionic_model = odefun.ode
+
+    φ₀ = @view u₀[heat_dofrange];
+    # TODO extraction these via utility functions
+    dh = heatfun.dh
+    s₀flat = @view u₀[(ndofs(dh)+1):end];
+    # Should not be reshape but some array of arrays fun, because in general (e.g. for heterogeneous tissues) we cannot reshape into a matrix
+    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
+
+    for cell in CellIterator(dh)
+        _celldofs = celldofs(cell)
+        φₘ_celldofs = _celldofs[dof_range(dh, :φₘ)]
+        # TODO query coordinate directly from the cell model
+        coordinates = getcoordinates(cell)
+        for (i, (x₁, x₂)) in zip(φₘ_celldofs,coordinates)
+            if x₁ &lt;= 1.25 &amp;&amp; x₂ &lt;= 1.25
+                φ₀[i] = 1.0
+            end
+            if x₂ &gt;= 1.25
+                s₀[i,1] = 0.1
+            end
+        end
+    end
+end;
+
+ep_model = MonodomainModel(
+    Cₘ,
+    χ,
+    κ,
+    stimulation_protocol,
+    cell_model,
+    :φₘ, :s,
+);
+
+split_ep_model = ReactionDiffusionSplit(ep_model);
+
+spatial_discretization_method = FiniteElementDiscretization(
+    Dict(:φₘ =&gt; LagrangeCollection{1}()),
+)
+odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh);
+
+u₀ = zeros(Float32, OS.function_size(odeform))
+spiral_wave_initializer!(u₀, odeform);
+
+heat_timestepper = BackwardEulerSolver(
+    inner_solver=KrylovJL_CG(atol=1e-6, rtol=1e-5),
+);
+
+cell_timestepper = AdaptiveForwardEulerSubstepper(;
+    reaction_threshold=0.1,
+);
+
+timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
+
+dt₀ = 10.0
+dtvis = 25.0;
+
+tspan = (0.0, dtvis);   # hide
+
+problem = OS.OperatorSplittingProblem(odeform, u₀, tspan);
+
+integrator = OS.init(problem, timestepper, dt=dt₀);
+
+io = ParaViewWriter(&quot;EP01_spiral_wave&quot;)
+for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    (; dh) = odeform.functions[1]
+    φ = u[odeform.solution_indices[1]]
+    store_timestep!(io, t, dh.grid) do file
+        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+    end
+end;</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../cm06_heartvalves/">« CM06: Heart Valves (TODO)</a><a class="docs-footer-nextpage" href="../ep02_purkinje/">EP02: Purkinje Network (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.9.0 on <span class="colophon-date" title="Monday 31 March 2025 13:52">Monday 31 March 2025</span>. Using Julia version 1.11.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
