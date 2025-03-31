@@ -532,6 +532,11 @@ function Geselowitz1989ECGLeadCache(
 
     lead_rhs = zeros(eltype(∇Njκ∇φₘ_t), nelectrodes, length(∇Njκ∇φₘ_t))
 
+    @info size(lead_op.A), size(lead_rhs[1,:])
+    leadprob = LinearSolve.LinearProblem(
+        lead_op.A, copy(lead_rhs[1,:])
+    )
+    lincache = init(leadprob, linear_solver)
     @views for (i, electrode_set) in enumerate(electrode_positions)
         @assert length(electrode_set) ≥ 2 "Electrode set $i has too few electrodes ($(length(electrode_set))<2)"
         current_rhs = lead_rhs[i,:]
@@ -539,11 +544,14 @@ function Geselowitz1989ECGLeadCache(
         for j in 2:length(electrode_set)
             _add_electrode!(current_rhs, lead_dh, electrode_set[j], -1.0/(length(electrode_set)-1), lead_field_sym)
         end
-        leadprob = LinearSolve.LinearProblem(
-            lead_op.A, current_rhs; u0=Z[i,:]
-        )
-        lincache = init(leadprob, linear_solver)
+        # leadprob = LinearSolve.LinearProblem(
+        #     lead_op.A, copy(current_rhs);# u0=Z[i,:]
+        # )
+        # lincache = init(leadprob, linear_solver)
+        # LinearSolve.solve!(lincache)
+        LinearSolve.set_b(lincache, copy(current_rhs))
         LinearSolve.solve!(lincache)
+        Z[i,:] .= lincache.u
     end
 
     return Geselowitz1989ECGLeadCache(source_op, transfer_op, ∇Njκ∇φₘ_h, ∇Njκ∇φₘ_t, Z, electrode_positions)
