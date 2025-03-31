@@ -10,11 +10,10 @@ mesh = generate_ideal_lv_mesh(11,2,5;
 
 coordinate_system = compute_lv_coordinate_system(mesh);
 
-microstructure = create_simple_microstructure_model(
+microstructure = create_microstructure_model(
     coordinate_system,
-    LagrangeCollection{1}()^3;
-    endo_helix_angle = deg2rad(60.0),
-    epi_helix_angle = deg2rad(-60.0),
+    LagrangeCollection{1}()^3,
+    ODB25LTMicrostructureParameters(),
 );
 
 passive_material_model = Guccione1991PassiveModel()
