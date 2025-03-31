@@ -40,6 +40,7 @@ function add_subdomain!(dh::DofHandler{<:Any, <:SimpleMesh}, name::String, appro
     cells = mesh.grid.cells
     haskey(mesh.volumetric_subdomains, name) || error("Volumetric Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.volumetric_subdomains))")
     for (celltype, cellset) in mesh.volumetric_subdomains[name].data
+        # @info name, length(cellset)
         sdh = SubDofHandler(dh, OrderedSet{Int}([idx.idx for idx in cellset]))
         for ad in approxmations
             add!(sdh, ad.sym, getinterpolation(ad.ipc, cells[first(sdh.cellset)]))
