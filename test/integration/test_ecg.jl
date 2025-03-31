@@ -3,7 +3,7 @@
         size = 4.
         signal_strength = 0.04
         nel_heart = (18, 18, 16)
-        nel_torso = (5, 3, 5) .* Int(size) .* 2
+        nel_torso = (4, 4, 4) .* Int(size) .* 2
         ground_vertex = Vec(0.0, 0.0, 0.0)
         electrodes = [
             ground_vertex,
@@ -62,10 +62,10 @@
         )
         u = zeros(Thunderbolt.solution_size(heart_fun))
         plonsey_ecg = Thunderbolt.Plonsey1964ECGGaussCache(op, u)
-        poisson_ecg = Thunderbolt.PoissonECGReconstructionCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]))
+        poisson_ecg = Thunderbolt.PoissonECGReconstructionCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]), torso_heart_domain=["heart"])
 
         geselowitz_electrodes = [[electrodes[1], electrodes[i]] for i in 2:length(electrodes)]
-        geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), geselowitz_electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]))
+        geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), geselowitz_electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]), torso_heart_domain=["heart"])
 
         @testset "Equilibrium" begin
             u .= 0.0
