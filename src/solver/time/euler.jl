@@ -283,18 +283,39 @@ end
 #    0 = G(u,v)
 #    0 = L(u,v,dₜu,dₜv)     (or simpler dₜv = L(u,v))
 # so we pass the stage information into the interior.
+function setup_quasistatic_element_cache(wrapper::BackwardEulerStageFunctionWrapper, material_model::MultiMaterialModel, qr::QuadratureRule, sdh::SubDofHandler, cv::CellValues)
+    return setup_quasistatic_element_cache(wrapper, material_model.materials, material_model.domains, qr, sdh, cv)
+end
+@unroll function setup_quasistatic_element_cache(wrapper::BackwardEulerStageFunctionWrapper, materials::Tuple, domains::Vector, qr::QuadratureRule, sdh::SubDofHandler, cv::CellValues)
+    idx = 1
+    @unroll for material ∈ materials
+        if first(domains[idx]) ∈ sdh.cellset
+            return QuasiStaticElementCache(
+                material,
+                setup_coefficient_cache(material, qr, sdh),
+                setup_internal_cache(wrapper, qr, sdh),
+                cv
+            )
+        end
+        idx += 1
+    end
+    error("MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.")
+end
+function setup_quasistatic_element_cache(wrapper::BackwardEulerStageFunctionWrapper, material_model::AbstractMaterialModel, qr::QuadratureRule, sdh::SubDofHandler, cv::CellValues)
+    return QuasiStaticElementCache(
+        material_model,
+        setup_coefficient_cache(material_model, qr, sdh),
+        setup_internal_cache(wrapper, qr, sdh),
+        cv
+    )
+end
 function setup_element_cache(wrapper::AbstractTimeDiscretizationAnnotation{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo     = geometric_subdomain_interpolation(sdh)
     cv         = CellValues(qr, ip, ip_geo)
-    return QuasiStaticElementCache(
-        wrapper.f.material_model,
-        setup_coefficient_cache(wrapper.f.material_model, qr, sdh),
-        setup_internal_cache(wrapper, qr, sdh),
-        cv
-    )
+    return setup_quasistatic_element_cache(wrapper, wrapper.f.material_model, qr, sdh, cv)
 end
 
 # update_stage!(stage::BackwardEulerStageCache, kΔt) = update_stage!(stage, stage.nlsolver.local_solver_cache.op, kΔt)
@@ -313,13 +334,48 @@ function perform_backward_euler_step!(f::QuasiStaticFunction, cache::BackwardEul
     return true
 end
 
-function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_model::AbstractMaterialModel, internal_cache::Union{EmptyInternalCache, TrivialCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
+    return internal_cache
+end
+function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_model::MultiMaterialModel, internal_cache::Union{RateIndependentCondensationMaterialStateCache, RateDependentCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
+    setup_internal_cache_backward_euler_unwrap_multi(wrapper, material_model.materials, material_model.domains, internal_cache, qr, sdh)
+end
+@unroll function setup_internal_cache_backward_euler_unwrap_multi(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_models::Tuple, domains::Vector, internal_cache::Union{RateIndependentCondensationMaterialStateCache, RateDependentCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
+    idx = 1
+    @unroll for material_model ∈ material_models
+        if first(domains[idx]) ∈ sdh.cellset
+            n_ivs_per_qp = local_function_size(material_model)
+            return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
+                # Pass the model
+                wrapper.f,
+                # And some cache to speed up evaluation of f and associated coefficients
+                internal_cache,
+                # Pass global solution info
+                wrapper.u,
+                wrapper.uprev,
+                # Current time step length
+                wrapper.Δt,
+                # Local nonlinear solver cache
+                wrapper.local_solver_cache,
+                # This one holds information about the local dofs inside u and uprev
+                wrapper.lvh,
+                # Buffer for Q and Qprev
+                zeros(n_ivs_per_qp),
+                zeros(n_ivs_per_qp),
+            )
+        end
+        idx += 1
+    end
+    error("MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.")
+
+end
+function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_model::AbstractMaterialModel internal_cache::Union{RateIndependentCondensationMaterialStateCache, RateDependentCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
     n_ivs_per_qp = local_function_size(wrapper.f.material_model)
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         # Pass the model
         wrapper.f,
         # And some cache to speed up evaluation of f and associated coefficients
-        setup_internal_cache(wrapper.f.material_model, qr, sdh),
+        internal_cache,
         # Pass global solution info
         wrapper.u,
         wrapper.uprev,
@@ -333,6 +389,9 @@ function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:Quasi
         zeros(n_ivs_per_qp),
         zeros(n_ivs_per_qp),
     )
+end
+function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
+    return setup_internal_cache_backward_euler_unwrap(wrapper, setup_internal_cache(wrapper.f.material_model, qr, sdh), qr, sdh)
 end
 
 function setup_boundary_cache(wrapper::BackwardEulerStageFunctionWrapper, fqr, sdh)

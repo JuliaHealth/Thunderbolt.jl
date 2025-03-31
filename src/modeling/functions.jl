@@ -105,10 +105,12 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
         qr = getquadraturerule(f.integrator.qrc, sdh)
         # ivsize_per_qp = sum(sdh.field_n_components; init=0) # FIXME broken...
         ivsize_per_qp = sum(Ferrite.n_components.(sdh.field_interpolations); init=0)
+        ivsize_per_qp == 0 && continue
+        material_model = get_material_model(f, sdh)
         for cell in CellIterator(sdh)
             for qp in QuadratureIterator(qr)
                 q = @view uq[offset:(offset+ivsize_per_qp-1)]
-                default_initial_state!(q, f.integrator.volume_model.material_model)
+                default_initial_state!(q, material_model)
                 offset += ivsize_per_qp
             end
         end

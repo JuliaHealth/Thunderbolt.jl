@@ -85,8 +85,14 @@ end
 
 # Smoke tests that things do not crash and that things do at least something
 @testset "Contracting cuboid" begin
-    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    # mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
     # mesh = generate_mesh(Hexahedron, (1, 1, 1), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+
+    grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    addcellset!(grid, "", x->true) # FIXME
+    addcellset!(grid, "inner", x->x[3] ≤ 0.1)
+    addcellset!(grid, "outer", x->x[3] ≥ 0.1)
+    mesh = to_mesh(grid)
 
     microstructure_model = OrthotropicMicrostructureModel(
         ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
@@ -113,6 +119,27 @@ end
     # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.stage.nlsolver.global_solver_cache.op.dh.grid) do vtk
     #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
     # end
+
+    mmat = Thunderbolt.MultiMaterialModel(
+        (
+            ActiveStressModel(
+                HolzapfelOgden2009Model(),
+                SimpleActiveStress(),
+                Thunderbolt.CaDrivenInternalSarcomereModel(
+                    Thunderbolt.RDQ20MFModel(),
+                    TestCalciumHatField(),
+                ),
+                microstructure_model
+            ),
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                microstructure_model,
+            ),
+        ),
+        ["inner", "outer"],
+        mesh
+    )
+    i = test_solve_contractile_cuboid(mesh, mmat, timestepper)
 
 
     timestepper = HomotopyPathSolver(newton)

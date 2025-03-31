@@ -159,4 +159,30 @@ u₅ = test_solve_passive_structure(
 
 @test u₅ ≈ u₁
 
+u₆ = test_solve_passive_structure(
+    mesh,
+    Thunderbolt.MultiMaterialModel(
+        (
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ConstantCoefficient(OrthotropicMicrostructure(
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                )),
+            ),
+        ),
+        ["inner", "outer"],
+        mesh
+    )
+)
+
 end
