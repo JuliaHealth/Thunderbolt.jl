@@ -64,8 +64,8 @@ function assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, geometry_
         ∇u = function_gradient(cv, qp, uₑ)
         F = one(∇u) + ∇u
 
-        # Compute stress and tangent
-        P, ∂P∂F = material_routine(constitutive_model, F, coefficient_cache, internal_cache, geometry_cache, qp, time)
+        # Compute "tangent only"
+        _, ∂P∂F = material_routine(constitutive_model, F, coefficient_cache, internal_cache, geometry_cache, qp, time)
 
         # Loop over test functions
         for i in 1:ndofs
@@ -97,8 +97,8 @@ function assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, ge
         ∇u = function_gradient(cv, qp, uₑ)
         F = one(∇u) + ∇u
 
-        # Compute stress and tangent
-        P, ∂P∂F = material_routine(constitutive_model, F, coefficient_cache, internal_cache, geometry_cache, qp, time)
+        # Compute stress only
+        P = reduced_material_routine(constitutive_model, F, coefficient_cache, internal_cache, geometry_cache, qp, time)
 
         # Loop over test functions
         for i in 1:ndofs
@@ -106,13 +106,6 @@ function assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, ge
 
             # Add contribution to the residual from this test function
             residualₑ[i] += ∇δui ⊡ P * dΩ
-
-            # ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
-            # for j in 1:ndofs
-            #     ∇δuj = shape_gradient(cv, qp, j)
-            #     # Add contribution to the tangent
-            #     Kₑ[i, j] += ( ∇δui∂P∂F ⊡ ∇δuj ) * dΩ
-            # end
         end
     end
 end
