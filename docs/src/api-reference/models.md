@@ -12,7 +12,6 @@ FieldCoefficient
 AnalyticalCoefficient
 SpectralTensorCoefficient
 SpatiallyHomogeneousDataField
-CoordinateSystemCoefficient
 evaluate_coefficient
 ```
 
@@ -21,8 +20,8 @@ evaluate_coefficient
 ```@docs
 AnisotropicPlanarMicrostructureModel
 OrthotropicMicrostructureModel
-create_simple_microstructure_model
-Thunderbolt.streeter_type_fsn
+create_microstructure_model
+ODB25LTMicrostructureParameters
 ```
 
 ## Boundary Conditions
@@ -38,7 +37,7 @@ PressureFieldBC
 ## Solid Mechanics
 
 ```@docs
-StructuralModel
+QuasiStaticModel
 ExtendedHillModel
 GeneralizedHillModel
 ActiveStressModel

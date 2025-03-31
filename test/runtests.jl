@@ -29,16 +29,16 @@ function generate_mixed_dimensional_grid_3D()
     nodes = Node.([
         Vec((-1.0, -1.0, -1.0)),
         Vec((1.0, -1.0, -1.0)),
-        Vec((1.0, 1.0, -1.0)),
         Vec((-1.0, 1.0, -1.0)),
+        Vec((1.0, 1.0, -1.0)),
         Vec((-1.0, -1.0, 1.0)),
         Vec((1.0, -1.0, 1.0)),
-        Vec((1.0, 1.0, 1.0)),
         Vec((-1.0, 1.0, 1.0)),
+        Vec((1.0, 1.0, 1.0)),
         Vec((0.0,0.0,0.0)),
     ])
     elements = [
-        Hexahedron((1,2,3,4,5,6,7,8)),
+        Hexahedron((1,2,4,3,5,6,8,7)),
         Line((8,9)),
     ]
     cellsets = Dict((
@@ -46,12 +46,12 @@ function generate_mixed_dimensional_grid_3D()
         "Purkinje" => OrderedSet([2])
     ))
     facetsets = Dict((
-        "left" => OrderedSet([FacetIndex(1,1)]),
-        "right" => OrderedSet([FacetIndex(1,2)]),
-        "top" => OrderedSet([FacetIndex(1,3)]),
-        "bottom" => OrderedSet([FacetIndex(1,4)]),
-        "front" => OrderedSet([FacetIndex(1,5)]),
-        "back" => OrderedSet([FacetIndex(1,6)]),
+        "bottom" => OrderedSet([FacetIndex(1,1)]),
+        "front" => OrderedSet([FacetIndex(1,2)]),
+        "right" => OrderedSet([FacetIndex(1,3)]),
+        "back" => OrderedSet([FacetIndex(1,4)]),
+        "left" => OrderedSet([FacetIndex(1,5)]),
+        "top" => OrderedSet([FacetIndex(1,6)]),
     ))
     return Grid(elements, nodes; cellsets, facetsets)
 end
@@ -71,7 +71,7 @@ include("test_mesh.jl")
 include("test_coefficients.jl")
 include("test_microstructures.jl")
 
-include("integration/test_passive_structure.jl") # TODO make this a tutorial
+include("integration/test_passive_structure.jl")
 include("integration/test_solid_mechanics.jl")
 include("integration/test_electrophysiology.jl")
 include("integration/test_ecg.jl")

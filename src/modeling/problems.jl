@@ -123,7 +123,7 @@ struct QuasiStaticProblem{fType <: AbstractQuasiStaticFunction, uType, tType, pT
     p::pType
 end
 
-QuasiStaticProblem(f::AbstractQuasiStaticFunction, tspan::Tuple{<:Real, <:Real}) = QuasiStaticProblem(f, zeros(ndofs(f.dh)), tspan, DiffEqBase.NullParameters())
+QuasiStaticProblem(f::AbstractQuasiStaticFunction, tspan::Tuple{<:Real, <:Real}) = QuasiStaticProblem(f, zeros(solution_size(f)), tspan, DiffEqBase.NullParameters())
 QuasiStaticProblem(f::AbstractQuasiStaticFunction, u0::AbstractVector, tspan::Tuple{<:Real, <:Real}) = QuasiStaticProblem(f, u0, tspan, DiffEqBase.NullParameters())
 
 

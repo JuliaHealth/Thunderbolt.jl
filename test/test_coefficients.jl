@@ -58,8 +58,8 @@
         @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
     end
 
-    @testset "Cartesian CoordinateSystemCoefficient" begin
-        ccsc = CoordinateSystemCoefficient(CartesianCoordinateSystem(grid))
+    @testset "Cartesian Coordinate System" begin
+        ccsc = CartesianCoordinateSystem(grid)
         coeff_cache = Thunderbolt.setup_coefficient_cache(ccsc, qr, sdh)
         reinit!(cell_cache, 1)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ Vec((-0.5,))
@@ -78,7 +78,7 @@
     @testset "AnalyticalCoefficient" begin
         ac = AnalyticalCoefficient(
             (x,t) -> norm(x)+t,
-            CoordinateSystemCoefficient(CartesianCoordinateSystem(grid))
+            CartesianCoordinateSystem(grid),
         )
         coeff_cache = Thunderbolt.setup_coefficient_cache(ac, qr, sdh)
         reinit!(cell_cache, 1)

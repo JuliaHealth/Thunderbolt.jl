@@ -39,9 +39,11 @@
         op = Thunderbolt.setup_assembled_operator(
             Thunderbolt.BilinearDiffusionIntegrator(
                 ConstantCoefficient(κ),
+                QuadratureRuleCollection(2),
+                :φₘ,
             ),
             Thunderbolt.SparseMatrixCSC,
-            heart_fun.dh, :φₘ, QuadratureRuleCollection(1), 
+            heart_fun.dh,
         )
         Thunderbolt.update_operator!(op, 0.0) # trigger assembly
 

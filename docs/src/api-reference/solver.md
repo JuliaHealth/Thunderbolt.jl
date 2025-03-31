@@ -14,6 +14,7 @@ SchurComplementLinearSolver
 
 ```@docs
 NewtonRaphsonSolver
+MultiLevelNewtonRaphsonSolver
 ```
 
 

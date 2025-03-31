@@ -21,7 +21,7 @@ include("solver/operator_splitting.jl")
 solution_size(f::GenericSplitFunction) = OS.function_size(f)
 
 @reexport using Ferrite
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
+import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
 import Ferrite: vertices, edges, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
@@ -38,6 +38,8 @@ import LinearSolve
 
 import Base: *, +, -
 
+import ForwardDiff
+
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
         compose, ODESystem, Differential
@@ -52,6 +54,7 @@ include("utils.jl")
 
 include("mesh/meshes.jl")
 
+include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
@@ -100,7 +103,6 @@ export
     FieldCoefficient,
     AnalyticalCoefficient,
     FieldCoefficient,
-    CoordinateSystemCoefficient,
     SpectralTensorCoefficient,
     SpatiallyHomogeneousDataField,
     evaluate_coefficient,
@@ -124,14 +126,15 @@ export
     # Generic models
     ODEProblem,
     TransientDiffusionModel,
-    TransientDiffusionFunction,
+    AffineODEFunction,
+    default_initial_condition!,
     # Local API
     PointwiseODEProblem,
     PointwiseODEFunction,
     # Mechanics
-    StructuralModel,
+    QuasiStaticModel,
     QuasiStaticProblem,
-    QuasiStaticNonlinearFunction,
+    QuasiStaticFunction,
     PK1Model,
     PrestressedMechanicalModel,
     # Passive material models
@@ -151,9 +154,10 @@ export
     LinearSpringModel,
     SimpleActiveSpring,
     # Contraction model
+    CaDrivenInternalSarcomereModel,
     ConstantStretchModel,
     PelceSunLangeveld1995Model,
-    SteadyStateSarcomereModel,
+    RDQ20MFModel,
     # Active model
     ActiveMaterialAdapter,
     GMKActiveDeformationGradientModel,
@@ -188,10 +192,12 @@ export
     OrthotropicMicrostructure,
     TransverselyIsotropicMicrostructureModel,
     TransverselyIsotropicMicrostructure,
-    create_simple_microstructure_model,
+    ODB25LTMicrostructureParameters,
+    create_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,
     LVCoordinate,
+    BiVCoordinateSystem,
     BiVCoordinate,
     CartesianCoordinateSystem,
     compute_lv_coordinate_system,
@@ -207,6 +213,7 @@ export
     # Solver
     SchurComplementLinearSolver,
     NewtonRaphsonSolver,
+    MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,
     ForwardEulerSolver,
     BackwardEulerSolver,
