@@ -163,7 +163,7 @@ u0: 12-element Vector{Float64}:
  300.0
    0.0
    0.0
-   0.0</code></pre><div class="admonition is-todo"><header class="admonition-header">Todo</header><div class="admonition-body"><p>Once Thudnerbolt is compatible with OrdinaryDiffEq we should remove the namespacing here.</p></div></div><pre><code class="language-julia hljs">@time circ_sol_init = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">  0.050428 seconds (3.82 k allocations: 156.391 KiB)</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>We can visualize the last pressure-volume loop as follows with GLMakie</p><pre><code class="language-julia hljs">using GLMakie
+   0.0</code></pre><div class="admonition is-todo"><header class="admonition-header">Todo</header><div class="admonition-body"><p>Once Thudnerbolt is compatible with OrdinaryDiffEq we should remove the namespacing here.</p></div></div><pre><code class="language-julia hljs">@time circ_sol_init = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">  0.050178 seconds (3.82 k allocations: 156.391 KiB)</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>We can visualize the last pressure-volume loop as follows with GLMakie</p><pre><code class="language-julia hljs">using GLMakie
 f = Figure()
 axs = [
     Axis(f[1, 1], title=&quot;LV&quot;),
