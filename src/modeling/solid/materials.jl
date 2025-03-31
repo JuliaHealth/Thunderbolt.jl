@@ -251,9 +251,9 @@ function _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_t
 end
 
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, geometry_cache, qp, time) where dim
+    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     # Early out if any of the previous local solves failed
     if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-        Qflat, _ = _query_local_state(state_cache, geometry_cache, qp)
         return Qflat, zero(Tensor{4,dim,Float64,4^dim})
     end
 
@@ -310,11 +310,9 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
         return Q, J
     end
 
-    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     Q, J = solve_internal_timestep(material_model, state_cache, λ, dλdt, Qflat, Qprevflat)
     # Abort if local solve failed
     if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-        Qflat, _ = _query_local_state(state_cache, geometry_cache, qp)
         return Qflat, zero(Tensor{4,dim,Float64,4^dim})
     end
     Qflat .= Q
@@ -336,13 +334,14 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
 end
 
 # Some debug materials
-Base.@kwdef struct LinearMaxwellMaterial{T} <: AbstractMaterialModel
+Base.@kwdef struct LinearMaxwellMaterial{T, sdim} <: AbstractMaterialModel
     E₀::T
     E₁::T
     μ::T
     η₁::T
     ν::T
 end
+LinearMaxwellMaterial(E₀::T, Eₗ::T, μ::T, η₁::T, ν::T) where T = LinearMaxwellMaterial{T,3}(E₀, Eₗ, μ, η₁, ν)
 
 local_function_size(model::QuasiStaticModel) = local_function_size(model.material_model)
 function local_function_size(model::AbstractMaterialModel)
@@ -452,7 +451,7 @@ function stress_function(material::LinearMaxwellMaterial, ε, coefficients, ε�
     return E₀ * ℂ ⊡ ε + E₁ * ℂ ⊡ (ε - εᵛ)
 end
 
-function stress_and_tangent(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ)
+function stress_and_tangent(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ::SymmetricTensor{2})
     ε = symmetric(F - one(F))
     ∂σ∂ε, σ = Tensors.gradient(ε->stress_function(material_model, ε, coefficients, εᵛ), ε, :all)
     return σ, ∂σ∂ε
@@ -463,9 +462,13 @@ function setup_coefficient_cache(m::LinearMaxwellMaterial, qr::QuadratureRule, s
 end
 
 function setup_internal_cache(material_model::LinearMaxwellMaterial, qr::QuadratureRule, sdh::SubDofHandler)
-    return nothing # FIXME what should we do here? :)
+    return EmptyRateIndependentCondensationMaterialStateCache()
 end
 
-function gather_internal_variable_infos(model::LinearMaxwellMaterial)
-    return InternalVariableInfo(:εᵛ, 6) # TODO dimension info
+function gather_internal_variable_infos(model::LinearMaxwellMaterial{T, sdim}) where {T, sdim}
+    if sdim == 3
+        return InternalVariableInfo(:εᵛ, 6)
+    else
+        return InternalVariableInfo(:εᵛ, 4)
+    end
 end

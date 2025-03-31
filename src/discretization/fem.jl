@@ -153,16 +153,44 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     return semidiscrete_ode
 end
 
+# Solid mechanics semidiscretize interface
+function semidiscretize_register_subdomains!(dh, lvh, model, material_model::AbstractMaterialModel, discretization::FiniteElementDiscretization)
+    sym = model.displacement_symbol
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    qrc = _get_quadrature_from_discretization(discretization, sym)
+    for name in discretization.subdomains
+        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+        add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
+    end
+end
+
+function semidiscretize_register_subdomains!(dh, lvh, model, material_models::MultiMaterialModel, discretization::FiniteElementDiscretization)
+    semidiscretize_register_subdomains_multi!(dh, lvh, model, material_models.materials, material_models.domains, material_models.domain_names, discretization)
+end
+@unroll function semidiscretize_register_subdomains_multi!(dh, lvh, model, material_models, domains, domain_names, discretization)
+    sym = model.displacement_symbol
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    qrc = _get_quadrature_from_discretization(discretization, sym)
+    idx = 1
+    @unroll for material_model in material_models
+        add_subdomain!(dh,  domain_names[idx], [ApproximationDescriptor(sym, ipc)])
+        add_subdomain!(lvh, domain_names[idx], gather_internal_variable_infos(material_model), qrc, dh)
+        idx += 1
+    end
+end
+
+
 function semidiscretize(model::QuasiStaticModel, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
     lvh = InternalVariableHandler(mesh)
-    for name in discretization.subdomains
-        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        add_subdomain!(lvh, name, gather_internal_variable_infos(model.material_model), qrc, dh)
-    end
+    # for name in discretization.subdomains
+    #     add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+    #     add_subdomain!(lvh, name, gather_internal_variable_infos(model.material_model), qrc, dh)
+    # end
+    semidiscretize_register_subdomains!(dh, lvh, model, model.material_model, discretization)
     close!(dh)
     close!(lvh)
 
