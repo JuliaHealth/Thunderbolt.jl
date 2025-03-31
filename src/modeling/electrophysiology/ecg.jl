@@ -172,6 +172,7 @@ function PoissonECGReconstructionCache(
     torso_diffusion_tensor_field, # κ - diffusion tensor description for heart and torso on torso grid
     electrode_positions::AbstractVector{<:Vec};
     ground               = Set([VertexIndex(1, 1)]),
+    torso_heart_domain   = nothing,
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
@@ -183,6 +184,7 @@ function PoissonECGReconstructionCache(
         torso_diffusion_tensor_field,
         electrode_positions;
         ground,
+        torso_heart_domain,
         linear_solver,
         solution_vector_type,
         system_matrix_type,
@@ -199,6 +201,7 @@ function PoissonECGReconstructionCache(
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
     linear_solver        = LinearSolve.KrylovJL_CG(),
+    torso_heart_domain   = nothing,
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
     extracellular_potential_symbol = :φₑ,
@@ -217,7 +220,8 @@ function PoissonECGReconstructionCache(
         torso_model,
         FiniteElementDiscretization(
             Dict(extracellular_potential_symbol => ipc),
-            [Dirichlet(extracellular_potential_symbol, ground, (x,t) -> 0.0)]
+            [Dirichlet(extracellular_potential_symbol, ground, (x,t) -> 0.0)],
+            subdomain_names(torso_grid),
         ),
         torso_grid
     )
@@ -229,7 +233,8 @@ function PoissonECGReconstructionCache(
         heart_dh,
         torso_dh,
         first(heart_dh.field_names),
-        first(torso_dh.field_names),
+        first(torso_dh.field_names);
+        subdomains_to = get_subdofhandler_indices_on_subdomains(torso_dh, torso_heart_domain)
     )
 
     heart_op = setup_assembled_operator(
@@ -360,6 +365,7 @@ function Geselowitz1989ECGLeadCache(
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
+    torso_heart_domain   = nothing,
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
@@ -373,6 +379,7 @@ function Geselowitz1989ECGLeadCache(
         ipc                 ,
         qrc                 ,
         ground              ,
+        torso_heart_domain  ,
         linear_solver       ,
         solution_vector_type,
         system_matrix_type  ,
@@ -388,6 +395,7 @@ function Geselowitz1989ECGLeadCache(
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
+    torso_heart_domain   = nothing,
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
@@ -401,6 +409,7 @@ function Geselowitz1989ECGLeadCache(
         ipc                 ,
         qrc                 ,
         ground              ,
+        torso_heart_domain  ,
         linear_solver       ,
         solution_vector_type,
         system_matrix_type  ,
@@ -416,6 +425,7 @@ function Geselowitz1989ECGLeadCache(
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
+    torso_heart_domain   = nothing,
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
@@ -438,19 +448,21 @@ function Geselowitz1989ECGLeadCache(
         lead_field_model,
         FiniteElementDiscretization(
             Dict(lead_field_sym => ipc),
-            [Dirichlet(lead_field_sym, ground, (x,t) -> 0.0)]
+            [Dirichlet(lead_field_sym, ground, (x,t) -> 0.0)],
+            subdomain_names(torso_grid),
         ),
         torso_grid
     )
 
-
+    heart_grid = get_grid(heart_fun.dh)
     sourcefun = semidiscretize(
         source_model,
         FiniteElementDiscretization(
             Dict(tmpsym => ipc),
-            Dirichlet[]
+            Dirichlet[],
+            subdomain_names(heart_grid),
         ),
-        get_grid(heart_fun.dh)
+        heart_grid,
     )
 
     ϕₘ_op = setup_assembled_operator(
@@ -482,7 +494,8 @@ function Geselowitz1989ECGLeadCache(
         heart_dh,
         lead_field_dh,
         first(heart_dh.field_names),
-        first(lead_field_dh.field_names),
+        first(lead_field_dh.field_names);
+        subdomains_to = get_subdofhandler_indices_on_subdomains(lead_field_dh, torso_heart_domain),
     )
 
     Geselowitz1989ECGLeadCache(

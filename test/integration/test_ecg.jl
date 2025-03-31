@@ -3,7 +3,7 @@
         size = 4.
         signal_strength = 0.04
         nel_heart = (18, 18, 16)
-        nel_torso = (3, 2, 4) .* Int(size) .* 2
+        nel_torso = (5, 3, 5) .* Int(size) .* 2
         ground_vertex = Vec(0.0, 0.0, 0.0)
         electrodes = [
             ground_vertex,
@@ -17,7 +17,7 @@
         electrode_pairs = [[i,1] for i in 2:length(electrodes)]
 
         heart_grid = generate_mesh(geo, nel_heart)
-        Ferrite.transform_coordinates!(heart_grid, x->Vec{3}(sign.(x) .* x.^2))
+        # Ferrite.transform_coordinates!(heart_grid, x->Vec{3}(sign.(x) .* x.^2))
 
         κ  = SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0))
         κᵢ = SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0))
@@ -47,12 +47,16 @@
         )
         Thunderbolt.update_operator!(op, 0.0) # trigger assembly
 
-        torso_grid = generate_mesh(geo, nel_torso, Vec((-size,-size,-size)), Vec((size,size,size)))
+        torso_grid_ = generate_grid(geo, nel_torso, Vec((-size,-size,-size)), Vec((size,size,size)))
+        addcellset!(torso_grid_, "heart", x->norm(x,1) ≤ 1.0)
+        addcellset!(torso_grid_, "surrounding-tissue", x->norm(x,1) ≥ 1.0)
+        torso_grid = to_mesh(torso_grid_)
         torso_fun = semidiscretize(
             heart_model,
             FiniteElementDiscretization(
                 Dict(:φₘ => LagrangeCollection{1}()),
-                Dirichlet[]
+                Dirichlet[],
+                ["heart", "surrounding-tissue"]
             ),
             torso_grid
         )
