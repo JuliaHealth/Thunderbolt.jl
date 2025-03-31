@@ -117,7 +117,7 @@ function assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, ge
     end
 end
 
-struct MultiMaterialModel{MaterialTuple}
+struct MultiMaterialModel{MaterialTuple} <: AbstractMaterialModel
     materials::MaterialTuple
     domains::Vector{OrderedSet{Int}} # These must match the subdofhandler sets and hence be disjoint
     domain_names::Vector{String}     # These must match the subdofhandler sets and hence be disjoint
@@ -174,17 +174,3 @@ end
 function setup_internal_cache(model::MultiMaterialModel, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_internal_cache_multi(model.materials, model.domains, qr, sdh)
 end
-
-@unroll function __get_material_model_multi(materials, domains, sdh)
-    idx = 1
-    @unroll for material ∈ materials
-        if first(domains[idx]) ∈ sdh.cellset
-            return material
-        end
-        idx += 1
-    end
-    error("MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.")
-end
-__get_material_model(model::MultiMaterialModel, sdh) = __get_material_model_multi(model.materials, model.domains, sdh)
-__get_material_model(model::AbstractMaterialModel, sdh) = model
-get_material_model(f::QuasiStaticFunction, sdh) = __get_material_model(f.integrator.volume_model.material_model, sdh)

@@ -27,6 +27,12 @@ mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, NewtonType <: N
     iter::Int
 end
 
+function Base.show(io::IO, cache::NewtonRaphsonSolverCache)
+    println(io, "NewtonRaphsonSolverCache:")
+    Base.show(io, cache.parameters)
+    Base.show(io, cache.op)
+end
+
 function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphsonSolver{T}) where {T}
     @unpack inner_solver = solver
     op = setup_operator(f, solver)

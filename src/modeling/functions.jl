@@ -93,8 +93,7 @@ end
 
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
 function local_function_size(f::QuasiStaticFunction)
-    length(f.lvh.dh.subdofhandlers) == 0 && return 0
-    return sum(Ferrite.n_components.(f.lvh.dh.subdofhandlers[1].field_interpolations); init=0)
+    error("Local function size of QuasiStaticFunction can vary!")
 end
 function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     fill!(u, 0.0)
@@ -119,3 +118,17 @@ end
 
 gather_internal_variable_infos(model::QuasiStaticModel) = gather_internal_variable_infos(model.material_model)
 gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]
+
+@unroll function __get_material_model_multi(materials, domains, sdh)
+    idx = 1
+    @unroll for material ∈ materials
+        if first(domains[idx]) ∈ sdh.cellset
+            return material
+        end
+        idx += 1
+    end
+    error("MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.")
+end
+__get_material_model(model::MultiMaterialModel, sdh) = __get_material_model_multi(model.materials, model.domains, sdh)
+__get_material_model(model::AbstractMaterialModel, sdh) = model
+get_material_model(f::QuasiStaticFunction, sdh) = __get_material_model(f.integrator.volume_model.material_model, sdh)

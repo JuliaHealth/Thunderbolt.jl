@@ -161,6 +161,12 @@ function AssembledNonlinearOperator(integrator::NonlinearIntegrator, dh::Abstrac
     )
 end
 
+function Base.show(io::IO, cache::AssembledNonlinearOperator)
+    println(io, "AssembledNonlinearOperator:")
+    Base.show(io, typeof(cache.integrator))
+    Base.show(io, MIME"text/plain"(), cache.dh)
+end
+
 getJ(op::AssembledNonlinearOperator) = op.J
 
 function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, time)

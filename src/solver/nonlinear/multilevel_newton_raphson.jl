@@ -12,6 +12,30 @@ Base.@kwdef mutable struct GenericLocalNonlinearSolverCache{JacobianType, Residu
     retcode::SciMLBase.ReturnCode.T = SciMLBase.ReturnCode.Default
 end
 
+function Base.show(io::IO, cache::GenericLocalNonlinearSolverCache)
+    println(io, "NewtonRaphsonSolverCache:")
+    Base.show(io, cache.params)
+    println(io, "J=$(typeof(cache.J)) with size $(size(cache.J))")
+    println(io, "R=$(typeof(cache.residual)) with size $(size(cache.residual))")
+    println(io, "C=$(typeof(cache.rhs_corrector)) with size $(size(cache.rhs_corrector))")
+    println(io, "outer_tol=$(cache.outer_tol)")
+    println(io, "status=$(cache.retcode)")
+end
+
+function check_local_solve_covergence(local_solver_cache::GenericLocalNonlinearSolverCache)
+    return local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+end
+function check_local_solve_covergence(local_solver_cache::Tuple)
+    return any(check_local_solve_covergence.(local_solver_cache))
+end
+
+function set_local_solver_tol(local_solver_cache::GenericLocalNonlinearSolverCache, tol)
+    local_solver_cache.outer_tol = tol
+end
+function set_local_solver_tol(local_solver_cache::Tuple, tol)
+    set_local_solver_tol.(local_solver_cache, tol)
+end
+
 """
     MultilevelNewtonRaphsonSolver{T}
 
@@ -29,6 +53,18 @@ struct MultiLevelNewtonRaphsonSolverCache{gCacheType, lCacheType} <: AbstractNon
     local_solver_cache::lCacheType
 end
 
+function Base.show(io::IO, cache::MultiLevelNewtonRaphsonSolverCache)
+    println(io, "MultiLevelNewtonRaphsonSolverCache:")
+    Base.show(io, cache.global_solver_cache)
+    if cache.local_solver_cache isa Tuple
+        for local_solver_cache in cache.local_solver_cache
+            Base.show(io, local_solver_cache)
+        end
+    else
+        Base.show(io, cache.local_solver_cache)
+    end
+end
+
 function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::MultiLevelNewtonRaphsonSolverCache, t)
     cache = mlcache.global_solver_cache
 
@@ -39,13 +75,13 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
     residualnormprev = 0.0
     Θ1prev = length(Θks) > 0 ? first(Θks) : 0.0
     resize!(Θks, 0)
-    mlcache.local_solver_cache.outer_tol = Inf
+    set_local_solver_tol(mlcache.local_solver_cache, Inf)
     while true
         cache.iter += 1
         residual .= 0.0
         @timeit_debug "update operator" update_linearization!(op, residual, u, t)
         # Check if local solve failed
-        if mlcache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+        if check_local_solve_covergence(mlcache.local_solver_cache)
             @debug "Some local newton did not converge. Aborting. ||r|| = $residualnorm" _group=:nlsolve
             return false
         end
@@ -53,7 +89,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
         linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
 
         residualnorm = residual_norm(cache, f)
-        mlcache.local_solver_cache.outer_tol = residualnorm
+        set_local_solver_tol(mlcache.local_solver_cache, residualnorm^2)
         if residualnorm < cache.parameters.tol && cache.iter > 1 # Do at least two iterations to get a sane convergence estimate
             break
         elseif cache.iter > cache.parameters.max_iter

@@ -92,6 +92,8 @@ end
     addcellset!(grid, "", x->true) # FIXME
     addcellset!(grid, "inner", x->x[3] ≤ 0.1)
     addcellset!(grid, "outer", x->x[3] ≥ 0.1)
+    addcellset!(grid, "front", x->x[1] ≤ 0.1)
+    addcellset!(grid, "back",  x->x[1] ≥ 0.1)
     mesh = to_mesh(grid)
 
     microstructure_model = OrthotropicMicrostructureModel(
@@ -104,7 +106,6 @@ end
     timestepper = BackwardEulerSolver(;
         inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
             newton=newton,
-            # local_newton=NewtonRaphsonSolver(),
         )
     )
     i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
@@ -123,8 +124,8 @@ end
     mmat = Thunderbolt.MultiMaterialModel(
         (
             ActiveStressModel(
-                HolzapfelOgden2009Model(),
-                SimpleActiveStress(),
+                Guccione1991PassiveModel(),
+                SimpleActiveStress(;Tmax=220e3),
                 Thunderbolt.CaDrivenInternalSarcomereModel(
                     Thunderbolt.RDQ20MFModel(),
                     TestCalciumHatField(),
@@ -132,15 +133,38 @@ end
                 microstructure_model
             ),
             PK1Model(
-                HolzapfelOgden2009Model(),
+                Guccione1991PassiveModel(),
                 microstructure_model,
             ),
         ),
-        ["inner", "outer"],
+        ["front", "back"],
         mesh
     )
     i = test_solve_contractile_cuboid(mesh, mmat, timestepper)
+    VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.stage.nlsolver.global_solver_cache.op.dh.grid) do vtk
+        write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+    end
 
+    mmat2 = Thunderbolt.MultiMaterialModel(
+        (
+            PK1Model(
+                Guccione1991PassiveModel(),
+                microstructure_model,
+            ),
+            ActiveStressModel(
+                Guccione1991PassiveModel(),
+                SimpleActiveStress(;Tmax=220e3),
+                Thunderbolt.CaDrivenInternalSarcomereModel(
+                    Thunderbolt.RDQ20MFModel(),
+                    TestCalciumHatField(),
+                ),
+                microstructure_model
+            ),
+        ),
+        ["back", "front"],
+        mesh
+    )
+    i = test_solve_contractile_cuboid(mesh, mmat2, timestepper)
 
     timestepper = HomotopyPathSolver(newton)
     test_solve_contractile_cuboid(mesh, ExtendedHillModel(
@@ -174,9 +198,9 @@ end
         ),
         microstructure_model
     ), timestepper)
-    VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
-        write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
-    end
+    # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
+    #     write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
+    # end
 
     mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 

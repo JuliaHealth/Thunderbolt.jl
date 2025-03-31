@@ -180,16 +180,12 @@ end
 function setup_solver_cache(wrapper::BackwardEulerStageAnnotation, solver::AbstractNonlinearSolver)
     _setup_solver_cache(wrapper, wrapper.f, solver)
 end
-@inline function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::QuasiStaticFunction, solver::MultiLevelNewtonRaphsonSolver)
-    @unpack integrator, dh = f
-    @unpack volume_model, face_model = integrator
-    @unpack local_solver, newton = solver
-
-    # TODO add an abstraction layer to autoamte the steps below
-    singleQsize = local_function_size(f)
-    local_solver_cache = GenericLocalNonlinearSolverCache(
+function _setup_local_solver_cache(local_solver::GenericLocalNonlinearSolver, material_model::AbstractMaterialModel)
+    singleQsize = local_function_size(material_model)
+    @debug "Setting up local nonlinear solver with size(Q)=$(singleQsize) for material $(material_model)" _group=:nlsolve
+    return GenericLocalNonlinearSolverCache(
         # Solver parameters
-        solver.local_solver,
+        local_solver,
         # Buffers
         zeros(singleQsize, singleQsize),
         zeros(singleQsize),
@@ -199,6 +195,17 @@ end
         # Local convergence 
         SciMLBase.ReturnCode.Default,
     )
+end
+function _setup_local_solver_cache(local_solver::GenericLocalNonlinearSolver, material_models::MultiMaterialModel)
+    return map(material_model -> _setup_local_solver_cache(local_solver, material_model), material_models.materials)
+end
+@inline function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::QuasiStaticFunction, solver::MultiLevelNewtonRaphsonSolver)
+    @unpack integrator, dh = f
+    @unpack volume_model, face_model = integrator
+    @unpack local_solver, newton = solver
+
+    # TODO add an abstraction layer to autoamte the steps below
+    local_solver_cache = _setup_local_solver_cache(solver.local_solver, f.integrator.volume_model.material_model)
 
     # Extract condensable parts
     Q     = @view wrapper.u[(ndofs(dh)+1):end]
@@ -237,10 +244,13 @@ end
 
     newton_cache = NewtonRaphsonSolverCache(op, residual, newton, inner_cache, T[], 0)
 
-    return MultiLevelNewtonRaphsonSolverCache(
+    cache = MultiLevelNewtonRaphsonSolverCache(
         newton_cache, # setup_solver_cache(G, solver.newton),
         local_solver_cache, #setup_solver_cache(L, solver.local_newton), # FIXME pass
     )
+    @debug "Setting up Multi-Level Newton-Raphson solver." _group=:nlsolve
+    @debug cache _group=:nlsolve
+    return cache
 end
 
 # TODO Refactor the setup into generic parts and use multiple dispatch for the specifics.
@@ -347,7 +357,7 @@ end
             n_ivs_per_qp = local_function_size(material_model)
             return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
                 # Pass the model
-                wrapper.f,
+                material_model,
                 # And some cache to speed up evaluation of f and associated coefficients
                 internal_cache,
                 # Pass global solution info
@@ -356,7 +366,7 @@ end
                 # Current time step length
                 wrapper.Δt,
                 # Local nonlinear solver cache
-                wrapper.local_solver_cache,
+                wrapper.local_solver_cache[idx],
                 # This one holds information about the local dofs inside u and uprev
                 wrapper.lvh,
                 # Buffer for Q and Qprev
@@ -367,13 +377,12 @@ end
         idx += 1
     end
     error("MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.")
-
 end
-function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_model::AbstractMaterialModel internal_cache::Union{RateIndependentCondensationMaterialStateCache, RateDependentCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
-    n_ivs_per_qp = local_function_size(wrapper.f.material_model)
+function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_model::AbstractMaterialModel, internal_cache::Union{RateIndependentCondensationMaterialStateCache, RateDependentCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
+    n_ivs_per_qp = local_function_size(material_model)
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         # Pass the model
-        wrapper.f,
+        material_model,
         # And some cache to speed up evaluation of f and associated coefficients
         internal_cache,
         # Pass global solution info
@@ -391,7 +400,7 @@ function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageF
     )
 end
 function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
-    return setup_internal_cache_backward_euler_unwrap(wrapper, setup_internal_cache(wrapper.f.material_model, qr, sdh), qr, sdh)
+    return setup_internal_cache_backward_euler_unwrap(wrapper, wrapper.f.material_model, setup_internal_cache(wrapper.f.material_model, qr, sdh), qr, sdh)
 end
 
 function setup_boundary_cache(wrapper::BackwardEulerStageFunctionWrapper, fqr, sdh)
