@@ -202,12 +202,11 @@ mesh = generate_ideal_lv_mesh(8,2,5;
 mesh = Thunderbolt.hexahedralize(mesh)
 
 coordinate_system = compute_lv_coordinate_system(mesh)
-microstructure    = create_simple_microstructure_model(
+microstructure    = create_microstructure_model(
     coordinate_system,
     LagrangeCollection{1}()^3,
-    endo_helix_angle = deg2rad(60.0),
-    epi_helix_angle = deg2rad(-60.0),
-)
+    ODB25LTMicrostructureParameters(),
+);
 passive_material_model = Guccione1991PassiveModel()
 active_material_model  = Guccione1993ActiveModel()
 function calcium_profile_function(x::LVCoordinate,t)

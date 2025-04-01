@@ -43,11 +43,10 @@ coordinate_system = compute_lv_coordinate_system(mesh);
 
 # In this coordinate system we will now create a microstructure with linearly varying helix angle in transmural direction.
 # The compute microstructure field will be generated on the function space of piecewise continuous first order Lagrange polynomials.
-microstructure = create_simple_microstructure_model(
+microstructure = create_microstructure_model(
     coordinate_system,
-    LagrangeCollection{1}()^3;
-    endo_helix_angle = deg2rad(60.0),
-    epi_helix_angle = deg2rad(-60.0),
+    LagrangeCollection{1}()^3,
+    ODB25LTMicrostructureParameters(),
 );
 
 # Now we describe the model which we want to use.
