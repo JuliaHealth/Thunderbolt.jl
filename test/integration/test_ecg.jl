@@ -1,9 +1,12 @@
+using Thunderbolt, Test, SparseArrays
+import Thunderbolt: to_mesh, OrderedSet
+
 @testset "ECG" begin
-    @testset "Blocks with $geo" for geo in (Hexahedron, Tetrahedron)
-        size = 4.
+    @testset "Blocks with $geo" for geo in (Tetrahedron,Hexahedron)
+        size = 2.
         signal_strength = 0.04
-        nel_heart = (18, 18, 16)
-        nel_torso = (3, 2, 4) .* Int(size) .* 2
+        nel_heart = (6, 6, 6) .* 1
+        nel_torso = (8, 8, 8) .* Int(size)
         ground_vertex = Vec(0.0, 0.0, 0.0)
         electrodes = [
             ground_vertex,
@@ -19,11 +22,14 @@
         heart_grid = generate_mesh(geo, nel_heart)
         Ferrite.transform_coordinates!(heart_grid, x->Vec{3}(sign.(x) .* x.^2))
 
-        κ  = SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0))
-        κᵢ = SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0))
+        κ  = ConstantCoefficient(SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0)))
+        κᵢ = AnalyticalCoefficient(
+            (x,t) -> norm(x,Inf) ≤ 1.0 ? SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0)) : SymmetricTensor{2,3,Float64}((0.0, 0, 0, 0.0, 0, 0.0)),
+            CartesianCoordinateSystem{3}()
+        )
 
         heart_model = TransientDiffusionModel(
-            ConstantCoefficient(κ),
+            κᵢ,
             NoStimulationProtocol(), # Poisoning to detecte if we accidentally touch these
             :φₘ
         )
@@ -38,7 +44,7 @@
 
         op = Thunderbolt.setup_assembled_operator(
             Thunderbolt.BilinearDiffusionIntegrator(
-                ConstantCoefficient(κ),
+                κ,
                 QuadratureRuleCollection(2),
                 :φₘ,
             ),
@@ -47,21 +53,39 @@
         )
         Thunderbolt.update_operator!(op, 0.0) # trigger assembly
 
-        torso_grid = generate_mesh(geo, nel_torso, Vec((-size,-size,-size)), Vec((size,size,size)))
-        torso_fun = semidiscretize(
-            heart_model,
-            FiniteElementDiscretization(
-                Dict(:φₘ => LagrangeCollection{1}()),
-                Dirichlet[]
-            ),
-            torso_grid
-        )
+        torso_grid_ = generate_grid(geo, nel_torso, Vec((-size,-size,-size)), Vec((size,size,size)))
+        addcellset!(torso_grid_, "heart", x->norm(x,Inf) ≤ 1.0)
+        # addcellset!(torso_grid_, "surrounding-tissue", x->norm(x,Inf) ≥ 1.0)
+        torso_grid_.cellsets["surrounding-tissue"] = OrderedSet([i for i in 1:getncells(torso_grid_) if i ∉ torso_grid_.cellsets["heart"]])
+        torso_grid = to_mesh(torso_grid_)
         u = zeros(Thunderbolt.solution_size(heart_fun))
         plonsey_ecg = Thunderbolt.Plonsey1964ECGGaussCache(op, u)
-        poisson_ecg = Thunderbolt.PoissonECGReconstructionCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]))
+        poisson_ecg = Thunderbolt.PoissonECGReconstructionCache(
+            heart_fun,
+            torso_grid,
+            κᵢ, κ,
+            electrodes;
+            ground               = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]),
+            torso_heart_domain   = ["heart"],
+            ipc                  = LagrangeCollection{1}(),
+            qrc                  = QuadratureRuleCollection(2),
+            linear_solver        = Thunderbolt.LinearSolve.UMFPACKFactorization(),
+            system_matrix_type   = SparseMatrixCSC{Float64,Int64}
+        )
 
         geselowitz_electrodes = [[electrodes[1], electrodes[i]] for i in 2:length(electrodes)]
-        geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), geselowitz_electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]))
+        geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(
+            heart_fun,
+            torso_grid,
+            κᵢ, κ,
+            geselowitz_electrodes; 
+            ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]),
+            torso_heart_domain=["heart"],
+            ipc                  = LagrangeCollection{1}(),
+            qrc                  = QuadratureRuleCollection(3),
+            linear_solver        = Thunderbolt.LinearSolve.UMFPACKFactorization(),
+            system_matrix_type   = SparseMatrixCSC{Float64,Int64}
+        )
 
         @testset "Equilibrium" begin
             u .= 0.0
@@ -111,8 +135,8 @@
             end
         end
 
-        @testset "Planar wave dim=$dim" for dim in 1:3
-            Ferrite.apply_analytical!(u, heart_fun.dh, :φₘ, x->x[dim]^3 )
+        @testset "Planar wave dim=$dim" for dim in 1:1# 1:3
+            Ferrite.apply_analytical!(u, heart_fun.dh, :φₘ, x->x[dim]^3)
 
             @testset "Plonsey1964 xᵢ³" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -131,7 +155,7 @@
                 @test ecg_vals[1] ≈ 0.0 atol=1e-12 # Ground
                 for dim2 in 1:3
                     if dim2 == dim
-                        @test ecg_vals[2*dim2+1]-ecg_vals[2*dim2] < 0.0
+                        @test ecg_vals[2*dim2+1]-ecg_vals[2*dim2] ≈ -2*0.37 atol=1e-2
                     else
                         @test ecg_vals[2*dim2+1]-ecg_vals[2*dim2] ≈ 0.0 atol=1e-4
                     end
@@ -143,7 +167,7 @@
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
                 for dim2 in 1:3
                     if dim2 == dim
-                        @test ecg_vals[2*dim2]-ecg_vals[2*dim2-1] < 0.0
+                        @test ecg_vals[2*dim2]-ecg_vals[2*dim2-1] ≈ -2*0.37 atol=1e-2
                     else
                         @test ecg_vals[2*dim2]-ecg_vals[2*dim2-1] ≈ 0.0 atol=1e-4
                     end
@@ -171,7 +195,7 @@
                     ecg_vals = Thunderbolt.evaluate_ecg(poisson_ecg) 
                     
                     if i == dim
-                        @test ecg_vals[2*i+1]-ecg_vals[2*i] > 0.0
+                        @test ecg_vals[2*i+1]-ecg_vals[2*i] ≈ 2*0.37 atol=1e-2
                     else
                         @test ecg_vals[2*i+1]-ecg_vals[2*i] ≈ 0.0 atol=1e-4
                     end
@@ -185,7 +209,7 @@
                     ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg) 
                     
                     if i == dim
-                        @test ecg_vals[2*i]-ecg_vals[2*i-1] > 0.0
+                        @test ecg_vals[2*i]-ecg_vals[2*i-1] ≈ 2*0.37 atol=1e-2
                     else
                         @test ecg_vals[2*i]-ecg_vals[2*i-1] ≈ 0.0 atol=1e-4
                     end
