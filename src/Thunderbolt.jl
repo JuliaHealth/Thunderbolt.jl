@@ -192,7 +192,8 @@ export
     OrthotropicMicrostructure,
     TransverselyIsotropicMicrostructureModel,
     TransverselyIsotropicMicrostructure,
-    create_simple_microstructure_model,
+    ODB25LTMicrostructureParameters,
+    create_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,
     LVCoordinate,

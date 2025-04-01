@@ -29,13 +29,15 @@
     end
 
     @testset "OrthotropicMicrostructureModel" begin
-        ms = create_simple_microstructure_model(ring_cs, ip_collection,
-            endo_helix_angle = deg2rad(0.0),
-            epi_helix_angle = deg2rad(0.0),
-            endo_transversal_angle = 0.0,
-            epi_transversal_angle = 0.0,
-            endo_rot_angle = deg2rad(0.0),
-            epi_rot_angle = deg2rad(0.0),
+        ms = create_microstructure_model(ring_cs, ip_collection, 
+            ODB25LTMicrostructureParameters(
+                αendo = 0.0,
+                αepi  = 0.0,
+                βendo = 0.0,
+                βepi  = 0.0,
+                γendo = 0.0,
+                γepi  = 0.0,
+            )
         )
         cache2 = Thunderbolt.setup_coefficient_cache(ms, qr, sdh)
         for cellcache in CellIterator(ring_grid)

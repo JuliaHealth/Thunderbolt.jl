@@ -221,7 +221,8 @@ end
     @test !any(isnan.(cs.u_apicobasal))
     @test !any(isnan.(cs.u_transmural))
     @test !any(isnan.(cs.u_rotational))
-    microstructure_model = create_simple_microstructure_model(cs, LagrangeCollection{1}()^3)
+    microstructure_parameters = ODB25LTMicrostructureParameters(αendo=deg2rad(80.0), αepi=deg2rad(-65.0))
+    microstructure_model      = create_microstructure_model(cs, LagrangeCollection{1}()^3, microstructure_parameters)
 
     test_solve_contractile_ideal_lv(grid, ExtendedHillModel(
         HolzapfelOgden2009Model(),
