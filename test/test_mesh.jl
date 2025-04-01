@@ -26,7 +26,10 @@
         # Triangle
     ]
         dim = Ferrite.getrefdim(element_type)
-        grid = generate_grid(element_type, ntuple(_ -> 3, dim))
+        grid = generate_grid(element_type, ntuple(_ -> 4, dim))
+        addcellset!(grid, "right_cells", x -> x[1] ≥ 0.0)
+        addcellset!(grid, "left_cells", x -> x[1] ≤ 0.0)
+
         if dim == 3
             grid_hex = Thunderbolt.hexahedralize(grid)
             @test all(typeof.(getcells(grid_hex)) .== Hexahedron) # Test if we really hit all elements
@@ -45,6 +48,12 @@
             @test getfacetset(grid_hex, "front") == getfacetset(grid_hex, "front_new")
             addfacetset!(grid_hex, "back_new", x -> x[2] ≈ 1.0)
             @test getfacetset(grid_hex, "back") == getfacetset(grid_hex, "back_new")
+
+            # Check for correct transfer of cellsets
+            addcellset!(grid_hex, "right_cells_new", x -> x[1] ≥ 0.0)
+            @test getcellset(grid_hex, "right_cells") == getcellset(grid_hex, "right_cells_new")
+            addcellset!(grid_hex, "left_cells_new", x -> x[1] ≤ 0.0)
+            @test getcellset(grid_hex, "left_cells") == getcellset(grid_hex, "left_cells_new")
         end
 
         if element_type == Hexahedron
