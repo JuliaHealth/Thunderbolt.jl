@@ -46,7 +46,7 @@ LV only part of the universal ventricular coordinate, containing
     * apicobasal
     * rotational
 """
-struct LVCoordinate{T}
+Base.@kwdef struct LVCoordinate{T}
     transmural::T
     apicobasal::T
     rotational::T
@@ -327,7 +327,7 @@ Biventricular universal coordinate, containing
     * rotational
     * transventricular
 """
-struct BiVCoordinate{T}
+Base.@kwdef struct BiVCoordinate{T}
     transmural::T
     apicobasal::T
     rotational::T

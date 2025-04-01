@@ -208,6 +208,7 @@ end
 @inline Ferrite.getcells(mesh::SimpleMesh, setname::String) = Ferrite.getcells(mesh.grid, setname)
 @inline Ferrite.getcelltype(mesh::SimpleMesh) = Ferrite.getcelltype(mesh.grid)
 @inline Ferrite.getcelltype(mesh::SimpleMesh, i::Int) = Ferrite.getcelltype(mesh.grid, i)
+@inline Ferrite.getcellset(mesh::SimpleMesh, name::String) = Ferrite.getcellset(mesh.grid, name)
 @inline Ferrite.getfacetset(mesh::SimpleMesh, name::String) = Ferrite.getfacetset(mesh.grid, name)
 @inline Ferrite.getnodeset(mesh::SimpleMesh, name::String) = Ferrite.getnodeset(mesh.grid, name)
 

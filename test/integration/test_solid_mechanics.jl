@@ -85,8 +85,16 @@ end
 
 # Smoke tests that things do not crash and that things do at least something
 @testset "Contracting cuboid" begin
-    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    # mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
     # mesh = generate_mesh(Hexahedron, (1, 1, 1), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+
+    grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    addcellset!(grid, "", x->true) # FIXME
+    addcellset!(grid, "inner", x->x[3] ≤ 0.1)
+    addcellset!(grid, "outer", x->x[3] ≥ 0.1)
+    addcellset!(grid, "front", x->x[1] ≤ 0.1)
+    addcellset!(grid, "back",  x->x[1] ≥ 0.1)
+    mesh = to_mesh(grid)
 
     microstructure_model = OrthotropicMicrostructureModel(
         ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
@@ -98,7 +106,6 @@ end
     timestepper = BackwardEulerSolver(;
         inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
             newton=newton,
-            # local_newton=NewtonRaphsonSolver(),
         )
     )
     i = test_solve_contractile_cuboid(mesh, ActiveStressModel(
@@ -114,6 +121,50 @@ end
     #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
     # end
 
+    mmat = Thunderbolt.MultiMaterialModel(
+        (
+            ActiveStressModel(
+                Guccione1991PassiveModel(),
+                SimpleActiveStress(;Tmax=220e3),
+                Thunderbolt.CaDrivenInternalSarcomereModel(
+                    Thunderbolt.RDQ20MFModel(),
+                    TestCalciumHatField(),
+                ),
+                microstructure_model
+            ),
+            PK1Model(
+                Guccione1991PassiveModel(),
+                microstructure_model,
+            ),
+        ),
+        ["front", "back"],
+        mesh
+    )
+    i = test_solve_contractile_cuboid(mesh, mmat, timestepper)
+    VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.stage.nlsolver.global_solver_cache.op.dh.grid) do vtk
+        write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+    end
+
+    mmat2 = Thunderbolt.MultiMaterialModel(
+        (
+            PK1Model(
+                Guccione1991PassiveModel(),
+                microstructure_model,
+            ),
+            ActiveStressModel(
+                Guccione1991PassiveModel(),
+                SimpleActiveStress(;Tmax=220e3),
+                Thunderbolt.CaDrivenInternalSarcomereModel(
+                    Thunderbolt.RDQ20MFModel(),
+                    TestCalciumHatField(),
+                ),
+                microstructure_model
+            ),
+        ),
+        ["back", "front"],
+        mesh
+    )
+    i = test_solve_contractile_cuboid(mesh, mmat2, timestepper)
 
     timestepper = HomotopyPathSolver(newton)
     test_solve_contractile_cuboid(mesh, ExtendedHillModel(
@@ -147,9 +198,9 @@ end
         ),
         microstructure_model
     ), timestepper)
-    VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
-        write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
-    end
+    # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
+    #     write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
+    # end
 
     mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 
@@ -170,7 +221,8 @@ end
     @test !any(isnan.(cs.u_apicobasal))
     @test !any(isnan.(cs.u_transmural))
     @test !any(isnan.(cs.u_rotational))
-    microstructure_model = create_simple_microstructure_model(cs, LagrangeCollection{1}()^3)
+    microstructure_parameters = ODB25LTMicrostructureParameters(αendo=deg2rad(80.0), αepi=deg2rad(-65.0))
+    microstructure_model      = create_microstructure_model(cs, LagrangeCollection{1}()^3, microstructure_parameters)
 
     test_solve_contractile_ideal_lv(grid, ExtendedHillModel(
         HolzapfelOgden2009Model(),

@@ -22,6 +22,24 @@ function material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, c
     return P, ∂P∂F + ∂P∂QdQdF
 end
 
+function reduced_material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, coefficient_cache, ::EmptyInternalCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    return stress_function(material_model, F, coefficients, EmptyInternalModel())
+end
+
+function reduced_material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, coefficient_cache, state_cache::TrivialCondensationMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    Q = state(state_cache, geometry_cache, qp, time)
+    return stress_function(material_model, F, coefficients, Q)
+end
+
+function reduced_material_routine(material_model::AbstractMaterialModel, F::Tensor{2}, coefficient_cache, state_cache::RateIndependentCondensationMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    Q            = solve_local_constraint_state_only(F, coefficients, material_model, state_cache, geometry_cache, qp, time)
+    P            = stress_function(material_model, F, coefficients, Q)
+    return P, ∂P∂F + ∂P∂QdQdF
+end
+
 @doc raw"""
     PrestressedMechanicalModel(inner_model, prestress_field)
 
@@ -92,11 +110,20 @@ default_initial_state!(uq, model::PK1Model) = default_initial_state!(uq, model.i
 
 setup_internal_cache(material_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(material_model.internal_model, qr, sdh)
 
+function stress_function(model::PK1Model, F::Tensor{2}, coefficients, ::EmptyInternalModel)
+    ∂Ψ∂F = Tensors.gradient(
+        F_ad -> Ψ(F_ad, coefficients, model.material),
+        F
+    )
+
+    return ∂Ψ∂F
+end
+
 function stress_and_tangent(model::PK1Model, F::Tensor{2}, coefficients, ::EmptyInternalModel)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
-        F_ad ->
-              Ψ(F_ad, coefficients, model.material),
-        F, :all)
+        F_ad -> Ψ(F_ad, coefficients, model.material),
+        F, :all
+    )
 
     return ∂Ψ∂F, ∂²Ψ∂F²
 end
@@ -163,6 +190,20 @@ function setup_coefficient_cache(m::ExtendedHillModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
+function stress_function(model::ExtendedHillModel, F::Tensor{2}, coefficients, cell_state)
+    # TODO what is a good abstraction here?
+    Fᵃ = compute_Fᵃ(cell_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
+    N = 𝓝(cell_state, F, coefficients, model.contraction_model)
+
+    ∂Ψ∂F = Tensors.gradient(
+        F_ad ->
+                Ψ(F_ad,     coefficients, model.passive_spring)
+            + N*Ψ(F_ad, Fᵃ, coefficients, model.active_spring),
+        F, :all)
+
+    return ∂Ψ∂F
+end
+
 function stress_and_tangent(model::ExtendedHillModel, F::Tensor{2}, coefficients, cell_state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(cell_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
@@ -201,6 +242,17 @@ default_initial_state!(uq, model::Union{GeneralizedHillModel,ExtendedHillModel,A
 function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
+
+function stress_function(model::ActiveStressModel, F::Tensor{2}, coefficients, cell_state)
+    ∂²Ψ∂F², ∂Ψ∂F = Tensors.gradient(
+        F_ad -> Ψ(F_ad, coefficients, model.material_model),
+        F
+    )
+
+    P2 = 𝓝(cell_state, F_ad, coefficients, model.contraction_model) * active_stress(model.active_stress_model, F_ad, coefficients)
+    return ∂Ψ∂F + P2
+end
+
 
 function stress_and_tangent(model::ActiveStressModel, F::Tensor{2}, coefficients, cell_state)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
@@ -250,10 +302,53 @@ function _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, active_t
     return -dQdF
 end
 
+# Local solve
+function solve_internal_timestep(material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, λ, dλdt, Q, Qprev, Ca)
+    @unpack Δt = state_cache
+    #     dsdt = sarcomere_rhs(s,λ,t)
+    # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
+
+    function local_residual!(R, Q, λ, dλdt)
+        dQ = zeros(eltype(Q), length(Q)) # TODO preallocate during setup
+        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
+        @.. R = (Q - Qprev) / state_cache.Δt - dQ
+        return nothing
+    end
+
+    function local_residual_jac_wrap!(R, Q)
+        return local_residual!(R, Q, λ, dλdt)
+    end
+
+    R  = state_cache.local_solver_cache.residual
+    J  = state_cache.local_solver_cache.J
+    rtol = min(state_cache.local_solver_cache.params.tol, state_cache.local_solver_cache.outer_tol)
+    for newton_iter in 1:state_cache.local_solver_cache.params.max_iters
+        ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
+        local_residual!(R, Q, λ, dλdt)
+        ΔQ = J \ R
+        Q .-= ΔQ
+        residualnorm = norm(R)
+        if residualnorm < state_cache.local_solver_cache.params.tol
+            break
+        elseif newton_iter == state_cache.local_solver_cache.params.max_iters
+            state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.MaxIters
+            @debug "Reached maximum local Newton iterations at cell $(cellid(geometry_cache)) qp $(qp.i). Aborting. ||r|| = $(residualnorm)" _group=:nlsolve
+            return Q, J
+        elseif isnan(residualnorm)
+            state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.ConvergenceFailure
+            @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
+            return Q, J
+        end
+    end
+    ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
+    state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.Success
+    return Q, J
+end
+
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, geometry_cache, qp, time) where dim
+    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     # Early out if any of the previous local solves failed
     if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-        Qflat, _ = _query_local_state(state_cache, geometry_cache, qp)
         return Qflat, zero(Tensor{4,dim,Float64,4^dim})
     end
 
@@ -267,57 +362,12 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
     dλdt    = 0.0 # TODO query
     Ca      = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
 
-    # Local solve
-    function solve_internal_timestep(material::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, λ, dλdt, Q, Qprev)
-        @unpack Δt = state_cache
-        #     dsdt = sarcomere_rhs(s,λ,t)
-        # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
-
-        function local_residual!(R, Q, λ, dλdt)
-            dQ = zeros(eltype(Q), length(Q)) # TODO preallocate during setup
-            sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
-            @.. R = (Q - Qprev) / state_cache.Δt - dQ
-            return nothing
-        end
-
-        function local_residual_jac_wrap!(R, Q)
-            return local_residual!(R, Q, λ, dλdt)
-        end
-
-        R  = state_cache.local_solver_cache.residual
-        J  = state_cache.local_solver_cache.J
-        rtol = min(state_cache.local_solver_cache.params.tol, state_cache.local_solver_cache.outer_tol)
-        for newton_iter in 1:state_cache.local_solver_cache.params.max_iters
-            ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
-            local_residual!(R, Q, λ, dλdt)
-            ΔQ = J \ R
-            Q .-= ΔQ
-            residualnorm = norm(R)
-            if residualnorm < state_cache.local_solver_cache.params.tol
-                break
-            elseif newton_iter == state_cache.local_solver_cache.params.max_iters
-                state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.MaxIters
-                @debug "Reached maximum local Newton iterations at cell $(cellid(geometry_cache)) qp $(qp.i). Aborting. ||r|| = $(residualnorm)" _group=:nlsolve
-                return Q, J
-            elseif isnan(residualnorm)
-                state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.ConvergenceFailure
-                @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
-                return Q, J
-            end
-        end
-        ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
-        state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.Success
-        return Q, J
-    end
-
-    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
-    Q, J = solve_internal_timestep(material_model, state_cache, λ, dλdt, Qflat, Qprevflat)
+    Q, J = solve_internal_timestep(material_model, state_cache, λ, dλdt, Qflat, Qprevflat, Ca)
     # Abort if local solve failed
     if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-        Qflat, _ = _query_local_state(state_cache, geometry_cache, qp)
         return Qflat, zero(Tensor{4,dim,Float64,4^dim})
     end
-    Qflat .= Q
+    # Qflat .= Q
     _store_local_state!(state_cache, geometry_cache, qp)
 
     # Solve corrector problem
@@ -335,14 +385,43 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
     return Q, _solve_local_sarcomere_dQdF(dQdλ, dλdF, λ, F, coefficients, material_model.active_stress_model, material_model.contraction_model)
 end
 
+function solve_local_constraint_state_only(F::Tensor{2,dim}, coefficients, material_model::ActiveStressModel, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, geometry_cache, qp, time) where dim
+    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
+    # Early out if any of the previous local solves failed
+    if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+        return Qflat, zero(Tensor{4,dim,Float64,4^dim})
+    end
+
+    function computeλ(F)
+        f  = F ⋅ coefficients.f
+        return √(f ⋅ f)
+    end
+
+    # Frozen variables
+    dλdF, λ = Tensors.gradient(computeλ, F, :all)
+    dλdt    = 0.0 # TODO query
+    Ca      = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
+
+    Q, J = solve_internal_timestep(material_model, state_cache, λ, dλdt, Qflat, Qprevflat, Ca)
+    # Abort if local solve failed
+    if state_cache.local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+        return Qflat, zero(Tensor{4,dim,Float64,4^dim})
+    end
+    # Qflat .= Q
+    _store_local_state!(state_cache, geometry_cache, qp)
+
+    return Q
+end
+
 # Some debug materials
-Base.@kwdef struct LinearMaxwellMaterial{T} <: AbstractMaterialModel
+Base.@kwdef struct LinearMaxwellMaterial{T, sdim} <: AbstractMaterialModel
     E₀::T
     E₁::T
     μ::T
     η₁::T
     ν::T
 end
+LinearMaxwellMaterial(E₀::T, Eₗ::T, μ::T, η₁::T, ν::T) where T = LinearMaxwellMaterial{T,3}(E₀, Eₗ, μ, η₁, ν)
 
 local_function_size(model::QuasiStaticModel) = local_function_size(model.material_model)
 function local_function_size(model::AbstractMaterialModel)
@@ -387,29 +466,28 @@ function _store_local_state!(state_cache::GenericFirstOrderRateIndependentConden
     return nothing
 end
 
+function solve_internal_timestep(material::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, ε::SymmetricTensor{2,dim}, εᵛflat, εᵛprevflat) where dim
+    @unpack Δt = state_cache
+    εᵛ₁ = SymmetricTensor{2,dim}(εᵛflat)
+    εᵛ₀ = SymmetricTensor{2,dim}(εᵛprevflat)
+    #     dεᵛdt = E₁/η₁ c : (ε - εᵛ)
+    # <=> (εᵛ₁ - εᵛ₀) / Δt = E₁/η₁ c : (ε - εᵛ₁) = E₁/η₁ c : ε - E₁/η₁ c : εᵛ₁
+    # <=> εᵛ₁ / Δt + E₁/η₁ c : εᵛ₁ = εᵛ₀/Δt + E₁/η₁ c : ε
+    # <=> (𝐈 / Δt + E₁/η₁ c) : εᵛ₁ = εᵛ₀/Δt + E₁/η₁ c : ε
+
+    (; E₀, E₁, μ, η₁, ν) = material
+    I = one(ε)
+    c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
+    c₂ = 1 / (1+ν) * one(c₁)
+    ℂ = c₁ + c₂
+
+    # FIXME non-allocating version by using state_cache nlsolver
+    A = tomandel(SMatrix, one(ℂ)/Δt + E₁/η₁ * ℂ)
+    b = tomandel(SVector, εᵛ₀/Δt + E₁/η₁ * ℂ ⊡ ε)
+    return frommandel(typeof(ε), A \ b)
+end
+
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, geometry_cache, qp, time) where dim
-    # Concept only for now.
-    function solve_internal_timestep(material::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, ε, εᵛflat, εᵛprevflat)
-        @unpack Δt = state_cache
-        εᵛ₁ = SymmetricTensor{2,dim}(εᵛflat)
-        εᵛ₀ = SymmetricTensor{2,dim}(εᵛprevflat)
-        #     dεᵛdt = E₁/η₁ c : (ε - εᵛ)
-        # <=> (εᵛ₁ - εᵛ₀) / Δt = E₁/η₁ c : (ε - εᵛ₁) = E₁/η₁ c : ε - E₁/η₁ c : εᵛ₁
-        # <=> εᵛ₁ / Δt + E₁/η₁ c : εᵛ₁ = εᵛ₀/Δt + E₁/η₁ c : ε
-        # <=> (𝐈 / Δt + E₁/η₁ c) : εᵛ₁ = εᵛ₀/Δt + E₁/η₁ c : ε
-
-        (; E₀, E₁, μ, η₁, ν) = material
-        I = one(ε)
-        c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
-        c₂ = 1 / (1+ν) * one(c₁)
-        ℂ = c₁ + c₂
-
-        # FIXME non-allocating version by using state_cache nlsolver
-        A = tomandel(SMatrix, one(ℂ)/Δt + E₁/η₁ * ℂ)
-        b = tomandel(SVector, εᵛ₀/Δt + E₁/η₁ * ℂ ⊡ ε)
-        return frommandel(typeof(ε), A \ b)
-    end
-
     Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     ε = symmetric(F - one(F))
     Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat)
@@ -417,8 +495,7 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
     _store_local_state!(state_cache, geometry_cache, qp)
 
     # Corrector
-    # Concept only for now.
-    function solve_internal_timestep_corrector(material::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, ε, εᵛflat, εᵛprevflat)
+    function solve_internal_timestep_corrector(material::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, ε, εᵛflat, εᵛprevflat, coefficients)
         @unpack Δt = state_cache
         εᵛ₁ = SymmetricTensor{2,dim}(εᵛflat)
         εᵛ₀ = SymmetricTensor{2,dim}(εᵛprevflat)
@@ -437,10 +514,20 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
         B = tomandel(SMatrix, E₁/η₁ * ℂ)
         return frommandel(typeof(ℂ), A \ B)
     end
-    dQdF = solve_internal_timestep_corrector(material_model, state_cache, ε, Qflat, Qprevflat)
+    dQdF = solve_internal_timestep_corrector(material_model, state_cache, ε, Qflat, Qprevflat, coefficients)
     ∂P∂Q = Tensors.gradient(εᵛ->stress_function(material_model, ε, coefficients, εᵛ), Q)
 
     return Q, ∂P∂Q ⊡ dQdF
+end
+
+function solve_local_constraint_state_only(F::Tensor{2,dim}, coefficients, material_model::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache, geometry_cache, qp, time) where dim
+    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
+    ε = symmetric(F - one(F))
+    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat)
+    Qflat .= Q.data
+    _store_local_state!(state_cache, geometry_cache, qp)
+
+    return Q
 end
 
 function stress_function(material::LinearMaxwellMaterial, ε, coefficients, εᵛ)
@@ -452,7 +539,7 @@ function stress_function(material::LinearMaxwellMaterial, ε, coefficients, ε�
     return E₀ * ℂ ⊡ ε + E₁ * ℂ ⊡ (ε - εᵛ)
 end
 
-function stress_and_tangent(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ)
+function stress_and_tangent(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ::SymmetricTensor{2})
     ε = symmetric(F - one(F))
     ∂σ∂ε, σ = Tensors.gradient(ε->stress_function(material_model, ε, coefficients, εᵛ), ε, :all)
     return σ, ∂σ∂ε
@@ -463,9 +550,13 @@ function setup_coefficient_cache(m::LinearMaxwellMaterial, qr::QuadratureRule, s
 end
 
 function setup_internal_cache(material_model::LinearMaxwellMaterial, qr::QuadratureRule, sdh::SubDofHandler)
-    return nothing # FIXME what should we do here? :)
+    return EmptyRateIndependentCondensationMaterialStateCache()
 end
 
-function gather_internal_variable_infos(model::LinearMaxwellMaterial)
-    return InternalVariableInfo(:εᵛ, 6) # TODO dimension info
+function gather_internal_variable_infos(model::LinearMaxwellMaterial{T, sdim}) where {T, sdim}
+    if sdim == 3
+        return InternalVariableInfo(:εᵛ, 6)
+    else
+        return InternalVariableInfo(:εᵛ, 4)
+    end
 end
