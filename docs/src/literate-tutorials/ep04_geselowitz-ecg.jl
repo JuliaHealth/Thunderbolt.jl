@@ -118,7 +118,7 @@ integrator = init(problem, timestepper, dt=dt₀, verbose=true)
 
 # Now that the time integrator is ready we setup the ECG problem.
 torso_mesh_κᵢ = ConstantCoefficient(1.0)
-torso_mesh_κ  = ConstantCoefficient(1.0)
+torso_mesh_κ  = ConstantCoefficient(2.0)
 # !!! todo
 #     Show how to transfer `diffusion_tensor_field` onto the torso mesh.
 geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(
