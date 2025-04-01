@@ -10,6 +10,8 @@ import LinearAlgebra: mul!
 using SparseMatricesCSR, Polyester, LinearAlgebra
 using OrderedCollections
 using BlockArrays, SparseArrays, StaticArrays
+import SparseArrays: getcolptr
+import SparseMatricesCSR: getrowptr
 
 using JLD2
 import WriteVTK
@@ -42,10 +44,11 @@ import ForwardDiff
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
-        compose, ODESystem, Differential
+    compose, ODESystem, Differential
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
+import KernelAbstractions: GPU, @kernel, @index, @ndrange, @groupsize, @print, functional
 import Adapt:
     Adapt, adapt_structure, adapt
 
