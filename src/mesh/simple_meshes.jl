@@ -112,6 +112,8 @@ elementtypes(::SimpleMesh{sdim,Quadrilateral}) where sdim = @SVector [Quadrilate
 elementtypes(::SimpleMesh{3,Tetrahedron}) = @SVector [Tetrahedron]
 elementtypes(::SimpleMesh{3,Hexahedron}) = @SVector [Hexahedron]
 
+subdomain_names(mesh::SimpleMesh) = collect(keys(mesh.volumetric_subdomains))
+
 function to_mesh(grid::Grid)
     mfaces = OrderedDict{NTuple{3,Int}, Int}()
     medges = OrderedDict{NTuple{2,Int}, Int}()
