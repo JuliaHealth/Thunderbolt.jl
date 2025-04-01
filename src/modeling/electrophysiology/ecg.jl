@@ -52,12 +52,12 @@ struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
     op::OperatorType
 end
 
-function Plonsey1964ECGGaussCache(op::AssembledBilinearOperator, φₘ::AbstractVector{T}) where T
+function Plonsey1964ECGGaussCache(op::AssembledBilinearOperator, φₘ::AbstractVector{T}, subdomains::AbstractVector{String} = [""]) where T
     @unpack dh, integrator = op
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
-    κ∇φₘ = construct_qvector(Vector{Vec{sdim,T}}, Vector{Int64}, grid, integrator.qrc)
+    κ∇φₘ = construct_qvector(Vector{Vec{sdim,T}}, Vector{Int64}, grid, integrator.qrc, subdomains)
     compute_quadrature_fluxes!(κ∇φₘ, dh, φₘ, dh.field_names[1], integrator)
     Plonsey1964ECGGaussCache(κ∇φₘ, op)
 end
