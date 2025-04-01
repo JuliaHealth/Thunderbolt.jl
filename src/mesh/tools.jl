@@ -363,10 +363,16 @@ function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
     # !isempty(grid.edgesets) && warn("Edgesets are not transfered to new mesh!")
 
     new_cellsets = Dict{String, OrderedSet{Int}}()
+    sizehint!(new_cellsets, length(grid.cellsets))
     for (setname, cellset) ∈ grid.cellsets
         new_cellsets[setname] = OrderedSet{Int}()
+        n_new_cells = sum((cellidx == length(cell_offsets) ? length(new_cells) : cell_offsets[cellidx+1]) - cell_offsets[cellidx] for cellidx ∈ cellset)
+        sizehint!(new_cellsets[setname], n_new_cells)
         for cellidx ∈ cellset
-            push!(new_cellsets[setname], ntuple(i -> cell_offsets[cellidx] + i, (cellidx == length(cell_offsets) ? length(new_cells) : cell_offsets[cellidx+1]) - cell_offsets[cellidx])...)
+            new_cells_range = cell_offsets[cellidx] + 1 : (cellidx == length(cell_offsets) ? length(new_cells) : cell_offsets[cellidx+1])
+            for new_cell in new_cells_range
+                push!(new_cellsets[setname], new_cell)
+            end
         end
     end
 
