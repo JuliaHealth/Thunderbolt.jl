@@ -51,13 +51,13 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
     field_name_to::Symbol
 
     function NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol; subdomains_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers)) where sdim
-        @assert field_name_from ∈ dh_from.field_names
-        @assert field_name_to ∈ dh_to.field_names
+        @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
+        @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
 
         dofset = Set{Int}()
         for sdh in dh_to.subdofhandlers[subdomains_to]
             # Skip subdofhandler if field is not present
-            field_name_to ∈ sdh.field_names || continue
+            field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
             # Just gather the dofs of the given field in the set
             for cellidx ∈ sdh.cellset
                 dofs = celldofs(dh_to, cellidx)
@@ -82,7 +82,7 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
         nodes = Vector{Ferrite.get_coordinate_type(grid_to)}(undef, length(dofset))
         for sdh in dh_to.subdofhandlers[subdomains_from]
             # Skip subdofhandler if field is not present
-            field_name_to ∈ sdh.field_names || continue
+            field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
             # Grab the reference coordinates of the field to interpolate
             ip = Ferrite.getfieldinterpolation(sdh, field_name_to)
             ref_coords = Ferrite.reference_coordinates(ip)

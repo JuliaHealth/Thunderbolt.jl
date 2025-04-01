@@ -13,7 +13,7 @@
         end
     end
 
-    @testset "Nodal Intergrid Interpolation on Matchin Grids" begin
+    @testset "Nodal Intergrid Interpolation on Matching Grids" begin
         source_dh = DofHandler(source_mesh)
         add!(source_dh, :z, Lagrange{RefQuadrilateral,1}())
         add!(source_dh, :u, Lagrange{RefQuadrilateral,2}())

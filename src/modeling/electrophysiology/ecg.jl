@@ -232,8 +232,8 @@ function PoissonECGReconstructionCache(
     transfer_op = NodalIntergridInterpolation(
         heart_dh,
         torso_dh,
-        first(heart_dh.field_names),
-        first(torso_dh.field_names);
+        first(Ferrite.getfieldnames(heart_dh)),
+        first(Ferrite.getfieldnames(torso_dh));
         subdomains_to = get_subdofhandler_indices_on_subdomains(torso_dh, torso_heart_domain)
     )
 
@@ -290,7 +290,7 @@ function PoissonECGReconstructionCache(
     torso_dh = torso_op.dh
     torso_ch = torso_fun.ch
     grid = get_grid(torso_dh)
-    length(torso_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
+    length(Ferrite.getfieldnames(torso_dh)) == 1 || @warn "Multiple fields detected. Setup might be broken..."
 
     φₘt   = create_system_vector(solution_vector_type, torso_fun) # RHS buffer for source term
     κ∇φₘt = create_system_vector(solution_vector_type, torso_fun) # RHS buffer after transfer
@@ -492,8 +492,8 @@ function Geselowitz1989ECGLeadCache(
     transfer_op = NodalIntergridInterpolation(
         heart_dh,
         lead_field_dh,
-        first(heart_dh.field_names),
-        first(lead_field_dh.field_names);
+        first(Ferrite.getfieldnames(heart_dh)),
+        first(Ferrite.getfieldnames(lead_field_dh));
         subdomains_to = get_subdofhandler_indices_on_subdomains(lead_field_dh, torso_heart_domain),
     )
 
@@ -522,7 +522,7 @@ function Geselowitz1989ECGLeadCache(
     lead_field_sym       = :Z,
 )
     lead_dh  = lead_op.dh
-    length(lead_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
+    length(Ferrite.getfieldnames(lead_dh)) == 1 || @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)
     φₘ_t        = create_system_vector(solution_vector_type, lead_fun) # Solution vector
     ∇φₘ_t       = create_system_vector(solution_vector_type, lead_fun)  # Solution vector
