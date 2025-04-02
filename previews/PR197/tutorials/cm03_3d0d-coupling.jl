@@ -202,12 +202,11 @@ mesh = generate_ideal_lv_mesh(8,2,5;
 mesh = Thunderbolt.hexahedralize(mesh)
 
 coordinate_system = compute_lv_coordinate_system(mesh)
-microstructure    = create_simple_microstructure_model(
+microstructure    = create_microstructure_model(
     coordinate_system,
     LagrangeCollection{1}()^3,
-    endo_helix_angle = deg2rad(60.0),
-    epi_helix_angle = deg2rad(-60.0),
-)
+    ODB25LTMicrostructureParameters(),
+);
 passive_material_model = Guccione1991PassiveModel()
 active_material_model  = Guccione1993ActiveModel()
 function calcium_profile_function(x::LVCoordinate,t)
@@ -223,9 +222,9 @@ function calcium_profile_function(x::LVCoordinate,t)
 end
 calcium_field = AnalyticalCoefficient(
     calcium_profile_function,
-    CoordinateSystemCoefficient(coordinate_system),
+    coordinate_system,
 )
-sarcomere_model = ConstantStretchModel(;calcium_field)
+sarcomere_model = CaDrivenInternalSarcomereModel(ConstantStretchModel(), calcium_field)
 active_stress_model = ActiveStressModel(
     passive_material_model,
     active_material_model,
@@ -233,7 +232,7 @@ active_stress_model = ActiveStressModel(
     microstructure,
 )
 weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
-solid_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions);
+solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
 
 p3D = LVc.p3D
 V0D = LVc.V

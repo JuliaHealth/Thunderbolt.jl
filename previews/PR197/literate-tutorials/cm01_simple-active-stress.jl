@@ -43,11 +43,10 @@ coordinate_system = compute_lv_coordinate_system(mesh);
 
 # In this coordinate system we will now create a microstructure with linearly varying helix angle in transmural direction.
 # The compute microstructure field will be generated on the function space of piecewise continuous first order Lagrange polynomials.
-microstructure = create_simple_microstructure_model(
+microstructure = create_microstructure_model(
     coordinate_system,
-    LagrangeCollection{1}()^3;
-    endo_helix_angle = deg2rad(60.0),
-    epi_helix_angle = deg2rad(-60.0),
+    LagrangeCollection{1}()^3,
+    ODB25LTMicrostructureParameters(),
 );
 
 # Now we describe the model which we want to use.
@@ -74,12 +73,12 @@ function calcium_profile_function(x::LVCoordinate,t)
 end
 calcium_field = AnalyticalCoefficient(
     calcium_profile_function,
-    CoordinateSystemCoefficient(coordinate_system),
+    coordinate_system,
 );
 
 # We will use for a very simple sarcomere model which is constant in the calcium concentration.
 # Note that a using a sarcomere model which has evoluation equations or rate-dependent terms will require different solvers.
-sarcomere_model = ConstantStretchModel(;calcium_field);
+sarcomere_model = CaDrivenInternalSarcomereModel(ConstantStretchModel(), calcium_field);
 
 # Now we have everything set to describe our active stress model by passing all the model components into it.
 active_stress_model = ActiveStressModel(
@@ -94,7 +93,7 @@ active_stress_model = ActiveStressModel(
 weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
 
 # We finalize the mechanical model by assigning a symbol to identify the unknown solution field and connect the active stress model with the weak boundary conditions.
-mechanical_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions)
+mechanical_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions)
 
 # !!! tip
 #     A full list of all models can be found in the [API reference](@ref models-api).

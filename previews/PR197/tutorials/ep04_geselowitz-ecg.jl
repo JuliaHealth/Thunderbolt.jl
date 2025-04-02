@@ -36,7 +36,7 @@ end
 protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
     AnalyticalCoefficient(
         UniformEndocardialActivation(),
-        CoordinateSystemCoefficient(CartesianCoordinateSystem{3}())
+        CartesianCoordinateSystem{3}()
     ),
     [SVector((-Inf, Inf))],
 )
