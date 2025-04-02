@@ -12,7 +12,7 @@ Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType} <: AbstractNo
     max_iter::Int = 100
     inner_solver::solverType = LinearSolve.KrylovJL_GMRES()
     monitor::MonitorType = DefaultProgressMonitor()
-    enforce_monotonic_convergence::Bool = false
+    enforce_monotonic_convergence::Bool = true
 end
 
 mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, NewtonType <: NewtonRaphsonSolver{T}, InnerSolverCacheType} <: AbstractNonlinearSolverCache
