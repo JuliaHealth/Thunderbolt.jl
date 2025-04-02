@@ -1,7 +1,4 @@
-using Test
 using SparseArrays
-using CUDA
-using Thunderbolt
 using LinearSolve
 using SparseMatricesCSR
 using KernelAbstractions
