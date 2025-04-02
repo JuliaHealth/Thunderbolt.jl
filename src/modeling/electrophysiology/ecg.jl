@@ -1,29 +1,30 @@
+# TODO we should use this function to study how we can pull the fluxes with the operator infrastructure directly
 function compute_quadrature_fluxes!(fluxdata, dh, u, field_name, integrator)
     grid = get_grid(dh)
     sdim = getspatialdim(grid)
     for sdh in dh.subdofhandlers
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-        firstcell   = getcells(grid, first(sdh.cellset))
-        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr  = getquadraturerule(integrator.qrc, firstcell)
-        cv = CellValues(element_qr, ip, ip_geo)
-        _compute_quadrature_fluxes_on_subdomain!(fluxdata,sdh,cv,u,integrator)
+        element_cache  = setup_element_cache(integrator, sdh)
+        # Function barrier
+        _compute_quadrature_fluxes_on_subdomain!(fluxdata,sdh,u,element_cache)
     end
 end
 
-function _compute_quadrature_fluxes_on_subdomain!(κ∇u,sdh,cv,u,integrator::BilinearDiffusionIntegrator)
-    n_basefuncs = getnbasefunctions(cv)
+function _compute_quadrature_fluxes_on_subdomain!(κ∇u,sdh,u,element_cache::BilinearDiffusionElementCache)
+    @unpack cellvalues, Dcache = element_cache
+    n_basefuncs = getnbasefunctions(cellvalues)
+
+    uₑ = zeros(n_basefuncs)
     for cell ∈ CellIterator(sdh)
         κ∇ucell = get_data_for_index(κ∇u, cellid(cell))
 
-        reinit!(cv, cell)
-        uₑ = @view u[celldofs(cell)]
+        reinit!(cellvalues, cell)
+        uₑ .= u[celldofs(cell)]
 
-        for qp in QuadratureIterator(cv)
-            D_loc = evaluate_coefficient(integrator.D, cell, qp, time)
+        for qp in QuadratureIterator(cellvalues)
+            D_loc = evaluate_coefficient(Dcache, cell, qp, time)
             # dΩ = getdetJdV(cellvalues, qp)
             for i in 1:n_basefuncs
-                ∇Nᵢ = shape_gradient(cv, qp, i)
+                ∇Nᵢ = shape_gradient(cellvalues, qp, i)
                 κ∇ucell[qp.i] += D_loc ⋅ ∇Nᵢ * uₑ[i]
             end
         end
@@ -52,12 +53,12 @@ struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
     op::OperatorType
 end
 
-function Plonsey1964ECGGaussCache(op::AssembledBilinearOperator, φₘ::AbstractVector{T}) where T
+function Plonsey1964ECGGaussCache(op::AssembledBilinearOperator, φₘ::AbstractVector{T}, subdomains::AbstractVector{String} = [""]) where T
     @unpack dh, integrator = op
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
-    κ∇φₘ = construct_qvector(Vector{Vec{sdim,T}}, Vector{Int64}, grid, integrator.qrc)
+    κ∇φₘ = construct_qvector(Vector{Vec{sdim,T}}, Vector{Int64}, grid, integrator.qrc, subdomains)
     compute_quadrature_fluxes!(κ∇φₘ, dh, φₘ, dh.field_names[1], integrator)
     Plonsey1964ECGGaussCache(κ∇φₘ, op)
 end
