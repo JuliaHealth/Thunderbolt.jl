@@ -213,19 +213,21 @@ function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural
         coupling = coupler.chamber_couplings[i]
         # The pressure dof is just the last dof index for the structurel problem + the current chamber index
         pressure_dof_index = num_unknowns_structure + i
-        chamber_facetset = getfacetset(structural_problem.dh.grid, coupling.chamber_surface_setname)
+        (; dh) = structural_problem
+        chamber_facetset = getfacetset(get_grid(dh), coupling.chamber_surface_setname)
         chamber_volume_idx_lumped = get_variable_symbol_index(circuit_model, coupling.lumped_model_symbol)
-        initial_volume_lumped = NaN # We do this to catch initializiation issues downstream
+        # TODO rethink the next two lines
         tying = RSAFDQ2022SingleChamberTying(
             pressure_dof_index,
             pressure_dof_index,
             chamber_facetset,
             coupling.chamber_volume_method,
             coupler.displacement_symbol,
-            initial_volume_lumped,
+            NaN,
             chamber_volume_idx_lumped,
             num_unknowns_structure+num_unknown_pressures(circuit_model)+chamber_volume_idx_lumped,
         )
+        tying.V⁰ᴰval = initial_volume_lumped = compute_chamber_volume(dh, zeros(ndofs(dh)), coupling.chamber_surface_setname, tying)
         push!(chamber_tyings, tying)
     end
     return chamber_tyings
@@ -251,6 +253,10 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
     # Tie problems
     # Fix dispatch....
     chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
+    @debug "Chamber tyings:"
+    for chamber_tying in chamber_tyings
+        @debug "$(chamber_tying.pressure_dof_index_local), $(chamber_tying.pressure_dof_index_global), $(chamber_tying.volume_method), $(chamber_tying.displacement_symbol), $(chamber_tying.V⁰ᴰidx_local), $(chamber_tying.V⁰ᴰidx_global)"
+    end
     @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
 
     tying_info = RSAFDQ2022TyingInfo(chamber_tyings)

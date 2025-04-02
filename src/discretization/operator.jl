@@ -201,9 +201,7 @@ function _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, fa
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         # TODO benchmark against putting this into the FacetIterator
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-            assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
-        end
+        @timeit_debug "assemble faces" assemble_element!(Jₑ, uₑ, cell, face_cache, time)
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, celldofs(cell), Jₑ)
     end
@@ -242,9 +240,7 @@ function _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, f
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         # TODO benchmark against putting this into the FacetIterator
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-            assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
-        end
+        @timeit_debug "assemble faces" assemble_element!(Jₑ, rₑ, uₑ, cell, face_cache, time)
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, dofs, Jₑ, rₑ)
     end
