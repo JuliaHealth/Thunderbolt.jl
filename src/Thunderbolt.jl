@@ -10,8 +10,6 @@ import LinearAlgebra: mul!
 using SparseMatricesCSR, Polyester, LinearAlgebra
 using OrderedCollections
 using BlockArrays, SparseArrays, StaticArrays
-import SparseArrays: getcolptr
-import SparseMatricesCSR: getrowptr
 
 using JLD2
 import WriteVTK

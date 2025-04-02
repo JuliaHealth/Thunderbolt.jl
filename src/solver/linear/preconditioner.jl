@@ -222,31 +222,30 @@ _makecache(iterator::DeviceDiagonalIterator{CSC,NonSymmetricMatrix}, idx,k) =
     _makecache(iterator,idx,k,_diag_offpart_csr)
 
 
-function _makecache(iterator::DeviceDiagonalIterator{CSC}, idx,k, diag_offpart_func) 
+function _makecache(iterator::DeviceDiagonalIterator{CSC}, idx::Ti,k::Ti, diag_offpart_func) where {Ti<:Integer} 
     #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
     #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
     # bₖᵢ := Aᵢᵢ
     # dₖᵢ := ∑_{j ∈ Ωⁱₒ} |Aᵢⱼ|
     @unpack A,partsize = iterator
-    part_start_idx = (k - Int32(1)) * partsize + Int32(1)
-    part_end_idx = min(part_start_idx + partsize - Int32(1), size(A, 2))
+    part_start_idx = (k - convert(Ti,1)) * partsize + convert(Ti,1)
+    part_end_idx = min(part_start_idx + partsize - convert(Ti,1), size(A, 2))
     
-    # since matrix is symmetric, then both CSC and CSR are the same.
     b,d = diag_offpart_func(A.colPtr, A.rowVal, A.nzVal, idx, part_start_idx, part_end_idx)
 
     return DiagonalCache(k, idx,b, d)
 end
 
-function _makecache(iterator::DeviceDiagonalIterator{CSR}, idx,k)
+function _makecache(iterator::DeviceDiagonalIterator{CSR}, idx::Ti,k::Ti) where {Ti<:Integer}
     #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
     #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
     # bₖᵢ := Aᵢᵢ
     # dₖᵢ := ∑_{j ∈ Ωⁱₒ} |Aᵢⱼ|
     @unpack A,partsize = iterator  # A is in CSR format
-    part_start_idx = (k - Int32(1)) * partsize + Int32(1)
-    part_end_idx = min(part_start_idx + partsize - Int32(1), size(A, 2)) 
+    part_start_idx = (k - convert(Ti,1)) * partsize + convert(Ti,1)
+    part_end_idx = min(part_start_idx + partsize - convert(Ti,1), size(A, 2)) 
 
-    b,d = _diag_offpart_csr(getrowptr(A), colvals(A), nnz(A), idx, part_start_idx, part_end_idx)
+    b,d = _diag_offpart_csr(A.rowPtr, A.colVal, A.nzVal, idx, part_start_idx, part_end_idx)
 
     return DiagonalCache(k, idx, b, d)
 end
@@ -262,13 +261,12 @@ end
     initial_partition_idx = convert(Ti,@index(Group)) 
     for diagonal in DeviceDiagonalIterator(symT,A,partsize,nparts,local_idx,initial_partition_idx)
         @unpack k, idx, b, d = diagonal
-        @print k,idx,convert(Float64,b), convert(Float64,d) #TODO: remove this line
         y[idx] = y[idx]/ (b + d)  
     end
 end
 
 
-## CPU Multithreaded implementation for the L1 Gauss Seidel preconditioner
+## Polyester - CPU ##
 function build_l1prec(::CpuL1PrecBuilder, A::AbstractSparseMatrix; partsize::Union{Integer,Nothing}=nothing)
     partsize = isnothing(partsize) ? 1 : partsize
     nparts = ceil(Int, size(A, 1) / partsize)
@@ -293,7 +291,7 @@ function Base.iterate(iterator::DiagonalIterator, state=1)
 end
 
 
-_makecache(iterator::DiagonalIterator{SparseMatrixCSC,NonSymmetricMatrix}, idx) =
+_makecache(iterator::DiagonalIterator{SparseMatrixCSC{Tv,Ti},NonSymmetricMatrix}, idx) where {Tv,Ti} =
     _makecache(iterator, idx, _diag_offpart_csc)
 
 
@@ -316,7 +314,7 @@ function _makecache(iterator::DiagonalIterator{SparseMatrixCSC{Tv,Ti}}, idx, dia
     return DiagonalCache(k, idx, b, d)
 end
 
-function _makecache(iterator::DiagonalIterator{SparseMatrixCSR}, idx)
+function _makecache(iterator::DiagonalIterator{SparseMatrixCSR{1,Tv,Ti}}, idx) where {Tv,Ti}
     #Ωⁱ := {j ∈ Ωₖ : i ∈ Ωₖ}
     #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
     # bₖᵢ := Aᵢᵢ
@@ -330,12 +328,13 @@ function _makecache(iterator::DiagonalIterator{SparseMatrixCSR}, idx)
     return DiagonalCache(k, idx, b, d)
 end
 
-
 function _l1prec!(y, P, issym)
     @unpack partitioning, A = P
     @unpack partsize, nparts = partitioning
     symT = issym ? SymmetricMatrix : NonSymmetricMatrix
     @batch for part in 1:nparts
+        # diagonl iterator here is different than the one in GPU implementation.
+        # here, there are no strides, and the iterator is just looping over the diagonals in the corresponding partition. 
         for diagonal in DiagonalIterator(symT, part, partsize, A)
             @unpack k, idx, b, d = diagonal
             y[idx] = y[idx] / (b + d)

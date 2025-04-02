@@ -3,6 +3,7 @@ module CuThunderboltExt
 using Thunderbolt
 using LinearSolve
 using KernelAbstractions
+using SparseMatricesCSR
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
