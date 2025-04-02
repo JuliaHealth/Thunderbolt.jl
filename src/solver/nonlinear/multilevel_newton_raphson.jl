@@ -101,7 +101,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
         end
 
         @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
-        nonlinear_step_monitor(cache, t, f, cache.parameters.monitor)
+        nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
         solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 

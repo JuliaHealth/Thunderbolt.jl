@@ -345,10 +345,12 @@ function assemble_face_pressure_qp!(Kₑ::AbstractMatrix, residualₑ::AbstractV
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    neumann_term = p * J * cofF
+    # @info qp, J, cofF ⋅ n₀
+    neumann_term = p * J * cofF ⋅ n₀
+    # neumann_term = p * n₀
     for i in 1:ndofs_face
         δuᵢ = shape_value(fv, qp, i)
-        residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
+        residualₑ[i] += neumann_term ⋅ δuᵢ * dΓ
 
         for j in 1:ndofs_face
             ∇δuⱼ = shape_gradient(fv, qp, j)
@@ -372,11 +374,11 @@ function assemble_face_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector, 
 
     ∇u = function_gradient(fv, qp, uₑ)
     F = one(∇u) + ∇u
-    
+
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    # neumann_term = p * J * cofF
+    # neumann_term = p * J * cofF ⋅ n₀
     for i in 1:ndofs_face
         δuᵢ = shape_value(fv, qp, i)
 
@@ -406,10 +408,11 @@ function assemble_face_pressure_qp!(residualₑ::AbstractVector, uₑ::AbstractV
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    neumann_term = p * J * cofF
+    neumann_term = p * J * cofF ⋅ n₀
+    # neumann_term = p * n₀
     for i in 1:ndofs_face
         δuᵢ = shape_value(fv, qp, i)
-        residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
+        residualₑ[i] += neumann_term ⋅ δuᵢ * dΓ
     end
 end
 
@@ -483,5 +486,66 @@ function assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell,
 
     for qp in QuadratureIterator(fv)
         assemble_face_pressure_qp!(residualₑ, uₑ, p, qp, fv)
+    end
+end
+
+
+# We can use this to debug weak BCs for their consistency
+struct ConsistencyCheckWeakBoundaryCondition{BC} <: AbstractWeakBoundaryCondition
+    bc::BC
+    Δ::Float64
+end
+
+struct ConsistencyCheckWeakBoundaryConditionCache{IC} <: AbstractSurfaceElementCache
+    inner_cache::IC
+    Kₑfd::Matrix{Float64}
+    uₑfd::Vector{Float64}
+    residualₑfd::Vector{Float64}
+    residualₑref::Vector{Float64}
+    Δ::Float64
+end
+@inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, face_cache::ConsistencyCheckWeakBoundaryConditionCache) = is_facet_in_cache(facet, cell, face_cache.inner_cache)
+@inline getboundaryname(face_cache::ConsistencyCheckWeakBoundaryConditionCache) = getboundaryname(face_cache.inner_cache)
+@inline getboundaryname(check::ConsistencyCheckWeakBoundaryCondition) = getboundaryname(check.bc)
+
+function setup_boundary_cache(ccc::ConsistencyCheckWeakBoundaryCondition, qr::FacetQuadratureRule, sdh::SubDofHandler)
+    N = ndofs_per_cell(sdh)
+    return ConsistencyCheckWeakBoundaryConditionCache(
+        setup_boundary_cache(ccc.bc, qr, sdh),
+        zeros(N, N),
+        zeros(N),
+        zeros(N),
+        zeros(N),
+        ccc.Δ,
+    )
+end
+
+function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, cache::ConsistencyCheckWeakBoundaryConditionCache, time)
+    (; Δ, inner_cache, Kₑfd, uₑfd, residualₑfd, residualₑref) = cache
+
+    # The incoming element matrix might be non-empty, so we need to start by storing the offset.
+    Kₑfd .= Kₑ
+
+    # The actual assembly is happening here
+    assemble_face!(Kₑ, residualₑ, uₑ, cell, local_face_index, inner_cache, time)
+
+    # Now we get a fresh reference state to pull the differences
+    fill!(residualₑref, 0.0)
+    assemble_face!(residualₑref, uₑ, cell, local_face_index, inner_cache, time)
+    # Here we actually compute teh finite difference
+    for i in 1:length(uₑfd)
+        fill!(residualₑfd, 0.0)
+        uₑfd    .= uₑ
+        uₑfd[i] += Δ
+        assemble_face!(residualₑfd, uₑfd, cell, local_face_index, inner_cache, time)
+        residualₑfd .-= residualₑref
+        residualₑfd /= Δ
+        Kₑfd[:,i] .+= residualₑfd
+    end
+
+    # Finally we check for consistency
+    if maximum(abs.(Kₑfd .- Kₑ)) > Δ
+        @warn "Inconsistent element $(cellid(cell)) face $(local_face_index)! Jacobian difference: $(maximum(abs.(Kₑfd .- Kₑ)))"
+        @info uₑ
     end
 end

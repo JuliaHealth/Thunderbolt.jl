@@ -31,7 +31,7 @@ end
 
 #
 
-function nonlinear_step_monitor(nlcache, time, f, progress_monitor::DefaultProgressMonitor)
+function nonlinear_step_monitor(nlcache, time, f, u, progress_monitor::DefaultProgressMonitor)
     # (; id, msgs) = progress_monitor
     (; iter, linear_solver_cache) = nlcache
     stats = hasproperty(linear_solver_cache.cacheval, :stats) ? linear_solver_cache.cacheval.stats : nothing
@@ -68,13 +68,13 @@ Base.@kwdef struct VTKNewtonMonitor{MonitorType}
     inner_monitor::MonitorType = DefaultProgressMonitor()
 end
 
-function nonlinear_step_monitor(cache, time, f, monitor::VTKNewtonMonitor)
-    nonlinear_step_monitor(cache,time,f,monitor.inner_monitor)
+function nonlinear_step_monitor(cache, time, f, u, monitor::VTKNewtonMonitor)
+    nonlinear_step_monitor(cache,time,f,u,monitor.inner_monitor)
 
-    VTKGridFile(joinpath(monitor.outdir, "newton-monitor-t=$time-i=$newton_itr.vtu"), f.dh) do vtk
+    VTKGridFile(joinpath(monitor.outdir, "newton-monitor-t=$time-i=$(cache.iter).vtu"), f.dh) do vtk
         write_solution(vtk, f.dh, u)
-        write_solution(vtk, f.dh, linear_cache.b, "_residual")
-        write_solution(vtk, f.dh, linear_cache.u, "_increment")
+        write_solution(vtk, f.dh, cache.linear_solver_cache.b, "_residual")
+        write_solution(vtk, f.dh, cache.linear_solver_cache.u, "_increment")
     end
 end
 
