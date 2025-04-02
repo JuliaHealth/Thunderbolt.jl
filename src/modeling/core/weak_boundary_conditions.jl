@@ -496,7 +496,7 @@ struct ConsistencyCheckWeakBoundaryCondition{BC} <: AbstractWeakBoundaryConditio
     Δ::Float64
 end
 
-struct ConsistencyCheckWeakBoundaryConditionCache{IC}
+struct ConsistencyCheckWeakBoundaryConditionCache{IC} <: AbstractSurfaceElementCache
     inner_cache::IC
     Kₑfd::Matrix{Float64}
     uₑfd::Vector{Float64}
@@ -506,11 +506,12 @@ struct ConsistencyCheckWeakBoundaryConditionCache{IC}
 end
 @inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, face_cache::ConsistencyCheckWeakBoundaryConditionCache) = is_facet_in_cache(facet, cell, face_cache.inner_cache)
 @inline getboundaryname(face_cache::ConsistencyCheckWeakBoundaryConditionCache) = getboundaryname(face_cache.inner_cache)
+@inline getboundaryname(check::ConsistencyCheckWeakBoundaryCondition) = getboundaryname(check.bc)
 
-function setup_boundary_cache(ccc::ConsistencyCheckWeakBoundaryCondition, qr::FacetQuadratureRule, ip::Interpolation, sdh::SubDofHandler)
+function setup_boundary_cache(ccc::ConsistencyCheckWeakBoundaryCondition, qr::FacetQuadratureRule, sdh::SubDofHandler)
     N = ndofs_per_cell(sdh)
     return ConsistencyCheckWeakBoundaryConditionCache(
-        setup_boundary_cache(ccc.bc, qr, ip, sdh),
+        setup_boundary_cache(ccc.bc, qr, sdh),
         zeros(N, N),
         zeros(N),
         zeros(N),

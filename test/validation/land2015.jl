@@ -47,7 +47,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
         1e-7,
     )
     quasistaticform = semidiscretize(
-        StructuralModel(:displacement, constitutive_model, (bcs,)),
+        QuasiStaticModel(:displacement, constitutive_model, (bcs,)),
         spatial_discretization_method,
         mesh
     )
