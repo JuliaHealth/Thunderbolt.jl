@@ -362,6 +362,20 @@ function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
     !isempty(grid.vertexsets) && warn("Vertexsets are not transfered to new mesh!")
     # !isempty(grid.edgesets) && warn("Edgesets are not transfered to new mesh!")
 
+    new_cellsets = Dict{String, OrderedSet{Int}}()
+    sizehint!(new_cellsets, length(grid.cellsets))
+    for (setname, cellset) ∈ grid.cellsets
+        new_cellsets[setname] = OrderedSet{Int}()
+        n_new_cells = sum((cellidx == length(cell_offsets) ? length(new_cells) : cell_offsets[cellidx+1]) - cell_offsets[cellidx] for cellidx ∈ cellset)
+        sizehint!(new_cellsets[setname], n_new_cells)
+        for cellidx ∈ cellset
+            new_cells_range = cell_offsets[cellidx] + 1 : (cellidx == length(cell_offsets) ? length(new_cells) : cell_offsets[cellidx+1])
+            for new_cell in new_cells_range
+                push!(new_cellsets[setname], new_cell)
+            end
+        end
+    end
+
     new_facetsets = Dict{String, OrderedSet{FacetIndex}}()
     for (setname,facetset) ∈ grid.facetsets
         new_facetsets[setname] = OrderedSet{FacetIndex}()
@@ -371,7 +385,7 @@ function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
             end
         end
     end
-    return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes]; facetsets=new_facetsets, nodesets=deepcopy(grid.nodesets))
+    return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes]; cellsets = new_cellsets, facetsets=new_facetsets, nodesets=deepcopy(grid.nodesets))
 end
 
 function compute_minΔx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
