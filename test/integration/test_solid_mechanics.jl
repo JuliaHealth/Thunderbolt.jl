@@ -4,6 +4,10 @@ struct TestCalciumHatField end
 Thunderbolt.setup_coefficient_cache(coeff::TestCalciumHatField, ::QuadratureRule, ::SubDofHandler) = coeff
 Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache::CellCache, qp::QuadraturePoint, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
 
+struct TestCalciumQuadraticHatField end
+Thunderbolt.setup_coefficient_cache(coeff::TestCalciumQuadraticHatField, ::QuadratureRule, ::SubDofHandler) = coeff
+Thunderbolt.evaluate_coefficient(coeff::TestCalciumQuadraticHatField, cell_cache::CellCache, qp::QuadraturePoint, t) = t/1000.0 < 0.5 ? (2.0*t/1000.0)^2 : 2.0-(2.0*t/1000.0)^2
+
 function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, subdomains = [""])
     tspan = timestepper isa BackwardEulerSolver ? (0.0,10.0) : (0.0,300.0)
     Δt    = timestepper isa BackwardEulerSolver ? 2.0 : 100.0
@@ -43,9 +47,8 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, su
     return integrator
 end
 
-function test_solve_contractile_ideal_lv(mesh, constitutive_model)
-    tspan = (0.0,300.0)
-    Δt = 100.0
+function test_solve_contractile_ideal_lv(mesh, constitutive_model, tmax, Δt = 100.0, adaptive=true)
+    tspan = (0.0,tmax)
 
     # Clamp three sides
     dbcs = [
@@ -74,7 +77,7 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model)
     timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization(), max_iter=10, tol=1e-10)
     )
-    integrator = init(problem, timestepper, dt=Δt, verbose=true, maxiters=25)
+    integrator = init(problem, timestepper, dt=Δt, verbose=true, adaptive=adaptive, maxiters=50)
     u₀ = copy(integrator.u)
     solve!(integrator)
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
@@ -233,7 +236,7 @@ end
             TestCalciumHatField(),
         ),
         microstructure_model
-    ))
+    ), 300.0)
 
     test_solve_contractile_ideal_lv(grid, GeneralizedHillModel(
         LinYinPassiveModel(),
@@ -244,19 +247,90 @@ end
             TestCalciumHatField(),
         ),
         microstructure_model
-    ))
+    ), 300.0)
 
-    test_solve_contractile_ideal_lv(grid, ActiveStressModel(
-        HumphreyStrumpfYinModel(),
-        SimpleActiveStress(),
-        Thunderbolt.CaDrivenInternalSarcomereModel(
-            PelceSunLangeveld1995Model(),
-            TestCalciumHatField(),
-        ),
-        microstructure_model
-    ))
+    # Check that adaptivity does not change the result
+    @testset "Check path difference" begin
+        i1 = test_solve_contractile_ideal_lv(grid, ActiveStressModel(
+            HumphreyStrumpfYinModel(),
+            SimpleActiveStress(),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                PelceSunLangeveld1995Model(),
+                TestCalciumQuadraticHatField(),
+            ),
+            microstructure_model
+        ), 10.0, 1.0, true)
 
-    # TODO test with filled LV
+        i2 = test_solve_contractile_ideal_lv(grid, ActiveStressModel(
+            HumphreyStrumpfYinModel(),
+            SimpleActiveStress(),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                PelceSunLangeveld1995Model(),
+                TestCalciumQuadraticHatField(),
+            ),
+            microstructure_model
+        ), 10.0, 1.0, false)
+
+        # Test path-independence setup
+        @test i1.t ≈ 10.0
+        @test i2.t ≈ 10.0
+        @test i1.u ≈ i2.u
+    end
+
+    # Check that the load-path is actually different
+    @testset "Check path difference" begin
+        i1 = test_solve_contractile_ideal_lv(grid, ActiveStressModel(
+            HumphreyStrumpfYinModel(),
+            SimpleActiveStress(),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                PelceSunLangeveld1995Model(),
+                TestCalciumHatField(),
+            ),
+            microstructure_model
+        ), 100.0)
+
+        i2 = test_solve_contractile_ideal_lv(grid, ActiveStressModel(
+            HumphreyStrumpfYinModel(),
+            SimpleActiveStress(),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                PelceSunLangeveld1995Model(),
+                TestCalciumQuadraticHatField(),
+            ),
+            microstructure_model
+        ), 100.0)
+
+        # Test path-independence setup
+        @test i1.t ≈ 100.0
+        @test i2.t ≈ 100.0
+        @test i1.u ≠ i2.u
+    end
+
+    # Check that the integrator reaches the final time and the solutions coincide
+    @testset "Check path independence" begin
+        i1 = test_solve_contractile_ideal_lv(grid, ActiveStressModel(
+            HumphreyStrumpfYinModel(),
+            SimpleActiveStress(),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                PelceSunLangeveld1995Model(),
+                TestCalciumHatField(),
+            ),
+            microstructure_model
+        ), 500.0)
+
+        i2 = test_solve_contractile_ideal_lv(grid, ActiveStressModel(
+            HumphreyStrumpfYinModel(),
+            SimpleActiveStress(),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                PelceSunLangeveld1995Model(),
+                TestCalciumQuadraticHatField(),
+            ),
+            microstructure_model
+        ), 500.0)
+        # Test path-independence
+        @test i1.t ≈ 500.0
+        @test i2.t ≈ 500.0
+        @test i1.u ≈ i2.u
+    end
 end
 
 @testset "Viscoelasticity" begin
