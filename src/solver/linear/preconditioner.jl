@@ -2,6 +2,7 @@
 ## L1 Gauss Seidel Preconditioner ##
 ####################################
 
+## Structs ##
 abstract type AbstractPartitioning end
 
 struct GpuPartitioning{Ti,Backend} <: AbstractPartitioning
@@ -24,10 +25,8 @@ struct L1Preconditioner{Partitioning,MatrixType}
     A::MatrixType
 end
 
-# LinearSolve.ldiv!(::VectorType, ::L1Preconditioner{Partitioning}, ::VectorType) where {VectorType<:AbstractVector,Partitioning} =
-#     error("Not implemented")
-
 abstract type AbstractL1PrecBuilder end
+
 struct GpuL1PrecBuilder <: AbstractL1PrecBuilder
     backend::GPU
     function GpuL1PrecBuilder(backend::GPU)
@@ -43,13 +42,37 @@ struct CpuL1PrecBuilder <: AbstractL1PrecBuilder end
 (builder::AbstractL1PrecBuilder)(A::AbstractMatrix,partsize::Ti,nparts::Ti) where {Ti} = 
     build_l1prec(builder, A,partsize, nparts)
 
-
-## Shared code for cpu and gpu implementations
-abstract type AbstractDiagonalIterator end
+# CSR and CSC are exact the same in symmetric matrices,so we need to hold symmetry info
+# in order to be exploited in CSC case (i.e. treat CSC as CSR for symmetric matrices).
 abstract type AbstractMatrixSymmetry end
-
-struct SymmetricMatrix <: AbstractMatrixSymmetry end # important for the case of CSC format
+struct SymmetricMatrix <: AbstractMatrixSymmetry end 
 struct NonSymmetricMatrix <: AbstractMatrixSymmetry end
+    
+abstract type AbstractDiagonalIterator end
+## Naming convention here: 'Device' is usedfor objects that are usedin GPU conext.
+## 'Gpu' is used for the objects that are used in CPU context but hold some data for GPU.  
+struct DeviceDiagonalIterator{MatrixFormat,MatrixSymmetry  <: AbstractMatrixSymmetry,MatrixType,Ti} <: AbstractDiagonalIterator
+    A::MatrixType
+    partsize::Ti
+    nparts::Ti
+    local_idx::Ti # local index never changes
+    initial_partition_idx::Ti # why initial ? because we are using stride to loop over the diagonals. 
+    initial_global_idx::Ti 
+    function DeviceDiagonalIterator(::Type{symT}, A::MatrixType,partsize::Ti,nparts::Ti,local_idx::Ti,initial_partition_idx::Ti) where {symT<:AbstractMatrixSymmetry,MatrixType,Ti}
+        format_type = sparsemat_format_type(A) 
+        initial_global_idx = (initial_partition_idx - convert(Ti,1)) * partsize + local_idx
+        new{format_type,symT,MatrixType,Ti}(A,partsize,nparts,local_idx,initial_partition_idx,initial_global_idx)
+    end
+end
+
+struct DiagonalIterator{MatrixType,MatrixSymmetry<:AbstractMatrixSymmetry,Ti<:Integer} <: AbstractDiagonalIterator
+    A::MatrixType
+    k::Ti # partition index
+    partsize::Ti # partition size
+end
+
+DiagonalIterator(::Type{SymT}, k::Ti, partsize::Ti, A::MatrixType) where {SymT<:AbstractMatrixSymmetry,MatrixType,Ti<:Integer} =
+    DiagonalIterator{MatrixType,SymT,Ti}(A, k, partsize)
 
 struct DiagonalCache{Ti,Tv}
     k::Ti # partition index
@@ -58,7 +81,11 @@ struct DiagonalCache{Ti,Tv}
     d::Tv # off-partition absolute sum
 end
 
-function diag_offpart_csr(rowPtr, colVal, nzVal, idx::Integer, part_start::Integer, part_end::Integer)
+abstract type AbstractMatrixFormat end
+struct CSR <: AbstractMatrixFormat end
+struct CSC <: AbstractMatrixFormat end
+
+function _diag_offpart_csr(rowPtr, colVal, nzVal, idx::Integer, part_start::Integer, part_end::Integer)
     Tv = eltype(nzVal)
     b = zero(Tv)
     d = zero(Tv)
@@ -80,7 +107,7 @@ function diag_offpart_csr(rowPtr, colVal, nzVal, idx::Integer, part_start::Integ
     return b, d
 end
 
-function diag_offpart_csc(colPtr, rowVal, nzVal, idx::Integer, part_start::Integer, part_end::Integer)
+function _diag_offpart_csc(colPtr, rowVal, nzVal, idx::Integer, part_start::Integer, part_end::Integer)
     Tv = eltype(nzVal)
     b = zero(Tv)
     d = zero(Tv)
@@ -108,8 +135,7 @@ function diag_offpart_csc(colPtr, rowVal, nzVal, idx::Integer, part_start::Integ
     return b, d
 end
 
-
-## KA - GPU
+## KA - GPU ##
 function build_l1prec(builder::GpuL1PrecBuilder, A::AbstractSparseMatrix,partsize::Ti, nparts::Ti) where {Ti<:Integer}
     @unpack backend = builder
     partsize == 0 && error("partsize must be greater than 0")
@@ -133,7 +159,7 @@ function convert_to_backend(::AbstractSparseMatrix, ::GPU)
 end
 
 function convert_to_backend(::AbstractVector, ::GPU)
-    # this functions needs to be extended to support all the sparse matrix formats in different backends.
+    # this functions needs to be extended to support all vector types in different backends.
     # e.g. `convert_to_backend(x::Vector, ::CUDABackend)` should return `x |> cu` object.
     # `convert_to_backend(x::CuVector, ::CUDABackend)` should return `x` object.
     error("Not implemented")
@@ -165,27 +191,8 @@ function _ldiv!(y::VectorType , P::L1Preconditioner{GpuPartitioning{Ti,Backend}}
     return nothing
 end
 
-
-abstract type AbstractMatrixFormat end
-struct CSR <: AbstractMatrixFormat end
-struct CSC <: AbstractMatrixFormat end
-
-function sparsemat_format_type(A::AbstractSparseMatrix)
+function sparsemat_format_type(::AbstractSparseMatrix)
     error("Not implemented")
-end
-
-struct DeviceDiagonalIterator{MatrixFormat,MatrixSymmetry  <: AbstractMatrixSymmetry,MatrixType,Ti} <: AbstractDiagonalIterator
-    A::MatrixType
-    partsize::Ti
-    nparts::Ti
-    local_idx::Ti # local index never changes
-    initial_partition_idx::Ti # why initial ? because we are using stride to loop over the diagonals. 
-    initial_global_idx::Ti 
-    function DeviceDiagonalIterator(::Type{symT}, A::MatrixType,partsize::Ti,nparts::Ti,local_idx::Ti,initial_partition_idx::Ti) where {symT<:AbstractMatrixSymmetry,MatrixType,Ti}
-        format_type = sparsemat_format_type(A) 
-        initial_global_idx = (initial_partition_idx - convert(Ti,1)) * partsize + local_idx
-        new{CSC,symT,MatrixType,Ti}(A,partsize,nparts,local_idx,initial_partition_idx,initial_global_idx)
-    end
 end
 
 function Base.iterate(iterator::DeviceDiagonalIterator)
@@ -203,16 +210,16 @@ function Base.iterate(iterator::DeviceDiagonalIterator, state)
     k += nparts # partition index
     idx = idx + total_work_items # diagonal index
     idx <= size(A, 1) || return nothing
-    return (_makecache(iterator,idx,k), (idx+1,k+1))
+    return (_makecache(iterator,idx,k), (idx,k))
 end
 
 
 _makecache(iterator::DeviceDiagonalIterator{CSC,NonSymmetricMatrix}, idx,k) = 
-    _makecache(iterator,idx,k,diag_offpart_csc)
+    _makecache(iterator,idx,k,_diag_offpart_csc)
 
 
  _makecache(iterator::DeviceDiagonalIterator{CSC,SymmetricMatrix}, idx,k) = 
-    _makecache(iterator,idx,k,diag_offpart_csr)
+    _makecache(iterator,idx,k,_diag_offpart_csr)
 
 
 function _makecache(iterator::DeviceDiagonalIterator{CSC}, idx,k, diag_offpart_func) 
@@ -239,40 +246,27 @@ function _makecache(iterator::DeviceDiagonalIterator{CSR}, idx,k)
     part_start_idx = (k - Int32(1)) * partsize + Int32(1)
     part_end_idx = min(part_start_idx + partsize - Int32(1), size(A, 2)) 
 
-    b,d = diag_offpart_csr(getrowptr(A), colvals(A), nnz(A), idx, part_start_idx, part_end_idx)
+    b,d = _diag_offpart_csr(getrowptr(A), colvals(A), nnz(A), idx, part_start_idx, part_end_idx)
 
     return DiagonalCache(k, idx, b, d)
 end
 
-struct DummyIter{MatrixType,Ti} <: AbstractDiagonalIterator
-    A::MatrixType
-    idx::Ti
-    k::Ti
-end
-
-function Base.iterate(iterator::DummyIter,state = 1)
-    if state >= 10
-        return nothing
-    end
-    return (state, state+1)
-end
-
-
 @kernel function _l1prec_kernel!(y, A,issym,partsize::Ti,nparts::Ti) where {Ti<:Integer}
     # this kernel will loop over the corresponding diagonals in strided fashion.
-    # e.g. if n_threads = 4, n_blocks = 2, A is (100 x 100), and current global thread id = 5, 
+    # e.g. if partsize = 4, nparts = 2, A is (100 x 100), and current global thread id = 5, 
     # then the kernel will loop over the diagonals with stride:
-    # k (partition index) = k + n_blocks (i.e. 2, 4, 6, 8, 10, 12, 14)
-    # idx (diagonal index) = idx + n_blocks * n_threads (i.e. 5, 13, 21, 29, 37, 45, 53)
+    # k (partition index) = k + nparts (i.e. 2, 4, 6, 8, 10, 12, 14)
+    # idx (diagonal index) = idx + nparts * partsize (i.e. 5, 13, 21, 29, 37, 45, 53)
     symT = issym ? SymmetricMatrix : NonSymmetricMatrix
     local_idx = convert(Ti,@index(Local))
     initial_partition_idx = convert(Ti,@index(Group)) 
     for diagonal in DeviceDiagonalIterator(symT,A,partsize,nparts,local_idx,initial_partition_idx)
         @unpack k, idx, b, d = diagonal
-        @print k,d #TODO: remove this line
+        @print k,idx,convert(Float64,b), convert(Float64,d) #TODO: remove this line
         y[idx] = y[idx]/ (b + d)  
     end
 end
+
 
 ## CPU Multithreaded implementation for the L1 Gauss Seidel preconditioner
 function build_l1prec(::CpuL1PrecBuilder, A::AbstractSparseMatrix; partsize::Union{Integer,Nothing}=nothing)
@@ -291,15 +285,6 @@ function LinearSolve.ldiv!(y::VectorType, P::L1Preconditioner{CpuPartitioning{Ti
     _l1prec!(y, P, isapprox(P.A, P.A', rtol=1e-12))
 end
 
-struct DiagonalIterator{MatrixType,MatrixSymmetry<:AbstractMatrixSymmetry,Ti<:Integer} <: AbstractDiagonalIterator
-    A::MatrixType
-    k::Ti # partition index
-    partsize::Ti # partition size
-end
-
-DiagonalIterator(::Type{SymT}, k::Ti, partsize::Ti, A::MatrixType) where {SymT<:AbstractMatrixSymmetry,MatrixType,Ti<:Integer} =
-    DiagonalIterator{MatrixType,SymT,Ti}(A, k, partsize)
-
 function Base.iterate(iterator::DiagonalIterator, state=1)
     @unpack A, k, partsize = iterator
     idx = (k - 1) * partsize + state
@@ -309,11 +294,11 @@ end
 
 
 _makecache(iterator::DiagonalIterator{SparseMatrixCSC,NonSymmetricMatrix}, idx) =
-    _makecache(iterator, idx, diag_offpart_csc)
+    _makecache(iterator, idx, _diag_offpart_csc)
 
 
 _makecache(iterator::DiagonalIterator{SparseMatrixCSC{Tv,Ti},SymmetricMatrix}, idx) where {Tv,Ti} =
-    _makecache(iterator, idx, diag_offpart_csr)
+    _makecache(iterator, idx, _diag_offpart_csr)
 
 
 function _makecache(iterator::DiagonalIterator{SparseMatrixCSC{Tv,Ti}}, idx, diag_offpart_func) where {Tv,Ti}
@@ -340,7 +325,7 @@ function _makecache(iterator::DiagonalIterator{SparseMatrixCSR}, idx)
     part_start_idx = (k - 1) * partsize + 1
     part_end_idx = min(part_start_idx + partsize - 1, size(A, 2))
 
-    b, d = diag_offpart_csr(A.rowptr, A.colval, A.nzval, idx, part_start_idx, part_end_idx)
+    b, d = _diag_offpart_csr(A.rowptr, A.colval, A.nzval, idx, part_start_idx, part_end_idx)
 
     return DiagonalCache(k, idx, b, d)
 end
