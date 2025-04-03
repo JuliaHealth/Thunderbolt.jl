@@ -437,17 +437,17 @@ end
 
 
 @doc raw"""
-    BioNeoHooekean
+    BioNeoHookean
     
 A simple isotropic Neo-Hookean model of the form
 
 $\Psi = \alpha (\bar{I_1}-3)$
 """
-Base.@kwdef struct BioNeoHooekean{TD,TU} #<: IsotropicMaterialModel
+Base.@kwdef struct BioNeoHookean{TD,TU} #<: IsotropicMaterialModel
     α::TD = 1.0
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, coeff, mp::BioNeoHooekean)
+function Ψ(F, coeff, mp::BioNeoHookean)
     # Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack α, mpU = mp
     C = tdot(F)
