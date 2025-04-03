@@ -20,6 +20,8 @@
         reinit!(cell_cache, 2)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ val
         @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 1.0) ≈ val
+
+        @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
     end
 
     @testset "FieldCoefficient" begin
@@ -52,6 +54,8 @@
         reinit!(cell_cache, 2)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ Vec((0.0,-0.5))
         @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 1.0) ≈ Vec((0.0,(0.1+1.0)/2.0-1.0))
+
+        @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
     end
 
     @testset "Cartesian Coordinate System" begin
@@ -67,6 +71,8 @@
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 1.0) ≈ Vec((0.5,))
         @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 0.0) ≈ Vec((0.55,))
         @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 1.0) ≈ Vec((0.55,))
+
+        @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
     end
 
     @testset "AnalyticalCoefficient" begin
@@ -85,6 +91,8 @@
         @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 0.0) ≈  0.55
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 1.0) ≈  1.5
         @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 1.0) ≈  1.55
+
+        @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
     end
 
     @testset "SpectralTensorCoefficient" begin
@@ -119,6 +127,8 @@
         )
         coeff_cache = Thunderbolt.setup_coefficient_cache(stc3, qr, sdh)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ st2
+
+        @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
     end
 
     @testset "SpatiallyHomogeneousDataField" begin
@@ -140,6 +150,8 @@
             @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 2.0) ≈ Vec((0.2,))
             @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 2.1) ≈ Vec((0.3,))
             @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 2.1) ≈ Vec((0.3,))
+
+            @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
         end
     end
 
@@ -164,6 +176,8 @@
             @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 0.0) ≈ st
             @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 1.0) ≈ st
             @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 1.0) ≈ st
+
+            @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
         end
     end
 end
