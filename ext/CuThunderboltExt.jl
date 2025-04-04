@@ -15,8 +15,8 @@ import Thunderbolt:
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
-    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
-    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator
+    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaDevice, ElementAssemblyStrategy, value_type, index_type, 
+    convert_vec_to_concrete,AbstractElementAssembly,GeneralLinearOperator
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,

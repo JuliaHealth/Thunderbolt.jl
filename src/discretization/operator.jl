@@ -369,9 +369,13 @@ struct LinearOperator{VectorType, IntegrandType, DHType <: AbstractDofHandler} <
     integrand::IntegrandType
     qrc::QuadratureRuleCollection
     dh::DHType
+    strategy_cache
 end
 
-function update_operator!(op::LinearOperator, time)
+# Control dispatch for assembly strategy
+update_operator!(op::LinearOperator, time) = _update_linear_operator!(op, op.strategy_cache, time)
+
+function _update_linear_operator!(op::LinearOperator, strategy_cache::SequentialAssemblyStrategyCache, time)
     @unpack b, qrc, dh, integrand  = op # TODO qrc into integrand
 
     fill!(b, 0.0)
@@ -383,13 +387,13 @@ function update_operator!(op::LinearOperator, time)
         element_cache = setup_element_cache(integrand, element_qr, sdh)
 
         # Function barrier
-        _update_linear_operator_on_subdomain!(b, sdh, element_cache, time)
+        _update_linear_operator_on_subdomain_sequential!(b, sdh, element_cache, time)
     end
 
     #finish_assemble(assembler)
 end
 
-function _update_linear_operator_on_subdomain!(b, sdh, element_cache, time)
+function _update_linear_operator_on_subdomain_sequential!(b, sdh, element_cache, time)
     ndofs = ndofs_per_cell(sdh)
     bₑ = zeros(ndofs)
     @inbounds for cell in CellIterator(sdh)
@@ -410,20 +414,19 @@ struct PEALinearOperator{VectorType, EAType, ProtocolType, DHType <: AbstractDof
     qrc::QuadratureRuleCollection
     protocol::ProtocolType
     dh::DHType
-    chunksize::Int
-    function PEALinearOperator(b::AbstractVector, qrc::QuadratureRuleCollection, protocol, dh::AbstractDofHandler; chunksizehint=64)
+    function PEALinearOperator(b::AbstractVector, qrc::QuadratureRuleCollection, protocol, dh::AbstractDofHandler)
         beas = EAVector(dh)
-        new{typeof(b), typeof(beas), typeof(protocol), typeof(dh)}(b, beas, qrc, protocol, dh, chunksizehint)
+        new{typeof(b), typeof(beas), typeof(protocol), typeof(dh)}(b, beas, qrc, protocol, dh)
     end
 end
 
 function update_operator!(op::PEALinearOperator, time)
-    _update_operator!(op, op.b, time)
+    _update_linear_operator!(op, ElementAssemblyStrategyCache(PolyesterDevice(), op.beas), time) # TODO allocated cache
 end
 
 # Threaded CPU dispatch
-function _update_operator!(op::PEALinearOperator, b::Vector, time)
-    @unpack qrc, dh, chunksize, protocol = op
+function _update_linear_operator!(op::PEALinearOperator, strategy_cache::ElementAssemblyStrategyCache, time)
+    @unpack b, qrc, dh, protocol = op
 
     @timeit_debug "assemble elements" for sdh in dh.subdofhandlers
         # Prepare evaluation caches
@@ -433,17 +436,18 @@ function _update_operator!(op::PEALinearOperator, b::Vector, time)
         element_cache = setup_element_cache(protocol, element_qr, sdh)
 
         # Function barrier
-        _update_pealinear_operator_on_subdomain!(op.beas, sdh, element_cache, time, chunksize)
+        _update_pealinear_operator_on_subdomain!(strategy_cache.ea_data, sdh, element_cache, time, strategy_cache.device_cache.chunksize)
     end
 
     fill!(b, 0.0)
-    ea_collapse!(b, op.beas)
+    ea_collapse!(b, strategy_cache.ea_data)
 end
 
 function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_cache, time, chunksize::Int)
     ncells = length(sdh.cellset)
     nchunks = ceil(Int, ncells / chunksize)
-    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_parallel(element_cache)) for tid in 1:nchunks]
+    device = nothing # :)
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunks]
     @batch for chunk in 1:nchunks
         chunkbegin = (chunk-1)*chunksize+1
         chunkbound = min(ncells, chunk*chunksize)

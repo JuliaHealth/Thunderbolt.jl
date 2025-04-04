@@ -49,8 +49,10 @@ import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
 
-
 include("utils.jl")
+
+include("devices.jl")
+include("strategy.jl")
 
 include("mesh/meshes.jl")
 

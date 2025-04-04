@@ -1,6 +1,7 @@
+using Thunderbolt
 import Thunderbolt: AssembledNonlinearOperator, AssembledBilinearOperator, NullOperator, DiagonalOperator, BlockOperator
 import LinearAlgebra: mul!
-using BlockArrays, SparseArrays
+using BlockArrays, SparseArrays, StaticArrays, Test
 
 @testset "Operators" begin
     @testset "Actions" begin
@@ -91,6 +92,7 @@ using BlockArrays, SparseArrays
                 protocol,
                 qrc,
                 dh,
+                Thunderbolt.SequentialAssemblyStrategyCache(nothing),
             )
             Thunderbolt.update_operator!(linop,0.0)
             @test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
@@ -117,6 +119,7 @@ using BlockArrays, SparseArrays
                 protocol,
                 qrc,
                 dh,
+                Thunderbolt.SequentialAssemblyStrategyCache(nothing),
             )
             Thunderbolt.update_operator!(linop,0.0)
             @test linop.b ≈ [1.0/2, 5.0/6, 4.0/3, 5.0/6, 1.0/2, 5.0/6, 5.0/6, 1.0/2, 1.0/2]

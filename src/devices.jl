@@ -1,0 +1,46 @@
+abstract type AbstractDevice{ValueType, IndexType} end
+abstract type AbstractCPUDevice{ValueType, IndexType} <: AbstractDevice{ValueType, IndexType} end
+abstract type AbstractGPUDevice{ValueType, IndexType} <: AbstractDevice{ValueType, IndexType} end
+
+value_type(::AbstractDevice{ValueType}) where ValueType = ValueType
+index_type(::AbstractDevice{<:Any, IndexType}) where IndexType = IndexType
+
+
+"""
+    SequentialCPUDevice
+
+Sequential algorithms on CPU.
+"""
+struct SequentialCPUDevice{ValueType, IndexType} <: AbstractCPUDevice{ValueType, IndexType}
+end
+SequentialCPUDevice() = SequentialCPUDevice{Float64, Int64}()
+
+
+"""
+    PolyesterDevice
+    
+Threaded algorithms via Polyester.jl .
+"""
+struct PolyesterDevice{ValueType, IndexType} <: AbstractCPUDevice{ValueType, IndexType}
+    chunksize::IndexType
+end
+PolyesterDevice() = PolyesterDevice{Float64, Int64}(32)
+allocate_vector(::PolyesterDevice{Tv}) where Tv = Vector{Tv}
+
+struct ChunkLocalAssemblyData{CellCacheType, ElementCacheType}
+    cc::CellCacheType
+    ec::ElementCacheType
+end
+
+
+"""
+    CudaDevice
+    
+Please add CUDA.jl to your Project to make this device work.
+"""
+struct CudaDevice{ValueType, IndexType} <: AbstractGPUDevice{ValueType, IndexType}
+    threads::IndexType
+    blocks::IndexType
+end
+
+CudaDevice() = CudaDevice(Float32, Int32)

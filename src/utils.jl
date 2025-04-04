@@ -189,7 +189,7 @@ function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::Abstr
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
-    
+
     @batch minbatch = size(y, 1) ÷ Threads.nthreads() for row in 1:size(y, 1)
         @inbounds begin
             v = zero(eltype(y))
@@ -438,11 +438,6 @@ end
         be_range = get_data_for_index(bes.eadata, edp.element_index)
         b[dof] += be_range[edp.local_dof_index]
     end
-end
-
-struct ChunkLocalAssemblyData{CellCacheType, ElementCacheType}
-    cc::CellCacheType
-    ec::ElementCacheType
 end
 
 create_dof_to_element_map(dh::DofHandler) = create_dof_to_element_map(Int, dh::DofHandler)
