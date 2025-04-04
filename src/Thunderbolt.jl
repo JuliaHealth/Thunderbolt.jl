@@ -42,10 +42,11 @@ import ForwardDiff
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
-        compose, ODESystem, Differential
+    compose, ODESystem, Differential
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
+import KernelAbstractions: GPU, @kernel, @index, @ndrange, @groupsize, @print, functional
 import Adapt:
     Adapt, adapt_structure, adapt
 
@@ -95,6 +96,7 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
+include("solver/linear/preconditioner.jl")
 
 # TODO put exports into the individual submodules above!
 export
