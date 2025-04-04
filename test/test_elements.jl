@@ -116,14 +116,17 @@
 
         element_cache = setup_element_cache(QuasiStaticModel(:u, model, ()), qr, sdhv)
 
-        assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, element_cache, 0.0)
+        @test_opt assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, element_cache, 0.0)
+                  assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, element_cache, 0.0)
         @test !iszero(Kₑ¹)
         @test !iszero(rₑ¹)
 
-        assemble_element!(     rₑ², uₑv, cell_cache_v, element_cache, 0.0)
+        @test_opt assemble_element!(     rₑ², uₑv, cell_cache_v, element_cache, 0.0)
+                  assemble_element!(     rₑ², uₑv, cell_cache_v, element_cache, 0.0)
         @test rₑ² ≈ rₑ¹
 
-        assemble_element!(Kₑ²,      uₑv, cell_cache_v, element_cache, 0.0)
+        @test_opt assemble_element!(Kₑ²,      uₑv, cell_cache_v, element_cache, 0.0)
+                  assemble_element!(Kₑ²,      uₑv, cell_cache_v, element_cache, 0.0)
         @test Kₑ² ≈ Kₑ¹
 
         composite_element_cache = CompositeVolumetricElementCache((
@@ -133,16 +136,19 @@
 
         Kₑ¹ .= 0.0
         rₑ¹ .= 0.0
-        assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, composite_element_cache, 0.0)
+        @test_opt assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, composite_element_cache, 0.0)
+                  assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, composite_element_cache, 0.0)
         @test 2Kₑ² ≈ Kₑ¹
         @test 2rₑ² ≈ rₑ¹
 
         rₑ² .= 0.0
-        assemble_element!(     rₑ², uₑv, cell_cache_v, composite_element_cache, 0.0)
+        @test_opt assemble_element!(     rₑ², uₑv, cell_cache_v, composite_element_cache, 0.0)
+                  assemble_element!(     rₑ², uₑv, cell_cache_v, composite_element_cache, 0.0)
         @test rₑ² ≈ rₑ¹
 
         Kₑ² .= 0.0
-        assemble_element!(Kₑ²,      uₑv, cell_cache_v, composite_element_cache, 0.0)
+        @test_opt assemble_element!(Kₑ²,      uₑv, cell_cache_v, composite_element_cache, 0.0)
+                  assemble_element!(Kₑ²,      uₑv, cell_cache_v, composite_element_cache, 0.0)
         @test Kₑ² ≈ Kₑ¹
     end
 
