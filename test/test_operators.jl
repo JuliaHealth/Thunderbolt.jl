@@ -1,5 +1,5 @@
 using Thunderbolt
-import Thunderbolt: AssembledNonlinearOperator, AssembledBilinearOperator, NullOperator, DiagonalOperator, BlockOperator
+import Thunderbolt: AssembledNonlinearOperator, AssembledBilinearOperator, NullOperator, DiagonalOperator, BlockOperator, EAVector
 import LinearAlgebra: mul!
 using BlockArrays, SparseArrays, StaticArrays, Test
 
@@ -87,24 +87,21 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 [SVector((0.0, 1.0))]
             )
 
-            linop = Thunderbolt.LinearOperator(
-                zeros(ndofs(dh)),
-                protocol,
-                qrc,
-                dh,
-                Thunderbolt.SequentialAssemblyStrategyCache(nothing),
+            for strategy_cache in (
+                    Thunderbolt.SequentialAssemblyStrategyCache(nothing),
+                    Thunderbolt.ElementAssemblyStrategyCache(SequentialCPUDevice(),EAVector(dh)),
+                    Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(),EAVector(dh)),
             )
-            Thunderbolt.update_operator!(linop,0.0)
-            @test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
-
-            plinop = Thunderbolt.PEALinearOperator(
-                zeros(ndofs(dh)),
-                qrc,
-                protocol,
-                dh,
-            )
-            Thunderbolt.update_operator!(plinop,0.0)
-            @test linop.b ≈ plinop.b
+                linop = Thunderbolt.LinearOperator(
+                    zeros(ndofs(dh)),
+                    protocol,
+                    qrc,
+                    dh,
+                    strategy_cache,
+                )
+                Thunderbolt.update_operator!(linop,0.0)
+                @test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
+            end
         end
 
         @testset "Quadratic Cartesian" begin
@@ -114,24 +111,21 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 [SVector((0.0, 1.0))]
             )
 
-            linop = Thunderbolt.LinearOperator(
-                zeros(ndofs(dh)),
-                protocol,
-                qrc,
-                dh,
+            for strategy_cache in (
                 Thunderbolt.SequentialAssemblyStrategyCache(nothing),
+                Thunderbolt.ElementAssemblyStrategyCache(SequentialCPUDevice(),EAVector(dh)),
+                Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(),EAVector(dh)),
             )
-            Thunderbolt.update_operator!(linop,0.0)
-            @test linop.b ≈ [1.0/2, 5.0/6, 4.0/3, 5.0/6, 1.0/2, 5.0/6, 5.0/6, 1.0/2, 1.0/2]
-
-            plinop = Thunderbolt.PEALinearOperator(
-                zeros(ndofs(dh)),
-                qrc,
-                protocol,
-                dh,
-            )
-            Thunderbolt.update_operator!(plinop,0.0)
-            @test linop.b ≈ plinop.b
+                linop = Thunderbolt.LinearOperator(
+                    zeros(ndofs(dh)),
+                    protocol,
+                    qrc,
+                    dh,
+                    strategy_cache,
+                )
+                Thunderbolt.update_operator!(linop,0.0)
+                @test linop.b ≈ [1.0/2, 5.0/6, 4.0/3, 5.0/6, 1.0/2, 5.0/6, 5.0/6, 1.0/2, 1.0/2]
+            end
         end
     end
 

@@ -11,26 +11,35 @@ function setup_operator(f::NullFunction, solver::AbstractSolver)
 end
 
 # Linear
-function setup_operator(::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc)
-    check_subdomains(dh)
-    LinearNullOperator{Float64, ndofs(dh)}()
+function setup_operator(strategy::AbstractAssemblyStrategy, ::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
-function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc)
-    return PEALinearOperator(
-        zeros(ndofs(dh)),
+function setup_operator(strategy::SequentialAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
+    return LinearOperator(
+        zeros(value_type(strategy.device), ndofs(dh)),
         qrc,
         protocol,
         dh,
+        SequentialAssemblyStrategyCache(strategy.device),
+    )
+end
+function setup_operator(strategy::ElementAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
+    return LinearOperator(
+        zeros(value_type(strategy.device), ndofs(dh)),
+        qrc,
+        protocol,
+        dh,
+        Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(), EAVector(value_type(strategy.device), index_type(strategy.device), dh)),
     )
 end
 
 # Bilinear
-function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
-    setup_assembled_operator(integrator, solver.system_matrix_type, dh)
+function setup_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, prototype::AbstractMatrix)
+    setup_assembled_operator(strategy, integrator, dh, prototype)
 end
-function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
-    A  = create_system_matrix(system_matrix_type, dh)
-    A_ = allocate_matrix(dh) #  TODO how to query this?
+function setup_assembled_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, dh::AbstractDofHandler, prototype::SystemMatrixType) where SystemMatrixType
+    A  = create_system_matrix(SystemMatrixType, dh)
+    A_ = allocate_matrix(dh) #  TODO how to query this correctly?
     return AssembledBilinearOperator(
         A, A_,
         integrator,

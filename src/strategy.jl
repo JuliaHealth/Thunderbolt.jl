@@ -18,7 +18,6 @@ end
 """
 struct PerColorAssemblyStrategy <: AbstractAssemblyStrategy
     device::AbstractDevice
-    chunksize::Int
     coloralg::Symbol
 end
 
@@ -36,7 +35,6 @@ end
 """
 struct ElementAssemblyStrategy <: AbstractAssemblyStrategy
     device::AbstractDevice
-    chunksize::Int
 end
 
 struct ElementAssemblyStrategyCache{DeviceCacheType, EADataType}

@@ -364,12 +364,12 @@ Base.size(op::LinearNullOperator{T,S}) where {T,S} = S
 update_operator!(op::LinearNullOperator, time) = nothing
 needs_update(op::LinearNullOperator, t) = false
 
-struct LinearOperator{VectorType, IntegrandType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
+struct LinearOperator{VectorType, IntegrandType, DHType <: AbstractDofHandler, StrategyCacheType} <: AbstractLinearOperator
     b::VectorType
     integrand::IntegrandType
     qrc::QuadratureRuleCollection
     dh::DHType
-    strategy_cache
+    strategy_cache::StrategyCacheType
 end
 
 # Control dispatch for assembly strategy
@@ -404,6 +404,25 @@ function _update_linear_operator_on_subdomain_sequential!(b, sdh, element_cache,
     end
 end
 
+# CPU EA dispatch
+function _update_linear_operator!(op::AbstractLinearOperator, strategy_cache::ElementAssemblyStrategyCache{<:AbstractCPUDevice}, time)
+    @unpack b, qrc, dh, integrand  = op # TODO qrc into integrand
+
+    for sdh in dh.subdofhandlers
+        # Prepare evaluation caches
+        element_qr  = getquadraturerule(qrc, sdh)
+
+        # Build evaluation caches
+        element_cache = setup_element_cache(integrand, element_qr, sdh)
+
+        # Function barrier
+        _update_pealinear_operator_on_subdomain!(strategy_cache.ea_data, sdh, element_cache, time, strategy_cache.device_cache)
+    end
+
+    fill!(b, 0.0)
+    ea_collapse!(b, strategy_cache.ea_data)
+end
+
 """
 Parallel element assembly linear operator.
 """
@@ -424,31 +443,21 @@ function update_operator!(op::PEALinearOperator, time)
     _update_linear_operator!(op, ElementAssemblyStrategyCache(PolyesterDevice(), op.beas), time) # TODO allocated cache
 end
 
-# Threaded CPU dispatch
-function _update_linear_operator!(op::PEALinearOperator, strategy_cache::ElementAssemblyStrategyCache, time)
-    @unpack b, qrc, dh, protocol = op
-
-    @timeit_debug "assemble elements" for sdh in dh.subdofhandlers
-        # Prepare evaluation caches
-        element_qr  = getquadraturerule(qrc, sdh)
-
-        # Build evaluation caches
-        element_cache = setup_element_cache(protocol, element_qr, sdh)
-
-        # Function barrier
-        _update_pealinear_operator_on_subdomain!(strategy_cache.ea_data, sdh, element_cache, time, strategy_cache.device_cache.chunksize)
+function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_cache, time, device::SequentialCPUDevice)
+    @timeit_debug "assemble subdomain" @inbounds for cell in CellIterator(sdh)
+        bₑ = get_data_for_index(beas, cellid(cell))
+        fill!(bₑ, 0)
+        @timeit_debug "assemble element" assemble_element!(bₑ, cell, element_cache, time)
     end
-
-    fill!(b, 0.0)
-    ea_collapse!(b, strategy_cache.ea_data)
 end
 
-function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_cache, time, chunksize::Int)
+function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_cache, time, device::PolyesterDevice)
+    (; chunksize) = device
     ncells = length(sdh.cellset)
     nchunks = ceil(Int, ncells / chunksize)
     device = nothing # :)
     tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunks]
-    @batch for chunk in 1:nchunks
+    @timeit_debug "assemble subdomain" @batch for chunk in 1:nchunks
         chunkbegin = (chunk-1)*chunksize+1
         chunkbound = min(ncells, chunk*chunksize)
         for i in chunkbegin:chunkbound
@@ -457,6 +466,7 @@ function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_c
             reinit!(tld.cc, eid)
             bₑ = get_data_for_index(beas, eid)
             fill!(bₑ, 0.0)
+            # @timeit_debug "assemble element" assemble_element!(bₑ, tld.cc, tld.ec, time)
             assemble_element!(bₑ, tld.cc, tld.ec, time)
         end
     end
@@ -467,18 +477,18 @@ __add_to_vector!(b::AbstractVector, a::AbstractVector) = b .+= a
 Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
-function needs_update(op::Union{LinearOperator, PEALinearOperator}, t)
+function needs_update(op::LinearOperator, t)
     return _needs_update(op, op.protocol, t)
 end
 
-function _needs_update(op::Union{LinearOperator, PEALinearOperator}, protocol::AnalyticalTransmembraneStimulationProtocol, t)
+function _needs_update(op::LinearOperator, protocol::AnalyticalTransmembraneStimulationProtocol, t)
     for nonzero_interval ∈ protocol.nonzero_intervals
         nonzero_interval[1] ≤ t ≤ nonzero_interval[2] && return true
     end
     return false
 end
 
-function _needs_update(op::Union{LinearOperator, PEALinearOperator}, protocol::NoStimulationProtocol, t)
+function _needs_update(op::LinearOperator, protocol::NoStimulationProtocol, t)
     return false
 end
 
@@ -491,7 +501,7 @@ end
 abstract type AbstractElementAssembly end
 
 # This linear operator is designed to be able to be dispatched to different devices (i.e. GPU and CPU (single threaded and multi-threaded)).
-struct GeneralLinearOperator{ElementAssembly,VectorType}
+struct GeneralLinearOperator{ElementAssembly<:AbstractElementAssembly,VectorType}
     b::VectorType
     element_assembly::ElementAssembly
 end
@@ -502,7 +512,7 @@ function init_linear_operator(::AbstractAssemblyStrategy,::IntegrandType,::Quadr
     error("Not implemented")
 end
 
-function update_operator!(::GeneralLinearOperator{AbstractElementAssembly}, time)
+function update_operator!(::GeneralLinearOperator{<:AbstractElementAssembly}, time)
     error("Not implemented")
 end
 
