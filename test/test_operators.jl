@@ -91,6 +91,8 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                     Thunderbolt.SequentialAssemblyStrategyCache(nothing),
                     Thunderbolt.ElementAssemblyStrategyCache(SequentialCPUDevice(),EAVector(dh)),
                     Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(),EAVector(dh)),
+                    Thunderbolt.PerColorAssemblyStrategyCache(SequentialCPUDevice(), Thunderbolt.create_dh_coloring(dh)),
+                    Thunderbolt.PerColorAssemblyStrategyCache(PolyesterDevice(), Thunderbolt.create_dh_coloring(dh)),
             )
                 linop = Thunderbolt.LinearOperator(
                     zeros(ndofs(dh)),

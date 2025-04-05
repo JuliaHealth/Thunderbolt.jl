@@ -18,7 +18,7 @@ end
 """
 struct PerColorAssemblyStrategy <: AbstractAssemblyStrategy
     device::AbstractDevice
-    coloralg::Symbol
+    # coloralg::Symbol # TODO
 end
 
 struct PerColorAssemblyStrategyCache{DeviceCacheType, ColorCacheType}
@@ -28,7 +28,10 @@ struct PerColorAssemblyStrategyCache{DeviceCacheType, ColorCacheType}
     color_cache::ColorCacheType
 end
 
-
+function create_dh_coloring(dh::DofHandler; alg = Ferrite.ColoringAlgorithm.WorkStream)
+    grid = get_grid(dh)
+    return [Ferrite.create_coloring(grid, sdh.cellset; alg) for sdh in dh.subdofhandlers]
+end
 
 """
     ElementAssemblyStrategy

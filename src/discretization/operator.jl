@@ -437,7 +437,6 @@ function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_c
     (; chunksize) = device
     ncells = length(sdh.cellset)
     nchunks = ceil(Int, ncells / chunksize)
-    device = nothing # :)
     tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunks]
     @timeit_debug "assemble subdomain" @batch for chunk in 1:nchunks
         chunkbegin = (chunk-1)*chunksize+1
@@ -453,6 +452,65 @@ function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_c
         end
     end
 end
+
+function _update_linear_operator!(op::AbstractLinearOperator, strategy_cache::PerColorAssemblyStrategyCache{<:AbstractCPUDevice}, time)
+    @unpack b, qrc, dh, integrand  = op # TODO qrc into integrand
+
+    fill!(b, 0.0)
+
+    for (sdhidx, sdh) in enumerate(dh.subdofhandlers)
+        # Prepare evaluation caches
+        element_qr  = getquadraturerule(qrc, sdh)
+
+        # Build evaluation caches
+        element_cache = setup_element_cache(integrand, element_qr, sdh)
+
+        # Function barrier
+        _update_colored_linear_operator_on_subdomain!(b, strategy_cache.color_cache[sdhidx], sdh, element_cache, time, strategy_cache.device_cache)
+    end
+end
+
+function _update_colored_linear_operator_on_subdomain!(b, colors, sdh, element_cache, time, device::SequentialCPUDevice)
+    ndofs = ndofs_per_cell(sdh)
+    bₑ = zeros(ndofs)
+    for color in colors
+        @timeit_debug "assemble subdomain" @inbounds for cell in CellIterator(sdh.dh, color)
+            fill!(bₑ, 0)
+            @timeit_debug "assemble element" assemble_element!(bₑ, cell, element_cache, time)
+            b[celldofs(cell)] .+= bₑ
+        end
+    end
+end
+
+function _update_colored_linear_operator_on_subdomain!(b, colors, sdh, element_cache, time, device::PolyesterDevice)
+    (; chunksize) = device
+    ncells = length(sdh.cellset)
+    nchunks = ceil(Int, ncells / chunksize)
+    # TODO this should be in the device cache
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunks]
+
+    # TODO this should be in the device cache
+    ndofs = ndofs_per_cell(sdh)
+    bₑ = zeros(ndofs)
+    bes  = [zeros(ndofs) for tid in 1:nchunks]
+
+    @timeit_debug "assemble subdomain" @batch for chunk in 1:nchunks
+        chunkbegin = (chunk-1)*chunksize+1
+        chunkbound = min(ncells, chunk*chunksize)
+        for i in chunkbegin:chunkbound
+            eid = sdh.cellset[i]
+            tld = tlds[chunk]
+            reinit!(tld.cc, eid)
+
+            bₑ = bes[chunk]
+
+            fill!(bₑ, 0)
+            assemble_element!(bₑ, tld.cc, tld.ec, time)
+            b[celldofs(tld.cc)] .+= bₑ
+        end
+    end
+end
+
 
 Ferrite.add!(b::AbstractVector, op::AbstractLinearOperator) = __add_to_vector!(b, op.b)
 __add_to_vector!(b::AbstractVector, a::AbstractVector) = b .+= a
