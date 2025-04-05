@@ -103,20 +103,26 @@ function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t
 
     # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(
+        SequentialAssemblyStrategy(PolyesterDevice()), # TODO pass from the outside
         f.mass_term,
         solver, dh,
+        A,
     )
 
     # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
     bilinear_operator = setup_operator(
+        SequentialAssemblyStrategy(PolyesterDevice()), # TODO pass from the outside
         f.bilinear_term,
         solver, dh,
+        A,
     )
     # ... + ∫f δu dV
     source_operator    = setup_operator(
+        ElementAssemblyStrategy(PolyesterDevice()), # TODO pass from the outside
         f.source_term,
         solver, dh,
         f.bilinear_term.qrc, # source follows linearity of diffusion for now...
+        b,
     )
 
     inner_prob  = LinearSolve.LinearProblem(

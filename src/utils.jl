@@ -189,7 +189,7 @@ function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::Abstr
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
-    
+
     @batch minbatch = size(y, 1) ÷ Threads.nthreads() for row in 1:size(y, 1)
         @inbounds begin
             v = zero(eltype(y))
@@ -388,7 +388,7 @@ end
 
 """
 """
-struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{<:Int}, DofMapType <: AbstractVector{<:ElementDofPair}} <: AbstractVector{T}
+struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{<:Integer}, DofMapType <: AbstractVector{<:ElementDofPair}} <: AbstractVector{T}
     # Buffer for the per element data
     eadata::DenseDataRange{EADataType, IndexType}
     # Map from global dof index to element index and local dof index
@@ -396,7 +396,7 @@ struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{
 end
 
 Base.size(v::EAVector) = size(v.eadata)
-Base.getindex(v::EAVector, i::Int) = getindex(v.eadata, i)
+Base.getindex(v::EAVector, i::Integer) = getindex(v.eadata, i)
 
 function Base.show(io::IO, mime::MIME"text/plain", data::EAVector{T, EADataType, IndexType}) where {T, EADataType, IndexType}
     println(io, "EAVector{T=", T, ", EADataType=", EADataType, ", IndexType=", IndexType, "} with storate for ", size(data.eadata), " entries." )
@@ -404,19 +404,20 @@ end
 
 @inline get_data_for_index(r::EAVector, i::Integer) = get_data_for_index(r.eadata, i)
 
-function EAVector(dh::DofHandler)
+EAVector(dh::DofHandler) = EAVector(Float64, Int, dh)
+function EAVector(::Type{ValueType}, ::Type{IndexType}, dh::DofHandler) where {ValueType,IndexType}
     @assert length(dh.field_names) == 1
     map  = create_dof_to_element_map(dh)
     grid = get_grid(dh)
 
     num_entries = length(dh.cell_dofs)
-    eadata      = zeros(num_entries)
-    eaoffsets   = Int64[]
+    eadata      = zeros(ValueType, num_entries)
+    eaoffsets   = IndexType[]
     next_offset = 1
     push!(eaoffsets, next_offset)
     for i in 1:getncells(grid)
         next_offset += ndofs_per_cell(dh, i)
-        push!(eaoffsets, next_offset)
+        push!(eaoffsets, IndexType(next_offset))
     end
 
     return EAVector(
@@ -438,11 +439,6 @@ end
         be_range = get_data_for_index(bes.eadata, edp.element_index)
         b[dof] += be_range[edp.local_dof_index]
     end
-end
-
-struct ChunkLocalAssemblyData{CellCacheType, ElementCacheType}
-    cc::CellCacheType
-    ec::ElementCacheType
 end
 
 create_dof_to_element_map(dh::DofHandler) = create_dof_to_element_map(Int, dh::DofHandler)

@@ -1,5 +1,5 @@
 # Encapsulates the CUDA backend specific data (e.g. element caches, memory allocation, etc.)
-struct CudaElementAssembly{Ti<:Integer,MemAlloc,ElementsCaches,DHType<:AbstractDofHandler} <: AbstractElementAssembly
+struct CudaElementAssemblyCache{Ti<:Integer,MemAlloc,ElementsCaches,DHType<:AbstractDofHandler}
     threads::Ti
     blocks::Ti
     mem_alloc::MemAlloc
@@ -24,10 +24,10 @@ function Thunderbolt.init_linear_operator(strategy::CudaAssemblyStrategy, protoc
     end
 end
 
-function _init_linop_cuda(strategy::CudaAssemblyStrategy, protocol::IntegrandType, qrc::QuadratureRuleCollection, dh::AbstractDofHandler,
+function _init_linop_cuda(strategy::ElementAssemblyStrategy, protocol::IntegrandType, qrc::QuadratureRuleCollection, dh::AbstractDofHandler,
     n_threads::Union{Integer,Nothing}, n_blocks::Union{Integer,Nothing}) where {IntegrandType}
     IT = inttype(strategy)
-    FT = floattype(strategy)
+    FT = value_type(strategy)
     b = CUDA.zeros(FT, ndofs(dh))
     cu_dh = Adapt.adapt_structure(strategy, dh)
     n_cells = dh |> get_grid |> getncells |> (x -> convert(IT, x))
@@ -39,7 +39,7 @@ function _init_linop_cuda(strategy::CudaAssemblyStrategy, protocol::IntegrandTyp
     n_basefuncs = convert(IT, ndofs_per_cell(dh))
     eles_caches = _setup_caches(strategy, protocol, qrc, dh)
     mem_alloc = allocate_device_mem(FeMemShape{FT}, threads,blocks, n_basefuncs)
-    element_assembly = CudaElementAssembly(threads, blocks, mem_alloc, eles_caches, strategy, cu_dh)
+    element_assembly = CudaElementAssemblyCache(threads, blocks, mem_alloc, eles_caches, strategy, cu_dh)
 
     return GeneralLinearOperator(b, element_assembly)
 end

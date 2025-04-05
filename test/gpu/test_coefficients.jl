@@ -36,7 +36,7 @@ function coeffs_kernel!(Vals, sdh, coeff_cache, cv, t)
     return nothing
 end
 
-import Thunderbolt: setup_coefficient_cache, evaluate_coefficient, ConductivityToDiffusivityCoefficient, deep_adapt,QuadraturePoint
+import Thunderbolt: setup_coefficient_cache, evaluate_coefficient, ConductivityToDiffusivityCoefficient, QuadraturePoint
 import Thunderbolt.FerriteUtils:
     CellIterator, QuadratureValuesIterator, cellid, getcoordinates, getnbasefunctions
 import CUDA: @cuda

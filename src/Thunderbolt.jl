@@ -49,8 +49,10 @@ import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
 
-
 include("utils.jl")
+
+include("devices.jl")
+include("strategy.jl")
 
 include("mesh/meshes.jl")
 
@@ -98,6 +100,9 @@ include("discretization/rsafdq-operator.jl")
 
 # TODO put exports into the individual submodules above!
 export
+    # Devices
+    SequentialCPUDevice,
+    PolyesterDevice,
     # Coefficients
     ConstantCoefficient,
     FieldCoefficient,
