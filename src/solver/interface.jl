@@ -17,8 +17,8 @@ end
 function setup_operator(strategy::SequentialAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
-        qrc,
         protocol,
+        qrc,
         dh,
         SequentialAssemblyStrategyCache(strategy.device),
     )
@@ -26,8 +26,8 @@ end
 function setup_operator(strategy::ElementAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
-        qrc,
         protocol,
+        qrc,
         dh,
         Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(), EAVector(value_type(strategy.device), index_type(strategy.device), dh)),
     )
@@ -35,11 +35,16 @@ end
 
 # Bilinear
 function setup_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, prototype::AbstractMatrix)
-    setup_assembled_operator(strategy, integrator, dh, prototype)
+    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
-function setup_assembled_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, dh::AbstractDofHandler, prototype::SystemMatrixType) where SystemMatrixType
-    A  = create_system_matrix(SystemMatrixType, dh)
-    A_ = allocate_matrix(dh) #  TODO how to query this correctly?
+function setup_assembled_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
+    A  = create_system_matrix(system_matrix_type, dh)
+    A_ = if strategy.device isa AbstractCPUDevice && system_matrix_type isa SparseMatrixCSC #if "can assemble with system_matrix_type"
+        A
+    else
+        allocate_matrix(dh)
+    end
+
     return AssembledBilinearOperator(
         A, A_,
         integrator,

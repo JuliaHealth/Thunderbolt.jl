@@ -283,7 +283,9 @@ function update_operator!(op::AssembledBilinearOperator, time)
 
     #finish_assemble(assembler)
 
-    copyto!(nonzeros(A), nonzeros(A_))
+    if A !== A_
+        copyto!(nonzeros(A), nonzeros(A_))
+    end
 end
 
 function _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
@@ -423,26 +425,6 @@ function _update_linear_operator!(op::AbstractLinearOperator, strategy_cache::El
     ea_collapse!(b, strategy_cache.ea_data)
 end
 
-"""
-Parallel element assembly linear operator.
-"""
-struct PEALinearOperator{VectorType, EAType, ProtocolType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
-    b::VectorType # [global test function index]
-    beas::EAType  # [element in subdomain, local test function index]
-                  # global test function index -> element indices
-    qrc::QuadratureRuleCollection
-    protocol::ProtocolType
-    dh::DHType
-    function PEALinearOperator(b::AbstractVector, qrc::QuadratureRuleCollection, protocol, dh::AbstractDofHandler)
-        beas = EAVector(dh)
-        new{typeof(b), typeof(beas), typeof(protocol), typeof(dh)}(b, beas, qrc, protocol, dh)
-    end
-end
-
-function update_operator!(op::PEALinearOperator, time)
-    _update_linear_operator!(op, ElementAssemblyStrategyCache(PolyesterDevice(), op.beas), time) # TODO allocated cache
-end
-
 function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_cache, time, device::SequentialCPUDevice)
     @timeit_debug "assemble subdomain" @inbounds for cell in CellIterator(sdh)
         bₑ = get_data_for_index(beas, cellid(cell))
@@ -478,7 +460,7 @@ Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
 function needs_update(op::LinearOperator, t)
-    return _needs_update(op, op.protocol, t)
+    return _needs_update(op, op.integrand, t)
 end
 
 function _needs_update(op::LinearOperator, protocol::AnalyticalTransmembraneStimulationProtocol, t)
