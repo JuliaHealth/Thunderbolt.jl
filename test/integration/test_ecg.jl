@@ -43,6 +43,7 @@ import Thunderbolt: to_mesh, OrderedSet
         )
 
         op = Thunderbolt.setup_assembled_operator(
+            Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
             Thunderbolt.BilinearDiffusionIntegrator(
                 κ,
                 QuadratureRuleCollection(2),
