@@ -270,7 +270,7 @@ struct AssembledBilinearOperator{MatrixType, MatrixType2, IntegratorType, DHType
 end
 
 function update_operator!(op::AssembledBilinearOperator, time)
-    _update_bilinaer_operator(op, op.strategy_cache, time)
+    _update_bilinaer_operator!(op, op.strategy_cache, time)
 end
 
 function _update_bilinaer_operator!(op::AssembledBilinearOperator, strategy_cache::SequentialAssemblyStrategyCache, time)
