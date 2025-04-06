@@ -25,6 +25,7 @@ struct PolyesterDevice{ValueType, IndexType} <: AbstractCPUDevice{ValueType, Ind
     chunksize::IndexType
 end
 PolyesterDevice() = PolyesterDevice{Float64, Int64}(32)
+PolyesterDevice(i::Int) = PolyesterDevice{Float64, Int64}(i)
 allocate_vector(::PolyesterDevice{Tv}) where Tv = Vector{Tv}
 
 struct ChunkLocalAssemblyData{CellCacheType, ElementCacheType}

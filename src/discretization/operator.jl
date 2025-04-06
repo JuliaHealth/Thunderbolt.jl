@@ -261,14 +261,19 @@ Base.size(op::AssembledNonlinearOperator, axis) = size(op.J, axis)
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
 
-struct AssembledBilinearOperator{MatrixType, MatrixType2, IntegratorType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
+struct AssembledBilinearOperator{MatrixType, MatrixType2, IntegratorType, DHType <: AbstractDofHandler, StrategyCacheType} <: AbstractBilinearOperator
     A::MatrixType
     A_::MatrixType2 # FIXME we need this if we assemble on a different device type than we solve on (e.g. CPU and GPU)
     integrator::IntegratorType
     dh::DHType
+    strategy_cache::StrategyCacheType
 end
 
 function update_operator!(op::AssembledBilinearOperator, time)
+    _update_bilinaer_operator(op, op.strategy_cache, time)
+end
+
+function _update_bilinaer_operator!(op::AssembledBilinearOperator, strategy_cache::SequentialAssemblyStrategyCache, time)
     @unpack A, A_, integrator, dh  = op
 
     assembler = start_assemble(A_)
@@ -278,7 +283,7 @@ function update_operator!(op::AssembledBilinearOperator, time)
         element_cache  = setup_element_cache(integrator, sdh)
 
         # Function barrier
-        _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
+        _update_bilinear_operator_on_subdomain_sequential!(assembler, sdh, element_cache, time)
     end
 
     #finish_assemble(assembler)
@@ -288,7 +293,7 @@ function update_operator!(op::AssembledBilinearOperator, time)
     end
 end
 
-function _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
+function _update_bilinear_operator_on_subdomain_sequential!(assembler, sdh, element_cache, time)
     ndofs = ndofs_per_cell(sdh)
     Aₑ = zeros(ndofs, ndofs)
 
@@ -299,6 +304,80 @@ function _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, 
         assemble!(assembler, celldofs(cell), Aₑ)
     end
 end
+
+function _update_bilinaer_operator!(op::AssembledBilinearOperator, strategy_cache::PerColorAssemblyStrategyCache{<:AbstractCPUDevice}, time)
+    @unpack A, A_, integrator, dh  = op
+
+    _ = start_assemble(A_)
+
+    for sdh in dh.subdofhandlers
+        # Build evaluation caches
+        element_cache  = setup_element_cache(integrator, sdh)
+
+        # Function barrier
+        _update_colored_bilinear_operator_on_subdomain!(A_, colors, sdh, element_cache, time, strategy_cache.device_cache)
+    end
+
+    #finish_assemble(assembler)
+
+    if A !== A_
+        copyto!(nonzeros(A), nonzeros(A_))
+    end
+end
+
+function _update_colored_bilinear_operator_on_subdomain!(A, colors, sdh, element_cache, time, device::SequentialCPUDevice)
+    (; chunksize) = device
+    ncells = length(sdh.cellset)
+    nchunks = ceil(Int, ncells / chunksize)
+    # TODO this should be in the device cache
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunks]
+
+    # TODO this should be in the device cache
+    ndofs     = ndofs_per_cell(sdh)
+    Aₑ        = zeros(ndofs,ndofs)
+    assembler = start_assemble(A; fillzero = false)
+
+    @timeit_debug "assemble subdomain" @inbounds for cell in CellIterator(sdh.dh, color)
+        fill!(Aₑ, 0)
+        @timeit_debug "assemble element" assemble_element!(Aₑ, cell, element_cache, time)
+        assemble!(assembler, celldofs(cell), Aₑ)
+    end
+end
+
+function _update_colored_bilinear_operator_on_subdomain!(assembler, colors, sdh, element_cache, time, device::PolyesterDevice)
+    ncellsmax = maximum(length.(colors))
+    nchunksmax = ceil(Int, ncellsmax / chunksize)
+    # TODO this should be in the device cache
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunksmax]
+
+    # TODO this should be in the device cache
+    ndofs = ndofs_per_cell(sdh)
+    Aes  = [zeros(ndofs,ndofs) for tid in 1:nchunksmax]
+    assemblers = [start_assemble(A; fillzero = false) for tid in 1:nchunksmax]
+
+    @timeit_debug "assemble subdomain" for color in colors
+        ncells  = maximum(length(color))
+        nchunks = ceil(Int, ncells / chunksize)
+        @batch for chunk in 1:nchunks
+            chunkbegin = (chunk-1)*chunksize+1
+            chunkbound = min(ncells, chunk*chunksize)
+
+            # Unpack chunk scratch
+            bₑ  = bes[chunk]
+            tld = tlds[chunk]
+
+            for i in chunkbegin:chunkbound
+                eid = color[i]
+                reinit!(tld.cc, eid)
+
+                fill!(Aₑ, 0)
+                assemble_element!(Aₑ, cell, element_cache, time)
+                assemble!(assembler, celldofs(cell), Aₑ)
+            end
+        end
+    end
+end
+
 
 update_linearization!(op::AbstractBilinearOperator, residual::AbstractVector, u::AbstractVector, time) = update_operator!(op, time)
 update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, time) = update_operator!(op, time)
@@ -484,29 +563,35 @@ end
 
 function _update_colored_linear_operator_on_subdomain!(b, colors, sdh, element_cache, time, device::PolyesterDevice)
     (; chunksize) = device
-    ncells = length(sdh.cellset)
-    nchunks = ceil(Int, ncells / chunksize)
+
+    ncellsmax = maximum(length.(colors))
+    nchunksmax = ceil(Int, ncellsmax / chunksize)
     # TODO this should be in the device cache
-    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunks]
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunksmax]
 
     # TODO this should be in the device cache
     ndofs = ndofs_per_cell(sdh)
-    bₑ = zeros(ndofs)
-    bes  = [zeros(ndofs) for tid in 1:nchunks]
+    bes  = [zeros(ndofs) for tid in 1:nchunksmax]
 
-    @timeit_debug "assemble subdomain" @batch for chunk in 1:nchunks
-        chunkbegin = (chunk-1)*chunksize+1
-        chunkbound = min(ncells, chunk*chunksize)
-        for i in chunkbegin:chunkbound
-            eid = sdh.cellset[i]
+    @timeit_debug "assemble subdomain" for color in colors
+        ncells  = maximum(length(color))
+        nchunks = ceil(Int, ncells / chunksize)
+        @batch for chunk in 1:nchunks
+            chunkbegin = (chunk-1)*chunksize+1
+            chunkbound = min(ncells, chunk*chunksize)
+
+            # Unpack chunk scratch
+            bₑ  = bes[chunk]
             tld = tlds[chunk]
-            reinit!(tld.cc, eid)
 
-            bₑ = bes[chunk]
+            for i in chunkbegin:chunkbound
+                eid = color[i]
+                reinit!(tld.cc, eid)
 
-            fill!(bₑ, 0)
-            assemble_element!(bₑ, tld.cc, tld.ec, time)
-            b[celldofs(tld.cc)] .+= bₑ
+                fill!(bₑ, 0)
+                assemble_element!(bₑ, tld.cc, tld.ec, time)
+                b[celldofs(tld.cc)] .+= bₑ
+            end
         end
     end
 end

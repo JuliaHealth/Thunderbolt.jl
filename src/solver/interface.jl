@@ -23,18 +23,27 @@ function setup_operator(strategy::SequentialAssemblyStrategy, protocol::Analytic
         SequentialAssemblyStrategyCache(strategy.device),
     )
 end
+function setup_operator(strategy::PerColorAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
+    return LinearOperator(
+        zeros(value_type(strategy.device), ndofs(dh)),
+        protocol,
+        qrc,
+        dh,
+        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(dh)),
+    )
+end
 function setup_operator(strategy::ElementAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
         protocol,
         qrc,
         dh,
-        Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(), EAVector(value_type(strategy.device), index_type(strategy.device), dh)),
+        ElementAssemblyStrategyCache(strategy.device, EAVector(value_type(strategy.device), index_type(strategy.device), dh)),
     )
 end
 
 # Bilinear
-function setup_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, prototype::AbstractMatrix)
+function setup_operator(strategy::Union{SequentialAssemblyStrategy,PerColorAssemblyStrategy}, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, prototype::AbstractMatrix)
     setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
 function setup_assembled_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
@@ -49,6 +58,22 @@ function setup_assembled_operator(strategy::SequentialAssemblyStrategy, integrat
         A, A_,
         integrator,
         dh,
+        SequentialAssemblyStrategyCache(strategy.device),
+    )
+end
+function setup_assembled_operator(strategy::PerColorAssemblyStrategy, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
+    A  = create_system_matrix(system_matrix_type, dh)
+    A_ = if strategy.device isa AbstractCPUDevice && system_matrix_type isa SparseMatrixCSC #if "can assemble with system_matrix_type"
+        A
+    else
+        allocate_matrix(dh)
+    end
+
+    return AssembledBilinearOperator(
+        A, A_,
+        integrator,
+        dh,
+        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(dh)),
     )
 end
 
