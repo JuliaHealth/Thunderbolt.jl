@@ -1,5 +1,5 @@
 using Thunderbolt
-import Thunderbolt: NullOperator, DiagonalOperator, BlockOperator, EAVector
+import Thunderbolt: NullOperator, DiagonalOperator, BlockOperator, EAVector, BilinearDiffusionIntegrator
 import LinearAlgebra: mul!
 using BlockArrays, SparseArrays, StaticArrays, Test
 
@@ -174,6 +174,85 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                     # Idempotency
                     Thunderbolt.update_operator!(linop_base,0.0)
                     @test norm_baseline == norm(linop_base.b)
+            end
+        end
+    end
+
+    @testset "Bilinear" begin
+        # Setup
+        grid = generate_grid(Quadrilateral, (10,9))
+        Ferrite.transform_coordinates!(grid, x->Vec{2}(sign.(x.-0.5) .* (x.-0.5).^2))
+        dh = DofHandler(grid)
+        add!(dh, :u, Lagrange{RefQuadrilateral,1}())
+        close!(dh)
+        qrc = QuadratureRuleCollection{2}()
+
+        @testset "Constant Cartesian" begin
+            cs = CartesianCoordinateSystem(grid)
+            integrator = BilinearDiffusionIntegrator(
+                ConstantCoefficient(SymmetricTensor{2,2,Float64,3}((4.5e-5, 0, 2.0e-5))),
+                QuadratureRuleCollection(2),
+                :u
+            )
+            solver = BackwardEulerSolver() # TODO remove this
+            bilinop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), integrator, solver, dh)
+            # Check that assembly works
+            Thunderbolt.update_operator!(bilinop_base,0.0)
+            norm_baseline = norm(bilinop_base.A)
+            @test norm_baseline > 0.0
+            # Idempotency
+            Thunderbolt.update_operator!(bilinop_base,0.0)
+            @test norm_baseline == norm(bilinop_base.A)
+
+            @testset "Strategy $strategy" for strategy in (
+                    Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+            )
+                bilinop = Thunderbolt.setup_operator(strategy, integrator, solver, dh)
+                # Consistency
+                Thunderbolt.update_operator!(bilinop,0.0)
+                @test bilinop.A ≈ bilinop_base.A
+                # Idempotency
+                Thunderbolt.update_operator!(bilinop,0.0)
+                @test bilinop.A ≈ bilinop_base.A
+            end
+        end
+
+        @testset "Analytical coefficient LVCS" begin
+            cs = LVCoordinateSystem(dh, LagrangeCollection{1}(), rand(ndofs(dh)), rand(ndofs(dh)), rand(ndofs(dh)))
+            integrator = BilinearDiffusionIntegrator(
+                AnalyticalCoefficient(
+                    (x,t) -> SymmetricTensor{2,2,Float64,3}((abs(x.transmural)+1e-6, 0, 2.0e-5)),
+                    cs,
+                ),
+                QuadratureRuleCollection(2),
+                :u,
+            )
+            solver = BackwardEulerSolver() # TODO remove this
+            bilinop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), integrator, solver, dh)
+            # Check that assembly works
+            Thunderbolt.update_operator!(bilinop_base,0.0)
+            norm_baseline = norm(bilinop_base.A)
+            @test norm_baseline > 0.0
+            # Idempotency
+            Thunderbolt.update_operator!(bilinop_base,0.0)
+            @test norm_baseline == norm(bilinop_base.A)
+
+            @testset "Strategy $strategy" for strategy in (
+                    Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+            )
+                bilinop = Thunderbolt.setup_operator(strategy, integrator, solver, dh)
+                # Consistency
+                Thunderbolt.update_operator!(bilinop,0.0)
+                @test bilinop.A ≈ bilinop_base.A
+                # Idempotency
+                Thunderbolt.update_operator!(bilinop,0.0)
+                @test bilinop.A ≈ bilinop_base.A
             end
         end
     end

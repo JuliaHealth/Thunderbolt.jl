@@ -56,6 +56,7 @@ include("strategy.jl")
 
 include("mesh/meshes.jl")
 
+include("ferrite-addons/parallel_duplication_api.jl")
 include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 

@@ -11,10 +11,10 @@ function setup_operator(f::NullFunction, solver::AbstractSolver)
 end
 
 # Linear
-function setup_operator(strategy::AbstractAssemblyStrategy, ::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
+function setup_operator(strategy::AbstractAssemblyStrategy, ::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
-function setup_operator(strategy::SequentialAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
+function setup_operator(strategy::SequentialAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
         protocol,
@@ -23,7 +23,7 @@ function setup_operator(strategy::SequentialAssemblyStrategy, protocol::Analytic
         SequentialAssemblyStrategyCache(strategy.device),
     )
 end
-function setup_operator(strategy::PerColorAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
+function setup_operator(strategy::PerColorAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
         protocol,
@@ -32,7 +32,7 @@ function setup_operator(strategy::PerColorAssemblyStrategy, protocol::Analytical
         PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(dh)),
     )
 end
-function setup_operator(strategy::ElementAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection, prototype::AbstractVector)
+function setup_operator(strategy::ElementAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
         protocol,
@@ -43,7 +43,7 @@ function setup_operator(strategy::ElementAssemblyStrategy, protocol::AnalyticalT
 end
 
 # Bilinear
-function setup_operator(strategy::Union{SequentialAssemblyStrategy,PerColorAssemblyStrategy}, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, prototype::AbstractMatrix)
+function setup_operator(strategy::Union{SequentialAssemblyStrategy,PerColorAssemblyStrategy}, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
     setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
 function setup_assembled_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)

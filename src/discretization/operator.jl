@@ -310,12 +310,12 @@ function _update_bilinaer_operator!(op::AssembledBilinearOperator, strategy_cach
 
     _ = start_assemble(A_)
 
-    for sdh in dh.subdofhandlers
+    for (sdhidx,sdh) in enumerate(dh.subdofhandlers)
         # Build evaluation caches
         element_cache  = setup_element_cache(integrator, sdh)
 
         # Function barrier
-        _update_colored_bilinear_operator_on_subdomain!(A_, colors, sdh, element_cache, time, strategy_cache.device_cache)
+        _update_colored_bilinear_operator_on_subdomain!(A_, strategy_cache.color_cache[sdhidx], sdh, element_cache, time, strategy_cache.device_cache)
     end
 
     #finish_assemble(assembler)
@@ -326,25 +326,22 @@ function _update_bilinaer_operator!(op::AssembledBilinearOperator, strategy_cach
 end
 
 function _update_colored_bilinear_operator_on_subdomain!(A, colors, sdh, element_cache, time, device::SequentialCPUDevice)
-    (; chunksize) = device
-    ncells = length(sdh.cellset)
-    nchunks = ceil(Int, ncells / chunksize)
-    # TODO this should be in the device cache
-    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_device(device, element_cache)) for tid in 1:nchunks]
-
     # TODO this should be in the device cache
     ndofs     = ndofs_per_cell(sdh)
     Aₑ        = zeros(ndofs,ndofs)
-    assembler = start_assemble(A; fillzero = false)
+    assembler = start_assemble(A)
 
-    @timeit_debug "assemble subdomain" @inbounds for cell in CellIterator(sdh.dh, color)
-        fill!(Aₑ, 0)
-        @timeit_debug "assemble element" assemble_element!(Aₑ, cell, element_cache, time)
-        assemble!(assembler, celldofs(cell), Aₑ)
+    @timeit_debug "assemble subdomain" for color in colors
+        @inbounds for cell in CellIterator(sdh.dh, color)
+            fill!(Aₑ, 0)
+            @timeit_debug "assemble element" assemble_element!(Aₑ, cell, element_cache, time)
+            assemble!(assembler, celldofs(cell), Aₑ)
+        end
     end
 end
 
-function _update_colored_bilinear_operator_on_subdomain!(assembler, colors, sdh, element_cache, time, device::PolyesterDevice)
+function _update_colored_bilinear_operator_on_subdomain!(A, colors, sdh, element_cache, time, device::PolyesterDevice)
+    (; chunksize) = device
     ncellsmax = maximum(length.(colors))
     nchunksmax = ceil(Int, ncellsmax / chunksize)
     # TODO this should be in the device cache
@@ -363,16 +360,17 @@ function _update_colored_bilinear_operator_on_subdomain!(assembler, colors, sdh,
             chunkbound = min(ncells, chunk*chunksize)
 
             # Unpack chunk scratch
-            bₑ  = bes[chunk]
-            tld = tlds[chunk]
+            Aₑ        = Aes[chunk]
+            tld       = tlds[chunk]
+            assembler = assemblers[chunk]
 
             for i in chunkbegin:chunkbound
                 eid = color[i]
                 reinit!(tld.cc, eid)
 
                 fill!(Aₑ, 0)
-                assemble_element!(Aₑ, cell, element_cache, time)
-                assemble!(assembler, celldofs(cell), Aₑ)
+                assemble_element!(Aₑ, tld.cc, tld.ec, time)
+                assemble!(assembler, celldofs(tld.cc), Aₑ)
             end
         end
     end
