@@ -4,6 +4,8 @@ import LinearAlgebra: mul!
 using BlockArrays, SparseArrays, StaticArrays, Test
 
 @testset "Operators" begin
+    solver = BackwardEulerSolver() # TODO remove this
+
     @testset "Actions" begin
         vin = ones(5)
         vout = ones(5)
@@ -87,13 +89,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 [SVector((0.0, 1.0))]
             )
 
-            linop_base = Thunderbolt.LinearOperator(
-                zeros(ndofs(dh)),
-                protocol,
-                qrc,
-                dh,
-                Thunderbolt.SequentialAssemblyStrategyCache(nothing),
-            )
+            linop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), protocol, solver, dh, qrc)
             # Check that assembly works
             Thunderbolt.update_operator!(linop_base,0.0)
             norm_baseline = norm(linop_base.b)
@@ -102,23 +98,18 @@ using BlockArrays, SparseArrays, StaticArrays, Test
             Thunderbolt.update_operator!(linop_base,0.0)
             @test norm_baseline == norm(linop_base.b)
 
-            @testset "Strategy $strategy_cache" for strategy_cache in (
-                    Thunderbolt.ElementAssemblyStrategyCache(SequentialCPUDevice(),EAVector(dh)),
-                    Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(1),EAVector(dh)),
-                    Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(2),EAVector(dh)),
-                    Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(3),EAVector(dh)),
-                    Thunderbolt.PerColorAssemblyStrategyCache(SequentialCPUDevice(), Thunderbolt.create_dh_coloring(dh)),
-                    Thunderbolt.PerColorAssemblyStrategyCache(PolyesterDevice(1), Thunderbolt.create_dh_coloring(dh)),
-                    Thunderbolt.PerColorAssemblyStrategyCache(PolyesterDevice(2), Thunderbolt.create_dh_coloring(dh)),
-                    Thunderbolt.PerColorAssemblyStrategyCache(PolyesterDevice(3), Thunderbolt.create_dh_coloring(dh)),
+            @testset "Strategy $strategy" for strategy in (
+                    Thunderbolt.ElementAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(3)),
+                    Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
             )
-                linop = Thunderbolt.LinearOperator(
-                    zeros(ndofs(dh)),
-                    protocol,
-                    qrc,
-                    dh,
-                    strategy_cache,
-                )
+                linop = Thunderbolt.setup_operator(strategy, protocol, solver, dh, qrc)
+
                 # Consistency
                 Thunderbolt.update_operator!(linop,0.0)
                 @test linop.b ≈ linop_base.b
@@ -135,13 +126,8 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 [SVector((0.0, 1.0))]
             )
 
-            linop_base = Thunderbolt.LinearOperator(
-                zeros(ndofs(dh)),
-                protocol,
-                qrc,
-                dh,
-                Thunderbolt.SequentialAssemblyStrategyCache(nothing),
-            )
+            linop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), protocol, solver, dh, qrc)
+
             # Check that assembly works
             Thunderbolt.update_operator!(linop_base,0.0)
             norm_baseline = norm(linop_base.b)
@@ -150,30 +136,25 @@ using BlockArrays, SparseArrays, StaticArrays, Test
             Thunderbolt.update_operator!(linop_base,0.0)
             @test norm_baseline == norm(linop_base.b)
 
-            @testset "Strategy $strategy_cache" for strategy_cache in (
-                Thunderbolt.ElementAssemblyStrategyCache(SequentialCPUDevice(),EAVector(dh)),
-                Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(1),EAVector(dh)),
-                Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(2),EAVector(dh)),
-                Thunderbolt.ElementAssemblyStrategyCache(PolyesterDevice(3),EAVector(dh)),
-                Thunderbolt.PerColorAssemblyStrategyCache(SequentialCPUDevice(), Thunderbolt.create_dh_coloring(dh)),
-                Thunderbolt.PerColorAssemblyStrategyCache(PolyesterDevice(1), Thunderbolt.create_dh_coloring(dh)),
-                Thunderbolt.PerColorAssemblyStrategyCache(PolyesterDevice(2), Thunderbolt.create_dh_coloring(dh)),
-                Thunderbolt.PerColorAssemblyStrategyCache(PolyesterDevice(3), Thunderbolt.create_dh_coloring(dh)),
+            @testset "Strategy $strategy" for strategy in (
+                Thunderbolt.ElementAssemblyStrategy(SequentialCPUDevice()),
+                Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(1)),
+                Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(2)),
+                Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(3)),
+                Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
             )
-                linop = Thunderbolt.LinearOperator(
-                    zeros(ndofs(dh)),
-                    protocol,
-                    qrc,
-                    dh,
-                    strategy_cache,
-                )
-                    # Check that assembly works
-                    Thunderbolt.update_operator!(linop_base,0.0)
-                    norm_baseline = norm(linop_base.b)
-                    @test norm_baseline > 0.0
-                    # Idempotency
-                    Thunderbolt.update_operator!(linop_base,0.0)
-                    @test norm_baseline == norm(linop_base.b)
+                linop = Thunderbolt.setup_operator(strategy, protocol, solver, dh, qrc)
+
+                # Check that assembly works
+                Thunderbolt.update_operator!(linop_base,0.0)
+                norm_baseline = norm(linop_base.b)
+                @test norm_baseline > 0.0
+                # Idempotency
+                Thunderbolt.update_operator!(linop_base,0.0)
+                @test norm_baseline == norm(linop_base.b)
             end
         end
     end
@@ -194,7 +175,6 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 QuadratureRuleCollection(2),
                 :u
             )
-            solver = BackwardEulerSolver() # TODO remove this
             bilinop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), integrator, solver, dh)
             # Check that assembly works
             Thunderbolt.update_operator!(bilinop_base,0.0)
@@ -230,7 +210,6 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 QuadratureRuleCollection(2),
                 :u,
             )
-            solver = BackwardEulerSolver() # TODO remove this
             bilinop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), integrator, solver, dh)
             # Check that assembly works
             Thunderbolt.update_operator!(bilinop_base,0.0)
