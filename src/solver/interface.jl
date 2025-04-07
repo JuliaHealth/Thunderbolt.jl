@@ -77,19 +77,26 @@ function setup_assembled_operator(strategy::PerColorAssemblyStrategy, integrator
     )
 end
 
-# function setup_operator(problem::QuasiStaticProblem, relevant_coupler, solver::AbstractNonlinearSolver)
-#     @unpack dh, constitutive_model, face_models, displacement_symbol = problem
-#     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
-#     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
-
-#     intorder = default_quadrature_order(problem, displacement_symbol)
-#     qr = QuadratureRuleCollection(intorder)
-#     qr_face = FacetQuadratureRuleCollection(intorder)
-
-#     return AssembledNonlinearOperator(
-#         dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, relevant_coupler, ???, <- depending on the coupler either face or element qr
-#     )
-# end
+# Nonlinear
+function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+    return setup_assembled_nonlinear_operator(get_strategy(f), f, solver)
+end
+function setup_assembled_nonlinear_operator(strategy::SequentialAssemblyStrategy, f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+    return AssembledNonlinearOperator(
+        allocate_matrix(f.dh),
+        f.integrator,
+        f.dh,
+        SequentialAssemblyStrategyCache(strategy.device),
+    )
+end
+function setup_assembled_nonlinear_operator(strategy::PerColorAssemblyStrategy, f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+    return AssembledNonlinearOperator(
+        allocate_matrix(f.dh),
+        f.integrator,
+        f.dh,
+        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(f.dh)),
+    )
+end
 
 # # TODO correct dispatches
 # function setup_coupling_operator(first_problem::DiffEqBase.AbstractDEProblem, second_problem::DiffEqBase.AbstractDEProblem, relevant_couplings, solver::AbstractNonlinearSolver)

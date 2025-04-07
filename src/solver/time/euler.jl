@@ -229,8 +229,12 @@ end
         f.lvh,
     )
     # This is copy paste of setup_solver_cache(G, solver.newton)
+    # TODO call setup_operator here
     op = AssembledNonlinearOperator(
-        NonlinearIntegrator(volume_wrapper, face_wrapper, integrator.syms, integrator.qrc, integrator.fqrc), dh,
+        allocate_matrix(dh),
+        NonlinearIntegrator(volume_wrapper, face_wrapper, integrator.syms, integrator.qrc, integrator.fqrc),
+        dh,
+        SequentialAssemblyStrategyCache(nothing),
     )
     # op = setup_operator(f, solver)
     T = Float64

@@ -147,18 +147,11 @@ Comes with one entry point for each cache type to handle the most common cases:
 !!! todo
     assemble_interface! -> update jacobian/residual contribution for interface contributions (e.g. DG or FSI)
 """
-struct AssembledNonlinearOperator{MatrixType <: AbstractSparseMatrix, IntegratorType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
+struct AssembledNonlinearOperator{MatrixType <: AbstractSparseMatrix, IntegratorType, DHType <: AbstractDofHandler, StrategyCacheType} <: AbstractNonlinearOperator
     J::MatrixType
     integrator::IntegratorType
     dh::DHType
-end
-
-function AssembledNonlinearOperator(integrator::NonlinearIntegrator, dh::AbstractDofHandler)
-    AssembledNonlinearOperator(
-        allocate_matrix(dh), # TODO pass matrix type info
-        integrator,
-        dh,
-    )
+    strategy_cache::StrategyCacheType
 end
 
 function Base.show(io::IO, cache::AssembledNonlinearOperator)
@@ -170,6 +163,10 @@ end
 getJ(op::AssembledNonlinearOperator) = op.J
 
 function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, time)
+    _update_linearization!(op, op.strategy_cache, u, time)
+end
+# This function is defined to control the dispatch
+function _update_linearization!(op::AssembledNonlinearOperator, strategy_cache::SequentialAssemblyStrategyCache, u::AbstractVector, time)
     @unpack J, dh, integrator = op
 
     assembler = start_assemble(J)
@@ -180,13 +177,13 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
         face_cache     = setup_boundary_cache(integrator, sdh)
 
         # Function barrier
-        _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, face_cache, EmptyTyingCache(), u, time) # TODO remove tying cache
+        _sequential_update_linearization_on_subdomain_J!(assembler, sdh, element_cache, face_cache, EmptyTyingCache(), u, time) # TODO remove tying cache
     end
 
     #finish_assemble(assembler)
 end
-
-function _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
+# This function is defined to make things sufficiently type-stable
+function _sequential_update_linearization_on_subdomain_J!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
     # Prepare standard values
     ndofs = ndofs_per_cell(sdh)
     Jₑ = zeros(ndofs, ndofs)
@@ -207,8 +204,13 @@ function _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, fa
     end
 end
 
+
 function update_linearization!(op::AssembledNonlinearOperator, residual::AbstractVector, u::AbstractVector, time)
-    @unpack J, dh, integrator = op
+    _update_linearization!(op, op.strategy_cache, residual::AbstractVector, u::AbstractVector, time)
+end
+# This function is defined to control the dispatch
+function _update_linearization!(op::AssembledNonlinearOperator, strategy_cache::SequentialAssemblyStrategyCache, residual::AbstractVector, u::AbstractVector, time)
+    @unpack J, dh, integrator, strategy_cache = op
 
     assembler = start_assemble(J, residual)
 
@@ -218,13 +220,13 @@ function update_linearization!(op::AssembledNonlinearOperator, residual::Abstrac
         face_cache     = setup_boundary_cache(integrator, sdh)
 
         # Function barrier
-        _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, EmptyTyingCache(), u, time) # TODO remove tying cache
+        _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, EmptyTyingCache(), u, time) # TODO remove tying cache
     end
 
     #finish_assemble(assembler)
 end
-
-function _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
+# This function is defined to make things sufficiently type-stable
+function _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
     # Prepare standard values
     ndofs = ndofs_per_cell(sdh)
     Jₑ = zeros(ndofs, ndofs)
