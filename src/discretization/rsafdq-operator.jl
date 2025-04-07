@@ -76,7 +76,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
         tying_cache    = setup_tying_cache(tying_model, tying_qr, sdh)
 
         # Function barrier
-        _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, boundary_cache, tying_cache, u, time)
+        _sequential_update_linearization_on_subdomain_J!(assembler, sdh, element_cache, boundary_cache, tying_cache, u, time)
 
         # Assemble forward and backward coupling contributions
         for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
@@ -140,7 +140,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::Abstr
         tying_cache    = setup_tying_cache(tying_model, tying_qr, sdh)
 
         # Function barrier
-        _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, boundary_cache, tying_cache, u, time)
+        _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, boundary_cache, tying_cache, u, time)
 
         # Assemble forward and backward coupling contributions
         for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
