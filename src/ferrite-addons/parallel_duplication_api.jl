@@ -1,4 +1,11 @@
-# Adaption of the API presented in Ferrite.jl#1070 for general devices with some tweaks
+# Adaption of the API presented in Ferrite.jl#1070 for general devices with some tweaks. Essentially a Adapt.jl wrapper.
+function duplicate_for_device(device, asm::Ferrite.CSCAssembler)
+    return Ferrite.CSCAssembler(asm.K, asm.f, duplicate_for_device(device, asm.permutation), duplicate_for_device(device, asm.sorteddofs))
+end
+function duplicate_for_device(device, asm::Ferrite.SymmetricCSCAssembler)
+    return Ferrite.SymmetricCSCAssembler(asm.K, asm.f, duplicate_for_device(device, asm.permutation), duplicate_for_device(device, asm.sorteddofs))
+end
+
 function duplicate_for_device(device, fv::FacetValues)
     return FacetValues(
         duplicate_for_device(device, fv.fun_values),

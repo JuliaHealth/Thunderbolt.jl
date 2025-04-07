@@ -162,11 +162,33 @@ end
 
 getJ(op::AssembledNonlinearOperator) = op.J
 
+# Interface
 function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, time)
-    _update_linearization!(op, op.strategy_cache, u, time)
+    _update_linearization_J!(op, op.strategy_cache, u, time)
 end
+function update_linearization!(op::AssembledNonlinearOperator, residual::AbstractVector, u::AbstractVector, time)
+    _update_linearization_Jr!(op, op.strategy_cache, residual, u, time)
+end
+
+"""
+    mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector)
+    mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector, α, β)
+
+Apply the (scaled) action of the linearization of the contained nonlinear form to the vector `in`.
+
+!!! TODO
+    Revisit this decision. Should mul! be the action of the nonlinear operator (i.e. the residual kernel) or of its linearization (i.e. the MV kernel for iterative solvers)?
+"""
+mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector) = mul!(out, op.J, in)
+mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector, α, β) = mul!(out, op.J, in, α, β)
+
+Base.eltype(op::AssembledNonlinearOperator) = eltype(op.J)
+Base.size(op::AssembledNonlinearOperator, axis) = size(op.J, axis)
+
+# -------------------------------------------------- Sequential on CPU --------------------------------------------------
+
 # This function is defined to control the dispatch
-function _update_linearization!(op::AssembledNonlinearOperator, strategy_cache::SequentialAssemblyStrategyCache, u::AbstractVector, time)
+function _update_linearization_J!(op::AssembledNonlinearOperator, strategy_cache::SequentialAssemblyStrategyCache, u::AbstractVector, time)
     @unpack J, dh, integrator = op
 
     assembler = start_assemble(J)
@@ -204,12 +226,8 @@ function _sequential_update_linearization_on_subdomain_J!(assembler, sdh, elemen
     end
 end
 
-
-function update_linearization!(op::AssembledNonlinearOperator, residual::AbstractVector, u::AbstractVector, time)
-    _update_linearization!(op, op.strategy_cache, residual::AbstractVector, u::AbstractVector, time)
-end
 # This function is defined to control the dispatch
-function _update_linearization!(op::AssembledNonlinearOperator, strategy_cache::SequentialAssemblyStrategyCache, residual::AbstractVector, u::AbstractVector, time)
+function _update_linearization_Jr!(op::AssembledNonlinearOperator, strategy_cache::SequentialAssemblyStrategyCache, residual::AbstractVector, u::AbstractVector, time)
     @unpack J, dh, integrator, strategy_cache = op
 
     assembler = start_assemble(J, residual)
@@ -248,18 +266,190 @@ function _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, eleme
     end
 end
 
-"""
-    mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector)
-    mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector, α, β)
+# -------------------------------------------------- Colored on CPU --------------------------------------------------
 
-Apply the (scaled) action of the linearization of the contained nonlinear form to the vector `in`.
-"""
-mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector) = mul!(out, op.J, in)
-mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector, α, β) = mul!(out, op.J, in, α, β)
+# This function is defined to control the dispatch
+function _update_linearization_J!(op::AssembledNonlinearOperator, strategy_cache::PerColorAssemblyStrategyCache, u::AbstractVector, time)
+    @unpack J, dh, integrator = op
 
-Base.eltype(op::AssembledNonlinearOperator) = eltype(op.J)
-Base.size(op::AssembledNonlinearOperator, axis) = size(op.J, axis)
+    assembler = start_assemble(J)
 
+    for (sdhidx, sdh) in enumerate(dh.subdofhandlers)
+        # Build evaluation caches
+        element_cache  = setup_element_cache(integrator, sdh)
+        face_cache     = setup_boundary_cache(integrator, sdh)
+
+        # Function barrier
+        _update_colored_linearization_on_subdomain_J!(assembler, strategy_cache.color_cache[sdhidx], sdh, element_cache, face_cache, EmptyTyingCache(), u, time, strategy_cache.device_cache)
+    end
+
+    #finish_assemble(assembler)
+end
+
+# This function is defined to make things sufficiently type-stable
+function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, element_cache, face_cache, tying_cache, u, time, ::SequentialCPUDevice)
+    # Prepare standard values
+    ndofs = ndofs_per_cell(sdh)
+    Jₑ = zeros(ndofs, ndofs)
+    uₑ = zeros(ndofs)
+    uₜ = get_tying_dofs(tying_cache, u)
+    @inbounds for color in colors
+        for cell in CellIterator(sdh.dh, color)
+            # Prepare buffers
+            fill!(Jₑ, 0)
+            uₑ .= @view u[celldofs(cell)]
+
+            # Fill buffers
+            @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
+            # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+            # TODO benchmark against putting this into the FacetIterator
+            @timeit_debug "assemble faces" assemble_element!(Jₑ, uₑ, cell, face_cache, time)
+            @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
+            assemble!(assembler, celldofs(cell), Jₑ)
+        end
+    end
+end
+function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, element_cache, face_cache, tying_cache, u, time, device::PolyesterDevice)
+    (; chunksize) = device
+    ncellsmax = maximum(length.(colors))
+    nchunksmax = ceil(Int, ncellsmax / chunksize)
+
+    # TODO this should be in the device cache
+    ndofs = ndofs_per_cell(sdh)
+    Jes  = [zeros(ndofs,ndofs) for tid in 1:nchunksmax]
+    ues  = [zeros(ndofs) for tid in 1:nchunksmax]
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), (duplicate_for_device(device, element_cache), duplicate_for_device(device, face_cache), duplicate_for_device(device, tying_cache))) for tid in 1:nchunksmax]
+    assemblers = [duplicate_for_device(device, assembler) for tid in 1:nchunksmax]
+
+    uₜ   = get_tying_dofs(tying_cache, u)
+
+    @inbounds for color in colors
+        ncells  = maximum(length(color))
+        nchunks = ceil(Int, ncells / chunksize)
+        @batch for chunk in 1:nchunks
+            chunkbegin = (chunk-1)*chunksize+1
+            chunkbound = min(ncells, chunk*chunksize)
+
+            # Unpack chunk scratch
+            Jₑ        = Jes[chunk]
+            uₑ        = ues[chunk]
+            tld       = tlds[chunk]
+            assembler = assemblers[chunk]
+
+            for i in chunkbegin:chunkbound
+                eid = color[i]
+                cell = tld.cc
+                reinit!(cell, eid)
+
+                # Prepare buffers
+                fill!(Jₑ, 0)
+                uₑ .= @view u[celldofs(cell)]
+
+                # Fill buffers
+                @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, tld.ec[1], time)
+                # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+                # TODO benchmark against putting this into the FacetIterator
+                @timeit_debug "assemble faces" assemble_element!(Jₑ, uₑ, cell, tld.ec[2], time)
+                @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tld.ec[3], time)
+                assemble!(assembler, celldofs(cell), Jₑ)
+            end
+        end
+    end
+end
+
+# This function is defined to control the dispatch
+function _update_linearization_Jr!(op::AssembledNonlinearOperator, strategy_cache::PerColorAssemblyStrategyCache, residual::AbstractVector, u::AbstractVector, time)
+    @unpack J, dh, integrator = op
+
+    assembler = start_assemble(J, residual)
+
+    for (sdhidx,sdh) in enumerate(dh.subdofhandlers)
+        # Build evaluation caches
+        element_cache  = setup_element_cache(integrator, sdh)
+        face_cache     = setup_boundary_cache(integrator, sdh)
+
+        # Function barrier
+        _update_colored_linearization_on_subdomain_Jr!(assembler, strategy_cache.color_cache[sdhidx], sdh, element_cache, face_cache, EmptyTyingCache(), u, time, strategy_cache.device_cache)
+    end
+
+    #finish_assemble(assembler)
+end
+
+# This function is defined to make things sufficiently type-stable
+function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, element_cache, face_cache, tying_cache, u, time, ::SequentialCPUDevice)
+    # Prepare standard values
+    ndofs = ndofs_per_cell(sdh)
+    Jₑ = zeros(ndofs, ndofs)
+    uₑ = zeros(ndofs)
+    rₑ = zeros(ndofs)
+    uₜ = get_tying_dofs(tying_cache, u)
+    @inbounds for color in colors
+        for cell in CellIterator(sdh.dh, color)
+            # Prepare buffers
+            fill!(Jₑ, 0)
+            fill!(rₑ, 0)
+            uₑ .= @view u[celldofs(cell)]
+
+            # Fill buffers
+            @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
+            # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+            # TODO benchmark against putting this into the FacetIterator
+            @timeit_debug "assemble faces" assemble_element!(Jₑ, rₑ, uₑ, cell, face_cache, time)
+            @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
+            assemble!(assembler, celldofs(cell), Jₑ, rₑ)
+        end
+    end
+end
+function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, element_cache, face_cache, tying_cache, u, time, device::PolyesterDevice)
+    (; chunksize) = device
+    ncellsmax = maximum(length.(colors))
+    nchunksmax = ceil(Int, ncellsmax / chunksize)
+
+    # TODO this should be in the device cache
+    ndofs = ndofs_per_cell(sdh)
+    Jes  = [zeros(ndofs,ndofs) for tid in 1:nchunksmax]
+    res  = [zeros(ndofs) for tid in 1:nchunksmax]
+    ues  = [zeros(ndofs) for tid in 1:nchunksmax]
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), (duplicate_for_device(device, element_cache), duplicate_for_device(device, face_cache), duplicate_for_device(device, tying_cache))) for tid in 1:nchunksmax]
+    assemblers = [duplicate_for_device(device, assembler) for tid in 1:nchunksmax]
+
+    uₜ   = get_tying_dofs(tying_cache, u)
+
+    @inbounds for color in colors
+        ncells  = maximum(length(color))
+        nchunks = ceil(Int, ncells / chunksize)
+        @batch for chunk in 1:nchunks
+            chunkbegin = (chunk-1)*chunksize+1
+            chunkbound = min(ncells, chunk*chunksize)
+
+            # Unpack chunk scratch
+            Jₑ        = Jes[chunk]
+            rₑ        = res[chunk]
+            uₑ        = ues[chunk]
+            tld       = tlds[chunk]
+            assembler = assemblers[chunk]
+
+            for i in chunkbegin:chunkbound
+                eid = color[i]
+                cell = tld.cc
+                reinit!(cell, eid)
+
+                # Prepare buffers
+                fill!(Jₑ, 0)
+                fill!(rₑ, 0)
+                uₑ .= @view u[celldofs(cell)]
+
+                # Fill buffers
+                @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, tld.ec[1], time)
+                # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+                # TODO benchmark against putting this into the FacetIterator
+                @timeit_debug "assemble faces" assemble_element!(Jₑ, rₑ, uₑ, cell, tld.ec[2], time)
+                @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tld.ec[3], time)
+                assemble!(assembler, celldofs(cell), Jₑ, rₑ)
+            end
+        end
+    end
+end
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
 
@@ -310,28 +500,26 @@ end
 function _update_bilinaer_operator!(op::AssembledBilinearOperator, strategy_cache::PerColorAssemblyStrategyCache{<:AbstractCPUDevice}, time)
     @unpack A, A_, integrator, dh  = op
 
-    _ = start_assemble(A_)
+    assembler = start_assemble(A_)
 
     for (sdhidx,sdh) in enumerate(dh.subdofhandlers)
         # Build evaluation caches
         element_cache  = setup_element_cache(integrator, sdh)
 
         # Function barrier
-        _update_colored_bilinear_operator_on_subdomain!(A_, strategy_cache.color_cache[sdhidx], sdh, element_cache, time, strategy_cache.device_cache)
+        _update_colored_bilinear_operator_on_subdomain!(assembler, strategy_cache.color_cache[sdhidx], sdh, element_cache, time, strategy_cache.device_cache)
     end
 
     #finish_assemble(assembler)
-
     if A !== A_
         copyto!(nonzeros(A), nonzeros(A_))
     end
 end
 
-function _update_colored_bilinear_operator_on_subdomain!(A, colors, sdh, element_cache, time, device::SequentialCPUDevice)
+function _update_colored_bilinear_operator_on_subdomain!(assembler, colors, sdh, element_cache, time, device::SequentialCPUDevice)
     # TODO this should be in the device cache
     ndofs     = ndofs_per_cell(sdh)
     Aₑ        = zeros(ndofs,ndofs)
-    assembler = start_assemble(A)
 
     @timeit_debug "assemble subdomain" for color in colors
         @inbounds for cell in CellIterator(sdh.dh, color)
@@ -342,7 +530,7 @@ function _update_colored_bilinear_operator_on_subdomain!(A, colors, sdh, element
     end
 end
 
-function _update_colored_bilinear_operator_on_subdomain!(A, colors, sdh, element_cache, time, device::PolyesterDevice)
+function _update_colored_bilinear_operator_on_subdomain!(assembler, colors, sdh, element_cache, time, device::PolyesterDevice)
     (; chunksize) = device
     ncellsmax = maximum(length.(colors))
     nchunksmax = ceil(Int, ncellsmax / chunksize)
@@ -352,7 +540,7 @@ function _update_colored_bilinear_operator_on_subdomain!(A, colors, sdh, element
     # TODO this should be in the device cache
     ndofs = ndofs_per_cell(sdh)
     Aes  = [zeros(ndofs,ndofs) for tid in 1:nchunksmax]
-    assemblers = [start_assemble(A; fillzero = false) for tid in 1:nchunksmax]
+    assemblers = [duplicate_for_device(device, assembler) for tid in 1:nchunksmax]
 
     @timeit_debug "assemble subdomain" for color in colors
         ncells  = maximum(length(color))
