@@ -11,6 +11,9 @@ using SparseMatricesCSR, Polyester, LinearAlgebra
 using OrderedCollections
 using BlockArrays, SparseArrays, StaticArrays
 
+import SparseArrays: getcolptr,getnzval
+import SparseMatricesCSR: getrowptr,getnzval
+
 using JLD2
 import WriteVTK
 import ReadVTK
@@ -46,7 +49,8 @@ import ModelingToolkit: @variables, @parameters, @component, @named,
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
-import KernelAbstractions: GPU, @kernel, @index, @ndrange, @groupsize, @print, functional
+import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @print, functional,
+    CPU
 import Adapt:
     Adapt, adapt_structure, adapt
 

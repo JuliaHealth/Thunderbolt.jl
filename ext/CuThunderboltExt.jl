@@ -5,6 +5,8 @@ using LinearSolve
 using KernelAbstractions
 using SparseMatricesCSR
 
+import SparseArrays
+
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
     threadIdx, blockIdx, blockDim, @cuda, @cushow,
@@ -20,7 +22,7 @@ import Thunderbolt:
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
     setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
     convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator,
-    convert_to_backend, sparsemat_format_type, CSC, CSR
+    convert_to_backend, sparsemat_format_type, CSCFormat, CSRFormat
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,
