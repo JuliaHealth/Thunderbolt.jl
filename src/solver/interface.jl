@@ -11,10 +11,26 @@ function setup_operator(f::NullFunction, solver::AbstractSolver)
 end
 
 # Linear
-function setup_operator(strategy::AbstractAssemblyStrategy, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+# Unrolled to disambiguate
+function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
-function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+function setup_operator(strategy::PerColorAssemblyStrategy{<:AbstractCPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::ElementAssemblyStrategy{<:AbstractCPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractGPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::PerColorAssemblyStrategy{<:AbstractGPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::ElementAssemblyStrategy{<:AbstractGPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractGPUDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
         integrator,
