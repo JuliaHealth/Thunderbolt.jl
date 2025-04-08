@@ -804,29 +804,3 @@ end
 function _needs_update(op::LinearOperator, protocol::NoStimulationProtocol, t)
     return false
 end
-
-
-###################################
-# GPU dispatch for LinearOperator #
-###################################
-
-# This should encapsulate (elements caches, buffers, kernel launch parameters (e.g. threads and blocks in case of GPU))
-abstract type AbstractElementAssembly end
-
-# This linear operator is designed to be able to be dispatched to different devices (i.e. GPU and CPU (single threaded and multi-threaded)).
-struct GeneralLinearOperator{ElementAssembly<:AbstractElementAssembly,VectorType}
-    b::VectorType
-    element_assembly::ElementAssembly
-end
-
-# interfaces #
-# Concrete implementations for the following abstract types can be found in the corresponding extension.
-function init_linear_operator(::AbstractAssemblyStrategy,::IntegrandType,::QuadratureRuleCollection,::AbstractDofHandler) where {IntegrandType}
-    error("Not implemented")
-end
-
-function update_operator!(::GeneralLinearOperator{<:AbstractElementAssembly}, time)
-    error("Not implemented")
-end
-
-(op::GeneralLinearOperator)(time) = update_operator!(op, time)

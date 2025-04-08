@@ -5,18 +5,17 @@ using Thunderbolt
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
     threadIdx, blockIdx, blockDim, @cuda, @cushow,
-    CUDABackend, launch_configuration, device, cu,cudaconvert
+    CUDABackend, launch_configuration, cu,cudaconvert
 
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
     SparseMatrixCSR, SparseMatrixCSC,
-    AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
+    AbstractSolver, AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,QuadratureRuleCollection,
-    AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
-    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaDevice, ElementAssemblyStrategy, value_type, index_type, 
-    convert_vec_to_concrete,AbstractElementAssembly,GeneralLinearOperator
+    setup_element_cache,update_operator!,FieldCoefficientCache, CudaDevice, ElementAssemblyStrategy, value_type, index_type, 
+    convert_vec_to_concrete
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,

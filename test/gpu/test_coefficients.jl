@@ -58,15 +58,15 @@ import Tensors: Vec
     n_cells = grid.cells |> length
     sdh = first(dh.subdofhandlers)
 
-    strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
-    cu_dh = adapt_structure(strategy, dh)
+    device   = Thunderbolt.CudaDevice()
+
+    cu_dh = adapt_structure(device, dh)
     cu_sdh = cu_dh.subdofhandlers[1]
     @testset "ConstantCoefficient($val" for val ∈ [1.0f0]
         cc = ConstantCoefficient(val)
         coeff_cache = setup_coefficient_cache(cc, qr, sdh)
         correct_vals = ones(Float32, n_cells * n_quad)
         Vals = zeros(Float32, n_cells * n_quad) |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -79,10 +79,9 @@ import Tensors: Vec
         data_scalar[1, 2] = -1.0f0
         data_scalar[2, 1] = -1.0f0
         fcs = FieldCoefficient(data_scalar, ip_collection)
-        coeff_cache = adapt_structure(strategy, setup_coefficient_cache(fcs, qr, sdh))
+        coeff_cache = adapt_structure(device, setup_coefficient_cache(fcs, qr, sdh))
         correct_vals = [0.0f0, -0.1f0, -0.5f0, (0.1f0 + 1.0f0) / 2.0f0 - 1.0f0]
         Vals = zeros(Float32, correct_vals |> length) |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         CUDA.@cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -93,10 +92,9 @@ import Tensors: Vec
         data_vector[1, 2] = Vec((0.0f0, -1.0f0))
         data_vector[2, 1] = Vec((-1.0f0, -0.0f0))
         fcv = FieldCoefficient(data_vector, ip_collection^2)
-        coeff_cache = adapt_structure(strategy, setup_coefficient_cache(fcv, qr, sdh))
+        coeff_cache = adapt_structure(device, setup_coefficient_cache(fcv, qr, sdh))
         correct_vals = [Vec((0.0f0, 0.0f0)), Vec((-0.1f0, 0.0f0)), Vec((0.0f0, -0.5f0)), Vec((0.0f0, (0.1f0 + 1.0f0) / 2.0f0 - 1.0f0))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -108,7 +106,6 @@ import Tensors: Vec
         coeff_cache = setup_coefficient_cache(ccsc, qr, sdh)
         correct_vals = [Vec((-0.5f0,)), Vec((-0.45f0,)), Vec((0.5f0,)), Vec((0.55f0,))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -123,14 +120,12 @@ import Tensors: Vec
         coeff_cache = Thunderbolt.setup_coefficient_cache(ac, qr, sdh)
         correct_vals = [0.5f0, 0.45f0, 0.5f0, 0.55f0]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
 
         correct_vals = [1.5f0, 1.45f0, 1.5f0, 1.55f0]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 1.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -148,7 +143,6 @@ import Tensors: Vec
         coeff_cache = setup_coefficient_cache(stc, qr, sdh)
         correct_vals = [st, st, st, st]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -162,7 +156,6 @@ import Tensors: Vec
         coeff_cache = setup_coefficient_cache(stc2, qr, sdh)
         correct_vals = [st2, st2, st2, st2]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -175,7 +168,6 @@ import Tensors: Vec
         coeff_cache = setup_coefficient_cache(stc3, qr, sdh)
         correct_vals = [st2, st2, st2, st2]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -187,10 +179,9 @@ import Tensors: Vec
             [1.0f0, 2.0f0],
             [Vec((0.1f0,)), Vec((0.2f0,)), Vec((0.3f0,))]
         )
-        coeff_cache = adapt_structure(strategy, Thunderbolt.setup_coefficient_cache(shdc, qr, sdh))
+        coeff_cache = adapt_structure(device, Thunderbolt.setup_coefficient_cache(shdc, qr, sdh))
         correct_vals = [Vec((0.1f0,)), Vec((0.1f0,)), Vec((0.1f0,)), Vec((0.1f0,))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -198,7 +189,6 @@ import Tensors: Vec
 
         correct_vals = [Vec((0.1f0,)), Vec((0.1f0,)), Vec((0.1f0,)), Vec((0.1f0,))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 1.0f0)
         @test Vector(Vals) ≈ correct_vals
@@ -206,7 +196,6 @@ import Tensors: Vec
 
         correct_vals = [Vec((0.2f0,)), Vec((0.2f0,)), Vec((0.2f0,)), Vec((0.2f0,))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 1.1f0)
         @test Vector(Vals) ≈ correct_vals
@@ -214,19 +203,15 @@ import Tensors: Vec
 
         correct_vals = [Vec((0.2f0,)), Vec((0.2f0,)), Vec((0.2f0,)), Vec((0.2f0,))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 2.0f0)
         @test Vector(Vals) ≈ correct_vals
 
-
         correct_vals = [Vec((0.3f0,)), Vec((0.3f0,)), Vec((0.3f0,)), Vec((0.3f0,))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 2.1f0)
         @test Vector(Vals) ≈ correct_vals
-
     end
 
 
@@ -245,14 +230,12 @@ import Tensors: Vec
         coeff_cache = setup_coefficient_cache(ctdc, qr, sdh)
         correct_vals = [Tensor{2,2,Float32}((-1.0, 0.0, 0.0, 0.0)), Tensor{2,2,Float32}((-1.0, 0.0, 0.0, 0.0)), Tensor{2,2,Float32}((-1.0, 0.0, 0.0, 0.0)), Tensor{2,2,Float32}((-1.0, 0.0, 0.0, 0.0))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 0.0f0)
         @test Vector(Vals) ≈ correct_vals
 
         correct_vals = [Tensor{2,2,Float32}((-1.0, 0.0, 0.0, 0.0)), Tensor{2,2,Float32}((-1.0, 0.0, 0.0, 0.0)), Tensor{2,2,Float32}((-1.0, 0.0, 0.0, 0.0)), Tensor{2,2,Float32}((-1.0, 0.0, 0.0, 0.0))]
         Vals = correct_vals |> similar |> cu
-        cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
         @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, cu_sdh, coeff_cache, cellvalues, 1.0f0)
         @test Vector(Vals) ≈ correct_vals

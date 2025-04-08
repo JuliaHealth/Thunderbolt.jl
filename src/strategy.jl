@@ -3,8 +3,8 @@ abstract type AbstractAssemblyStrategy end
 """
     SequentialAssemblyStrategy()
 """
-struct SequentialAssemblyStrategy <: AbstractAssemblyStrategy
-    device::AbstractDevice
+struct SequentialAssemblyStrategy{DeviceType} <: AbstractAssemblyStrategy
+    device::DeviceType
 end
 
 struct SequentialAssemblyStrategyCache{DeviceCacheType}
@@ -16,8 +16,8 @@ end
 """
     PerColorAssemblyStrategy(chunksize, coloralg)
 """
-struct PerColorAssemblyStrategy <: AbstractAssemblyStrategy
-    device::AbstractDevice
+struct PerColorAssemblyStrategy{DeviceType} <: AbstractAssemblyStrategy
+    device::DeviceType
     # coloralg::Symbol # TODO
 end
 
@@ -36,8 +36,8 @@ end
 """
     ElementAssemblyStrategy
 """
-struct ElementAssemblyStrategy <: AbstractAssemblyStrategy
-    device::AbstractDevice
+struct ElementAssemblyStrategy{DeviceType} <: AbstractAssemblyStrategy
+    device::DeviceType
 end
 
 struct ElementAssemblyStrategyCache{DeviceCacheType, EADataType}

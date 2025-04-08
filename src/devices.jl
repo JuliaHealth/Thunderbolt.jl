@@ -18,7 +18,7 @@ SequentialCPUDevice() = SequentialCPUDevice{Float64, Int64}()
 
 """
     PolyesterDevice
-    
+
 Threaded algorithms via Polyester.jl .
 """
 struct PolyesterDevice{ValueType, IndexType} <: AbstractCPUDevice{ValueType, IndexType}
@@ -36,12 +36,12 @@ end
 
 """
     CudaDevice
-    
+
 Please add CUDA.jl to your Project to make this device work.
 """
 struct CudaDevice{ValueType, IndexType} <: AbstractGPUDevice{ValueType, IndexType}
-    threads::IndexType
-    blocks::IndexType
+    threads::Union{IndexType, Nothing}
+    blocks::Union{IndexType, Nothing}
 end
 
-CudaDevice() = CudaDevice(Float32, Int32)
+CudaDevice() = CudaDevice{Float32, Int32}(nothing, nothing)

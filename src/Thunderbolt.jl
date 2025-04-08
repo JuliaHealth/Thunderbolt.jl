@@ -36,7 +36,7 @@ import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
 
-import Base: *, +, -
+import Base: *, +, -, @kwdef
 
 import ForwardDiff
 
