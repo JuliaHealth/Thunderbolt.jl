@@ -56,7 +56,7 @@ LinYinPassiveModel
 LinYinActiveModel
 HumphreyStrumpfYinModel
 Guccione1991PassiveModel
-Thunderbolt.BioNeoHooekean
+Thunderbolt.BioNeoHookean
 ```
 
 ### Active Energies

@@ -150,7 +150,7 @@ function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, sdh::S
     field_name = first(sdh.dh.field_names)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo     = geometric_subdomain_interpolation(sdh)
-    cv = CellValues(qr, ip, ip_geo)
+    cv         = CellValues(qr, ip, ip_geo)
     return setup_quasistatic_element_cache(model.material_model, qr, sdh, cv)
 end
 
