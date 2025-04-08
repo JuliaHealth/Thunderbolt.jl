@@ -108,6 +108,7 @@ end
 ## Preconditioner internal functionalty ##
 
 Adapt.adapt(::CPU, A::AbstractSparseMatrix) = A
+Adapt.adapt(::CPU, x::Vector) = x
 
 sparsemat_format_type(::SparseMatrixCSC) = CSCFormat
 sparsemat_format_type(::SparseMatrixCSR) = CSRFormat
