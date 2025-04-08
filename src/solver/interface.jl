@@ -30,7 +30,8 @@ end
 function setup_operator(strategy::ElementAssemblyStrategy{<:AbstractGPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
-function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractGPUDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+
+function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
         integrator,
