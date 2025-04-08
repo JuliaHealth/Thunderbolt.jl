@@ -1,6 +1,6 @@
 """
 Descriptor for a finite element discretization of a part of a PDE over some subdomain.
-    
+
 !!! note
     The current implementation is restricted to Bubnov-Galerkin methods. Petrov-Galerkin support will come in the future.
 """
@@ -15,12 +15,17 @@ struct FiniteElementDiscretization
     """
     subdomains::Vector{String}
     """
+    This field might be removed in future updates.
     """
     mass_qrc::Union{<:QuadratureRuleCollection,Nothing} # TODO maybe an "extras" field should be used instead :)
     """
+    This field might be removed in future updates.
     """
-    function FiniteElementDiscretization(ips::Dict{Symbol}, dbcs::Vector{Dirichlet} = Dirichlet[], subdomains::Vector{String} = [""], mass_qrc = nothing)
-        new(ips, dbcs, subdomains, mass_qrc)
+    assembly_strategy::AbstractAssemblyStrategy
+    """
+    """
+    function FiniteElementDiscretization(ips::Dict{Symbol}, dbcs::Vector{Dirichlet} = Dirichlet[], subdomains::Vector{String} = [""], assembly_strategy=SequentialAssemblyStrategy(SequentialCPUDevice()), mass_qrc = nothing)
+        new(ips, dbcs, subdomains, mass_qrc, assembly_strategy)
     end
 end
 
@@ -80,8 +85,9 @@ function semidiscretize(model::TransientDiffusionModel, discretization::FiniteEl
             qrc,
             sym,
         ),
-        model.source, # TODO qrc for source term
+        LinearIntegrator(model.source, qrc),
         dh,
+        discretization.assembly_strategy,
     )
 end
 
@@ -107,9 +113,10 @@ function semidiscretize(model::SteadyDiffusionModel, discretization::FiniteEleme
             qrc,
             sym,
         ),
-        model.source, # TODO qrc for source term
+        LinearIntegrator(model.source, qrc),
         dh,
         ch,
+        discretization.assembly_strategy,
     )
 end
 
@@ -207,6 +214,7 @@ function semidiscretize(model::QuasiStaticModel, discretization::FiniteElementDi
             qrc,
             _get_facet_quadrature_from_discretization(discretization, sym),
         ),
+        discretization.assembly_strategy,
     )
 
     return semidiscrete_problem

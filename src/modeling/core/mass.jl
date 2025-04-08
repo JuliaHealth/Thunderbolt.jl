@@ -17,6 +17,13 @@ struct BilinearMassElementCache{IT, CV} <: AbstractVolumetricElementCache
     cellvalues::CV
 end
 
+function duplicate_for_device(device, cache::BilinearMassElementCache)
+    return BilinearMassElementCache(
+        duplicate_for_device(device, cache.ρcache),
+        duplicate_for_device(device, cache.cellvalues),
+    )
+end
+
 function assemble_element!(Mₑ::AbstractMatrix, cell, element_cache::BilinearMassElementCache, time)
     @unpack ρcache, cellvalues = element_cache
     reinit!(element_cache.cellvalues, cell)

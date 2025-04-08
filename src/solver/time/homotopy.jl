@@ -15,12 +15,6 @@ mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}, VTprev} 
     tmp::VT
 end
 
-function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
-    return AssembledNonlinearOperator(
-        f.integrator, f.dh,
-    )
-end
-
 function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::HomotopyPathSolver, t₀;
         uprev = nothing,
         u = nothing,
