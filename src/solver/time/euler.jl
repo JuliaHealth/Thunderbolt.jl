@@ -119,7 +119,6 @@ function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t
         ElementAssemblyStrategy(get_strategy(f).device), #The EA strategy should always outperform other strats for the linear operator
         f.source_term,
         solver, dh,
-        f.bilinear_term.qrc, # source follows linearity of diffusion for now...
     )
 
     inner_prob  = LinearSolve.LinearProblem(
