@@ -633,9 +633,9 @@ Base.size(op::LinearNullOperator{T,S}) where {T,S} = S
 update_operator!(op::LinearNullOperator, time) = nothing
 needs_update(op::LinearNullOperator, t) = false
 
-struct LinearOperator{VectorType, IntegrandType, DHType <: AbstractDofHandler, StrategyCacheType} <: AbstractLinearOperator
+struct LinearOperator{VectorType, IntegratorType, DHType <: AbstractDofHandler, StrategyCacheType} <: AbstractLinearOperator
     b::VectorType
-    integrand::IntegrandType
+    integrator::IntegratorType
     dh::DHType
     strategy_cache::StrategyCacheType
 end
@@ -644,12 +644,12 @@ end
 update_operator!(op::LinearOperator, time) = _update_linear_operator!(op, op.strategy_cache, time)
 
 function _update_linear_operator!(op::LinearOperator, strategy_cache::SequentialAssemblyStrategyCache, time)
-    @unpack b, dh, integrand  = op
+    @unpack b, dh, integrator  = op
 
     fill!(b, 0.0)
     for sdh in dh.subdofhandlers
         # Build evaluation caches
-        element_cache = setup_element_cache(integrand, sdh)
+        element_cache = setup_element_cache(integrator, sdh)
 
         # Function barrier
         _update_linear_operator_on_subdomain_sequential!(b, sdh, element_cache, time)
@@ -671,11 +671,11 @@ end
 
 # CPU EA dispatch
 function _update_linear_operator!(op::AbstractLinearOperator, strategy_cache::ElementAssemblyStrategyCache{<:AbstractCPUDevice}, time)
-    @unpack b, dh, integrand  = op
+    @unpack b, dh, integrator  = op
 
     for sdh in dh.subdofhandlers
         # Build evaluation caches
-        element_cache = setup_element_cache(integrand, sdh)
+        element_cache = setup_element_cache(integrator, sdh)
 
         # Function barrier
         _update_pealinear_operator_on_subdomain!(strategy_cache.ea_data, sdh, element_cache, time, strategy_cache.device_cache)
@@ -714,13 +714,13 @@ function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_c
 end
 
 function _update_linear_operator!(op::AbstractLinearOperator, strategy_cache::PerColorAssemblyStrategyCache{<:AbstractCPUDevice}, time)
-    @unpack b, dh, integrand  = op
+    @unpack b, dh, integrator  = op
 
     fill!(b, 0.0)
 
     for (sdhidx, sdh) in enumerate(dh.subdofhandlers)
         # Build evaluation caches
-        element_cache = setup_element_cache(integrand, sdh)
+        element_cache = setup_element_cache(integrator, sdh)
 
         # Function barrier
         _update_colored_linear_operator_on_subdomain!(b, strategy_cache.color_cache[sdhidx], sdh, element_cache, time, strategy_cache.device_cache)
@@ -781,7 +781,7 @@ Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
 function needs_update(op::LinearOperator, t)
-    return _needs_update(op, op.integrand, t)
+    return _needs_update(op, op.integrator.integrand, t)
 end
 
 function _needs_update(op::LinearOperator, protocol::AnalyticalTransmembraneStimulationProtocol, t)

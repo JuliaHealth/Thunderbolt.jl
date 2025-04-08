@@ -319,41 +319,6 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 @test nlop.J ≈ nlop_base.J
             end
         end
-
-        # @testset "Analytical coefficient LVCS" begin
-        #     cs = LVCoordinateSystem(dh, LagrangeCollection{1}(), rand(ndofs(dh)), rand(ndofs(dh)), rand(ndofs(dh)))
-        #     integrator = BilinearDiffusionIntegrator(
-        #         AnalyticalCoefficient(
-        #             (x,t) -> SymmetricTensor{2,2,Float64,3}((abs(x.transmural)+1e-6, 0, 2.0e-5)),
-        #             cs,
-        #         ),
-        #         QuadratureRuleCollection(2),
-        #         :u,
-        #     )
-        #     nlop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), integrator, solver, dh)
-        #     # Check that assembly works
-        #     Thunderbolt.update_operator!(nlop_base,0.0)
-        #     norm_baseline = norm(nlop_base.A)
-        #     @test norm_baseline > 0.0
-        #     # Idempotency
-        #     Thunderbolt.update_operator!(nlop_base,0.0)
-        #     @test norm_baseline == norm(nlop_base.A)
-
-        #     @testset "Strategy $strategy" for strategy in (
-        #             Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
-        #             Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
-        #             Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
-        #             Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
-        #     )
-        #         nlop = Thunderbolt.setup_operator(strategy, integrator, solver, dh)
-        #         # Consistency
-        #         Thunderbolt.update_operator!(nlop,0.0)
-        #         @test nlop.A ≈ nlop_base.A
-        #         # Idempotency
-        #         Thunderbolt.update_operator!(nlop,0.0)
-        #         @test nlop.A ≈ nlop_base.A
-        #     end
-        # end
     end
 
     @testset "Coupled" begin

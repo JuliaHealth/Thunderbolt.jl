@@ -85,7 +85,7 @@ function semidiscretize(model::TransientDiffusionModel, discretization::FiniteEl
             qrc,
             sym,
         ),
-        model.source, # TODO qrc for source term
+        LinearIntegrator(model.source, qrc),
         dh,
         discretization.assembly_strategy,
     )
@@ -113,7 +113,7 @@ function semidiscretize(model::SteadyDiffusionModel, discretization::FiniteEleme
             qrc,
             sym,
         ),
-        model.source, # TODO qrc for source term
+        LinearIntegrator(model.source, qrc),
         dh,
         ch,
         discretization.assembly_strategy,
