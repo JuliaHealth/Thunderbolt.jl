@@ -84,12 +84,15 @@ using BlockArrays, SparseArrays, StaticArrays, Test
 
         @testset "Constant Cartesian" begin
             cs = CartesianCoordinateSystem(grid)
-            protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> 1.0, cs),
-                [SVector((0.0, 1.0))]
+            linint = Thunderbolt.LinearIntegrator(
+                AnalyticalTransmembraneStimulationProtocol(
+                    AnalyticalCoefficient((x,t) -> 1.0, cs),
+                    [SVector((0.0, 1.0))]
+                ),
+                qrc
             )
 
-            linop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), protocol, solver, dh, qrc)
+            linop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), linint, solver, dh)
             # Check that assembly works
             Thunderbolt.update_operator!(linop_base,0.0)
             norm_baseline = norm(linop_base.b)
@@ -108,7 +111,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                     Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
                     Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
             )
-                linop = Thunderbolt.setup_operator(strategy, protocol, solver, dh, qrc)
+                linop = Thunderbolt.setup_operator(strategy, linint, solver, dh)
 
                 # Consistency
                 Thunderbolt.update_operator!(linop,0.0)
@@ -121,12 +124,15 @@ using BlockArrays, SparseArrays, StaticArrays, Test
 
         @testset "Quadratic Cartesian" begin
             cs = CartesianCoordinateSystem(grid)
-            protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> norm(x)^2+1.0, cs),
-                [SVector((0.0, 1.0))]
+            linint = Thunderbolt.LinearIntegrator(
+                AnalyticalTransmembraneStimulationProtocol(
+                    AnalyticalCoefficient((x,t) -> norm(x)^2+1.0, cs),
+                    [SVector((0.0, 1.0))]
+                ),
+                qrc
             )
 
-            linop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), protocol, solver, dh, qrc)
+            linop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), linint, solver, dh)
 
             # Check that assembly works
             Thunderbolt.update_operator!(linop_base,0.0)
@@ -146,7 +152,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
             )
-                linop = Thunderbolt.setup_operator(strategy, protocol, solver, dh, qrc)
+                linop = Thunderbolt.setup_operator(strategy, linint, solver, dh)
 
                 # Check that assembly works
                 Thunderbolt.update_operator!(linop_base,0.0)

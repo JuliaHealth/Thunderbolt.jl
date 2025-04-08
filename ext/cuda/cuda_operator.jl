@@ -8,7 +8,7 @@ struct CudaElementAssemblyCache{Ti<:Integer,MemAlloc,ElementsCaches,DHType<:Abst
 end
 
 # Thunderbolt setup entry point
-function Thunderbolt.setup_operator(strategy::ElementAssemblyStrategy{<:CudaDevice}, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
+function Thunderbolt.setup_operator(strategy::ElementAssemblyStrategy{<:CudaDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
     if CUDA.functional()
         n_threads = strategy.device.threads
         n_blocks  = strategy.device.blocks
@@ -19,13 +19,13 @@ function Thunderbolt.setup_operator(strategy::ElementAssemblyStrategy{<:CudaDevi
         if !isnothing(n_blocks) && n_blocks == 0
             error("n_blocks must be greater than zero")
         end
-        return _init_linop_ea_cuda(strategy, protocol, qrc, dh)
+        return _init_linop_ea_cuda(strategy, integrator, dh)
     else
         error("CUDA is not functional, please check your GPU driver and CUDA installation")
     end
 end
 
-function _init_linop_ea_cuda(strategy::ElementAssemblyStrategy, protocol::IntegrandType, qrc::QuadratureRuleCollection, dh::AbstractDofHandler) where {IntegrandType}
+function _init_linop_ea_cuda(strategy::ElementAssemblyStrategy, integrator::LinearIntegrator, dh::AbstractDofHandler)
     # Multiple domains not yet supported
     Thunderbolt.check_subdomains(dh)
 
@@ -43,11 +43,11 @@ function _init_linop_ea_cuda(strategy::ElementAssemblyStrategy, protocol::Integr
     blocks  = isnothing(n_blocks)  ? _calculate_nblocks(threads, n_cells) : convert(IT, n_blocks)
 
     n_basefuncs      = convert(IT, ndofs_per_cell(dh))
-    eles_caches      = _setup_caches(strategy, protocol, qrc, dh)
+    eles_caches      = _setup_caches(strategy, integrator, dh)
     mem_alloc        = allocate_device_mem(FeMemShape{FT}, threads, blocks, n_basefuncs)
     element_assembly = CudaElementAssemblyCache(threads, blocks, mem_alloc, eles_caches, cu_dh)
 
-    return LinearOperator(b, protocol, qrc, dh, element_assembly)
+    return LinearOperator(b, integrator, dh, element_assembly)
 end
 
 
@@ -60,14 +60,11 @@ function _calculate_nblocks(threads::Ti, n_cells::Ti) where {Ti<:Integer}
 end
 
 
-function _setup_caches(strategy::ElementAssemblyStrategy, integrand::IntegrandType, qrc::QuadratureRuleCollection, dh::AbstractDofHandler) where {IntegrandType}
+function _setup_caches(strategy::ElementAssemblyStrategy, integrator::LinearIntegrator, dh::AbstractDofHandler)
     sdh_to_cache = sdh ->
         begin
-            # Prepare evaluation caches
-            element_qr = getquadraturerule(qrc, sdh)
-
             # Build evaluation caches
-            element_cache = Adapt.adapt_structure(strategy.device, setup_element_cache(integrand, element_qr, sdh))
+            element_cache = Adapt.adapt_structure(strategy.device, setup_element_cache(integrator, sdh))
             return element_cache
         end
     eles_caches = dh.subdofhandlers .|> sdh_to_cache
@@ -104,7 +101,7 @@ function _update_linear_operator_cuda_kernel!(b, sdh, element_cache, mem_alloc, 
         bₑ = cellfe(cell)
         assemble_element!(bₑ, cell, element_cache, time)
         dofs = celldofs(cell)
-        @inbounds for i in 1:length(dofs)
+        @inbounds for i in eachindex(dofs)
             CUDA.@atomic b[dofs[i]] += bₑ[i]
         end
     end

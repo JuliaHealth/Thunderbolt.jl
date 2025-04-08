@@ -9,29 +9,29 @@
 
     cs = CartesianCoordinateSystem(grid)
 
-    protocol = AnalyticalTransmembraneStimulationProtocol(
-                    AnalyticalCoefficient((x,t) -> cos(2π * t) * exp(-norm(x)^2), cs),
-                    [SVector((0.f0, 1.f0))]
-                )
+    linint = Thunderbolt.LinearIntegrator(
+        AnalyticalTransmembraneStimulationProtocol(
+            AnalyticalCoefficient((x,t) -> cos(2π * t) * exp(-norm(x)^2), cs),
+            [SVector((0.f0, 1.f0))]
+        ),
+        qrc
+    )
 
-    
     cpustrategy = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice{Float32,Int32}())
     linop = Thunderbolt.setup_operator(
         cpustrategy,
-        protocol,
+        linint,
         BackwardEulerSolver(),
         dh,
-        qrc,
     )
     Thunderbolt.update_operator!(linop,0.f0)
 
     gpustrategy = Thunderbolt.ElementAssemblyStrategy(Thunderbolt.CudaDevice())
     cuda_op = Thunderbolt.setup_operator(
         gpustrategy,
-        protocol,
+        linint,
         BackwardEulerSolver(),
         dh,
-        qrc,
     )
 
     Thunderbolt.update_operator!(cuda_op,0.f0)

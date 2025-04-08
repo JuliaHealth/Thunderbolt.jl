@@ -13,7 +13,7 @@ import Thunderbolt:
     SparseMatrixCSR, SparseMatrixCSC,
     AbstractSolver, AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
-    LinearOperator,QuadratureRuleCollection,
+    LinearIntegrator,LinearOperator,QuadratureRuleCollection,
     setup_element_cache,update_operator!,FieldCoefficientCache, CudaDevice, ElementAssemblyStrategy, value_type, index_type, 
     convert_vec_to_concrete
 

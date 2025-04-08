@@ -11,42 +11,39 @@ function setup_operator(f::NullFunction, solver::AbstractSolver)
 end
 
 # Linear
-function setup_operator(strategy::AbstractAssemblyStrategy, ::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
+function setup_operator(strategy::AbstractAssemblyStrategy, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
-function setup_operator(strategy::SequentialAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
+function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
-        protocol,
-        qrc,
+        integrator,
         dh,
         SequentialAssemblyStrategyCache(strategy.device),
     )
 end
-function setup_operator(strategy::PerColorAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
+function setup_operator(strategy::PerColorAssemblyStrategy{<:AbstractCPUDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
-        protocol,
-        qrc,
+        integrator,
         dh,
         PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(dh)),
     )
 end
-function setup_operator(strategy::ElementAssemblyStrategy, protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc::QuadratureRuleCollection)
+function setup_operator(strategy::ElementAssemblyStrategy{<:AbstractCPUDevice},  integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
     return LinearOperator(
         zeros(value_type(strategy.device), ndofs(dh)),
-        protocol,
-        qrc,
+        integrator,
         dh,
         ElementAssemblyStrategyCache(strategy.device, EAVector(value_type(strategy.device), index_type(strategy.device), dh)),
     )
 end
 
 # Bilinear
-function setup_operator(strategy::Union{SequentialAssemblyStrategy,PerColorAssemblyStrategy}, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+function setup_operator(strategy::Union{SequentialAssemblyStrategy{<:AbstractCPUDevice},PerColorAssemblyStrategy{<:AbstractCPUDevice}}, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
     setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
-function setup_assembled_operator(strategy::SequentialAssemblyStrategy, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
+function setup_assembled_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
     A  = create_system_matrix(system_matrix_type, dh)
     A_ = if strategy.device isa AbstractCPUDevice && system_matrix_type isa SparseMatrixCSC #if "can assemble with system_matrix_type"
         A
