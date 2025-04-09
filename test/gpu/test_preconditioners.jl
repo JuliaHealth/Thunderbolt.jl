@@ -20,7 +20,7 @@ end
 
 function test_sym_csc(A,x,partsize,backend)
     expected_y = expected_result(x)
-    cudabuilder = Thunderbolt.L1GSPrecBuilder(backend)
+    cudabuilder = L1GSPrecBuilder(backend)
     @testset "$backend CSC Symmetric" begin
         N = size(A, 1)
         for nparts in 1:partsize:N
@@ -35,7 +35,7 @@ end
 function test_sym_csr(A,x,partsize,backend)
     expected_y = expected_result(x)
     B = SparseMatrixCSR(A)  # CSR version of A
-    cudabuilder = Thunderbolt.L1GSPrecBuilder(backend)
+    cudabuilder = L1GSPrecBuilder(backend)
     @testset "$backend CSR Symmetric" begin
         N = size(A, 1)
         for nparts in 1:partsize:N
@@ -67,13 +67,13 @@ end
         expected_y2[2] = x[2] / (A2[2,2] + abs(A2[2,3]) + abs(A2[2,8]) )  # Adjusted for non-symmetric case
 
         # GPU
-        P_gpu = Thunderbolt.L1GSPrecBuilder(CUDABackend())(A2, 2, 1)
+        P_gpu = L1GSPrecBuilder(CUDABackend())(A2, 2, 1)
         y_gpu = similar(x)
         LinearSolve.ldiv!(y_gpu, P_gpu, x)
         @test isapprox(y_gpu, expected_y2; atol=1e-10)
 
         # CPU
-        P_cpu = Thunderbolt.L1GSPrecBuilder(CPU())(A2, 2, 1)
+        P_cpu = L1GSPrecBuilder(CPU())(A2, 2, 1)
         y_cpu = similar(x)
         LinearSolve.ldiv!(y_cpu, P_cpu, x)
         @test isapprox(y_cpu, expected_y2; atol=1e-10)
