@@ -76,6 +76,14 @@ function LinearSolve.ldiv!(y::VectorType, P::L1GSPreconditioner{BlockPartitionin
     _ldiv!(y, P)
 end
 
+function (\)(P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType <: AbstractVector, Ti, Backend}
+    # P is a preconditioner
+    # x is a vector
+    y = similar(x)
+    LinearSolve.ldiv!(y, P, x)
+    return y
+end
+
 function _ldiv!(y::VectorType , P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}})  where {VectorType <: AbstractVector, Ti, Backend}
     @unpack partitioning, A = P
     @unpack partsize, nparts, backend = partitioning

@@ -25,8 +25,9 @@ function test_sym_csc(A,x,partsize,backend)
         N = size(A, 1)
         for nparts in 1:partsize:N
             P = cudabuilder(A, partsize, nparts)
-            y = similar(x)
-            LinearSolve.ldiv!(y, P, x)
+            # y = similar(x)
+            # LinearSolve.ldiv!(y, P, x)
+            y = P \ x
             @test isapprox(y, expected_y; atol=1e-10)
         end
     end
@@ -40,8 +41,9 @@ function test_sym_csr(A,x,partsize,backend)
         N = size(A, 1)
         for nparts in 1:partsize:N
             P = cudabuilder(B, partsize, nparts)
-            y = similar(x)
-            LinearSolve.ldiv!(y, P, x)
+            # y = similar(x)
+            # LinearSolve.ldiv!(y, P, x)
+            y = P \ x
             @test isapprox(y, expected_y; atol=1e-10)
         end
     end
@@ -74,8 +76,9 @@ end
 
         # CPU
         P_cpu = L1GSPrecBuilder(CPU())(A2, 2, 1)
-        y_cpu = similar(x)
-        LinearSolve.ldiv!(y_cpu, P_cpu, x)
+        # y_cpu = similar(x)
+        # LinearSolve.ldiv!(y_cpu, P_cpu, x)
+        y_cpu = P_cpu \ x
         @test isapprox(y_cpu, expected_y2; atol=1e-10)
     end
     
