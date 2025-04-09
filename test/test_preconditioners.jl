@@ -5,7 +5,7 @@ using KernelAbstractions
 ## L1 Gauss Seidel Preconditioner - CPU ##
 ##########################################
 
-@testset "L1GS Preconditioner - Symmetric A" begin
+@testset "L1GS Preconditioner - Unsymmetric A" begin
     md = mdopen("HB/sherman5") 
     A = md.A
     b = md.b[:,1] 
@@ -30,4 +30,4 @@ using KernelAbstractions
     #@test sol_prec.stats.timer <= sol_unprec.stats.timer # commented out because it fails, is it normal?
 end
 
-# TODO: unsymmetric matrix
+# TODO: symmetric matrix
