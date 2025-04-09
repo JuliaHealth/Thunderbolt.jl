@@ -1,16 +1,19 @@
 using MatrixDepot,LinearSolve,SparseMatricesCSR
 using KernelAbstractions
+using ThreadPinning 
 
 ##########################################
 ## L1 Gauss Seidel Preconditioner - CPU ##
 ##########################################
 
+pinthreads(:cores)
+
 @testset "L1GS Preconditioner - Unsymmetric A" begin
     md = mdopen("HB/sherman5") 
     A = md.A
     b = md.b[:,1] 
-    nparts = 16
-    partsize = size(md.A,1) / 16 |> ceil |> Int
+    nparts = ThreadPinning.ncores()
+    partsize = size(md.A,1) / nparts |> ceil |> Int
 
     u = A\b
 
