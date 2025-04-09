@@ -28,12 +28,7 @@ end
 (builder::L1GSPrecBuilder)(A::AbstractMatrix,partsize::Ti,nparts::Ti) where {Ti} = 
     build_l1prec(builder, A,partsize, nparts)
 
-# CSR and CSC are exact the same in symmetric matrices,so we need to hold symmetry info
-# in order to be exploited in CSC case (i.e. treat CSC as CSR for symmetric matrices).
-abstract type AbstractMatrixSymmetry end
-struct SymmetricMatrix <: AbstractMatrixSymmetry end 
-struct NonSymmetricMatrix <: AbstractMatrixSymmetry end
-    
+  
 struct DiagonalIterator{MatrixFormat,MatrixSymmetry  <: AbstractMatrixSymmetry,MatrixType,Ti} 
     A::MatrixType
     partsize::Ti
@@ -57,11 +52,6 @@ struct DiagonalCache{Ti,Tv}
     b::Tv # partition diagonal value
     d::Tv # off-partition absolute sum
 end
-
-abstract type AbstractMatrixFormat end
-struct CSRFormat <: AbstractMatrixFormat end
-struct CSCFormat <: AbstractMatrixFormat end
-
 
 ## Preconditioner builder ##
 function build_l1prec(builder::L1GSPrecBuilder, A::AbstractSparseMatrix,partsize::Ti, nparts::Ti) where {Ti<:Integer}
@@ -105,14 +95,7 @@ function _ldiv!(y::VectorType , P::L1GSPreconditioner{BlockPartitioning{Ti,Backe
     return nothing
 end
 
-## Preconditioner internal functionalty ##
-
-Adapt.adapt(::CPU, A::AbstractSparseMatrix) = A
-Adapt.adapt(::CPU, x::Vector) = x
-
-sparsemat_format_type(::SparseMatrixCSC) = CSCFormat
-sparsemat_format_type(::SparseMatrixCSR) = CSRFormat
-
+## L1 GS internal functionalty ##
 
 function Base.iterate(iterator::DiagonalIterator)
     @unpack A, initial_partition_idx, initial_global_idx = iterator

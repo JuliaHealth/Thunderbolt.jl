@@ -21,8 +21,7 @@ import Thunderbolt:
     LinearOperator,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
     setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
-    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator,
-    sparsemat_format_type, CSCFormat, CSRFormat
+    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,
@@ -31,6 +30,9 @@ import Thunderbolt.FerriteUtils:
     cellfe, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
     FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache,
     FeCellMem, KeCellMem, KeFeCellMem,NoCellMem,AbstractMemShape
+
+import Thunderbolt.Preconditioners:
+    sparsemat_format_type, CSCFormat, CSRFormat
 
 
 import Ferrite:

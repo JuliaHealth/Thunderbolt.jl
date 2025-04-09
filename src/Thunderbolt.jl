@@ -11,9 +11,6 @@ using SparseMatricesCSR, Polyester, LinearAlgebra
 using OrderedCollections
 using BlockArrays, SparseArrays, StaticArrays
 
-import SparseArrays: getcolptr,getnzval
-import SparseMatricesCSR: getrowptr,getnzval
-
 using JLD2
 import WriteVTK
 import ReadVTK
@@ -49,8 +46,6 @@ import ModelingToolkit: @variables, @parameters, @component, @named,
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
-import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @print, functional,
-    CPU
 import Adapt:
     Adapt, adapt_structure, adapt
 
@@ -88,6 +83,8 @@ include("solver/interface.jl")
 include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
+include("solver/linear/preconditioners/Preconditioners.jl")
+@reexport using .Preconditioners 
 
 
 include("modeling/electrophysiology/ecg.jl")
@@ -100,7 +97,6 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
-include("solver/linear/preconditioner.jl")
 
 # TODO put exports into the individual submodules above!
 export
