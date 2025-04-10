@@ -9,12 +9,76 @@ struct BlockPartitioning{Ti,Backend}
     backend::Backend 
 end
 
+@doc raw"""
+    L1GSPreconditioner{Partitioning, VectorType}
+
+The ℓ₁ Gauss–Seidel preconditioner is a robust and parallel-friendly preconditioner, particularly effective for sparse and ill-conditioned systems.
+
+# Algorithm
+
+The L1-GS preconditioner is constructed by dividing the matrix into blocks `nparts`:
+- Let Ωₖ denote the block with index `k`.
+- For each Ωₖ, we define the following sets:
+    - Ωⁱ $:= \{j ∈ Ωₖ : i ∈ Ωₖ\}$ → the set of columns in the diagonal block for row i
+    - Ωⁱₒ $:= \{j ∉ Ωₖ : i ∈ Ωₖ\}$ →  the remaining “off-diagonal” columns in row i
+
+The preconditioner matrix $M_{ℓ_1}$  is defined as:
+```math
+M_{ℓ_1} = \mathcal{M}_H + D^{ℓ_1} = \text{diag}\{B_k + D_k^{ℓ_1}\} \\
+B_k = A_{kk}
+```
+Where $D^{ℓ_1}$ is a diagonal matrix with entries
+
+```math
+d_{ii}^{ℓ_1} = \sum_{j ∈ Ωⁱₒ} |a_{ij}|
+```
+
+# Fields
+- `partitioning`: Encapsulates partitioning data (e.g. nparts, partsize, backend).
+- `B`: Vector of diagonal entries (used in normalization).
+- `D`: Vector of ℓ₁ row norms of off-diagonal entries.
+
+
+# Reference
+Baker, A. H., Falgout, R. D., Kolev, T. V., & Yang, U. M. (2011).  
+*Multigrid Smoothers for Ultraparallel Computing*,  
+SIAM J. Sci. Comput., 33(5), 2864–2887.  
+[https://doi.org/10.1137/100798806](https://www.osti.gov/servlets/purl/1117969)
+"""
 struct L1GSPreconditioner{Partitioning,VectorType}
     partitioning::Partitioning
-    B::VectorType # Diagonal values
-    D::VectorType # Off-diagonal absolute sum
+    B::VectorType
+    D::VectorType
 end
 
+"""
+    L1GSPrecBuilder(backend::Backend)
+
+Builder object for ℓ₁ Gauss–Seidel (L1-GS) preconditioners.
+
+Ensures the given `backend` is functional before construction. Supports GPU (e.g. CUDABackend) and CPU backends.
+
+# Usage
+
+Once constructed, the builder can be used to create a preconditioner from a matrix `A` by calling it like a function:
+
+```julia
+backend = CPU()
+builder = L1GSPrecBuilder(backend)
+N = 800
+A = spdiagm(0 => 2 * ones(N), -1 => -ones(N-1), 1 => -ones(N-1))
+nparts = 8 # no. cores in CPU case
+partsize = 100 
+prec = builder(A, partsize, nparts)
+```
+!!! note
+    - In **CPU backends**, `nparts` typically matches the number of available CPU cores or threads.
+    - In **GPU backends**, `nparts` corresponds to the number of thread blocks, and `partsize` represents the number of threads per block.
+
+    In both CPU and GPU settings, `nparts * partsize` does **not** need to exactly equal the number of rows `N`. 
+    However, this flexibility is more commonly encountered in GPU programming, due to the way the GPU execution model works: each SM executes work as groups of threads called warps, and the number of blocks that can be active on the SMs in a single kernel launch is limited.
+
+"""
 struct L1GSPrecBuilder
     backend::Backend
     function L1GSPrecBuilder(backend::Backend)
