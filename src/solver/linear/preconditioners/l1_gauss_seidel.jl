@@ -88,10 +88,9 @@ end
 function LinearSolve.ldiv!(y::Vector, P::L1GSPreconditioner{BlockPartitioning{Ti,CPU}}, x::Vector) where { Ti <: Integer}
     # x: residual
     # y: preconditioned residual
-    y .= x 
     @unpack partitioning,B,D = P
     @unpack backend = partitioning
-    y .= y ./ (B + D)
+    y .= x ./ (B + D)
     return nothing
 end
 
