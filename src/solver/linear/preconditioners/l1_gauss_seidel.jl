@@ -9,9 +9,10 @@ struct BlockPartitioning{Ti,Backend}
     backend::Backend 
 end
 
-struct L1GSPreconditioner{Partitioning,MatrixType}
+struct L1GSPreconditioner{Partitioning,VectorType}
     partitioning::Partitioning
-    A::MatrixType
+    B::VectorType # Diagonal values
+    D::VectorType # Off-diagonal absolute sum
 end
 
 struct L1GSPrecBuilder
@@ -29,17 +30,19 @@ end
     build_l1prec(builder, A,partsize, nparts)
 
   
-struct DiagonalIterator{MatrixFormat,MatrixSymmetry  <: AbstractMatrixSymmetry,MatrixType,Ti} 
+struct DiagonalIterator{MatrixFormat,MatrixSymmetry <: AbstractMatrixSymmetry,MatrixType,VectorType,Ti} 
     A::MatrixType
+    B::VectorType # Diagonal values
+    D::VectorType # Off-diagonal absolute sum
     partsize::Ti
     nparts::Ti
     local_idx::Ti # local index never changes
     initial_partition_idx::Ti # why initial ? because we are using stride to loop over the diagonals. 
     initial_global_idx::Ti 
-    function DiagonalIterator(::Type{symT}, A::MatrixType,partsize::Ti,nparts::Ti,local_idx::Ti,initial_partition_idx::Ti) where {symT<:AbstractMatrixSymmetry,MatrixType,Ti}
+    function DiagonalIterator(::Type{symT}, A::MatrixType,B::VectorType,D::VectorType,partsize::Ti,nparts::Ti,local_idx::Ti,initial_partition_idx::Ti) where {symT<:AbstractMatrixSymmetry,MatrixType,VectorType,Ti}
         format_type = sparsemat_format_type(A) 
         initial_global_idx = (initial_partition_idx - convert(Ti,1)) * partsize + local_idx
-        new{format_type,symT,MatrixType,Ti}(A,partsize,nparts,local_idx,initial_partition_idx,initial_global_idx)
+        new{format_type,symT,MatrixType,VectorType,Ti}(A,B,D,partsize,nparts,local_idx,initial_partition_idx,initial_global_idx)
     end
 end
 
@@ -64,16 +67,32 @@ end
 function _build_l1prec(backend::Backend, _A::AbstractSparseMatrix,partsize::Ti, nparts::Ti) where {Ti<:Integer}
     # No assumptions on A, i.e. A here might be in either backend compatible format or not. 
     # So we have to convert it to backend compatible format, if it is not already.
-    A = adapt(backend, _A)
     partitioning = BlockPartitioning(partsize, nparts, backend)
-    L1GSPreconditioner(partitioning, A)
+    B,D = _precompute_blocks(_A, partitioning)
+    L1GSPreconditioner(partitioning, B,D)
 end
 
-function LinearSolve.ldiv!(y::VectorType, P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType <: AbstractVector, Ti, Backend}
+function LinearSolve.ldiv!(y::VectorType, P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType <: AbstractVector, Ti<:Integer, Backend}
     # x: residual
     # y: preconditioned residual
     y .= x #works either way, whether x is GpuVectorType (e.g. CuArray) or Vector
-    _ldiv!(y, P)
+    @unpack partitioning,B,D = P
+    @unpack backend = partitioning
+    # The following code is required because there is no assumption on the compatibality of x with the backend.
+    _y = adapt(backend, y)
+    _y .= _y ./ (B + D)
+    copyto!(y, _y)
+    return nothing
+end
+
+function LinearSolve.ldiv!(y::Vector, P::L1GSPreconditioner{BlockPartitioning{Ti,CPU}}, x::Vector) where { Ti <: Integer}
+    # x: residual
+    # y: preconditioned residual
+    y .= x 
+    @unpack partitioning,B,D = P
+    @unpack backend = partitioning
+    y .= y ./ (B + D)
+    return nothing
 end
 
 function (\)(P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType <: AbstractVector, Ti, Backend}
@@ -82,25 +101,6 @@ function (\)(P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType
     y = similar(x)
     LinearSolve.ldiv!(y, P, x)
     return y
-end
-
-function _ldiv!(y::VectorType , P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}})  where {VectorType <: AbstractVector, Ti, Backend}
-    @unpack partitioning, A = P
-    @unpack partsize, nparts, backend = partitioning
-    gpu_y = adapt(backend, y)
-    issym = isapprox(A, A',rtol=1e-12)
-    # workgroupsize ⇔ n_threads
-    # ndrange ⇔ total number of threads
-    # ndrange = partsize * nparts
-    # Notes:
-    #  1. In GPU implementation: n_threads = partsize, n_blocks = nparts 
-    #  2. ndrange doesn't need to be equal `size_A`, because for kernel performance reasons one might 
-    #     launch kernel with specific n_threads, n_blocks.
-    ndrange = partsize * nparts
-    kernel = _l1prec_kernel!(backend,partsize,ndrange)
-    kernel(gpu_y, A, issym,partsize,nparts; ndrange=ndrange)
-    copyto!(y, gpu_y)
-    return nothing
 end
 
 ## L1 GS internal functionalty ##
@@ -211,18 +211,32 @@ function _diag_offpart_csc(colPtr, rowVal, nzVal, idx::Integer, part_start::Inte
     return b, d
 end
 
+function _precompute_blocks(_A::AbstractSparseMatrix,partitioning::BlockPartitioning)
+    @unpack partsize, nparts, backend = partitioning
+    A = adapt(backend, _A)
+    N = size(A, 1)
+    B = adapt(backend,zeros(eltype(A), N))
+    D = adapt(backend,zeros(eltype(A), N))
+    symT = isapprox(A, A',rtol=1e-12) ? SymmetricMatrix : NonSymmetricMatrix
+    ndrange = partsize * nparts
+    kernel = _precompute_blocks_kernel!(backend,partsize,ndrange)
+    kernel(B,D,A,symT,partsize,nparts; ndrange=ndrange)
+    synchronize(backend)
+    return B, D
+end
 
-@kernel function _l1prec_kernel!(y, A,issym,partsize::Ti,nparts::Ti) where {Ti<:Integer}
+
+@kernel function _precompute_blocks_kernel!(B,D,A,symT,partsize::Ti,nparts::Ti) where {Ti<:Integer}
     # this kernel will loop over the corresponding diagonals in strided fashion.
     # e.g. if partsize = 4, nparts = 2, A is (100 x 100), and current global thread id = 5, 
     # then the kernel will loop over the diagonals with stride:
     # k (partition index) = k + nparts (i.e. 2, 4, 6, 8, 10, 12, 14)
     # idx (diagonal index) = idx + nparts * partsize (i.e. 5, 13, 21, 29, 37, 45, 53)
-    symT = issym ? SymmetricMatrix : NonSymmetricMatrix
     local_idx = @index(Local)
     initial_partition_idx = @index(Group)
-    for diagonal in DiagonalIterator(symT,A,partsize,nparts,convert(Ti,local_idx),convert(Ti,initial_partition_idx))
+    for diagonal in DiagonalIterator(symT,A,B,D,partsize,nparts,convert(Ti,local_idx),convert(Ti,initial_partition_idx))
         @unpack k, idx, b, d = diagonal
-        y[idx] = y[idx]/ (b + d)  
+        B[idx] = b
+        D[idx] = d
     end
 end

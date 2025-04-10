@@ -9,6 +9,7 @@ function make_test_matrix(N)
     return spdiagm(0 => 2 * ones(N), -1 => -ones(N-1), 1 => -ones(N-1))
 end
 
+
 function expected_result(x)
     # Expected result after applying L1 preconditioner with partition size 2:
     # y[i] = x[i] / (A[i,i] + sum(|A[i,j]| for j not in partition))
