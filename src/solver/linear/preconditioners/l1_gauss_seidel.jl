@@ -211,9 +211,13 @@ function _diag_offpart_csc(colPtr, rowVal, nzVal, idx::Integer, part_start::Inte
     return b, d
 end
 
+convert_to_backend(backend::Backend, A::AbstractSparseMatrix) =
+    adapt(backend, A) # fallback value, specific backends are to be extended in their corresponding extensions.
+
 function _precompute_blocks(_A::AbstractSparseMatrix,partitioning::BlockPartitioning)
     @unpack partsize, nparts, backend = partitioning
-    A = adapt(backend, _A)
+    #A = adapt(backend, _A) # commented out because it exposes piracy and replaced by `convert_to_backend`. more info in "cuda_preconditioner.jl"
+    A = convert_to_backend(backend, _A)
     N = size(A, 1)
     B = adapt(backend,zeros(eltype(A), N))
     D = adapt(backend,zeros(eltype(A), N))
