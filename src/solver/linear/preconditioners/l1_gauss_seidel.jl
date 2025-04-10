@@ -46,9 +46,6 @@ struct DiagonalIterator{MatrixFormat,MatrixSymmetry <: AbstractMatrixSymmetry,Ma
     end
 end
 
-DiagonalIterator(::Type{SymT}, k::Ti, partsize::Ti, A::MatrixType) where {SymT<:AbstractMatrixSymmetry,MatrixType,Ti<:Integer} =
-    DiagonalIterator{MatrixType,SymT,Ti}(A, k, partsize)
-
 struct DiagonalCache{Ti,Tv}
     k::Ti # partition index
     idx::Ti # diagonal index
