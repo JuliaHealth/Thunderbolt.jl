@@ -57,18 +57,19 @@ struct DiagonalCache{Ti,Tv}
 end
 
 ## Preconditioner builder ##
-function build_l1prec(builder::L1GSPrecBuilder, A::AbstractSparseMatrix,partsize::Ti, nparts::Ti) where {Ti<:Integer}
+function build_l1prec(builder::L1GSPrecBuilder, A::MatrixType,partsize::Ti, nparts::Ti) where {Ti<:Integer,MatrixType}
     @unpack backend = builder
     partsize == 0 && error("partsize must be greater than 0")
     nparts == 0 && error("nparts must be greater than 0")
     _build_l1prec(backend, A, partsize, nparts)
 end
 
-function _build_l1prec(backend::Backend, _A::AbstractSparseMatrix,partsize::Ti, nparts::Ti) where {Ti<:Integer}
+function _build_l1prec(backend::Backend, _A::MatrixType,partsize::Ti, nparts::Ti) where {Ti<:Integer,MatrixType}
     # No assumptions on A, i.e. A here might be in either backend compatible format or not. 
     # So we have to convert it to backend compatible format, if it is not already.
     partitioning = BlockPartitioning(partsize, nparts, backend)
-    B,D = _precompute_blocks(_A, partitioning)
+    A = get_data(_A) # for symmetric case
+    B,D = _precompute_blocks(A, partitioning)
     L1GSPreconditioner(partitioning, B,D)
 end
 
@@ -103,6 +104,9 @@ function (\)(P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType
 end
 
 ## L1 GS internal functionalty ##
+
+get_data(A::AbstractSparseMatrix) = A
+get_data(A::Symmetric{Ti,TA}) where {Ti,TA} = TA(A.data) # restore the full matrix, why ? https://discourse.julialang.org/t/is-there-a-symmetric-sparse-matrix-implementation-in-julia/91333/2
 
 function Base.iterate(iterator::DiagonalIterator)
     @unpack A, initial_partition_idx, initial_global_idx = iterator

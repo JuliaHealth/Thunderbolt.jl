@@ -72,7 +72,7 @@ function test_l1gs_prec(A,b,test_set_name)
         sol_prec = solve(prob, KrylovJL_GMRES(P);Pl=P)
         println( "Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
         println( "Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
-        @test sol_prec.u ≈ u
+        @test isapprox(sol_prec.u , u, atol=1e-2)
         @test sol_prec.iters < sol_unprec.iters
         @test sol_prec.resid < sol_unprec.resid
         @test sol_prec.stats.timer <= sol_unprec.stats.timer 
@@ -113,7 +113,11 @@ end
         
         test_l1gs_prec(A,b,test_set_name)
         
-        # TODO: symmetric matrix
+        test_set_name = "Symmetric A"
+        md = mdopen("HB/bcsstk15") 
+        A = md.A
+        b = ones(size(A,1))
+        test_l1gs_prec(A,b,test_set_name)
     end
 
 

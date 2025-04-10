@@ -9,7 +9,7 @@ import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @prin
     CPU,synchronize
 import SparseArrays: getcolptr,getnzval
 import SparseMatricesCSR: getrowptr,getnzval
-
+import LinearAlgebra: Symmetric
 
 ## Generic Code #
 
