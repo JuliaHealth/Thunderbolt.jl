@@ -1,4 +1,4 @@
-using MatrixDepot,LinearSolve,SparseMatricesCSR
+using MatrixDepot,LinearSolve,SparseArrays,SparseMatricesCSR
 using KernelAbstractions
 using ThreadPinning 
 
@@ -37,6 +37,7 @@ function test_sym_csc(A,x,partsize,backend)
     end
 end
 
+
 function test_sym_csr(A,x,partsize,backend)
     expected_y = poisson_l1gs_expected_result(x)
     B = SparseMatrixCSR(A)  # CSR version of A
@@ -53,10 +54,11 @@ function test_sym_csr(A,x,partsize,backend)
     end
 end
 
+
 function test_l1gs_prec(A,b,test_set_name)
     @testset "$test_set_name" begin
         nparts = ThreadPinning.ncores()
-        partsize = size(md.A,1) / nparts |> ceil |> Int
+        partsize = size(A,1) / nparts |> ceil |> Int
     
         u = A\b
     
