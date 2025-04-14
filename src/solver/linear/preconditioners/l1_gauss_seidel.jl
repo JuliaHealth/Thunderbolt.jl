@@ -142,7 +142,7 @@ function LinearSolve.ldiv!(y::VectorType, P::L1GSPreconditioner{BlockPartitionin
     @unpack backend = partitioning
     # The following code is required because there is no assumption on the compatibality of x with the backend.
     _y = adapt(backend, y)
-    _y .= _y ./ (B + D)
+    @. _y = _y / (B + D)
     copyto!(y, _y)
     return nothing
 end
@@ -152,7 +152,7 @@ function LinearSolve.ldiv!(y::Vector, P::L1GSPreconditioner{BlockPartitioning{Ti
     # y: preconditioned residual
     @unpack partitioning,B,D = P
     @unpack backend = partitioning
-    y .= x ./ (B + D)
+    @. y = x / (B + D)
     return nothing
 end
 
