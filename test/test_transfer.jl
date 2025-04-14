@@ -64,10 +64,14 @@
         end
     end
 
-    target_grid_nonmatching = generate_grid(Triangle, (40, 44), Vec((-2.0,-2.0)), Vec((2.0,2.0)))
+    # target_grid_nonmatching = generate_grid(Triangle, (40, 44), Vec((-2.0,-2.0)), Vec((2.0,2.0)))
+    target_grid_nonmatching = generate_grid(Triangle, (4, 4), Vec((-2.0,-2.0)), Vec((2.0,2.0)))
     addcellset!(target_grid_nonmatching, "hole", x->norm(x) ≤ 1.0)
-    addcellset!(target_grid_nonmatching, "remaining", x->norm(x) ≥ 1.0)
+    target_grid_nonmatching.cellsets["remaining"] = OrderedSet([i for i in 1:getncells(target_grid_nonmatching) if i ∉ target_grid_nonmatching.cellsets["hole"]])
     target_mesh_nonmatching = to_mesh(target_grid_nonmatching)
+    # VTKGridFile("FIMH2021-Debug", target_grid_nonmatching) do vtk
+    #     Ferrite.write_cellset(vtk, target_grid_nonmatching)
+    # end
 
     @testset "Nodal Intergrid Interpolation on Non-Matching Grids" begin
         source_dh = DofHandler(source_mesh)
@@ -109,6 +113,69 @@
             end
         end
 
+        op = Thunderbolt.NodalIntergridInterpolation(source_dh, target_dh, :z, :w; subdomains_to=target_sdhids)
+        target_u = [NaN for i in 1:ndofs(target_dh)]
+        Thunderbolt.transfer!(target_u, op, source_u)
+        cvw = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle,1}())
+        for cc in CellIterator(target_dh.subdofhandlers[1])
+            reinit!(cvw, cc)
+            dofs_v = @view celldofs(cc)[v_range]
+            dofs_w = @view celldofs(cc)[w_range]
+            for qp in QuadratureIterator(cvw)
+                x = Thunderbolt.spatial_coordinate(Lagrange{RefTriangle,1}(), qp.ξ, getcoordinates(cc))
+                @test all(isnan.(target_u[dofs_v]))
+                @test function_value(cvw, qp, target_u[dofs_w]) ≈ norm(x) atol=3e-1
+            end
+        end
+    end
+
+    @testset "Nodal Intergrid Interpolation between Subdomains" failfast=true begin
+        source_dh = DofHandler(target_mesh_nonmatching)
+        source_sdh_hole = SubDofHandler(source_dh, getcellset(target_mesh_nonmatching, "hole"))
+        add!(source_sdh_hole, :v, Lagrange{RefTriangle,2}())
+        add!(source_sdh_hole, :z, Lagrange{RefTriangle,1}())
+        # source_sdh_remaining = SubDofHandler(source_dh, getcellset(target_mesh_nonmatching, "remaining"))
+        # add!(source_sdh_remaining, :v, Lagrange{RefTriangle,2}())
+        # add!(source_sdh_remaining, :w, Lagrange{RefTriangle,1}())
+        close!(source_dh)
+
+        source_u = ones(ndofs(source_dh))
+        apply_analytical!(source_u, source_dh, :v, x->-norm(x))
+        apply_analytical!(source_u, source_dh, :z, x-> norm(x))
+
+        target_dh = DofHandler(target_mesh_nonmatching)
+        target_sdh_hole = SubDofHandler(target_dh, getcellset(target_mesh_nonmatching, "hole"))
+        add!(target_sdh_hole, :v, Lagrange{RefTriangle,2}())
+        add!(target_sdh_hole, :w, Lagrange{RefTriangle,1}())
+        # target_sdh_remaining = SubDofHandler(target_dh, getcellset(target_mesh_nonmatching, "remaining"))
+        # add!(target_sdh_remaining, :v, Lagrange{RefTriangle,2}())
+        # add!(target_sdh_remaining, :w, Lagrange{RefTriangle,1}())
+        close!(target_dh)
+
+        v_range = dof_range(target_dh.subdofhandlers[1], :v)
+        w_range = dof_range(target_dh.subdofhandlers[1], :w)
+
+        target_sdhids = Thunderbolt.get_subdofhandler_indices_on_subdomains(target_dh, ["hole"])
+
+        op = Thunderbolt.NodalIntergridInterpolation(source_dh, target_dh, :v, :v; subdomains_to=target_sdhids)
+        target_u = [NaN for i in 1:ndofs(target_dh)]
+        Thunderbolt.transfer!(target_u, op, source_u)
+        cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle,2}())
+        for cc in CellIterator(target_dh.subdofhandlers[1])
+            reinit!(cvv, cc)
+            dofs_v = @view celldofs(cc)[v_range]
+            dofs_w = @view celldofs(cc)[w_range]
+            for qp in QuadratureIterator(cvv)
+                x = Thunderbolt.spatial_coordinate(Lagrange{RefTriangle,1}(), qp.ξ, getcoordinates(cc))
+                @test function_value(cvv, qp, target_u[dofs_v]) ≈ -norm(x) atol=3e-1
+                @test all(isnan.(target_u[dofs_w]))
+            end
+        end
+        VTKGridFile("FIMH2021-Debug", target_grid_nonmatching) do vtk
+            Ferrite.write_cellset(vtk, target_grid_nonmatching)
+            Ferrite.write_solution(vtk, target_dh, target_u, "tgt")
+            Ferrite.write_solution(vtk, source_dh, source_u, "src")
+        end
         op = Thunderbolt.NodalIntergridInterpolation(source_dh, target_dh, :z, :w; subdomains_to=target_sdhids)
         target_u = [NaN for i in 1:ndofs(target_dh)]
         Thunderbolt.transfer!(target_u, op, source_u)
