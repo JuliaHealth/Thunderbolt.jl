@@ -3,6 +3,18 @@
 ####################################
 
 ## Structs & Constructors ##
+"""
+    BlockPartitioning{Ti, Backend}
+
+Struct that encapsulates the diagonal partitioning configuration which is then used to distribute the work across multiple cores.
+
+# Fields
+- `nparts::Ti`: Number of partitions, typically equal to the number of CPU cores (in CPU backends) or the grid size (in GPU backends).
+- `partsize::Ti`: Number of rows (diagonals) assigned to each partition.
+- `backend::Backend`: Execution backend that determines where and how the preconditioner is applied, such as `CPU()` or `CUDABackend()`.
+
+More info & example [L1GSPrecBuilder](@ref)
+"""
 struct BlockPartitioning{Ti,Backend}
     partsize::Ti # number of diagonals per partition
     nparts::Ti # number of partitions

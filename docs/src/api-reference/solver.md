@@ -14,6 +14,7 @@ SchurComplementLinearSolver
 
 ```@docs
 Thunderbolt.Preconditioners.L1GSPreconditioner
+Thunderbolt.Preconditioners.BlockPartitioning
 Thunderbolt.Preconditioners.L1GSPrecBuilder
 ```
 

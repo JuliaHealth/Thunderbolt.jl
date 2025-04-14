@@ -23,9 +23,16 @@ abstract type AbstractMatrixFormat end
 struct CSRFormat <: AbstractMatrixFormat end
 struct CSCFormat <: AbstractMatrixFormat end
 
+
+# Why using these traits?
+# Since we are targeting multiple backends, but unfortunately, all the sparse matrix CSC/CSR on all
+# backends don't share the same supertype (e.g. AbstractSparseMatrixCSC/AbstractSparseMatrixCSR)
+# e.g. CUSPARSE.CuSparseDeviceMatrixCSC <:SparseArrays.AbstractSparseMatrixCSC → false
+# So we need to define our own traits to identify the format of the sparse matrix
 sparsemat_format_type(::SparseMatrixCSC) = CSCFormat
 sparsemat_format_type(::SparseMatrixCSR) = CSRFormat
 
+#TODO: remove once https://github.com/JuliaGPU/CUDA.jl/pull/2740 is merged
 convert_to_backend(backend::Backend, A::AbstractSparseMatrix) =
     adapt(backend, A) # fallback value, specific backends are to be extended in their corresponding extensions.
 
