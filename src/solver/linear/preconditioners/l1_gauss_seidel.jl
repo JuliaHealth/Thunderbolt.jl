@@ -19,8 +19,8 @@ The ℓ₁ Gauss–Seidel preconditioner is a robust and parallel-friendly preco
 The L1-GS preconditioner is constructed by dividing the matrix into blocks `nparts`:
 - Let Ωₖ denote the block with index `k`.
 - For each Ωₖ, we define the following sets:
-    - Ωⁱ $:= \{j ∈ Ωₖ : i ∈ Ωₖ\}$ → the set of columns in the diagonal block for row i
-    - Ωⁱₒ $:= \{j ∉ Ωₖ : i ∈ Ωₖ\}$ →  the remaining “off-diagonal” columns in row i
+    - $ Ωⁱ := \{j ∈ Ωₖ : i ∈ Ωₖ\} $ → the set of columns in the diagonal block for row i
+    - $ Ωⁱₒ := \{j ∉ Ωₖ : i ∈ Ωₖ\} $ →  the remaining “off-diagonal” columns in row i
 
 The preconditioner matrix $M_{ℓ_1}$  is defined as:
 ```math
@@ -275,8 +275,6 @@ function _diag_offpart_csc(colPtr, rowVal, nzVal, idx::Integer, part_start::Inte
     return b, d
 end
 
-convert_to_backend(backend::Backend, A::AbstractSparseMatrix) =
-    adapt(backend, A) # fallback value, specific backends are to be extended in their corresponding extensions.
 
 function _precompute_blocks(_A::AbstractSparseMatrix,partitioning::BlockPartitioning)
     @unpack partsize, nparts, backend = partitioning
