@@ -40,10 +40,9 @@ d_{ii}^{ℓ_1} = \sum_{j ∈ Ωⁱₒ} |a_{ij}|
 
 
 # Reference
-Baker, A. H., Falgout, R. D., Kolev, T. V., & Yang, U. M. (2011).  
+[Baker, A. H., Falgout, R. D., Kolev, T. V., & Yang, U. M. (2011).  
 *Multigrid Smoothers for Ultraparallel Computing*,  
-SIAM J. Sci. Comput., 33(5), 2864–2887.  
-[https://doi.org/10.1137/100798806](https://www.osti.gov/servlets/purl/1117969)
+SIAM J. Sci. Comput., 33(5), 2864–2887.](@cite BakFalKolYan:2011:MSU)
 """
 struct L1GSPreconditioner{Partitioning,VectorType}
     partitioning::Partitioning
