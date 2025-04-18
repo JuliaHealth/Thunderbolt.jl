@@ -11,16 +11,16 @@
 # Adapt.adapt(::CUDABackend, x::Vector) = x |> cu # not needed 
 # Adapt.adapt(::CUDABackend, x::CuVector) = x # not needed
 
-# workaround for the issue with adapt
-Preconditioners.convert_to_backend(::CUDABackend, A::AbstractSparseMatrix) = A |> cu
-Preconditioners.convert_to_backend(::CUDABackend, A::CUSPARSE.AbstractCuSparseMatrix) = A 
+# TODO: remove this function if back compatibility is not needed
+Preconditioners.convert_to_backend(::CUDABackend, A::AbstractSparseMatrix) = adapt(CUDABackend(), A)
+
 
 # For some reason, these properties are not automatically defined for Device Arrays, 
 # TODO: remove the following code when https://github.com/JuliaGPU/CUDA.jl/pull/2738 is merged
-SparseArrays.rowvals(A::CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1}) where {Tv,Ti} = A.rowVal
-SparseArrays.getcolptr(A::CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1}) where {Tv,Ti} = A.colPtr
-SparseArrays.getnzval(A::CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1}) where {Tv,Ti} = A.nzVal
-SparseMatricesCSR.getnzval(A::CUSPARSE.CuSparseDeviceMatrixCSR{Tv,Ti,1}) where {Tv,Ti} = A.nzVal
+#SparseArrays.rowvals(A::CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1}) where {Tv,Ti} = A.rowVal
+#SparseArrays.getcolptr(A::CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1}) where {Tv,Ti} = A.colPtr
+#SparseArrays.getnzval(A::CUSPARSE.CuSparseDeviceMatrixCSC{Tv,Ti,1}) where {Tv,Ti} = A.nzVal
+#SparseMatricesCSR.getnzval(A::CUSPARSE.CuSparseDeviceMatrixCSR{Tv,Ti,1}) where {Tv,Ti} = A.nzVal
 
 # PIRACY ALERT: the following code is commented out to avoid piracy
 # SparseMatricesCSR.colvals(A::CUSPARSE.CuSparseDeviceMatrixCSR{Tv,Ti,1}) where {Tv,Ti} = A.colVal

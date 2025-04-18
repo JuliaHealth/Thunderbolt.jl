@@ -88,12 +88,19 @@ function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: V
     return CuVector(v)
 end
 
+const __cuda_version__ = pkgversion(CUDA)
+@info("CuThunderboltExt.jl: CUDA version: ", __cuda_version__)
 
 include("cuda/cuda_utils.jl")
 include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
 include("cuda/cuda_iterator.jl")
-include("cuda/cuda_preconditioner.jl")
+
+if __cuda_version__ >= v"5.7.3" #TODO: better way? support back compatibility?
+    include("cuda/cuda_preconditioner.jl")
+else
+    @warn("CuThunderboltExt.jl: CUDA version is too old <$__cuda_version__, skipping CUDA preconditioner.")
+end
 
 end
