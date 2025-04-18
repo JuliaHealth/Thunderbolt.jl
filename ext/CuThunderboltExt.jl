@@ -1,6 +1,11 @@
 module CuThunderboltExt
 
 using Thunderbolt
+using LinearSolve
+using KernelAbstractions
+using SparseMatricesCSR
+
+import SparseArrays
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
@@ -10,7 +15,7 @@ import CUDA:
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
-    SparseMatrixCSR, SparseMatrixCSC,
+    SparseMatrixCSR, SparseMatrixCSC, AbstractSparseMatrix,
     AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,QuadratureRuleCollection,
@@ -25,6 +30,9 @@ import Thunderbolt.FerriteUtils:
     cellfe, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
     FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache,
     FeCellMem, KeCellMem, KeFeCellMem,NoCellMem,AbstractMemShape
+
+import Thunderbolt.Preconditioners:
+    sparsemat_format_type, CSCFormat, CSRFormat
 
 
 import Ferrite:
@@ -80,9 +88,19 @@ function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: V
     return CuVector(v)
 end
 
+const __cuda_version__ = pkgversion(CUDA)
+@info("CuThunderboltExt.jl: CUDA version: ", __cuda_version__)
+
+include("cuda/cuda_utils.jl")
 include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
 include("cuda/cuda_iterator.jl")
+
+if __cuda_version__ >= v"5.7.3" #TODO: better way? support back compatibility?
+    include("cuda/cuda_preconditioner.jl")
+else
+    @warn("CuThunderboltExt.jl: CUDA version is too old <$__cuda_version__, skipping CUDA preconditioner.")
+end
 
 end
