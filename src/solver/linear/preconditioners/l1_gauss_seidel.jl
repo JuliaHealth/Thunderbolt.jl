@@ -289,8 +289,7 @@ end
 
 function _precompute_blocks(_A::AbstractSparseMatrix,partitioning::BlockPartitioning)
     @unpack partsize, nparts, backend = partitioning
-    #A = adapt(backend, _A) # commented out because it exposes piracy and replaced by `convert_to_backend`. more info in "cuda_preconditioner.jl"
-    A = convert_to_backend(backend, _A)
+    A = adapt(backend, _A)
     N = size(A, 1)
     B = adapt(backend,zeros(eltype(A), N))
     D = adapt(backend,zeros(eltype(A), N))
