@@ -24,13 +24,14 @@ function poisson_l1gs_expected_result(x)
     return y
 end
 
-function test_sym_csc(A, x, partsize, backend)
+function test_sym_csc(A, x, partsize)
     expected_y = poisson_l1gs_expected_result(x)
+    backend = CPU()
     builder = L1GSPrecBuilder(backend)
     @testset "$backend CSC Symmetric" begin
         N = size(A, 1)
         for nparts in 1:partsize:N
-            P = builder(A, partsize, nparts)
+            P = builder(A, partsize)
             y = P \ x
             @test isapprox(y, expected_y; atol=1e-10)
         end
@@ -38,14 +39,14 @@ function test_sym_csc(A, x, partsize, backend)
 end
 
 
-function test_sym_csr(A, x, partsize, backend)
+function test_sym_csr(A, x, partsize)
     expected_y = poisson_l1gs_expected_result(x)
     B = SparseMatrixCSR(A)  # CSR version of A
     builder = L1GSPrecBuilder(backend)
     @testset "$backend CSR Symmetric" begin
         N = size(A, 1)
         for nparts in 1:partsize:N
-            P = builder(B, partsize, nparts)
+            P = builder(B, partsize)
             y = P \ x
             @test isapprox(y, expected_y; atol=1e-10)
         end
@@ -78,8 +79,8 @@ end
         N = 8
         A = poisson_test_matrix(N)
         x = Float32.(0:N-1)
-        test_sym_csc(A, x, 2, CPU())
-        test_sym_csr(A, x, 2, CPU())
+        test_sym_csc(A, x, 2)
+        test_sym_csr(A, x, 2)
 
         @testset "Non-Symmetric CSC" begin
             A2 = copy(A)

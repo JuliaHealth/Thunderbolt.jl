@@ -6,7 +6,7 @@ import LinearSolve: \
 using Adapt
 using UnPack
 import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @print, functional,
-    CPU,synchronize
+    CPU,synchronize,GPU
 import SparseArrays: getcolptr,getnzval
 import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
@@ -28,8 +28,8 @@ struct CSCFormat <: AbstractMatrixFormat end
 # backends don't share the same supertype (e.g. AbstractSparseMatrixCSC/AbstractSparseMatrixCSR)
 # e.g. CUSPARSE.CuSparseDeviceMatrixCSC <:SparseArrays.AbstractSparseMatrixCSC → false
 # So we need to define our own traits to identify the format of the sparse matrix
-sparsemat_format_type(::SparseMatrixCSC) = CSCFormat
-sparsemat_format_type(::SparseMatrixCSR) = CSRFormat
+sparsemat_format_type(::SparseMatrixCSC) = CSCFormat()
+sparsemat_format_type(::SparseMatrixCSR) = CSRFormat()
 
 # Why? because we want to circumvent piracy when extending these functions for device backend (e.g. CuSparseDeviceMatrixCSR)
 # TODO: find a more robust solution to dispatch the correct function
