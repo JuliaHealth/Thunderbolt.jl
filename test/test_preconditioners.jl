@@ -18,10 +18,7 @@ end
 function poisson_l1gs_expected_result(x)
     # Expected result after applying L1 preconditioner with partition size 2:
     # y[i] = x[i] / (A[i,i] + sum(|A[i,j]| for j not in partition))
-    y = x ./ (2 .+ 1)
-    y[1] = x[1] / 2
-    y[end] = x[end] / 2
-    return y
+    return [0, 1/3, 2/3, 11/9, 4/3, 19/9, 2, 9/2]
 end
 
 function test_sym_csc(A, x, partsize)

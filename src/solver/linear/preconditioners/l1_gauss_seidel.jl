@@ -222,7 +222,7 @@ end
 function LinearSolve.ldiv!(y::Vector, P::L1GSPreconditioner{BlockPartitioning{Ti,CPU}}, x::Vector) where {Ti<:Integer}
     # x: residual
     # y: preconditioned residual
-    _forward_sweep!(y,P)
+    _forward_sweep!(y, P)
     return nothing
 end
 
@@ -329,7 +329,7 @@ _diag_offpart(::AbstractMatrixSymmetry, ::CSRFormat, A, idx::Ti, part_start::Ti,
 
 function _pack_strict_lower_csr!(SLbuffer, rowPtr, colVal, nzVal, start_idx::Ti, end_idx::Ti, partsize::Ti, k::Ti) where {Ti<:Integer}
     block_stride = (partsize * (partsize - 1)) ÷ 2 # no. off-diagonal elements in a block
-    block_offset = (k - 1) * block_stride 
+    block_offset = (k - 1) * block_stride
 
     for i in start_idx:end_idx
         local_i = i - start_idx + 1
@@ -352,7 +352,7 @@ end
 
 function _pack_strict_lower_csc!(SLbuffer, colPtr, rowVal, nzVal, start_idx::Ti, end_idx::Ti, partsize::Ti, k::Ti) where {Ti<:Integer}
     block_stride = (partsize * (partsize - 1)) ÷ 2 # no. off-diagonal elements in a block
-    block_offset = (k - 1) * block_stride 
+    block_offset = (k - 1) * block_stride
     for col in start_idx:(end_idx-1)
         local_j = col - start_idx + 1
         for p in colPtr[col]:(colPtr[col+1]-1)
@@ -365,7 +365,6 @@ function _pack_strict_lower_csc!(SLbuffer, colPtr, rowVal, nzVal, start_idx::Ti,
             end
         end
     end
-
     return nothing
 end
 
@@ -399,12 +398,12 @@ function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartiti
 end
 
 
-@kernel function _precompute_blocks_kernel!(D_Dl1, SLbuffer, A, symA, partsize::Ti, nparts::Ti, nchunks::Ti, chuncksize::Ti) where {Ti<:Integer}
+@kernel function _precompute_blocks_kernel!(D_Dl1, SLbuffer, A, symA, partsize::Ti, nparts::Ti, nchunks::Ti, chunksize::Ti) where {Ti<:Integer}
     initial_partition_idx = @index(Global)
     size_A = convert(Ti, size(A, 1))
     format_A = sparsemat_format_type(A)
     # NOTE: `DiagonalPartsIterator` is logic agnostic. It essentially encapsulates the strided iterations over the diagonal blocks.
-    for part in DiagonalPartsIterator(size_A, partsize, nparts, nchunks, chuncksize, convert(Ti, initial_partition_idx))
+    for part in DiagonalPartsIterator(size_A, partsize, nparts, nchunks, chunksize, convert(Ti, initial_partition_idx))
         @unpack k, partsize, start_idx, end_idx = part # NOTE: `partsize` here is the actual size of the partition
         # From start_idx to end_idx, extract the diagonal and off-diagonal values
         for i in start_idx:end_idx
@@ -417,28 +416,29 @@ end
 end
 
 
-function _forward_sweep!(y,P)
+function _forward_sweep!(y, P)
     @unpack partitioning, D_Dl1, SLbuffer = P
-    @unpack partsize, nparts, nchunks, chunksize,backend = partitioning
+    @unpack partsize, nparts, nchunks, chunksize, backend = partitioning
     ndrange = nchunks * chunksize
     kernel = _forward_sweep_kernel!(backend, chunksize, ndrange)
-    kernel(y, D_Dl1, SLbuffer, size_A, partsize, nparts, nchunks, chuncksize; ndrange=ndrange)
+    size_A = convert(typeof(nparts), length(y))
+    kernel(y, D_Dl1, SLbuffer, size_A, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
     synchronize(backend)
     return nothing
 end
 
-@kernel function _forward_sweep_kernel!(y, D_Dl1, SLbuffer, size_A, partsize, nparts, nchunks, chuncksize)
+@kernel function _forward_sweep_kernel!(y, D_Dl1, SLbuffer, size_A::Ti, partsize::Ti, nparts::Ti, nchunks::Ti, chunksize::Ti) where {Ti<:Integer}
     initial_partition_idx = @index(Global)
     # NOTE: `DiagonalPartsIterator` is logic agnostic. It essentially encapsulates the strided iterations over the diagonal blocks.
-    for part in DiagonalPartsIterator(size_A, partsize, nparts, nchunks, chuncksize, convert(Ti, initial_partition_idx))
+    for part in DiagonalPartsIterator(size_A, partsize, nparts, nchunks, chunksize, convert(Ti, initial_partition_idx))
         @unpack k, partsize, start_idx, end_idx = part # NOTE: `partsize` here is the actual size of the partition
-
+        block_stride = (partsize * (partsize - 1)) ÷ 2 # no. off-diagonal elements in a block
         block_offset = (k - 1) * block_stride
 
         # forward‐solve (Ax=b): (1/a_{ii})[bᵢ - ∑_{j<i} a_ij * x_j]
         for i in start_idx:end_idx
             local_i = i - start_idx + 1
-            
+
             row_offset = (local_i * (local_i - 1)) ÷ 2
 
             # accumulate strictly‐lower * y
@@ -450,7 +450,6 @@ end
                 acc += SLbuffer[off_idx] * y[gj]
             end
 
-            # subtract and divide by the diagonal+offsum
             y[i] = (y[i] - acc) / D_Dl1[i]
         end
     end
