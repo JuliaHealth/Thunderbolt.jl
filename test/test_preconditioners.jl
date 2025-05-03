@@ -41,8 +41,9 @@ end
 
 function test_sym_csr(A, x, partsize)
     expected_y = poisson_l1gs_expected_result(x)
-    B = SparseMatrixCSR(A)  # CSR version of A
+    backend = CPU()
     builder = L1GSPrecBuilder(backend)
+    B = SparseMatrixCSR(A)
     @testset "$backend CSR Symmetric" begin
         N = size(A, 1)
         for nparts in 1:partsize:N
