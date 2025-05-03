@@ -222,6 +222,7 @@ end
 function LinearSolve.ldiv!(y::Vector, P::L1GSPreconditioner{BlockPartitioning{Ti,CPU}}, x::Vector) where {Ti<:Integer}
     # x: residual
     # y: preconditioned residual
+    y .= x 
     _forward_sweep!(y, P)
     return nothing
 end

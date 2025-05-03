@@ -38,6 +38,6 @@ getrowptr(A::SparseMatrixCSR) = SparseMatricesCSR.getrowptr(A)
 
 include("l1_gauss_seidel.jl")
 
-export L1GSPrecBuilder
+export L1GSPrecBuilder,CPUSetting,GPUSetting
 
 end
