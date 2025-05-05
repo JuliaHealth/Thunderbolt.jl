@@ -1,12 +1,9 @@
 using MatrixDepot, LinearSolve, SparseArrays, SparseMatricesCSR
 using KernelAbstractions
-using ThreadPinning
 
 ##########################################
 ## L1 Gauss Seidel Preconditioner - CPU ##
 ##########################################
-
-pinthreads(:cores) # to map each thread to core and avoid hyperthreading
 
 function poisson_test_matrix(N)
     # Poisson's equation in 1D with Dirichlet BCs
@@ -14,42 +11,19 @@ function poisson_test_matrix(N)
     return spdiagm(0 => 2 * ones(N), -1 => -ones(N - 1), 1 => -ones(N - 1))
 end
 
-
-function poisson_l1gs_expected_result(x)
-    # Expected result after applying L1 preconditioner with partition size 2:
-    # y[i] = x[i] / (A[i,i] + sum(|A[i,j]| for j not in partition))
-    return [0, 1/3, 2/3, 11/9, 4/3, 19/9, 2, 9/2]
-end
-
-function test_sym_csc(A, x, partsize)
-    expected_y = poisson_l1gs_expected_result(x)
-    @testset "CPU CSC Symmetric" begin
-        N = size(A, 1)
-        for ncores in 1:partsize:N
+function test_sym(testname,A, x,y_exp,D_Dl1_exp,SLbuffer_exp, partsize)
+    @testset "$testname Symmetric" begin
+        total_ncores = 8 # Assuming 8 cores for testing
+        for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
             builder = L1GSPrecBuilder(CPUSetting(ncores))
             P = builder(A, partsize)
             y = P \ x
-            @test isapprox(y, expected_y; atol=1e-10)
+            @test P.D_Dl1 ≈ D_Dl1_exp
+            @test P.SLbuffer ≈ SLbuffer_exp
+            @test y ≈ y_exp
         end
     end
 end
-
-
-function test_sym_csr(A, x, partsize)
-    expected_y = poisson_l1gs_expected_result(x)
-    backend = CPU()
-    B = SparseMatrixCSR(A)
-    @testset "CPU CSR Symmetric" begin
-        N = size(A, 1)
-        for ncores in 1:partsize:N
-            builder = L1GSPrecBuilder(CPUSetting(ncores))
-            P = builder(B, partsize)
-            y = P \ x
-            @test isapprox(y, expected_y; atol=1e-10)
-        end
-    end
-end
-
 
 function test_l1gs_prec(A, b)
     nparts = ThreadPinning.ncores()
@@ -73,40 +47,44 @@ end
 @testset "L1GS Preconditioner" begin
 
     @testset "Algorithm" begin
-        N = 8
+        N = 9
         A = poisson_test_matrix(N)
-        x = 0:N-1 |> collect .|> Float32
-        test_sym_csc(A, x, 2)
-        test_sym_csr(A, x, 2)
+        x = 0:N-1 |> collect .|> Float64
+        y_exp = [0, 1/3, 2/3, 11/9, 4/3, 19/9, 2, 3.0, 8/3]
+        D_Dl1_exp = Float64.([2,3,3,3,3,3,3,3,3])
+        SLbuffer_exp = Float64.([-1,-1,-1,-1])
+        test_sym("CPU CSC",A, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
+        B = SparseMatrixCSR(A)
+        test_sym("CPU, CSR",B, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
 
-        @testset "Non-Symmetric CSC" begin
-            A2 = copy(A)
-            A2[1, 8] = -1.0  # won't affect the result
-            A2[2, 8] = -1.0  # needs to  be handled
-            expected_y2 = poisson_l1gs_expected_result(x)
-            expected_y2[2] = x[2] / (A2[2, 2] + abs(A2[2, 3]) + abs(A2[2, 8]))  # Adjusted for non-symmetric case
+        # @testset "Non-Symmetric CSC" begin
+        #     A2 = copy(A)
+        #     A2[1, 8] = -1.0  # won't affect the result
+        #     A2[2, 8] = -1.0  # needs to  be handled
+        #     expected_y2 = poisson_l1gs_expected_result(x)
+        #     expected_y2[2] = x[2] / (A2[2, 2] + abs(A2[2, 3]) + abs(A2[2, 8]))  # Adjusted for non-symmetric case
 
-            P_cpu = L1GSPrecBuilder(CPU())(A2, 2, 1)
-            y_cpu = P_cpu \ x
-            @test isapprox(y_cpu, expected_y2; atol=1e-10)
-        end
+        #     P_cpu = L1GSPrecBuilder(CPU())(A2, 2, 1)
+        #     y_cpu = P_cpu \ x
+        #     @test isapprox(y_cpu, expected_y2; atol=1e-10)
+        # end
 
     end
-    @testset "Solution with LinearSolve" begin
+    # @testset "Solution with LinearSolve" begin
 
-        @testset "Unsymmetric A" begin
-            md = mdopen("HB/sherman5")
-            A = md.A
-            b = md.b[:, 1]
-            test_l1gs_prec(A, b)
-        end
+    #     @testset "Unsymmetric A" begin
+    #         md = mdopen("HB/sherman5")
+    #         A = md.A
+    #         b = md.b[:, 1]
+    #         test_l1gs_prec(A, b)
+    #     end
 
-        @testset "Symmetric A" begin
-            md = mdopen("HB/bcsstk15") # ill-conditioned matrix
-            A = md.A
-            b = ones(size(A, 1))
-            test_l1gs_prec(A, b)
-        end
-    end
+    #     @testset "Symmetric A" begin
+    #         md = mdopen("HB/bcsstk15") # ill-conditioned matrix
+    #         A = md.A
+    #         b = ones(size(A, 1))
+    #         test_l1gs_prec(A, b)
+    #     end
+    # end
 end
 

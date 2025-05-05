@@ -190,7 +190,7 @@ function _blockpartitioning(builder::L1GSPrecBuilder{<:CPUSetting}, A::AbstractS
     @unpack ncores, backend = backsetting
     nchunks = ncores # number of CPU cores
     nparts = convert(Ti, size(A, 1) / partsize |> ceil) #total number of partitions
-    chunksize = convert(Ti, (nparts / nchunks) |> ceil)  # number of partitions per chunk
+    chunksize = convert(Ti, (nparts / nchunks) |> ceil)  # number of partitions per chunk(group of work)
     partitioning = BlockPartitioning(partsize, nparts, nchunks, chunksize, backend)
     return partitioning
 end
@@ -240,7 +240,8 @@ get_data(A::AbstractSparseMatrix) = A
 get_data(A::Symmetric{Ti,TA}) where {Ti,TA} = TA(A.data) # restore the full matrix, why ? https://discourse.julialang.org/t/is-there-a-symmetric-sparse-matrix-implementation-in-julia/91333/2
 
 function Base.iterate(iterator::DiagonalPartsIterator)
-    @unpack initial_partition_idx = iterator
+    @unpack initial_partition_idx, nparts = iterator
+    initial_partition_idx <= nparts || return nothing
     k = initial_partition_idx
     return (_makecache(iterator, k), k)
 end
@@ -389,7 +390,9 @@ function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartiti
     A = adapt(backend, _A)
     N = size(A, 1)
     D_Dl1 = adapt(backend, zeros(eltype(A), N)) # D + Dˡ
-    SLbuffer = adapt(backend, zeros(eltype(A), (partsize * (partsize - 1) * nparts) ÷ 2)) # strictly lower triangular part of all diagonal blocks
+    last_partsize = N - (nparts - 1) * partsize # size of the last partition
+    SLbuffer_size = (partsize * (partsize - 1) * (nparts-1)) ÷ 2 +  last_partsize * (last_partsize - 1) ÷ 2 
+    SLbuffer = adapt(backend, zeros(eltype(A), SLbuffer_size)) # strictly lower triangular part of all diagonal blocks stored in a 1D array
     symA = isapprox(A, A', rtol=1e-12) ? SymmetricMatrix() : NonSymmetricMatrix()
     ndrange = nchunks * chunksize
     kernel = _precompute_blocks_kernel!(backend, chunksize, ndrange)
@@ -409,13 +412,13 @@ end
         # From start_idx to end_idx, extract the diagonal and off-diagonal values
         for i in start_idx:end_idx
             b, d = _diag_offpart(symA, format_A, A, i, start_idx, end_idx)
+            #@show i,b,d
             # Update the diagonal and off-diagonal values
             D_Dl1[i] = b + d
             _pack_strict_lower!(symA, format_A, SLbuffer, A, start_idx, end_idx, partsize, k)
         end
     end
 end
-
 
 function _forward_sweep!(y, P)
     @unpack partitioning, D_Dl1, SLbuffer = P
@@ -447,7 +450,7 @@ end
             @inbounds for local_j in 1:(local_i-1) # iterate over the off-diagonal columns in row local_i 
                 # j’s global index:
                 gj = start_idx + (local_j - 1)
-                off_idx = block_offset + row_offset + local_j
+                off_idx = block_offset + row_offset + (local_j-1) 
                 acc += SLbuffer[off_idx] * y[gj]
             end
 
