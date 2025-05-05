@@ -17,9 +17,9 @@ function test_sym(testname,A, x,y_exp,D_Dl1_exp,SLbuffer_exp, partsize)
         for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
             builder = L1GSPrecBuilder(CPUSetting(ncores))
             P = builder(A, partsize)
-            y = P \ x
             @test P.D_Dl1 ≈ D_Dl1_exp
             @test P.SLbuffer ≈ SLbuffer_exp
+            y = P \ x
             @test y ≈ y_exp
         end
     end
@@ -57,17 +57,21 @@ end
         B = SparseMatrixCSR(A)
         test_sym("CPU, CSR",B, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
 
-        # @testset "Non-Symmetric CSC" begin
-        #     A2 = copy(A)
-        #     A2[1, 8] = -1.0  # won't affect the result
-        #     A2[2, 8] = -1.0  # needs to  be handled
-        #     expected_y2 = poisson_l1gs_expected_result(x)
-        #     expected_y2[2] = x[2] / (A2[2, 2] + abs(A2[2, 3]) + abs(A2[2, 8]))  # Adjusted for non-symmetric case
+        @testset "Non-Symmetric CSC" begin
+            A2 = copy(A)
+            A2[1, 8] = -1.0  # won't affect the result
+            A2[2, 8] = -1.0  # 1/3 → 1/4
+            y2_exp = [0, 1/4, 2/3, 11/9, 4/3, 19/9, 2, 3.0, 8/3]
+            D_Dl1_exp2 = Float64.([3, 4, 3, 3, 3, 3, 3, 3, 3])
+            SLbuffer_exp2 = Float64.([-1, -1, -1, -1])
 
-        #     P_cpu = L1GSPrecBuilder(CPU())(A2, 2, 1)
-        #     y_cpu = P_cpu \ x
-        #     @test isapprox(y_cpu, expected_y2; atol=1e-10)
-        # end
+            builder = L1GSPrecBuilder(CPUSetting(2))
+            P = builder(A2, 2)
+            @test P.D_Dl1 ≈ D_Dl1_exp2
+            @test P.SLbuffer ≈ SLbuffer_exp2
+            y_cpu = P \ x
+            @test y_cpu ≈ y2_exp
+        end
 
     end
     # @testset "Solution with LinearSolve" begin
