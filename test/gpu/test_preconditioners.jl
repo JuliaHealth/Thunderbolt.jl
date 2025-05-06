@@ -15,53 +15,35 @@ function poisson_test_matrix(N)
     return spdiagm(0 => 2 * ones(N), -1 => -ones(N - 1), 1 => -ones(N - 1))
 end
 
-
-function poisson_l1gs_expected_result(x)
-    # Expected result after applying L1 preconditioner with partition size 2:
-    # y[i] = x[i] / (A[i,i] + sum(|A[i,j]| for j not in partition))
-    y = x ./ (2 .+ 1)
-    y[1] = x[1] / 2
-    y[end] = x[end] / 2
-    return y
-end
-
-function test_sym_csc(A, x, partsize, backend)
-    expected_y = poisson_l1gs_expected_result(x)
-    builder = L1GSPrecBuilder(backend)
-    @testset "$backend CSC Symmetric" begin
-        N = size(A, 1)
-        for nparts in 1:partsize:N
-            P = builder(A, partsize, nparts)
-            y = P \ x
-            @test isapprox(y, expected_y; atol=1e-10)
-        end
-    end
-end
-
-function test_sym_csr(A, x, partsize, backend)
-    expected_y = poisson_l1gs_expected_result(x)
-    B = SparseMatrixCSR(A)  # CSR version of A
-    builder = L1GSPrecBuilder(backend)
-    @testset "$backend CSR Symmetric" begin
-        N = size(A, 1)
-        for nparts in 1:partsize:N
-            P = builder(B, partsize, nparts)
-            y = P \ x
-            @test isapprox(y, expected_y; atol=1e-10)
+function test_sym(testname,A, x,y_exp,D_Dl1_exp,SLbuffer_exp, partsize)
+    @testset "$testname Symmetric" begin
+        total_nblocks = 10
+        total_nthreads = 10
+        for nblocks in 1:total_nblocks # testing for multiple `nblocks` and `nthreads` to check that the answer is independent of the config.
+            for nthreads in 1:total_nthreads
+                builder = L1GSPrecBuilder(GPUSetting(CUDABackend(),nblocks, nthreads))
+                P = builder(A, partsize)
+                @test Vector(P.D_Dl1) ≈ D_Dl1_exp
+                @test Vector(P.SLbuffer) ≈ SLbuffer_exp
+                y = P \ x
+                @test y ≈ y_exp
+            end
         end
     end
 end
 
 function test_l1gs_prec(A, b)
-    nparts = 20
-    partsize = 256
-
     prob = LinearProblem(A, b)
     sol_unprec = solve(prob, KrylovJL_GMRES())
     @test isapprox(A * sol_unprec.u, b, rtol=1e-1, atol=1e-1)
-
+    
     # Test L1GS Preconditioner
-    P = L1GSPrecBuilder(CUDABackend())(A, partsize, nparts)
+    nblocks = 20
+    nthreads = 256
+
+    partsize = 10
+    builder = L1GSPrecBuilder(GPUSetting(CUDABackend(),nblocks, nthreads))
+    P = builder(A, partsize)
     sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P)
     println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
     println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
@@ -71,36 +53,66 @@ function test_l1gs_prec(A, b)
     @test sol_prec.stats.timer < sol_unprec.stats.timer
 end
 
-@testset "L1 Gauss Seidel Preconditioner - GPU" begin
+@testset "L1GS Preconditioner - GPU" begin
+    @testset "GPUSetting" begin
+        # Test the default CPUSetting
+        builder = L1GSPrecBuilder(CUDABackend())
+        backsetting = builder.backsetting
+        @test backsetting.backend == CUDABackend()
+        dev = device()
+        nblocks = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT) # no. SMs
+        @test backsetting.nblocks == nblocks
+        @test backsetting.nthreads == 256
 
+        # Test the full constructor
+        nblocks = rand(1:nblocks)
+        nthreads = rand(1:256)
+        builder = L1GSPrecBuilder(GPUSetting(CUDABackend(),nblocks, nthreads))
+        backsetting = builder.backsetting
+        @test backsetting.backend == CUDABackend()
+        @test backsetting.nblocks == nblocks
+        @test backsetting.nthreads == nthreads
+    end
     @testset "Algorithm" begin
-        N = 8
+        N = 9
         A = poisson_test_matrix(N)
-        x = Float32.(0:N-1)
+        x = 0:N-1 |> collect .|> Float64
+        y_exp = [0, 1/3, 2/3, 11/9, 4/3, 19/9, 2, 3.0, 8/3]
+        D_Dl1_exp = Float64.([2,3,3,3,3,3,3,3,3])
+        SLbuffer_exp = Float64.([-1,-1,-1,-1])
+        test_sym("GPU CSC",A, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
+        B = SparseMatrixCSR(A)
+        test_sym("GPU, CSR",B, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
 
-        test_sym_csc(A, x, 2, CUDABackend())
-        test_sym_csr(A, x, 2, CUDABackend())
-
-        #### Non-symmetric CSC (GPU/CPU) ####
         @testset "Non-Symmetric CSC" begin
             A2 = copy(A)
             A2[1, 8] = -1.0  # won't affect the result
-            A2[2, 8] = -1.0  # needs to  be handled
-            expected_y2 = poisson_l1gs_expected_result(x)
-            expected_y2[2] = x[2] / (A2[2, 2] + abs(A2[2, 3]) + abs(A2[2, 8]))  # Adjusted for non-symmetric case
+            A2[2, 8] = -1.0  # 1/3 → 1/4
+            y2_exp = [0, 1/4, 2/3, 11/9, 4/3, 19/9, 2, 3.0, 8/3]
+            D_Dl1_exp2 = Float64.([3, 4, 3, 3, 3, 3, 3, 3, 3])
+            SLbuffer_exp2 = Float64.([-1, -1, -1, -1])
 
-            # GPU
-            P_gpu = L1GSPrecBuilder(CUDABackend())(A2, 2, 1)
-            y_gpu = similar(x)
-            LinearSolve.ldiv!(y_gpu, P_gpu, x)
-            @test isapprox(y_gpu, expected_y2; atol=1e-10)
+            builder = L1GSPrecBuilder(GPUSetting(CUDABackend(), 2, 2))
+            P = builder(A2, 2)
+            @test Vector(P.D_Dl1) ≈ D_Dl1_exp2
+            @test Vector(P.SLbuffer) ≈ SLbuffer_exp2
+            y_cpu = P \ x
+            @test y_cpu ≈ y2_exp
         end
 
+        @testset "Partsize" begin
+            partsize = 3
+            D_Dl1_exp = Float64.([2,2,3,3,2,3,3,2,2])
+            SLbuffer_exp = Float64.([-1,0,-1,-1,0,-1,-1,0,-1])
+            builder = L1GSPrecBuilder(GPUSetting(CUDABackend(), 2, 2))
+            P = builder(A, partsize)
+            @test Vector(P.D_Dl1) ≈ D_Dl1_exp
+            @test Vector(P.SLbuffer) ≈ SLbuffer_exp
+        end
     end
-
     @testset "Solution with LinearSolve" begin
 
-        @testset "Unsymmetric A" begin
+        @testset "Non-Symmetric A" begin
             md = mdopen("HB/sherman5")
             A = md.A
             b = md.b[:, 1]
@@ -108,7 +120,7 @@ end
         end
 
         @testset "Symmetric A" begin
-            md = mdopen("HB/bcsstk15") # ill-conditioned matrix
+            md = mdopen("HB/bcsstk15") 
             A = md.A
             b = ones(size(A, 1))
             test_l1gs_prec(A, b)
