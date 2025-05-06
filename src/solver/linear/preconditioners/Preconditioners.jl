@@ -36,6 +36,9 @@ sparsemat_format_type(::SparseMatrixCSR) = CSRFormat()
 colvals(A::SparseMatrixCSR) = SparseMatricesCSR.colvals(A)
 getrowptr(A::SparseMatrixCSR) = SparseMatricesCSR.getrowptr(A)
 
+
+default_device_config(backend::GPU) = error("$(typeof(backend)) backend is not supported yet")
+
 include("l1_gauss_seidel.jl")
 
 export L1GSPrecBuilder,CPUSetting,GPUSetting

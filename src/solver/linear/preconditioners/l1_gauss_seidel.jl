@@ -134,16 +134,13 @@ function L1GSPrecBuilder(backend::Backend)
     return L1GSPrecBuilder(setting)
 end
 
-#TODO: more rigorous 
 function _create_setting(::CPU)
-    ncores = 1
+    ncores = Threads.nthreads() # Not sure if this is the best way to do it without `ThreadPinning.jl`
     return CPUSetting(ncores)
 end
 
-#TODO: more rigorous
 function _create_setting(backend::GPU)
-    nblocks = 20
-    nthreads = 256
+    nblocks,nthreads = default_device_config(backend)
     return GPUSetting(backend, nblocks, nthreads)
 end
 
