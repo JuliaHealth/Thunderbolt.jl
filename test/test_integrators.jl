@@ -1,15 +1,14 @@
-import Thunderbolt: OS, ThunderboltTimeIntegrator
+import Thunderbolt: Thunderbolt, ThunderboltTimeIntegrator
+using DiffEqBase, OrdinaryDiffEqOperatorSplitting, Thunderbolt
+# using OrdinaryDiffEqLowOrderRK
 # using BenchmarkTools
 using UnPack
 
 @testset "Operator Splitting API" begin
-
-    ODEFunction = Thunderbolt.DiffEqBase.ODEFunction
-
     # For testing purposes
     struct DummyForwardEuler <: Thunderbolt.AbstractSolver
     end
-    
+
     Thunderbolt.DiffEqBase.isadaptive(::DummyForwardEuler) = false
 
     mutable struct DummyForwardEulerCache{duType, uType, duMatType} <: Thunderbolt.AbstractTimeSolverCache
