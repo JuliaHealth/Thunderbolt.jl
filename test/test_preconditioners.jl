@@ -45,7 +45,20 @@ function test_l1gs_prec(A, b)
 end
 
 @testset "L1GS Preconditioner" begin
+    @testset "CPUSetting" begin
+        # Test the default CPUSetting
+        builder = L1GSPrecBuilder(CPU())
+        backsetting = builder.backsetting
+        @test backsetting.backend == CPU()
+        @test backsetting.ncores == Threads.nthreads()
 
+        # Test the full constructor
+        ncores = rand(1:Threads.nthreads())
+        builder = L1GSPrecBuilder(CPUSetting(ncores))
+        backsetting = builder.backsetting
+        @test backsetting.backend == CPU()
+        @test backsetting.ncores == ncores
+    end
     @testset "Algorithm" begin
         N = 9
         A = poisson_test_matrix(N)
