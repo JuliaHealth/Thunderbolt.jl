@@ -26,15 +26,15 @@ function test_sym(testname,A, x,y_exp,D_Dl1_exp,SLbuffer_exp, partsize)
 end
 
 function test_l1gs_prec(A, b)
-    nparts = ThreadPinning.ncores()
-    partsize = size(A, 1) / nparts |> ceil |> Int
+    ncores = 8 # Assuming 8 cores for testing
+    partsize = size(A, 1) / ncores |> ceil |> Int
 
     prob = LinearProblem(A, b)
     sol_unprec = solve(prob, KrylovJL_GMRES())
     @test isapprox(A * sol_unprec.u, b, rtol=1e-1, atol=1e-1)
 
     # Test L1GS Preconditioner
-    P = L1GSPrecBuilder(CPU())(A, partsize, nparts)
+    P = L1GSPrecBuilder(CPUSetting(ncores))(A, partsize)
     sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P)
     println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
     println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
@@ -73,22 +73,32 @@ end
             @test y_cpu ≈ y2_exp
         end
 
+        @testset "Partsize" begin
+            partsize = 3
+            ncores = 2
+            D_Dl1_exp = Float64.([2,2,3,3,2,3,3,2,2])
+            SLbuffer_exp = Float64.([-1,0,-1,-1,0,-1,-1,0,-1])
+            builder = L1GSPrecBuilder(CPUSetting(ncores))
+            P = builder(A, partsize)
+            @test P.D_Dl1 ≈ D_Dl1_exp
+            @test P.SLbuffer ≈ SLbuffer_exp
+        end
     end
-    # @testset "Solution with LinearSolve" begin
+    @testset "Solution with LinearSolve" begin
 
-    #     @testset "Unsymmetric A" begin
-    #         md = mdopen("HB/sherman5")
-    #         A = md.A
-    #         b = md.b[:, 1]
-    #         test_l1gs_prec(A, b)
-    #     end
+        @testset "Non-Symmetric A" begin
+            md = mdopen("HB/sherman5")
+            A = md.A
+            b = md.b[:, 1]
+            test_l1gs_prec(A, b)
+        end
 
-    #     @testset "Symmetric A" begin
-    #         md = mdopen("HB/bcsstk15") # ill-conditioned matrix
-    #         A = md.A
-    #         b = ones(size(A, 1))
-    #         test_l1gs_prec(A, b)
-    #     end
-    # end
+        @testset "Symmetric A" begin
+            md = mdopen("HB/bcsstk15") 
+            A = md.A
+            b = ones(size(A, 1))
+            test_l1gs_prec(A, b)
+        end
+    end
 end
 

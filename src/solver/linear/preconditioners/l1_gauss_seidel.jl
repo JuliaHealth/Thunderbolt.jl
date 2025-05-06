@@ -330,19 +330,19 @@ _diag_offpart(::AbstractMatrixSymmetry, ::CSRFormat, A, idx::Ti, part_start::Ti,
     _diag_offpart_csr(getrowptr(A), colvals(A), getnzval(A), idx, part_start, part_end)
 
 function _pack_strict_lower_csr!(SLbuffer, rowPtr, colVal, nzVal, start_idx::Ti, end_idx::Ti, partsize::Ti, k::Ti) where {Ti<:Integer}
-    block_stride = (partsize * (partsize - 1)) ÷ 2 # no. off-diagonal elements in a block
-    block_offset = (k - 1) * block_stride
+    block_stride = (partsize * (partsize - 1)) ÷ 2 # no. off-diagonal elements in a block # 3
+    block_offset = (k - 1) * block_stride # k = 3 -> block_offset = 6
 
-    for i in start_idx:end_idx
-        local_i = i - start_idx + 1
+    for i in start_idx:end_idx # 7:9
+        local_i = i - start_idx + 1  
         # no. of off-diagonal elements in that row
-        row_offset = (local_i * (local_i - 1)) ÷ 2
+        row_offset = ((local_i-1) * (local_i - 2)) ÷ 2  
 
         # scan the CSR row
         for p in rowPtr[i]:(rowPtr[i+1]-1)
             j = colVal[p]
             if j >= start_idx && j < i
-                local_j = j - start_idx
+                local_j = j - start_idx + 1
                 # off-diagonal index consists of three parts: block offset, row offset, and column index
                 off_idx = block_offset + row_offset + local_j
                 SLbuffer[off_idx] = nzVal[p]
@@ -356,12 +356,12 @@ function _pack_strict_lower_csc!(SLbuffer, colPtr, rowVal, nzVal, start_idx::Ti,
     block_stride = (partsize * (partsize - 1)) ÷ 2 # no. off-diagonal elements in a block
     block_offset = (k - 1) * block_stride
     for col in start_idx:(end_idx-1) 
-        local_j = col - start_idx 
+        local_j = col - start_idx + 1
         for p in colPtr[col]:(colPtr[col+1]-1)
             i = rowVal[p]
             if i > col && i <= end_idx
                 local_i = i - start_idx + 1
-                row_offset = (local_i * (local_i - 1)) ÷ 2 
+                row_offset = ((local_i-1) * (local_i - 2)) ÷ 2
                 off_idx = block_offset + row_offset + local_j
                 SLbuffer[off_idx] = nzVal[p]
             end
@@ -443,14 +443,14 @@ end
         for i in start_idx:end_idx
             local_i = i - start_idx + 1
 
-            row_offset = (local_i * (local_i - 1)) ÷ 2
+            row_offset = ((local_i-1) * (local_i - 2)) ÷ 2
 
             # accumulate strictly‐lower * y
             acc = zero(eltype(y))
             @inbounds for local_j in 1:(local_i-1) # iterate over the off-diagonal columns in row local_i 
                 # j’s global index:
                 gj = start_idx + (local_j - 1)
-                off_idx = block_offset + row_offset + (local_j-1) 
+                off_idx = block_offset + row_offset + (local_j) 
                 acc += SLbuffer[off_idx] * y[gj]
             end
 
