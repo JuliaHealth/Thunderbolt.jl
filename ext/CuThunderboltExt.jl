@@ -5,7 +5,7 @@ using LinearSolve
 using KernelAbstractions
 using SparseMatricesCSR
 
-import SparseArrays
+import SparseArrays:SparseMatrixCSC,AbstractSparseMatrix
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
@@ -15,7 +15,6 @@ import CUDA:
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
-    SparseMatrixCSR, SparseMatrixCSC, AbstractSparseMatrix,
     AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,QuadratureRuleCollection,
@@ -88,20 +87,13 @@ function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: V
     return CuVector(v)
 end
 
-const __cuda_version__ = pkgversion(CUDA)
-const __min_cuda_version__ = v"5.7.3"   
-@info("CuThunderboltExt.jl: CUDA version: ", __cuda_version__)
+
 
 include("cuda/cuda_utils.jl")
 include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
 include("cuda/cuda_iterator.jl")
-
-if __cuda_version__ >= __min_cuda_version__
-    include("cuda/cuda_preconditioner.jl")
-else
-    @warn("CuThunderboltExt.jl: CUDA.jl version is too old $__cuda_version__ <$__min_cuda_version__, skipping `cuda_preconditioner.jl`.")
-end
+include("cuda/cuda_preconditioner.jl") #NOTE: min version for CUDA is v"5.7.3"
 
 end
