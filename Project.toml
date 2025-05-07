@@ -45,7 +45,7 @@ Aqua = "0.8"
 BlockArrays = "1"
 DiffEqBase = "6"
 FastBroadcast = "0.3.5"
-Ferrite = "1"
+Ferrite = "1.0"
 ForwardDiff = "0.10.38"
 JET = "0.9"
 KernelAbstractions = "0.9.34"
@@ -57,7 +57,7 @@ Preferences = "1"
 SciMLBase = "2"
 UnPack = "1"
 julia = "1.10"
-CUDA = "5.7.3"
+CUDA = ">=5.7.3"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
@@ -68,7 +68,6 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 MatrixDepot = "b51810bb-c9f3-55da-ae3c-350fc1fbce05"
-ThreadPinning = "811555cd-349b-4f26-b7bc-1f208b848042"
 
 [targets]
 test = ["Aqua", "DelimitedFiles", "JET", "Pkg", "StaticArrays", "Tensors", "Test","MatrixDepot"]
