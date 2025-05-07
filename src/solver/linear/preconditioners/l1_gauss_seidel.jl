@@ -58,7 +58,8 @@ Where $D^{ℓ_1}$ is a diagonal matrix with entries: $d_{ii}^{ℓ_1} = \sum_{j �
 SIAM J. Sci. Comput., 33(5), 2864–2887.](@cite BakFalKolYan:2011:MSU)
 
 !!! note
-    Here, we take $M_{HGS}$ to be the **forward** sweep of the Gauss–Seidel method, which is a lower triangular matrix.
+    For now $M_{HGS}$ applies only a **forward** sweep of the Gauss–Seidel method, which is a lower triangular matrix. 
+    The interface will be extended in future versions to allow for backward and symmetric sweeps.
 
 # Example
 ```julia
