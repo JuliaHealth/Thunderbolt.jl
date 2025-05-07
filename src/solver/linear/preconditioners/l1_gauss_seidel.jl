@@ -4,16 +4,20 @@
 
 ## Structs & Constructors ##
 """
-    BlockPartitioning{Ti, Backend}
+    BlockPartitioning{Ti<:Integer, Backend}
 
 Struct that encapsulates the diagonal partitioning configuration which is then used to distribute the work across multiple cores.
 
 # Fields
-- `nparts::Ti`: Number of partitions, typically equal to the number of CPU cores (in CPU backends) or the grid size (in GPU backends).
-- `partsize::Ti`: Number of rows (diagonals) assigned to each partition.
+- `partsize::Ti`: Size of each partition (diagonal block).
+- `nparts::Ti`: Number of partitions (i.e. size(A,1)/partsize).
+- `nchunks::Ti`: Number of workgroups (e.g. CPU cores or GPU blocks).
+- `chunksize::Ti`: Number of partitions assigned to each workgroup.
 - `backend::Backend`: Execution backend that determines where and how the preconditioner is applied, such as `CPU()` or `CUDABackend()`.
 
-More info & example [L1GSPrecBuilder](@ref)
+!!! note
+    `chuncksize * nchunks` doesn't have to be equal to `nparts` (can be less than or greater than). The diagonal partition iterator will take care of that throught strided iteration.
+    The reason for this is obvious in GPUBackend, in which `nblocks (i.e. nchunks)` and `nthreads (i.e. chunksize)` are chosen to maximize occupancy, which may not be equal to `nparts`.
 """
 struct BlockPartitioning{Ti<:Integer,Backend}
     partsize::Ti # dimension of each partition
@@ -30,7 +34,7 @@ The ℓ₁ Gauss–Seidel preconditioner is a robust and parallel-friendly preco
 
 # Algorithm
 
-The L1-GS preconditioner is constructed by dividing the matrix into blocks `nparts`:
+The L1-GS preconditioner is constructed by dividing the matrix into diagonal blocks `nparts`:
 - Let Ωₖ denote the block with index `k`.
 - For each Ωₖ, we define the following sets:
     - $ Ωⁱ := \{j ∈ Ωₖ : i ∈ Ωₖ\} $ → the set of columns in the diagonal block for row i
@@ -38,25 +42,33 @@ The L1-GS preconditioner is constructed by dividing the matrix into blocks `npar
 
 The preconditioner matrix $M_{ℓ_1}$  is defined as:
 ```math
-M_{ℓ_1} = \mathcal{M}_H + D^{ℓ_1} = \text{diag}\{B_k + D_k^{ℓ_1}\} \\
-B_k = A_{kk}
+M_{ℓ_1GS} = M_{HGS} + D^{ℓ_1} \\
 ```
-Where $D^{ℓ_1}$ is a diagonal matrix with entries
-
-```math
-d_{ii}^{ℓ_1} = \sum_{j ∈ Ωⁱₒ} |a_{ij}|
-```
+Where $D^{ℓ_1}$ is a diagonal matrix with entries: $d_{ii}^{ℓ_1} = \sum_{j ∈ Ωⁱₒ} |a_{ij}|$, and $M_{HGS}$ is obtained when the diagonal partitions are chosen to be the Gauss–Seidel sweeps on $ A_{kk} $
 
 # Fields
 - `partitioning`: Encapsulates partitioning data (e.g. nparts, partsize, backend).
-- `B`: Vector of diagonal entries (used in normalization).
-- `D`: Vector of ℓ₁ row norms of off-diagonal entries.
+- `D_Dl1`: $D+D^{ℓ_1}$.
+- `SLbuffer`: Strictly lower triangular part of all diagonal blocks stacked in a vector.
 
 
 # Reference
 [Baker, A. H., Falgout, R. D., Kolev, T. V., & Yang, U. M. (2011).  
 *Multigrid Smoothers for Ultraparallel Computing*,  
 SIAM J. Sci. Comput., 33(5), 2864–2887.](@cite BakFalKolYan:2011:MSU)
+
+!!! note
+    Here, we take $M_{HGS}$ to be the **forward** sweep of the Gauss–Seidel method, which is a lower triangular matrix.
+
+# Example
+```julia
+backend = CPU()
+builder = L1GSPrecBuilder(backend) # ≡ L1GSPrecBuilder(CPUSetting(Threads.nthreads()))
+N = 800
+A = spdiagm(0 => 2 * ones(N), -1 => -ones(N-1), 1 => -ones(N-1))
+partsize = 100 
+prec = builder(A, partsize)
+```   
 """
 struct L1GSPreconditioner{Partitioning,VectorType}
     partitioning::Partitioning
@@ -65,6 +77,15 @@ struct L1GSPreconditioner{Partitioning,VectorType}
 end
 
 abstract type AbstractBackendSetting end
+
+"""
+    CPUSetting(ncores::Ti)
+A configuration object for CPU backend. This struct encapsulates the number of CPU cores to be used for parallel computation.
+
+# Fields
+- `backend::CPU`: Represents the CPU backend (i.e. `CPU()`).
+- `ncores::Ti`: The number of CPU cores to be used for computation.
+"""
 struct CPUSetting{Ti<:Integer} <: AbstractBackendSetting
     backend::CPU
     ncores::Ti
@@ -77,6 +98,15 @@ function CPUSetting(ncores::Ti) where {Ti<:Integer}
     end
 end
 
+"""
+    GPUSetting(backend::Backend, nblocks::Ti, nthreads::Ti)
+A configuration object for GPU backend. This struct encapsulates the number of GPU blocks and threads to be used for parallel computation.
+
+    # Fields
+- `backend::Backend`: Represents the GPU backend (e.g. `CUDABackend()`).
+- `nblocks::Ti`: The number of GPU blocks to be used for computation.
+- `nthreads::Ti`: The number of threads per block to be used for computation.
+"""
 struct GPUSetting{Ti<:Integer,Backend<:GPU} <: AbstractBackendSetting
     backend::Backend
     nblocks::Ti
@@ -89,32 +119,10 @@ function GPUSetting(backend::Backend, nblocks::Ti, nthreads::Ti) where {Ti<:Inte
 end
 
 """
-    L1GSPrecBuilder(backend::Backend)
-
-Builder object for ℓ₁ Gauss–Seidel (L1-GS) preconditioners.
-
-Ensures the given `backend` is functional before construction. Supports GPU (e.g. CUDABackend) and CPU backends.
-
-# Usage
-
-Once constructed, the builder can be used to create a preconditioner from a matrix `A` by calling it like a function:
-
-```julia
-backend = CPU()
-builder = L1GSPrecBuilder(backend)
-N = 800
-A = spdiagm(0 => 2 * ones(N), -1 => -ones(N-1), 1 => -ones(N-1))
-nparts = 8 # no. cores in CPU case
-partsize = 100 
-prec = builder(A, partsize, nparts)
-```
-!!! note
-    - In **CPU backends**, `nparts` typically matches the number of available CPU cores or threads.
-    - In **GPU backends**, `nparts` corresponds to the number of thread blocks, and `partsize` represents the number of threads per block.
-
-    In both CPU and GPU settings, `nparts * partsize` does **not** need to exactly equal the number of rows `N`. 
-    However, this flexibility is more commonly encountered in GPU programming, due to the way the GPU execution model works: each SM executes work as groups of threads called warps, and the number of blocks that can be active on the SMs in a single kernel launch is limited.
-
+    L1GSPrecBuilder(setting::AbstractBackendSetting)
+A builder for the L1 Gauss-Seidel preconditioner. This struct encapsulates the backend setting and provides a method to build the preconditioner.
+# Fields
+- `backsetting::BackendSetting`: The backend setting used for the preconditioner (e.g. `CPUSetting`, `GPUSetting`). More info [CPUSetting](@ref) & [GPUSetting](@ref)
 """
 struct L1GSPrecBuilder{BackendSetting<:AbstractBackendSetting}
     backsetting::BackendSetting
