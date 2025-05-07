@@ -2,10 +2,6 @@
 ## CUDA L1 Gauss Seidel Preconditioner ##
 #########################################
 
-# PIRACY ALERT: the following code is commented out to avoid piracy
-# SparseMatricesCSR.colvals(A::CUSPARSE.CuSparseDeviceMatrixCSR{Tv,Ti,1}) where {Tv,Ti} = A.colVal
-# SparseMatricesCSR.getrowptr(A::CUSPARSE.CuSparseDeviceMatrixCSR{Tv,Ti,1}) where {Tv,Ti} = A.rowPtr
-
 # workaround for the issue with SparseMatricesCSR
 # TODO: find a more robust solution to dispatch the correct function
 Preconditioners.colvals(A::CUSPARSE.CuSparseDeviceMatrixCSR{Tv,Ti,1}) where {Tv,Ti} = A.colVal
