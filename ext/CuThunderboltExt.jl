@@ -89,7 +89,6 @@ end
 
 
 
-include("cuda/cuda_utils.jl")
 include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
