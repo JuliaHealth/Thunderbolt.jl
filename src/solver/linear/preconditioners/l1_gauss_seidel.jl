@@ -30,7 +30,7 @@ end
 @doc raw"""
     L1GSPreconditioner{Partitioning, VectorType}
 
-The ℓ₁ Gauss–Seidel preconditioner is a robust and parallel-friendly preconditioner, particularly effective for sparse and ill-conditioned systems.
+The ℓ₁ Gauss–Seidel preconditioner is a robust and parallel-friendly preconditioner for sparse matrices.
 
 # Algorithm
 
