@@ -336,10 +336,10 @@ _diag_offpart(::AbstractMatrixSymmetry, ::CSRFormat, A, idx::Ti, part_start::Ti,
     _diag_offpart_csr(getrowptr(A), colvals(A), getnzval(A), idx, part_start, part_end)
 
 function _pack_strict_lower_csr!(SLbuffer, rowPtr, colVal, nzVal, start_idx::Ti, end_idx::Ti, partsize::Ti, k::Ti) where {Ti<:Integer}
-    block_stride = (partsize * (partsize - 1)) ÷ 2 # no. off-diagonal elements in a block # 3
-    block_offset = (k - 1) * block_stride # k = 3 -> block_offset = 6
+    block_stride = (partsize * (partsize - 1)) ÷ 2 # no. off-diagonal elements in a block 
+    block_offset = (k - 1) * block_stride
 
-    for i in start_idx:end_idx # 7:9
+    for i in start_idx:end_idx 
         local_i = i - start_idx + 1  
         # no. of off-diagonal elements in that row
         row_offset = ((local_i-1) * (local_i - 2)) ÷ 2  
