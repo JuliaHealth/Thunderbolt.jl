@@ -57,12 +57,10 @@ end
 function _setup_caches(strategy::CudaAssemblyStrategy, integrand::IntegrandType, qrc::QuadratureRuleCollection, dh::AbstractDofHandler) where {IntegrandType}
     sdh_to_cache = sdh ->
         begin
-            # Prepare evaluation caches
-            ip = Ferrite.getfieldinterpolation(sdh, sdh.field_names[1])
             element_qr = getquadraturerule(qrc, sdh)
 
             # Build evaluation caches
-            element_cache = Adapt.adapt_structure(strategy, setup_element_cache(integrand, element_qr, ip, sdh))
+            element_cache = Adapt.adapt_structure(strategy, setup_element_cache(integrand, element_qr, sdh))
             return element_cache
         end
     eles_caches = dh.subdofhandlers .|> sdh_to_cache
