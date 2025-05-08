@@ -15,9 +15,9 @@ using JLD2
 import WriteVTK
 import ReadVTK
 
-# This is a standalone module which will be a custom package in the future
-include("solver/operator_splitting.jl")
-@reexport using .OS
+import OrdinaryDiffEqOperatorSplitting as OS
+import OrdinaryDiffEqOperatorSplitting: GenericSplitFunction
+export OS, GenericSplitFunction
 solution_size(f::GenericSplitFunction) = OS.function_size(f)
 
 @reexport using Ferrite
