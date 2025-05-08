@@ -61,8 +61,9 @@ end
         @test backsetting.backend == CUDABackend()
         dev = device()
         nblocks = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT) # no. SMs
+        nthreads = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR) # no. threads per SM
         @test backsetting.nblocks == nblocks
-        @test backsetting.nthreads == 256
+        @test backsetting.nthreads == nthreads
 
         # Test the full constructor
         nblocks = rand(1:nblocks)
