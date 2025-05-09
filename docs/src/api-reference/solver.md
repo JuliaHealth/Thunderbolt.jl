@@ -10,6 +10,16 @@ DocTestSetup = :(using Thunderbolt)
 SchurComplementLinearSolver
 ```
 
+## Preconditioners
+
+```@docs
+Thunderbolt.Preconditioners.CPUSetting
+Thunderbolt.Preconditioners.GPUSetting
+Thunderbolt.Preconditioners.BlockPartitioning
+Thunderbolt.Preconditioners.L1GSPrecBuilder
+Thunderbolt.Preconditioners.L1GSPreconditioner
+```
+
 ## Nonlinear
 
 ```@docs

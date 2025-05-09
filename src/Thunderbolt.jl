@@ -42,7 +42,7 @@ import ForwardDiff
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
-        compose, ODESystem, Differential
+    compose, ODESystem, Differential
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
@@ -86,6 +86,8 @@ include("solver/interface.jl")
 include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
+include("solver/linear/preconditioners/Preconditioners.jl")
+@reexport using .Preconditioners 
 
 
 include("modeling/electrophysiology/ecg.jl")
