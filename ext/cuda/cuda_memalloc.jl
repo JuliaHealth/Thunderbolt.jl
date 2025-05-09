@@ -35,7 +35,7 @@ end
 
 
 function _can_use_dynshmem(required_shmem::Integer)
-    dev = device()
+    dev = CUDA.device()
     MAX_DYN_SHMEM = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK)
     return required_shmem < MAX_DYN_SHMEM
 end

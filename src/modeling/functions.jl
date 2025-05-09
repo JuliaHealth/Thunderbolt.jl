@@ -7,8 +7,10 @@ Supertype for all functions coming from PDE discretizations.
 ## Interface
 
     solution_size(::AbstractSemidiscreteFunction)
+    get_strategy(::AbstractSemidiscreteFunction)
 """
 abstract type AbstractSemidiscreteFunction <: DiffEqBase.AbstractDiffEqFunction{true} end
+get_strategy(::AbstractSemidiscreteFunction) = SequentialAssemblyStrategy(SequentialCPUDevice())
 
 abstract type AbstractPointwiseFunction <: AbstractSemidiscreteFunction end
 
@@ -58,21 +60,25 @@ Adapt.@adapt_structure PointwiseODEFunction
 
 solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
 
-struct AffineODEFunction{MI, BI, ST, DH} <: AbstractSemidiscreteFunction
+struct AffineODEFunction{MI, BI, ST, DH, AS} <: AbstractSemidiscreteFunction
     mass_term::MI
     bilinear_term::BI
     source_term::ST
     dh::DH
+    assembly_strategy::AS
 end
+get_strategy(f::AffineODEFunction) = f.assembly_strategy
 
 solution_size(f::AffineODEFunction) = ndofs(f.dh)
 
-struct AffineSteadyStateFunction{BI, ST, DH, CH} <: AbstractSemidiscreteFunction
+struct AffineSteadyStateFunction{BI, ST, DH, CH, AS} <: AbstractSemidiscreteFunction
     bilinear_term::BI
     source_term::ST
     dh::DH
     ch::CH
+    assembly_strategy::AS
 end
+get_strategy(f::AffineSteadyStateFunction) = f.assembly_strategy
 
 solution_size(f::AffineSteadyStateFunction) = ndofs(f.dh)
 
@@ -84,12 +90,14 @@ abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 A discrete nonlinear (possibly multi-level) problem with time dependent terms.
 Abstractly written we want to solve the problem G(u, q, t) = 0, L(u, q, dₜq, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler, LVH <: InternalVariableHandler} <: AbstractQuasiStaticFunction
+struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler, LVH <: InternalVariableHandler, AS <: AbstractAssemblyStrategy} <: AbstractQuasiStaticFunction
     dh::DH
     ch::CH
     lvh::LVH
     integrator::I
+    assembly_strategy::AS
 end
+get_strategy(f::QuasiStaticFunction) = f.assembly_strategy
 
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
 function local_function_size(f::QuasiStaticFunction)

@@ -11,46 +11,106 @@ function setup_operator(f::NullFunction, solver::AbstractSolver)
 end
 
 # Linear
-function setup_operator(::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc)
-    check_subdomains(dh)
-    LinearNullOperator{Float64, ndofs(dh)}()
+# Unrolled to disambiguate
+function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
-function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, qrc)
-    return PEALinearOperator(
-        zeros(ndofs(dh)),
-        qrc,
-        protocol,
+function setup_operator(strategy::PerColorAssemblyStrategy{<:AbstractCPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::ElementAssemblyStrategy{<:AbstractCPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractGPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::PerColorAssemblyStrategy{<:AbstractGPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+function setup_operator(strategy::ElementAssemblyStrategy{<:AbstractGPUDevice}, ::LinearIntegrator{<:NoStimulationProtocol}, solver::AbstractSolver, dh::AbstractDofHandler)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+
+function setup_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+    return LinearOperator(
+        zeros(value_type(strategy.device), ndofs(dh)),
+        integrator,
         dh,
+        SequentialAssemblyStrategyCache(strategy.device),
+    )
+end
+function setup_operator(strategy::PerColorAssemblyStrategy{<:AbstractCPUDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+    return LinearOperator(
+        zeros(value_type(strategy.device), ndofs(dh)),
+        integrator,
+        dh,
+        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(dh)),
+    )
+end
+function setup_operator(strategy::ElementAssemblyStrategy{<:AbstractCPUDevice},  integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+    return LinearOperator(
+        zeros(value_type(strategy.device), ndofs(dh)),
+        integrator,
+        dh,
+        ElementAssemblyStrategyCache(strategy.device, EAVector(value_type(strategy.device), index_type(strategy.device), dh)),
     )
 end
 
 # Bilinear
-function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
-    setup_assembled_operator(integrator, solver.system_matrix_type, dh)
+function setup_operator(strategy::Union{SequentialAssemblyStrategy{<:AbstractCPUDevice},PerColorAssemblyStrategy{<:AbstractCPUDevice}}, integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
-function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
+function setup_assembled_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
     A  = create_system_matrix(system_matrix_type, dh)
-    A_ = allocate_matrix(dh) #  TODO how to query this?
+    A_ = if strategy.device isa AbstractCPUDevice && system_matrix_type isa SparseMatrixCSC #if "can assemble with system_matrix_type"
+        A
+    else
+        allocate_matrix(dh)
+    end
+
     return AssembledBilinearOperator(
         A, A_,
         integrator,
         dh,
+        SequentialAssemblyStrategyCache(strategy.device),
+    )
+end
+function setup_assembled_operator(strategy::PerColorAssemblyStrategy, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
+    A  = create_system_matrix(system_matrix_type, dh)
+    A_ = if strategy.device isa AbstractCPUDevice && system_matrix_type isa SparseMatrixCSC #if "can assemble with system_matrix_type"
+        A
+    else
+        allocate_matrix(dh)
+    end
+
+    return AssembledBilinearOperator(
+        A, A_,
+        integrator,
+        dh,
+        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(dh)),
     )
 end
 
-# function setup_operator(problem::QuasiStaticProblem, relevant_coupler, solver::AbstractNonlinearSolver)
-#     @unpack dh, constitutive_model, face_models, displacement_symbol = problem
-#     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
-#     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
-
-#     intorder = default_quadrature_order(problem, displacement_symbol)
-#     qr = QuadratureRuleCollection(intorder)
-#     qr_face = FacetQuadratureRuleCollection(intorder)
-
-#     return AssembledNonlinearOperator(
-#         dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, relevant_coupler, ???, <- depending on the coupler either face or element qr
-#     )
-# end
+# Nonlinear
+function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+    return setup_assembled_nonlinear_operator(get_strategy(f), f, solver)
+end
+function setup_assembled_nonlinear_operator(strategy::SequentialAssemblyStrategy, f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+    return AssembledNonlinearOperator(
+        allocate_matrix(f.dh),
+        f.integrator,
+        f.dh,
+        SequentialAssemblyStrategyCache(strategy.device),
+    )
+end
+function setup_assembled_nonlinear_operator(strategy::PerColorAssemblyStrategy, f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+    return AssembledNonlinearOperator(
+        allocate_matrix(f.dh),
+        f.integrator,
+        f.dh,
+        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(f.dh)),
+    )
+end
 
 # # TODO correct dispatches
 # function setup_coupling_operator(first_problem::DiffEqBase.AbstractDEProblem, second_problem::DiffEqBase.AbstractDEProblem, relevant_couplings, solver::AbstractNonlinearSolver)

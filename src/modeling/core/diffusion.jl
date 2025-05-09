@@ -17,6 +17,13 @@ struct BilinearDiffusionElementCache{CoefficientCacheType, CV} <: AbstractVolume
     cellvalues::CV
 end
 
+function duplicate_for_device(device, cache::BilinearDiffusionElementCache)
+    return BilinearDiffusionElementCache(
+        duplicate_for_device(device, cache.Dcache),
+        duplicate_for_device(device, cache.cellvalues),
+    )
+end
+
 function assemble_element!(Kₑ::AbstractMatrix, cell, element_cache::BilinearDiffusionElementCache, time)
     @unpack cellvalues, Dcache = element_cache
     n_basefuncs = getnbasefunctions(cellvalues)

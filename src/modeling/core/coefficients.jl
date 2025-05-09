@@ -14,7 +14,7 @@ struct FieldCoefficientCache{T, TA <: AbstractArray{T, 2}, CV}
     cv::CV
 end
 
-duplicate_for_parallel(cache::FieldCoefficientCache) = cache
+duplicate_for_device(device, cache::FieldCoefficientCache) = cache
 
 @inline function setup_coefficient_cache(coefficient::FieldCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
     return _create_field_coefficient_cache(coefficient, coefficient.ip_collection, qr, sdh)
@@ -56,7 +56,7 @@ struct ConstantCoefficient{T}
     val::T
 end
 
-duplicate_for_parallel(cache::ConstantCoefficient) = cache
+duplicate_for_device(device, cache::ConstantCoefficient) = cache
 
 function setup_coefficient_cache(coefficient::ConstantCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
     return coefficient
@@ -97,11 +97,11 @@ function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, 
     return κ/(Cₘ*χ)
 end
 
-function duplicate_for_parallel(cache::ConductivityToDiffusivityCoefficientCache)
+function duplicate_for_device(device, cache::ConductivityToDiffusivityCoefficientCache)
     ConductivityToDiffusivityCoefficientCache(
-        duplicate_for_parallel(cache.conductivity_tensor_cache),
-        duplicate_for_parallel(cache.capacitance_cache),
-        duplicate_for_parallel(cache.χ_cache),
+        duplicate_for_device(device, cache.conductivity_tensor_cache),
+        duplicate_for_device(device, cache.capacitance_cache),
+        duplicate_for_device(device, cache.χ_cache),
     )
 end
 
@@ -136,7 +136,7 @@ struct CartesianCoordinateSystemCache{CS, CV}
     cv::CV
 end
 
-duplicate_for_parallel(cache::CartesianCoordinateSystemCache) = cache
+duplicate_for_device(device, cache::CartesianCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(cs::CartesianCoordinateSystem, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
@@ -161,7 +161,7 @@ struct LVCoordinateSystemCache{CS <: LVCoordinateSystem, CV}
     cv::CV
 end
 
-duplicate_for_parallel(cache::LVCoordinateSystemCache) = cache
+duplicate_for_device(device, cache::LVCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(cs::LVCoordinateSystem, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
@@ -193,7 +193,7 @@ struct BiVCoordinateSystemCache{CS <: BiVCoordinateSystem, CV}
     cv::CV
 end
 
-duplicate_for_parallel(cache::BiVCoordinateSystemCache) = cache
+duplicate_for_device(device, cache::BiVCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(cs::BiVCoordinateSystem, qr::QuadratureRule{<:Any,<:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
@@ -237,10 +237,10 @@ struct SpectralTensorCoefficientCache{C1, C2}
     eigenvalue_cache::C2
 end
 
-function duplicate_for_parallel(cache::SpectralTensorCoefficientCache)
+function duplicate_for_device(device, cache::SpectralTensorCoefficientCache)
     SpectralTensorCoefficientCache(
-        duplicate_for_parallel(cache.eigenvectors),
-        duplicate_for_parallel(cache.eigenvalues),
+        duplicate_for_device(device, cache.eigenvectors),
+        duplicate_for_device(device, cache.eigenvalues),
     )
 end
 
@@ -271,7 +271,7 @@ struct SpatiallyHomogeneousDataField{T, TD <: AbstractVector{T}, TV <: AbstractV
     data::TD
 end
 
-duplicate_for_parallel(cache::SpatiallyHomogeneousDataField) = cache
+duplicate_for_device(device, cache::SpatiallyHomogeneousDataField) = cache
 
 function setup_coefficient_cache(coefficient::SpatiallyHomogeneousDataField, qr::QuadratureRule, sdh::SubDofHandler)
     return coefficient
