@@ -1,5 +1,6 @@
 using MatrixDepot, LinearSolve, SparseArrays, SparseMatricesCSR
 using KernelAbstractions
+import Thunderbolt: ThreadedSparseMatrixCSR
 
 ##########################################
 ## L1 Gauss Seidel Preconditioner - CPU ##
@@ -69,6 +70,9 @@ end
         test_sym("CPU CSC",A, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
         B = SparseMatrixCSR(A)
         test_sym("CPU, CSR",B, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
+        C = ThreadedSparseMatrixCSR(B)
+        test_sym("CPU, Threaded CSR",C, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
+
 
         @testset "Non-Symmetric CSC" begin
             A2 = copy(A)

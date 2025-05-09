@@ -10,6 +10,7 @@ import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @prin
 import SparseArrays: getcolptr,getnzval
 import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
+import Thunderbolt: ThreadedSparseMatrixCSR
 
 ## Generic Code #
 
@@ -29,12 +30,12 @@ struct CSCFormat <: AbstractMatrixFormat end
 # e.g. CUSPARSE.CuSparseDeviceMatrixCSC <:SparseArrays.AbstractSparseMatrixCSC → false
 # So we need to define our own traits to identify the format of the sparse matrix
 sparsemat_format_type(::SparseMatrixCSC) = CSCFormat()
-sparsemat_format_type(::SparseMatrixCSR) = CSRFormat()
+sparsemat_format_type(::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = CSRFormat()
 
 # Why? because we want to circumvent piracy when extending these functions for device backend (e.g. CuSparseDeviceMatrixCSR)
 # TODO: find a more robust solution to dispatch the correct function
-colvals(A::SparseMatrixCSR) = SparseMatricesCSR.colvals(A)
-getrowptr(A::SparseMatrixCSR) = SparseMatricesCSR.getrowptr(A)
+colvals(A::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = SparseMatricesCSR.getcolval(A)
+getrowptr(A::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = SparseMatricesCSR.getrowptr(A)
 
 
 default_device_config(backend::GPU) = error("$(typeof(backend)) backend is not supported yet")
