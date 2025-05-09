@@ -1,6 +1,11 @@
 module CuThunderboltExt
 
 using Thunderbolt
+using LinearSolve
+using KernelAbstractions
+using SparseMatricesCSR
+
+import SparseArrays:SparseMatrixCSC,AbstractSparseMatrix
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
@@ -10,7 +15,6 @@ import CUDA:
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
-    SparseMatrixCSR, SparseMatrixCSC,
     AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,QuadratureRuleCollection,
@@ -25,6 +29,9 @@ import Thunderbolt.FerriteUtils:
     cellfe, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
     FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache,
     FeCellMem, KeCellMem, KeFeCellMem,NoCellMem,AbstractMemShape
+
+import Thunderbolt.Preconditioners:
+    sparsemat_format_type, CSCFormat, CSRFormat
 
 
 import Ferrite:
@@ -84,5 +91,6 @@ include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
 include("cuda/cuda_iterator.jl")
+include("cuda/cuda_preconditioner.jl") #NOTE: min version for CUDA is v"5.7.3"
 
 end
