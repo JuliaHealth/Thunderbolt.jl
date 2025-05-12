@@ -87,6 +87,13 @@ function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: V
     return CuVector(v)
 end
 
+function Thunderbolt.default_backend(device::Thunderbolt.CudaDevice)
+    # nblocks = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT) # no. SMs
+    # # CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR
+    # nthreads = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR) # no. threads per SM
+    return CUDABackend()
+end
+
 include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")

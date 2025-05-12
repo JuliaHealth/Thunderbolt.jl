@@ -10,7 +10,8 @@ import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @prin
 import SparseArrays: getcolptr,getnzval
 import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
-import Thunderbolt: ThreadedSparseMatrixCSR
+import Thunderbolt: ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice,
+    default_backend
 
 ## Generic Code #
 
@@ -37,11 +38,8 @@ sparsemat_format_type(::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = CSRFor
 colvals(A::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = SparseMatricesCSR.getcolval(A)
 getrowptr(A::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = SparseMatricesCSR.getrowptr(A)
 
-
-default_device_config(backend::GPU) = error("$(typeof(backend)) backend is not supported yet")
-
 include("l1_gauss_seidel.jl")
 
-export L1GSPrecBuilder,CPUSetting,GPUSetting
+export L1GSPrecBuilder
 
 end

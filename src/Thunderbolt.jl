@@ -1,5 +1,7 @@
 module Thunderbolt
 
+import KernelAbstractions as KA
+
 using TimerOutputs
 
 import Unrolled: @unroll

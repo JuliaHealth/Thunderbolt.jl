@@ -63,13 +63,12 @@ SIAM J. Sci. Comput., 33(5), 2864–2887.](@cite BakFalKolYan:2011:MSU)
 
 # Example
 ```julia
-backend = CPU()
-builder = L1GSPrecBuilder(backend) # ≡ L1GSPrecBuilder(CPUSetting(Threads.nthreads()))
-N = 800
+builder = L1GSPrecBuilder(PolyesterDevice(4))
+N = 128*16
 A = spdiagm(0 => 2 * ones(N), -1 => -ones(N-1), 1 => -ones(N-1))
-partsize = 100 
+partsize = 16
 prec = builder(A, partsize)
-```   
+```
 """
 struct L1GSPreconditioner{Partitioning,VectorType}
     partitioning::Partitioning
@@ -77,80 +76,22 @@ struct L1GSPreconditioner{Partitioning,VectorType}
     SLbuffer::VectorType # strictly lower triangular part of all diagonal blocks. (length = (partsize*(partsize-1)* nparts)/2)
 end
 
-abstract type AbstractBackendSetting end
-
 """
-    CPUSetting(ncores::Ti)
-A configuration object for CPU backend. This struct encapsulates the number of CPU cores to be used for parallel computation.
-
+    L1GSPrecBuilder(device::AbstractDevice)
+A builder for the L1 Gauss-Seidel preconditioner. This struct encapsulates the backend and provides a method to build the preconditioner.
 # Fields
-- `backend::CPU`: Represents the CPU backend (i.e. `CPU()`).
-- `ncores::Ti`: The number of CPU cores to be used for computation.
+- `device::AbstractDevice`: The backend used for the preconditioner. More info [AbstractDevice](@ref).
 """
-struct CPUSetting{Ti<:Integer} <: AbstractBackendSetting
-    backend::CPU
-    ncores::Ti
-end
-function CPUSetting(ncores::Ti) where {Ti<:Integer}
-    if ncores > 0
-        return CPUSetting(CPU(), ncores)
-    else
-        error("ncores must be greater than 0")
-    end
-end
-
-"""
-    GPUSetting(backend::Backend, nblocks::Ti, nthreads::Ti)
-A configuration object for GPU backend. This struct encapsulates the number of GPU blocks and threads to be used for parallel computation.
-
-    # Fields
-- `backend::Backend`: Represents the GPU backend (e.g. `CUDABackend()`).
-- `nblocks::Ti`: The number of GPU blocks to be used for computation.
-- `nthreads::Ti`: The number of threads per block to be used for computation.
-"""
-struct GPUSetting{Ti<:Integer,Backend<:GPU} <: AbstractBackendSetting
-    backend::Backend
-    nblocks::Ti
-    nthreads::Ti
-end
-function GPUSetting(backend::Backend, nblocks::Ti, nthreads::Ti) where {Ti<:Integer}
-    nthreads == 0 && error("`nthreads` must be greater than 0")
-    nblocks == 0 && error("`nblocks`` must be greater than 0")
-    return GPUSetting(backend, nblocks, nthreads)
-end
-
-"""
-    L1GSPrecBuilder(setting::AbstractBackendSetting)
-A builder for the L1 Gauss-Seidel preconditioner. This struct encapsulates the backend setting and provides a method to build the preconditioner.
-# Fields
-- `backsetting::BackendSetting`: The backend setting used for the preconditioner (e.g. `CPUSetting`, `GPUSetting`). More info [CPUSetting](@ref) & [GPUSetting](@ref)
-"""
-struct L1GSPrecBuilder{BackendSetting<:AbstractBackendSetting}
-    backsetting::BackendSetting
-    function L1GSPrecBuilder(setting::AbstractBackendSetting)
-        @unpack backend = setting
+struct L1GSPrecBuilder{DeviceType<:AbstractDevice}
+    device::DeviceType
+    function L1GSPrecBuilder(device::AbstractDevice)
+        backend = default_backend(device)
         if functional(backend)
-            return new{typeof(setting)}(setting)
+            return new{typeof(device)}(device)
         else
             error(" $backend is not functional, please check your backend.")
         end
     end
-end
-
-
-function L1GSPrecBuilder(backend::Backend)
-    setting = _create_setting(backend)
-    return L1GSPrecBuilder(setting)
-end
-
-function _create_setting(::CPU)
-    ncores = Threads.nthreads() # Not sure if this is the best way to do it without `ThreadPinning.jl`
-    return CPUSetting(ncores)
-end
-
-function _create_setting(backend::GPU)
-    nblocks,nthreads = default_device_config(backend)
-    return GPUSetting(backend, nblocks, nthreads)
 end
 
 (builder::L1GSPrecBuilder)(A::AbstractMatrix, partsize::Ti) where {Ti<:Integer} =
@@ -191,25 +132,24 @@ end
 
 
 
-function _blockpartitioning(builder::L1GSPrecBuilder{<:CPUSetting}, A::AbstractSparseMatrix, partsize::Ti) where {Ti<:Integer}
-    @unpack backsetting = builder
-    @unpack ncores, backend = backsetting
-    nchunks = ncores # number of CPU cores
+function _blockpartitioning(builder::L1GSPrecBuilder{<:AbstractCPUDevice}, A::AbstractSparseMatrix, partsize::Ti) where {Ti<:Integer}
+    (; device) = builder
+    (; chunksize) = device
     nparts = convert(Ti, size(A, 1) / partsize |> ceil) #total number of partitions
-    chunksize = convert(Ti, (nparts / nchunks) |> ceil)  # number of partitions per chunk(group of work)
-    partitioning = BlockPartitioning(partsize, nparts, nchunks, chunksize, backend)
-    return partitioning
+    nchunks = chunksize * nparts
+    return BlockPartitioning(partsize, nparts, nchunks, chunksize, default_backend(device))
 end
 
-function _blockpartitioning(builder::L1GSPrecBuilder{<:GPUSetting}, A::AbstractSparseMatrix, partsize::Ti) where {Ti<:Integer}
-    @unpack backsetting = builder
-    @unpack nblocks, nthreads, backend = backsetting
-    nchunks = nblocks # number of GPU blocks
+function _blockpartitioning(builder::L1GSPrecBuilder{<:AbstractGPUDevice}, A::AbstractSparseMatrix, partsize::Ti) where {Ti<:Integer}
+    (; device) = builder
+    (; blocks, threads) = device
+    (threads == 0 || threads === nothing) && error("`threads` must be set greater than 0")
+    (blocks  == 0 || blocks === nothing)  && error("`blocks`` must be set greater than 0")
+    nchunks = blocks # number of GPU blocks
     nparts = convert(Ti, size(A, 1) / partsize |> ceil) #total number of partitions
     chunksize = convert(Ti, (nparts / nchunks) |> ceil) # number of partitions per chunk
-    chunksize = chunksize <= nthreads ? chunksize : nthreads # number of threads per block
-    partitioning = BlockPartitioning(partsize, nparts, nchunks, chunksize, backend)
-    return partitioning
+    chunksize = chunksize <= threads ? chunksize : threads # number of threads per block
+    return BlockPartitioning(partsize, nparts, nchunks, chunksize, default_backend(device))
 end
 
 function LinearSolve.ldiv!(y::VectorType, P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType<:AbstractVector,Ti<:Integer,Backend}

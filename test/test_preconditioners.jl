@@ -16,7 +16,7 @@ function test_sym(testname,A, x,y_exp,D_Dl1_exp,SLbuffer_exp, partsize)
     @testset "$testname Symmetric" begin
         total_ncores = 8 # Assuming 8 cores for testing
         for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
-            builder = L1GSPrecBuilder(CPUSetting(ncores))
+            builder = L1GSPrecBuilder(PolyesterDevice(ncores))
             P = builder(A, partsize)
             @test P.D_Dl1 ≈ D_Dl1_exp
             @test P.SLbuffer ≈ SLbuffer_exp
@@ -35,7 +35,7 @@ function test_l1gs_prec(A, b)
     @test isapprox(A * sol_unprec.u, b, rtol=1e-1, atol=1e-1)
 
     # Test L1GS Preconditioner
-    P = L1GSPrecBuilder(CPUSetting(ncores))(A, partsize)
+    P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize)
     sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P)
     println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
     println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
@@ -46,20 +46,6 @@ function test_l1gs_prec(A, b)
 end
 
 @testset "L1GS Preconditioner" begin
-    @testset "CPUSetting" begin
-        # Test the default CPUSetting
-        builder = L1GSPrecBuilder(CPU())
-        backsetting = builder.backsetting
-        @test backsetting.backend == CPU()
-        @test backsetting.ncores == Threads.nthreads()
-
-        # Test the full constructor
-        ncores = rand(1:Threads.nthreads())
-        builder = L1GSPrecBuilder(CPUSetting(ncores))
-        backsetting = builder.backsetting
-        @test backsetting.backend == CPU()
-        @test backsetting.ncores == ncores
-    end
     @testset "Algorithm" begin
         N = 9
         A = poisson_test_matrix(N)
@@ -82,7 +68,7 @@ end
             D_Dl1_exp2 = Float64.([3, 4, 3, 3, 3, 3, 3, 3, 3])
             SLbuffer_exp2 = Float64.([-1, -1, -1, -1])
 
-            builder = L1GSPrecBuilder(CPUSetting(2))
+            builder = L1GSPrecBuilder(PolyesterDevice(2))
             P = builder(A2, 2)
             @test P.D_Dl1 ≈ D_Dl1_exp2
             @test P.SLbuffer ≈ SLbuffer_exp2
@@ -95,7 +81,7 @@ end
             ncores = 2
             D_Dl1_exp = Float64.([2,2,3,3,2,3,3,2,2])
             SLbuffer_exp = Float64.([-1,0,-1,-1,0,-1,-1,0,-1])
-            builder = L1GSPrecBuilder(CPUSetting(ncores))
+            builder = L1GSPrecBuilder(PolyesterDevice(ncores))
             P = builder(A, partsize)
             @test P.D_Dl1 ≈ D_Dl1_exp
             @test P.SLbuffer ≈ SLbuffer_exp
