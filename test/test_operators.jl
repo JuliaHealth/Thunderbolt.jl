@@ -1,8 +1,11 @@
-import Thunderbolt: AssembledNonlinearOperator, AssembledBilinearOperator, NullOperator, DiagonalOperator, BlockOperator
+using Thunderbolt
+import Thunderbolt: NullOperator, DiagonalOperator, BlockOperator, EAVector, BilinearDiffusionIntegrator, NonlinearIntegrator, FacetQuadratureRuleCollection, InternalVariableHandler, QuasiStaticFunction
 import LinearAlgebra: mul!
-using BlockArrays, SparseArrays
+using BlockArrays, SparseArrays, StaticArrays, Test
 
 @testset "Operators" begin
+    solver = BackwardEulerSolver() # TODO remove this
+
     @testset "Actions" begin
         vin = ones(5)
         vout = ones(5)
@@ -73,7 +76,7 @@ using BlockArrays, SparseArrays
 
     @testset "Linear" begin
         # Setup
-        grid = generate_grid(Quadrilateral, (2,2))
+        grid = generate_grid(Quadrilateral, (4,3))
         dh = DofHandler(grid)
         add!(dh, :u, Lagrange{RefQuadrilateral,1}())
         close!(dh)
@@ -81,54 +84,240 @@ using BlockArrays, SparseArrays
 
         @testset "Constant Cartesian" begin
             cs = CartesianCoordinateSystem(grid)
-            protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> 1.0, cs),
-                [SVector((0.0, 1.0))]
+            linint = Thunderbolt.LinearIntegrator(
+                AnalyticalTransmembraneStimulationProtocol(
+                    AnalyticalCoefficient((x,t) -> 1.0, cs),
+                    [SVector((0.0, 1.0))]
+                ),
+                qrc
             )
 
-            linop = Thunderbolt.LinearOperator(
-                zeros(ndofs(dh)),
-                protocol,
-                qrc,
-                dh,
-            )
-            Thunderbolt.update_operator!(linop,0.0)
-            @test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
+            linop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), linint, solver, dh)
+            # Check that assembly works
+            Thunderbolt.update_operator!(linop_base,0.0)
+            norm_baseline = norm(linop_base.b)
+            @test norm_baseline > 0.0
+            # Idempotency
+            Thunderbolt.update_operator!(linop_base,0.0)
+            @test norm_baseline == norm(linop_base.b)
 
-            plinop = Thunderbolt.PEALinearOperator(
-                zeros(ndofs(dh)),
-                qrc,
-                protocol,
-                dh,
+            @testset "Strategy $strategy" for strategy in (
+                    Thunderbolt.ElementAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(3)),
+                    Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
             )
-            Thunderbolt.update_operator!(plinop,0.0)
-            @test linop.b ≈ plinop.b
+                linop = Thunderbolt.setup_operator(strategy, linint, solver, dh)
+
+                # Consistency
+                Thunderbolt.update_operator!(linop,0.0)
+                @test linop.b ≈ linop_base.b
+                # Idempotency
+                Thunderbolt.update_operator!(linop,0.0)
+                @test linop.b ≈ linop_base.b
+            end
         end
 
         @testset "Quadratic Cartesian" begin
             cs = CartesianCoordinateSystem(grid)
-            protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> norm(x)^2+1.0, cs),
-                [SVector((0.0, 1.0))]
+            linint = Thunderbolt.LinearIntegrator(
+                AnalyticalTransmembraneStimulationProtocol(
+                    AnalyticalCoefficient((x,t) -> norm(x)^2+1.0, cs),
+                    [SVector((0.0, 1.0))]
+                ),
+                qrc
             )
 
-            linop = Thunderbolt.LinearOperator(
-                zeros(ndofs(dh)),
-                protocol,
-                qrc,
-                dh,
-            )
-            Thunderbolt.update_operator!(linop,0.0)
-            @test linop.b ≈ [1.0/2, 5.0/6, 4.0/3, 5.0/6, 1.0/2, 5.0/6, 5.0/6, 1.0/2, 1.0/2]
+            linop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), linint, solver, dh)
 
-            plinop = Thunderbolt.PEALinearOperator(
-                zeros(ndofs(dh)),
-                qrc,
-                protocol,
-                dh,
+            # Check that assembly works
+            Thunderbolt.update_operator!(linop_base,0.0)
+            norm_baseline = norm(linop_base.b)
+            @test norm_baseline > 0.0
+            # Idempotency
+            Thunderbolt.update_operator!(linop_base,0.0)
+            @test norm_baseline == norm(linop_base.b)
+
+            @testset "Strategy $strategy" for strategy in (
+                Thunderbolt.ElementAssemblyStrategy(SequentialCPUDevice()),
+                Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(1)),
+                Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(2)),
+                Thunderbolt.ElementAssemblyStrategy(PolyesterDevice(3)),
+                Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
             )
-            Thunderbolt.update_operator!(plinop,0.0)
-            @test linop.b ≈ plinop.b
+                linop = Thunderbolt.setup_operator(strategy, linint, solver, dh)
+
+                # Check that assembly works
+                Thunderbolt.update_operator!(linop_base,0.0)
+                norm_baseline = norm(linop_base.b)
+                @test norm_baseline > 0.0
+                # Idempotency
+                Thunderbolt.update_operator!(linop_base,0.0)
+                @test norm_baseline == norm(linop_base.b)
+            end
+        end
+    end
+
+    @testset "Bilinear" begin
+        # Setup
+        grid = generate_grid(Quadrilateral, (10,9))
+        Ferrite.transform_coordinates!(grid, x->Vec{2}(sign.(x.-0.5) .* (x.-0.5).^2))
+        dh = DofHandler(grid)
+        add!(dh, :u, Lagrange{RefQuadrilateral,1}())
+        close!(dh)
+        qrc = QuadratureRuleCollection{2}()
+
+        @testset "Constant Cartesian" begin
+            cs = CartesianCoordinateSystem(grid)
+            integrator = BilinearDiffusionIntegrator(
+                ConstantCoefficient(SymmetricTensor{2,2,Float64,3}((4.5e-5, 0, 2.0e-5))),
+                QuadratureRuleCollection(2),
+                :u
+            )
+            bilinop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), integrator, solver, dh)
+            # Check that assembly works
+            Thunderbolt.update_operator!(bilinop_base,0.0)
+            norm_baseline = norm(bilinop_base.A)
+            @test norm_baseline > 0.0
+            # Idempotency
+            Thunderbolt.update_operator!(bilinop_base,0.0)
+            @test norm_baseline == norm(bilinop_base.A)
+
+            @testset "Strategy $strategy" for strategy in (
+                    Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+            )
+                bilinop = Thunderbolt.setup_operator(strategy, integrator, solver, dh)
+                # Consistency
+                Thunderbolt.update_operator!(bilinop,0.0)
+                @test bilinop.A ≈ bilinop_base.A
+                # Idempotency
+                Thunderbolt.update_operator!(bilinop,0.0)
+                @test bilinop.A ≈ bilinop_base.A
+            end
+        end
+
+        @testset "Analytical coefficient LVCS" begin
+            cs = LVCoordinateSystem(dh, LagrangeCollection{1}(), rand(ndofs(dh)), rand(ndofs(dh)), rand(ndofs(dh)))
+            integrator = BilinearDiffusionIntegrator(
+                AnalyticalCoefficient(
+                    (x,t) -> SymmetricTensor{2,2,Float64,3}((abs(x.transmural)+1e-6, 0, 2.0e-5)),
+                    cs,
+                ),
+                QuadratureRuleCollection(2),
+                :u,
+            )
+            bilinop_base = Thunderbolt.setup_operator(Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()), integrator, solver, dh)
+            # Check that assembly works
+            Thunderbolt.update_operator!(bilinop_base,0.0)
+            norm_baseline = norm(bilinop_base.A)
+            @test norm_baseline > 0.0
+            # Idempotency
+            Thunderbolt.update_operator!(bilinop_base,0.0)
+            @test norm_baseline == norm(bilinop_base.A)
+
+            @testset "Strategy $strategy" for strategy in (
+                    Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+            )
+                bilinop = Thunderbolt.setup_operator(strategy, integrator, solver, dh)
+                # Consistency
+                Thunderbolt.update_operator!(bilinop,0.0)
+                @test bilinop.A ≈ bilinop_base.A
+                # Idempotency
+                Thunderbolt.update_operator!(bilinop,0.0)
+                @test bilinop.A ≈ bilinop_base.A
+            end
+        end
+    end
+
+    @testset "Nonlinear" begin
+        # TODO remove
+        solver = NewtonRaphsonSolver()
+
+        # Setup
+        grid = generate_grid(Hexahedron, (2,5,9))
+        Ferrite.transform_coordinates!(grid, x->Vec{3}(sign.(x.-0.5) .* (x.-0.5).^2))
+        dh = DofHandler(grid)
+        add!(dh, :u, Lagrange{RefHexahedron,1}()^3)
+        close!(dh)
+        qrc = QuadratureRuleCollection{2}()
+        lvh = InternalVariableHandler(grid)
+        # close!(lvh)
+        ch = ConstraintHandler(dh)
+        close!(ch)
+        
+        @testset "Constant Cartesian" begin
+            cs = CartesianCoordinateSystem(grid)
+            integrator = NonlinearIntegrator(
+                QuasiStaticModel(:u,
+                    PK1Model(
+                        HolzapfelOgden2009Model(),
+                        ConstantCoefficient(
+                            OrthotropicMicrostructure(
+                                Vec((1.0, 0.0, 0.0)),
+                                Vec((0.0, 1.0, 0.0)),
+                                Vec((0.0, 0.0, 1.0)),
+                            )
+                        )
+                    ),
+                    ()
+                ),
+                (),
+                [:u],
+                QuadratureRuleCollection(2),
+                FacetQuadratureRuleCollection(2),
+            )
+            u = zeros(ndofs(dh))
+            apply_analytical!(u, dh, :u, x -> 0.05x)
+            nlop_base = Thunderbolt.setup_operator(
+                QuasiStaticFunction(dh, ch, lvh, integrator, Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice())),
+                solver,
+            )
+            # Check that assembly works
+            residual_base = zeros(ndofs(dh))
+            Thunderbolt.update_linearization!(nlop_base,residual_base,u,0.0)
+            norm_baseline = norm(nlop_base.J)
+            @test norm_baseline > 0.0
+            # Idempotency
+            Thunderbolt.update_linearization!(nlop_base,u,0.0)
+            @test norm_baseline == norm(nlop_base.J)
+
+            residual = zeros(ndofs(dh))
+            @testset "Strategy $strategy" for strategy in (
+                    Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
+                    Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+            )
+                nlop = Thunderbolt.setup_operator(
+                    QuasiStaticFunction(dh, ch, lvh, integrator, strategy),
+                    solver,
+                )
+                # Consistency
+                Thunderbolt.update_linearization!(nlop,residual,u,0.0)
+                @test residual ≈ residual_base
+                @test nlop.J ≈ nlop_base.J
+                Thunderbolt.update_linearization!(nlop,u,0.0)
+                @test nlop.J ≈ nlop_base.J
+                # Idempotency
+                Thunderbolt.update_linearization!(nlop,residual,u,0.0)
+                @test residual ≈ residual_base
+                @test nlop.J ≈ nlop_base.J
+                Thunderbolt.update_linearization!(nlop,u,0.0)
+                @test nlop.J ≈ nlop_base.J
+            end
         end
     end
 

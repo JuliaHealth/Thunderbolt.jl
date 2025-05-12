@@ -10,17 +10,17 @@ import SparseArrays:SparseMatrixCSC,AbstractSparseMatrix
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
     threadIdx, blockIdx, blockDim, @cuda, @cushow,
-    CUDABackend, launch_configuration, device, cu,cudaconvert
+    CUDABackend, launch_configuration, cu,cudaconvert
 
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
-    AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
+    SparseMatrixCSR, SparseMatrixCSC,
+    AbstractSolver, AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
-    LinearOperator,QuadratureRuleCollection,
-    AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
-    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
-    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator
+    LinearIntegrator,LinearOperator,QuadratureRuleCollection,
+    setup_element_cache,update_operator!,FieldCoefficientCache, CudaDevice, ElementAssemblyStrategy, value_type, index_type, 
+    convert_vec_to_concrete
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,
@@ -85,6 +85,13 @@ Thunderbolt.__add_to_vector!(b::CuVector, a::Vector) = b .+= CuVector(a)
 
 function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector}
     return CuVector(v)
+end
+
+function Thunderbolt.default_backend(device::Thunderbolt.CudaDevice)
+    # nblocks = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT) # no. SMs
+    # # CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR
+    # nthreads = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR) # no. threads per SM
+    return CUDABackend()
 end
 
 include("cuda/cuda_operator.jl")

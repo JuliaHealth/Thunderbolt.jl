@@ -103,20 +103,22 @@ function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t
 
     # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(
+        get_strategy(f),
         f.mass_term,
         solver, dh,
     )
 
     # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
     bilinear_operator = setup_operator(
+        get_strategy(f),
         f.bilinear_term,
         solver, dh,
     )
     # ... + ∫f δu dV
     source_operator    = setup_operator(
+        ElementAssemblyStrategy(get_strategy(f).device), #The EA strategy should always outperform other strats for the linear operator
         f.source_term,
         solver, dh,
-        f.bilinear_term.qrc, # source follows linearity of diffusion for now...
     )
 
     inner_prob  = LinearSolve.LinearProblem(
@@ -226,8 +228,12 @@ end
         f.lvh,
     )
     # This is copy paste of setup_solver_cache(G, solver.newton)
+    # TODO call setup_operator here
     op = AssembledNonlinearOperator(
-        NonlinearIntegrator(volume_wrapper, face_wrapper, integrator.syms, integrator.qrc, integrator.fqrc), dh,
+        allocate_matrix(dh),
+        NonlinearIntegrator(volume_wrapper, face_wrapper, integrator.syms, integrator.qrc, integrator.fqrc),
+        dh,
+        SequentialAssemblyStrategyCache(nothing),
     )
     # op = setup_operator(f, solver)
     T = Float64

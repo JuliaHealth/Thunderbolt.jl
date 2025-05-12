@@ -205,6 +205,7 @@ function PoissonECGReconstructionCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
     extracellular_potential_symbol = :φₑ,
+    strategy             = SequentialAssemblyStrategy(SequentialCPUDevice()),
 )
     heart_dh      = heart_fun.dh
     heart_grid = get_grid(heart_dh)
@@ -238,6 +239,7 @@ function PoissonECGReconstructionCache(
     )
 
     source_op = setup_assembled_operator(
+        strategy,
         BilinearDiffusionIntegrator(
             heart_diffusion_tensor_field,
             qrc,
@@ -249,6 +251,7 @@ function PoissonECGReconstructionCache(
     update_operator!(source_op, 0.) # Trigger assembly
 
     torso_op = setup_assembled_operator(
+        strategy,
         BilinearDiffusionIntegrator(
             torso_diffusion_tensor_field,
             qrc,
@@ -430,6 +433,7 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
     lead_field_sym       = :Z,
+    strategy             = SequentialAssemblyStrategy(SequentialCPUDevice()),
 )
     tmpsym = heart_fun.bilinear_term.sym
     lead_field_model = SteadyDiffusionModel(
@@ -465,6 +469,7 @@ function Geselowitz1989ECGLeadCache(
     )
 
     ϕₘ_op = setup_assembled_operator(
+        strategy,
         BilinearDiffusionIntegrator(
             heart_diffusion_tensor_field,
             qrc,
@@ -476,6 +481,7 @@ function Geselowitz1989ECGLeadCache(
     update_operator!(ϕₘ_op, 0.) # Trigger assembly
 
     lead_op = setup_assembled_operator(
+        strategy,
         BilinearDiffusionIntegrator(
             full_diffusion_tensor_field,
             qrc,
