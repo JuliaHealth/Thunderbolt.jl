@@ -342,7 +342,7 @@ blood_circuit_solver = ForwardEulerSolver(rate=ceil(Int, dt₀/0.001)) # Force t
 timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
 u₀ = zeros(solution_size(splitform))
-u₀[OS.get_dofrange(splitform, 2)] .= u0new;
+u₀[OS.get_solution_indices(splitform, 2)] .= u0new;
 # !!! todo
 #     How to map this correctly? If I understand correctly, then there is no guarantee that the states match.
 
