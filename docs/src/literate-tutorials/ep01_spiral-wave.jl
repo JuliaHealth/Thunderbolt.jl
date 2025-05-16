@@ -157,11 +157,12 @@ timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.
-dt₀ = 10.0
-dtvis = 25.0;
+dt₀   = 1.0
+dtvis = 25.0
 tspan = (0.0, 1000.0);
 # This speeds up the CI # hide
-# tspan = (0.0, dtvis);   # hide
+tspan = (0.0, dtvis);   # hide
+
 
 # Then we setup the problem.
 # We have a split function, so the correct problem is an OperatorSplittingProblem.
