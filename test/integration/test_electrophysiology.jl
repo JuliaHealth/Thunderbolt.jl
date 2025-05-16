@@ -45,7 +45,7 @@ using Thunderbolt
             mesh
         )
 
-        u₀ = zeros(Float64, OS.function_size(odeform))
+        u₀ = zeros(Float64, solution_size(odeform))
         simple_initializer!(u₀, odeform)
 
         tspan = (0.0, 10.0)

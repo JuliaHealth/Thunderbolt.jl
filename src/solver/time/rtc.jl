@@ -85,7 +85,7 @@ end
 end
 
 function OS.build_subintegrator_tree_with_cache(
-    prob::OperatorSplittingProblem, alg::ReactionTangentController,
+    prob::OS.OperatorSplittingProblem, alg::ReactionTangentController,
     uprevouter::AbstractVector, uouter::AbstractVector,
     solution_indices,
     t0, dt, tf,

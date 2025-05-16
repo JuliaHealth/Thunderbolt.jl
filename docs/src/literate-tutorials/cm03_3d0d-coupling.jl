@@ -16,7 +16,7 @@ using Thunderbolt, LinearSolve
 # Furthermore we will use CirculatorySystemModels to define the blood circuit model.
 using CirculatorySystemModels
 # Finally, we try to approach a valid initial state by solving a simpler model first.
-using ModelingToolkit, OrdinaryDiffEqTsit5
+using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
 # We start by defining a MTK component to couple the circuit model with Thunderbolt.
 @component function PressureCouplingChamber(;name)
@@ -342,7 +342,7 @@ blood_circuit_solver = ForwardEulerSolver(rate=ceil(Int, dt₀/0.001)) # Force t
 timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
 u₀ = zeros(solution_size(splitform))
-u₀[OS.get_dofrange(splitform, 2)] .= u0new;
+u₀[OS.get_solution_indices(splitform, 2)] .= u0new;
 # !!! todo
 #     How to map this correctly? If I understand correctly, then there is no guarantee that the states match.
 

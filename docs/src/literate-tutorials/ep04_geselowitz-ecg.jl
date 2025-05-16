@@ -9,7 +9,7 @@
 #     Provide context.
 #
 # ## Commented Program
-using Thunderbolt, LinearAlgebra, StaticArrays
+using Thunderbolt, LinearAlgebra, StaticArrays, OrdinaryDiffEqOperatorSplitting
 
 # !!! todo
 #     The initializer API is not yet finished and hence we deconstruct stuff here manually.
@@ -102,7 +102,7 @@ heart_odeform = semidiscretize(
     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
     heart_mesh,
 )
-u₀ = zeros(Float64, OS.function_size(heart_odeform))
+u₀ = zeros(Float64, solution_size(heart_odeform))
 steady_state_initializer!(u₀, heart_odeform)
 dt₀ = 0.01
 dtvis = 0.5

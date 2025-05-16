@@ -17,10 +17,16 @@ using JLD2
 import WriteVTK
 import ReadVTK
 
-# This is a standalone module which will be a custom package in the future
-include("solver/operator_splitting.jl")
-@reexport using .OS
-solution_size(f::GenericSplitFunction) = OS.function_size(f)
+import OrdinaryDiffEqOperatorSplitting as OS
+import OrdinaryDiffEqOperatorSplitting: GenericSplitFunction
+export OS, GenericSplitFunction
+function solution_size(gsf::GenericSplitFunction)
+    alldofs = Set{Int}()
+    for solution_indices in gsf.solution_indices
+        union!(alldofs, solution_indices)
+    end
+    return length(alldofs)
+end
 
 @reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
@@ -33,7 +39,7 @@ import Preferences
 import Logging: Logging, LogLevel, @info, @logmsg
 
 import SciMLBase
-@reexport import SciMLBase: init, solve, solve!, step!
+@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve

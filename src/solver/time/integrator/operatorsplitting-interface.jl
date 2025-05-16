@@ -8,8 +8,8 @@ end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
 function OS.build_subintegrator_tree_with_cache(
-    f::DiffEqBase.AbstractDiffEqFunction, # f::AbstractSemidiscreteFunction, # <- This is a temporary hotfix :)
-    alg::AbstractSolver, p,
+    prob::OS.OperatorSplittingProblem,
+    alg::AbstractSolver, f, p,
     uprevouter::AbstractVector, uouter::AbstractVector,
     solution_indices,
     t0, dt, tf,
@@ -132,7 +132,6 @@ function OS.build_subintegrator_tree_with_cache(
         false,
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
-    DiffEqBase.initialize!(integrator, integrator.cache)
 
     if _tstops !== nothing
         tstops = _tstops(parameter_values(integrator), prob.tspan)
