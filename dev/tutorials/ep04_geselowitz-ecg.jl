@@ -1,4 +1,4 @@
-using Thunderbolt, LinearAlgebra, StaticArrays
+using Thunderbolt, LinearAlgebra, StaticArrays, OrdinaryDiffEqOperatorSplitting
 
 function steady_state_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
@@ -81,7 +81,7 @@ heart_odeform = semidiscretize(
     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
     heart_mesh,
 )
-u₀ = zeros(Float64, OS.function_size(heart_odeform))
+u₀ = zeros(Float64, solution_size(heart_odeform))
 steady_state_initializer!(u₀, heart_odeform)
 dt₀ = 0.01
 dtvis = 0.5

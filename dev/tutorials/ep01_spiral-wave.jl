@@ -1,4 +1,4 @@
-using Thunderbolt, LinearSolve
+using Thunderbolt, LinearSolve, OrdinaryDiffEqOperatorSplitting
 
 mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)));
 
@@ -56,7 +56,7 @@ spatial_discretization_method = FiniteElementDiscretization(
 )
 odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh);
 
-u₀ = zeros(Float32, OS.function_size(odeform))
+u₀ = zeros(Float32, solution_size(odeform))
 spiral_wave_initializer!(u₀, odeform);
 
 heat_timestepper = BackwardEulerSolver(
@@ -69,8 +69,9 @@ cell_timestepper = AdaptiveForwardEulerSubstepper(;
 
 timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
 
-dt₀ = 10.0
-dtvis = 25.0;
+dt₀   = 1.0
+dtvis = 25.0
+tspan = (0.0, 1000.0);
 
 tspan = (0.0, dtvis);   # hide
 

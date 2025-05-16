@@ -2,7 +2,7 @@ using Thunderbolt, LinearSolve
 
 using CirculatorySystemModels
 
-using ModelingToolkit, OrdinaryDiffEqTsit5
+using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
 @component function PressureCouplingChamber(;name)
     @named in = CirculatorySystemModels.Pin()
@@ -284,7 +284,7 @@ blood_circuit_solver = ForwardEulerSolver(rate=ceil(Int, dt₀/0.001)) # Force t
 timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
 u₀ = zeros(solution_size(splitform))
-u₀[OS.get_dofrange(splitform, 2)] .= u0new;
+u₀[OS.get_solution_indices(splitform, 2)] .= u0new;
 
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
 integrator = init(problem, timestepper, dt=dt₀, verbose=true);
