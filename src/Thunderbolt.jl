@@ -39,7 +39,7 @@ import Preferences
 import Logging: Logging, LogLevel, @info, @logmsg
 
 import SciMLBase
-@reexport import SciMLBase: init, solve, solve!, step!
+@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
