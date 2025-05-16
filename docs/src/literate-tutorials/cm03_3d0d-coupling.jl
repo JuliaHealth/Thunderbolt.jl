@@ -16,7 +16,7 @@ using Thunderbolt, LinearSolve
 # Furthermore we will use CirculatorySystemModels to define the blood circuit model.
 using CirculatorySystemModels
 # Finally, we try to approach a valid initial state by solving a simpler model first.
-using ModelingToolkit, OrdinaryDiffEqTsit5
+using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
 # We start by defining a MTK component to couple the circuit model with Thunderbolt.
 @component function PressureCouplingChamber(;name)

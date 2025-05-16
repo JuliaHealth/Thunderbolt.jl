@@ -23,8 +23,8 @@
 # For some theory on operator splitting we refer to the [theory manual on operator splitting](@ref theory_operator-splitting).
 #
 # ## Commented Program
-# We start by loading Thunderbolt and LinearSolve to use a custom direct solver of our choice.
-using Thunderbolt, LinearSolve
+# We start by loading Thunderbolt, OrdinaryDiffEqOperatorSplitting and LinearSolve to use a custom direct solver of our choice.
+using Thunderbolt, LinearSolve, OrdinaryDiffEqOperatorSplitting
 
 # We start by constructing a square domain for our simulation.
 mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)));
