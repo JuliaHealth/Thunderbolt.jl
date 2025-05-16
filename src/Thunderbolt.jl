@@ -20,7 +20,13 @@ import ReadVTK
 import OrdinaryDiffEqOperatorSplitting as OS
 import OrdinaryDiffEqOperatorSplitting: GenericSplitFunction
 export OS, GenericSplitFunction
-solution_size(f::GenericSplitFunction) = OS.function_size(f)
+function solution_size(gsf::GenericSplitFunction)
+    alldofs = Set{Int}()
+    for solution_indices in gsf.solution_indices
+        union!(alldofs, solution_indices)
+    end
+    return length(alldofs)
+end
 
 @reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype

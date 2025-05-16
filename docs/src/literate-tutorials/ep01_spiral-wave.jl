@@ -132,7 +132,7 @@ spatial_discretization_method = FiniteElementDiscretization(
 odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh);
 
 # We now allocate a solution vector and set the initial condition.
-u₀ = zeros(Float32, OS.function_size(odeform))
+u₀ = zeros(Float32, solution_size(odeform))
 spiral_wave_initializer!(u₀, odeform);
 
 
@@ -159,8 +159,9 @@ timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
 # We first define our time domain, initial time step length and some dt for visualization.
 dt₀ = 10.0
 dtvis = 25.0;
+tspan = (0.0, 1000.0);
 # This speeds up the CI # hide
-tspan = (0.0, dtvis);   # hide
+# tspan = (0.0, dtvis);   # hide
 
 # Then we setup the problem.
 # We have a split function, so the correct problem is an OperatorSplittingProblem.
