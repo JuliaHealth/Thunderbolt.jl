@@ -1,22 +1,26 @@
 module CuThunderboltExt
 
 using Thunderbolt
+using LinearSolve
+using KernelAbstractions
+using SparseMatricesCSR
+
+import SparseArrays:SparseMatrixCSC,AbstractSparseMatrix
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
     threadIdx, blockIdx, blockDim, @cuda, @cushow,
-    CUDABackend, launch_configuration, device, cu,cudaconvert
+    CUDABackend, launch_configuration, cu,cudaconvert
 
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
     SparseMatrixCSR, SparseMatrixCSC,
-    AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
+    AbstractSolver, AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
-    LinearOperator,QuadratureRuleCollection,
-    AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
-    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
-    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator
+    LinearIntegrator,LinearOperator,QuadratureRuleCollection,
+    setup_element_cache,update_operator!,FieldCoefficientCache, CudaDevice, ElementAssemblyStrategy, value_type, index_type, 
+    convert_vec_to_concrete
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,
@@ -25,6 +29,9 @@ import Thunderbolt.FerriteUtils:
     cellfe, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
     FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache,
     FeCellMem, KeCellMem, KeFeCellMem,NoCellMem,AbstractMemShape
+
+import Thunderbolt.Preconditioners:
+    sparsemat_format_type, CSCFormat, CSRFormat
 
 
 import Ferrite:
@@ -80,9 +87,17 @@ function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: V
     return CuVector(v)
 end
 
+function Thunderbolt.default_backend(device::Thunderbolt.CudaDevice)
+    # nblocks = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT) # no. SMs
+    # # CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR
+    # nthreads = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR) # no. threads per SM
+    return CUDABackend()
+end
+
 include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
 include("cuda/cuda_iterator.jl")
+include("cuda/cuda_preconditioner.jl") #NOTE: min version for CUDA is v"5.7.3"
 
 end

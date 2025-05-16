@@ -1,5 +1,7 @@
 module Thunderbolt
 
+import KernelAbstractions as KA
+
 using TimerOutputs
 
 import Unrolled: @unroll
@@ -36,24 +38,27 @@ import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
 
-import Base: *, +, -
+import Base: *, +, -, @kwdef
 
 import ForwardDiff
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
-        compose, ODESystem, Differential
+    compose, ODESystem, Differential
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
 
-
 include("utils.jl")
+
+include("devices.jl")
+include("strategy.jl")
 
 include("mesh/meshes.jl")
 
+include("ferrite-addons/parallel_duplication_api.jl")
 include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 
@@ -83,6 +88,8 @@ include("solver/interface.jl")
 include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
+include("solver/linear/preconditioners/Preconditioners.jl")
+@reexport using .Preconditioners 
 
 
 include("modeling/electrophysiology/ecg.jl")
@@ -98,6 +105,9 @@ include("discretization/rsafdq-operator.jl")
 
 # TODO put exports into the individual submodules above!
 export
+    # Devices
+    SequentialCPUDevice,
+    PolyesterDevice,
     # Coefficients
     ConstantCoefficient,
     FieldCoefficient,

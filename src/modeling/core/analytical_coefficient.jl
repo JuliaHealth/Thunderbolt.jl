@@ -21,7 +21,7 @@ function setup_coefficient_cache(coeff::AnalyticalCoefficient, qr::QuadratureRul
     )
 end
 
-duplicate_for_parallel(cache::AnalyticalCoefficientCache) = AnalyticalCoefficientCache(cache.f, duplicate_for_parallel(cache.coordinate_system_cache))
+duplicate_for_device(device, cache::AnalyticalCoefficientCache) = AnalyticalCoefficientCache(cache.f, duplicate_for_device(device, cache.coordinate_system_cache))
 
 @inline function evaluate_coefficient(coeff::F, cell_cache::FerriteUtils.AnyCellCache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficientCache, T}
     x = evaluate_coefficient(coeff.coordinate_system_cache, cell_cache, qp, t)
@@ -39,7 +39,7 @@ struct AnalyticalCoefficientElementCache{CoefficientCacheType <: AnalyticalCoeff
     nonzero_intervals::VectorType
     cv::FEValueType
 end
-duplicate_for_parallel(ec::AnalyticalCoefficientElementCache) = AnalyticalCoefficientElementCache(duplicate_for_parallel(ec.cc), ec.nonzero_intervals, ec.cv)
+duplicate_for_device(device, ec::AnalyticalCoefficientElementCache) = AnalyticalCoefficientElementCache(duplicate_for_device(device, ec.cc), ec.nonzero_intervals, ec.cv)
 
 @inline function assemble_element!(bₑ::AbstractVector, geometry_cache::FerriteUtils.AnyCellCache, element_cache::AnalyticalCoefficientElementCache, time)
     _assemble_element!(bₑ, geometry_cache, getcoordinates(geometry_cache), element_cache::AnalyticalCoefficientElementCache, time)

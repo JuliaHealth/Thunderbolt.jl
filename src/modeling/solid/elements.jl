@@ -167,3 +167,13 @@ end
 function setup_internal_cache(model::MultiMaterialModel, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_internal_cache_multi(model.materials, model.domains, qr, sdh)
 end
+
+duplicate_for_device(device, model::AbstractMaterialModel) = model
+function duplicate_for_device(device, cache::QuasiStaticElementCache)
+    return QuasiStaticElementCache(
+        duplicate_for_device(device, cache.constitutive_model),
+        duplicate_for_device(device, cache.coefficient_cache),
+        duplicate_for_device(device, cache.internal_cache),
+        duplicate_for_device(device, cache.cv),
+    )
+end
