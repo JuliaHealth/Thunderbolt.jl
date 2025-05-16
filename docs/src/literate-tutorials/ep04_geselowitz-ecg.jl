@@ -9,7 +9,7 @@
 #     Provide context.
 #
 # ## Commented Program
-using Thunderbolt, LinearAlgebra, StaticArrays
+using Thunderbolt, LinearAlgebra, StaticArrays, OrdinaryDiffEqOperatorSplitting
 
 # !!! todo
 #     The initializer API is not yet finished and hence we deconstruct stuff here manually.
