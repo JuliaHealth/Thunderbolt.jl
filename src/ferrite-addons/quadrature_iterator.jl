@@ -21,7 +21,7 @@ struct QuadratureIterator{QR<:QuadratureRule}
 end
 QuadratureIterator(fqr::FacetQuadratureRule, local_face_idx::Int) = QuadratureIterator(fqr.face_rules[local_face_idx])
 QuadratureIterator(cv::CellValues) = QuadratureIterator(cv.qr)
-QuadratureIterator(fv::FacetValues) = QuadratureIterator(fv.fqr.face_rules[fv.current_facet[]])
+QuadratureIterator(fv::FacetValues) = QuadratureIterator(fv.fqr.facet_rules[fv.current_facet[]])
 
 function Base.iterate(iterator::QuadratureIterator, i = 1)
     i > getnquadpoints(iterator.qr) && return nothing
