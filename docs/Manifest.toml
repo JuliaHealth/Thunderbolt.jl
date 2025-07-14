@@ -2,7 +2,7 @@
 
 julia_version = "1.11.5"
 manifest_format = "2.0"
-project_hash = "0294a696126d0600cad7bf724802668f7198209b"
+project_hash = "774e5eff7961c94cb1c6bdc2500b602863ac782a"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "be7ae030256b8ef14a441726c4c37766b90b93a3"
@@ -1809,9 +1809,9 @@ version = "1.6.0"
 
 [[deps.ReadVTK]]
 deps = ["Base64", "CodecZlib", "Downloads", "LightXML", "Reexport", "VTKBase"]
-path = "../../ReadVTK"
+git-tree-sha1 = "9a4b57a775f730b9844c541ee814714b11b77bc5"
 uuid = "dc215faf-f008-4882-a9f7-a79a826fadc3"
-version = "0.2.5-DEV"
+version = "0.2.4"
 
 [[deps.RecipesBase]]
 deps = ["PrecompileTools"]
