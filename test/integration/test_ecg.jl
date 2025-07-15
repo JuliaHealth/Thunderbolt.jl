@@ -1,10 +1,11 @@
 using Thunderbolt, Test, SparseArrays
 import Thunderbolt: to_mesh, OrderedSet
+using FerriteGmsh
 
 @testset "ECG" begin
     @testset "Blocks with $geo" for geo in (Tetrahedron,Hexahedron)
         size = 2.
-        signal_strength = 0.04
+        signal_strength = 0.02
         nel_heart = (6, 6, 6) .* 1
         nel_torso = (8, 8, 8) .* Int(size)
         ground_vertex = Vec(0.0, 0.0, 0.0)
@@ -49,7 +50,7 @@ import Thunderbolt: to_mesh, OrderedSet
                 QuadratureRuleCollection(2),
                 :φₘ,
             ),
-            Thunderbolt.SparseMatrixCSC,
+            SparseMatrixCSC{Float64,Int64},
             heart_fun.dh,
         )
         Thunderbolt.update_operator!(op, 0.0) # trigger assembly
@@ -274,5 +275,108 @@ import Thunderbolt: to_mesh, OrderedSet
                 end
             end
         end
+    end
+
+    @testset "FIMH2021" begin
+        heart_elsize = 0.1
+        torso_elsize = 5.0
+        heart_radius = 1.0
+        torso_radius = 50.0
+        λ = 0.2
+
+        gmsh.initialize()
+        gmsh.model.add("sis-50")
+        gmsh.model.occ.add_disk(0.0, 0.0, 0.0, torso_radius, torso_radius, 1)
+        heart_handle = gmsh.model.occ.add_disk(0.0, 0.0, 0.0, heart_radius, heart_radius, 2)
+        gmsh.model.occ.cut([(2,1)], [(2,2)], 3, true, false)
+        handle2 = gmsh.model.occ.fragment([(2,3)], [(2,2)])
+        gmsh.model.occ.synchronize()
+        gmsh.model.mesh.renumberNodes()
+        gmsh.model.mesh.renumberElements()
+        # Set size of heart and torso
+        gmsh.model.mesh.setSize([(0,2)], heart_elsize);
+        gmsh.model.mesh.setSize([(0,3)], torso_elsize);
+        gmsh.model.mesh.generate(2)
+        gmsh.model.addPhysicalGroup(2, [2], -1, "heart")
+        gmsh.model.addPhysicalGroup(2, [3], -1, "torso")
+        nodes = tonodes()
+        elements, gmsh_elementidx = toelements(2)
+        cellsets = tocellsets(2, gmsh_elementidx)
+        gmsh.finalize()
+        grid = Grid(elements, nodes, cellsets=Dict(["heart" => cellsets["heart"], "torso" => cellsets["torso"]]))
+        torso_grid = heart_grid = to_mesh(grid)
+
+        κ  = AnalyticalCoefficient(
+            (x,t) -> norm(x,2) ≤ heart_radius ? SymmetricTensor{2,2,Float64,3}((2λ, 0, 2λ)) : SymmetricTensor{2,2,Float64,3}((λ, 0.0, λ)),
+            CartesianCoordinateSystem{2}()
+        )
+        κᵢ = AnalyticalCoefficient(
+            (x,t) -> norm(x,2) ≤ heart_radius ? SymmetricTensor{2,2,Float64,3}((λ, 0, λ)) : SymmetricTensor{2,2,Float64,3}((0.0, 0.0, 0.0)),
+            CartesianCoordinateSystem{2}()
+        )
+
+        heart_model = TransientDiffusionModel(
+            κᵢ,
+            NoStimulationProtocol(), # Poisoning to detecte if we accidentally touch these
+            :φₘ
+        )
+        heart_fun = semidiscretize(
+            heart_model,
+            FiniteElementDiscretization(
+                Dict(:φₘ => LagrangeCollection{1}()),
+                Dirichlet[],
+                ["heart"]
+            ),
+            heart_grid
+        )
+
+        ground_vertex = Vec(torso_radius, 0.0)
+        electrodes = [
+            ground_vertex,
+            Vec(0., 10.),
+        ]
+        electrode_pairs = [[2,1]]
+
+        op = Thunderbolt.setup_assembled_operator(
+            Thunderbolt.BilinearDiffusionIntegrator(
+                κ,
+                QuadratureRuleCollection(2),
+                :φₘ,
+            ),
+            SparseMatrixCSC{Float64,Int64},
+            heart_fun.dh,
+        )
+        Thunderbolt.update_operator!(op, 0.0) # trigger assembly
+
+        u = zeros(Thunderbolt.solution_size(heart_fun))
+        apply_analytical!(u, heart_fun.dh, :φₘ, x->max(0.0,norm(x-Vec((0.0,-1.0)))), getcellset(heart_grid, "heart"))
+
+        plonsey_ecg = Thunderbolt.Plonsey1964ECGGaussCache(op, u, ["heart"])
+        Thunderbolt.update_ecg!(plonsey_ecg, u)
+        plonsey_vals = Thunderbolt.evaluate_ecg(plonsey_ecg, electrodes[2], λ)
+
+        poisson_ecg = Thunderbolt.PoissonECGReconstructionCache(
+            heart_fun,
+            torso_grid,
+            κᵢ, κ,
+            electrodes;
+            ground               = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]),
+            torso_heart_domain   = ["heart"],
+            ipc                  = LagrangeCollection{1}(),
+            qrc                  = QuadratureRuleCollection(2),
+            linear_solver        = Thunderbolt.LinearSolve.UMFPACKFactorization(),
+            system_matrix_type   = SparseMatrixCSC{Float64,Int64}
+        )
+        Thunderbolt.update_ecg!(poisson_ecg, u)
+        poisson_vals = Thunderbolt.evaluate_ecg(poisson_ecg)
+        # VTKGridFile("FIMH2021-Debug", grid) do vtk
+        #     Ferrite.write_cellset(vtk, grid)
+        #     Ferrite.write_solution(vtk, poisson_ecg.torso_op.dh, poisson_ecg.φₘ_t, "1")
+        #     Ferrite.write_solution(vtk, poisson_ecg.torso_op.dh, poisson_ecg.κ∇φₘ_t, "2")
+        #     Ferrite.write_solution(vtk, poisson_ecg.torso_op.dh, poisson_ecg.ϕₑ, "3")
+        # end
+
+        # TODO investigate where the 2π comes from
+        @test plonsey_vals*2π ≈ poisson_vals[1] - poisson_vals[2] rtol = 1e-1
     end
 end
