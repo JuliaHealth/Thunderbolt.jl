@@ -50,11 +50,10 @@ end
 
 # This is the easiest solution for now
 # TODO optimize.
-struct InternalVariableHandler{DH<: AbstractDofHandler} <: AbstractDofHandler
+struct InternalVariableHandler{DH} <: AbstractDofHandler
     dh::DH
 end
 InternalVariableHandler(mesh::SimpleMesh) = InternalVariableHandler(DofHandler(mesh))
-InternalVariableHandler(mesh::Grid) = InternalVariableHandler(DofHandler(to_mesh(mesh)))
 Ferrite.close!(lvh::InternalVariableHandler) = close!(lvh.dh)
 Ferrite.ndofs(lvh::InternalVariableHandler) = ndofs(lvh.dh)
 
