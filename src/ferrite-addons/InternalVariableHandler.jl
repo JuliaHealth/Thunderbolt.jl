@@ -50,10 +50,11 @@ end
 
 # This is the easiest solution for now
 # TODO optimize.
-struct InternalVariableHandler{DH} <: AbstractDofHandler
+struct InternalVariableHandler{DH<: AbstractDofHandler} <: AbstractDofHandler
     dh::DH
 end
 InternalVariableHandler(mesh::SimpleMesh) = InternalVariableHandler(DofHandler(mesh))
+InternalVariableHandler(mesh::Grid) = InternalVariableHandler(DofHandler(to_mesh(mesh)))
 Ferrite.close!(lvh::InternalVariableHandler) = close!(lvh.dh)
 Ferrite.ndofs(lvh::InternalVariableHandler) = ndofs(lvh.dh)
 
@@ -67,6 +68,7 @@ Ferrite.n_components(ip::QuadratureInterpolation)   = 1
 Ferrite.n_dbc_components(::QuadratureInterpolation) = 0
 Ferrite.adjust_dofs_during_distribution(::QuadratureInterpolation) = false
 Ferrite.volumedof_interior_indices(ip::QuadratureInterpolation) = ntuple(i->i, getnbasefunctions(ip))
+# conformity is only used for VTK export and updating the constraint handler. This is not needed since the internal variables are not constrained.
 Ferrite.conformity(::QuadratureInterpolation) = Ferrite.L2Conformity()
 
 function Ferrite.reference_coordinates(ip::QuadratureInterpolation)
