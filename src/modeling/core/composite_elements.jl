@@ -35,7 +35,7 @@ assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellC
     end
 end
 
-# If we compose a face cache into an element cache, then we loop over the faces of the elements and try to assemble
+# If we compose a facet cache into an element cache, then we loop over the faces of the elements and try to assemble
 function assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
     for local_facet_index ∈ 1:nfacets(cell)
         if is_facet_in_cache(FacetIndex(cellid(cell), local_facet_index), cell, facet_cache)
@@ -95,7 +95,7 @@ assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCach
     end
 end
 
-# If we compose a face cache into an element cache, then we loop over the faces of the elements and try to assemble
+# If we compose a facet cache into an element cache, then we loop over the faces of the elements and try to assemble
 # Update element matrix in nonlinear operators
 assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_element!(Kₑ, uₑ, cell, surface_cache.inner_caches, time)
 # Update element matrix and residual in nonlinear operators

@@ -545,7 +545,7 @@ function assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ:
 
     # Finally we check for consistency
     if maximum(abs.(Kₑfd .- Kₑ)) > Δ
-        @warn "Inconsistent element $(cellid(cell)) face $(local_face_index)! Jacobian difference: $(maximum(abs.(Kₑfd .- Kₑ)))"
+        @warn "Inconsistent element $(cellid(cell)) facet $(local_face_index)! Jacobian difference: $(maximum(abs.(Kₑfd .- Kₑ)))"
         @info uₑ
     end
 end

@@ -131,7 +131,7 @@ export
     CellValueCollection,
     getcellvalues,
     FacetValueCollection,
-    getfacevalues,
+    getfacetvalues,
     # Mesh generators
     generate_mesh,
     generate_open_ring_mesh,
