@@ -142,7 +142,7 @@ A model for a function with its fully assembled linearization.
 
 Comes with one entry point for each cache type to handle the most common cases:
     assemble_element! -> update jacobian/residual contribution with internal state variables
-    assemble_face! -> update jacobian/residual contribution for boundary
+    assemble_facet! -> update jacobian/residual contribution for boundary
 
 !!! todo
     assemble_interface! -> update jacobian/residual contribution for interface contributions (e.g. DG or FSI)
@@ -196,16 +196,16 @@ function _update_linearization_J!(op::AssembledNonlinearOperator, strategy_cache
     for sdh in dh.subdofhandlers
         # Build evaluation caches
         element_cache  = setup_element_cache(integrator, sdh)
-        face_cache     = setup_boundary_cache(integrator, sdh)
+        facet_cache     = setup_boundary_cache(integrator, sdh)
 
         # Function barrier
-        _sequential_update_linearization_on_subdomain_J!(assembler, sdh, element_cache, face_cache, EmptyTyingCache(), u, time) # TODO remove tying cache
+        _sequential_update_linearization_on_subdomain_J!(assembler, sdh, element_cache, facet_cache, EmptyTyingCache(), u, time) # TODO remove tying cache
     end
 
     #finish_assemble(assembler)
 end
 # This function is defined to make things sufficiently type-stable
-function _sequential_update_linearization_on_subdomain_J!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
+function _sequential_update_linearization_on_subdomain_J!(assembler, sdh, element_cache, facet_cache, tying_cache, u, time)
     # Prepare standard values
     ndofs = ndofs_per_cell(sdh)
     Jₑ = zeros(ndofs, ndofs)
@@ -220,7 +220,7 @@ function _sequential_update_linearization_on_subdomain_J!(assembler, sdh, elemen
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         # TODO benchmark against putting this into the FacetIterator
-        @timeit_debug "assemble faces" assemble_element!(Jₑ, uₑ, cell, face_cache, time)
+        @timeit_debug "assemble facets" assemble_element!(Jₑ, uₑ, cell, facet_cache, time)
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, celldofs(cell), Jₑ)
     end
@@ -235,16 +235,16 @@ function _update_linearization_Jr!(op::AssembledNonlinearOperator, strategy_cach
     for sdh in dh.subdofhandlers
         # Build evaluation caches
         element_cache  = setup_element_cache(integrator, sdh)
-        face_cache     = setup_boundary_cache(integrator, sdh)
+        facet_cache     = setup_boundary_cache(integrator, sdh)
 
         # Function barrier
-        _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, EmptyTyingCache(), u, time) # TODO remove tying cache
+        _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, facet_cache, EmptyTyingCache(), u, time) # TODO remove tying cache
     end
 
     #finish_assemble(assembler)
 end
 # This function is defined to make things sufficiently type-stable
-function _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
+function _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, facet_cache, tying_cache, u, time)
     # Prepare standard values
     ndofs = ndofs_per_cell(sdh)
     Jₑ = zeros(ndofs, ndofs)
@@ -260,7 +260,7 @@ function _sequential_update_linearization_on_subdomain_Jr!(assembler, sdh, eleme
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         # TODO benchmark against putting this into the FacetIterator
-        @timeit_debug "assemble faces" assemble_element!(Jₑ, rₑ, uₑ, cell, face_cache, time)
+        @timeit_debug "assemble facets" assemble_element!(Jₑ, rₑ, uₑ, cell, facet_cache, time)
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, dofs, Jₑ, rₑ)
     end
@@ -277,17 +277,17 @@ function _update_linearization_J!(op::AssembledNonlinearOperator, strategy_cache
     for (sdhidx, sdh) in enumerate(dh.subdofhandlers)
         # Build evaluation caches
         element_cache  = setup_element_cache(integrator, sdh)
-        face_cache     = setup_boundary_cache(integrator, sdh)
+        facet_cache     = setup_boundary_cache(integrator, sdh)
 
         # Function barrier
-        _update_colored_linearization_on_subdomain_J!(assembler, strategy_cache.color_cache[sdhidx], sdh, element_cache, face_cache, EmptyTyingCache(), u, time, strategy_cache.device_cache)
+        _update_colored_linearization_on_subdomain_J!(assembler, strategy_cache.color_cache[sdhidx], sdh, element_cache, facet_cache, EmptyTyingCache(), u, time, strategy_cache.device_cache)
     end
 
     #finish_assemble(assembler)
 end
 
 # This function is defined to make things sufficiently type-stable
-function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, element_cache, face_cache, tying_cache, u, time, ::SequentialCPUDevice)
+function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, element_cache, facet_cache, tying_cache, u, time, ::SequentialCPUDevice)
     # Prepare standard values
     ndofs = ndofs_per_cell(sdh)
     Jₑ = zeros(ndofs, ndofs)
@@ -303,13 +303,13 @@ function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, e
             @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
             # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
             # TODO benchmark against putting this into the FacetIterator
-            @timeit_debug "assemble faces" assemble_element!(Jₑ, uₑ, cell, face_cache, time)
+            @timeit_debug "assemble facets" assemble_element!(Jₑ, uₑ, cell, facet_cache, time)
             @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
             assemble!(assembler, celldofs(cell), Jₑ)
         end
     end
 end
-function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, element_cache, face_cache, tying_cache, u, time, device::PolyesterDevice)
+function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, element_cache, facet_cache, tying_cache, u, time, device::PolyesterDevice)
     (; chunksize) = device
     ncellsmax = maximum(length.(colors))
     nchunksmax = ceil(Int, ncellsmax / chunksize)
@@ -318,7 +318,7 @@ function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, e
     ndofs = ndofs_per_cell(sdh)
     Jes  = [zeros(ndofs,ndofs) for tid in 1:nchunksmax]
     ues  = [zeros(ndofs) for tid in 1:nchunksmax]
-    tlds = [ChunkLocalAssemblyData(CellCache(sdh), (duplicate_for_device(device, element_cache), duplicate_for_device(device, face_cache), duplicate_for_device(device, tying_cache))) for tid in 1:nchunksmax]
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), (duplicate_for_device(device, element_cache), duplicate_for_device(device, facet_cache), duplicate_for_device(device, tying_cache))) for tid in 1:nchunksmax]
     assemblers = [duplicate_for_device(device, assembler) for tid in 1:nchunksmax]
 
     uₜ   = get_tying_dofs(tying_cache, u)
@@ -349,7 +349,7 @@ function _update_colored_linearization_on_subdomain_J!(assembler, colors, sdh, e
                 @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, tld.ec[1], time)
                 # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
                 # TODO benchmark against putting this into the FacetIterator
-                @timeit_debug "assemble faces" assemble_element!(Jₑ, uₑ, cell, tld.ec[2], time)
+                @timeit_debug "assemble facets" assemble_element!(Jₑ, uₑ, cell, tld.ec[2], time)
                 @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tld.ec[3], time)
                 assemble!(assembler, celldofs(cell), Jₑ)
             end
@@ -366,17 +366,17 @@ function _update_linearization_Jr!(op::AssembledNonlinearOperator, strategy_cach
     for (sdhidx,sdh) in enumerate(dh.subdofhandlers)
         # Build evaluation caches
         element_cache  = setup_element_cache(integrator, sdh)
-        face_cache     = setup_boundary_cache(integrator, sdh)
+        facet_cache     = setup_boundary_cache(integrator, sdh)
 
         # Function barrier
-        _update_colored_linearization_on_subdomain_Jr!(assembler, strategy_cache.color_cache[sdhidx], sdh, element_cache, face_cache, EmptyTyingCache(), u, time, strategy_cache.device_cache)
+        _update_colored_linearization_on_subdomain_Jr!(assembler, strategy_cache.color_cache[sdhidx], sdh, element_cache, facet_cache, EmptyTyingCache(), u, time, strategy_cache.device_cache)
     end
 
     #finish_assemble(assembler)
 end
 
 # This function is defined to make things sufficiently type-stable
-function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, element_cache, face_cache, tying_cache, u, time, ::SequentialCPUDevice)
+function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, element_cache, facet_cache, tying_cache, u, time, ::SequentialCPUDevice)
     # Prepare standard values
     ndofs = ndofs_per_cell(sdh)
     Jₑ = zeros(ndofs, ndofs)
@@ -394,13 +394,13 @@ function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, 
             @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
             # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
             # TODO benchmark against putting this into the FacetIterator
-            @timeit_debug "assemble faces" assemble_element!(Jₑ, rₑ, uₑ, cell, face_cache, time)
+            @timeit_debug "assemble facets" assemble_element!(Jₑ, rₑ, uₑ, cell, facet_cache, time)
             @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
             assemble!(assembler, celldofs(cell), Jₑ, rₑ)
         end
     end
 end
-function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, element_cache, face_cache, tying_cache, u, time, device::PolyesterDevice)
+function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, element_cache, facet_cache, tying_cache, u, time, device::PolyesterDevice)
     (; chunksize) = device
     ncellsmax = maximum(length.(colors))
     nchunksmax = ceil(Int, ncellsmax / chunksize)
@@ -410,7 +410,7 @@ function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, 
     Jes  = [zeros(ndofs,ndofs) for tid in 1:nchunksmax]
     res  = [zeros(ndofs) for tid in 1:nchunksmax]
     ues  = [zeros(ndofs) for tid in 1:nchunksmax]
-    tlds = [ChunkLocalAssemblyData(CellCache(sdh), (duplicate_for_device(device, element_cache), duplicate_for_device(device, face_cache), duplicate_for_device(device, tying_cache))) for tid in 1:nchunksmax]
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), (duplicate_for_device(device, element_cache), duplicate_for_device(device, facet_cache), duplicate_for_device(device, tying_cache))) for tid in 1:nchunksmax]
     assemblers = [duplicate_for_device(device, assembler) for tid in 1:nchunksmax]
 
     uₜ   = get_tying_dofs(tying_cache, u)
@@ -443,7 +443,7 @@ function _update_colored_linearization_on_subdomain_Jr!(assembler, colors, sdh, 
                 @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, tld.ec[1], time)
                 # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
                 # TODO benchmark against putting this into the FacetIterator
-                @timeit_debug "assemble faces" assemble_element!(Jₑ, rₑ, uₑ, cell, tld.ec[2], time)
+                @timeit_debug "assemble facets" assemble_element!(Jₑ, rₑ, uₑ, cell, tld.ec[2], time)
                 @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tld.ec[3], time)
                 assemble!(assembler, celldofs(cell), Jₑ, rₑ)
             end

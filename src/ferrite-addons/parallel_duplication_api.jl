@@ -54,7 +54,7 @@ function duplicate_for_device(device, qr::QR) where {refshape, QR <: QuadratureR
 end
 
 function duplicate_for_device(device, qr::QR) where {refshape, QR <: FacetQuadratureRule{refshape}}
-    return FacetQuadratureRule{refshape}(duplicate_for_device(device, qr.face_rules))::QR
+    return FacetQuadratureRule{refshape}(duplicate_for_device(device, qr.facet_rules))::QR
 end
 
 duplicate_for_device(device, ip::Ferrite.Interpolation) = ip

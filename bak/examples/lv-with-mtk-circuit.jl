@@ -281,8 +281,8 @@ tspan = (0.0, 1000.0)
 
 io = ParaViewWriter(name_base);
 
-face_models = ()
-solid = StructuralModel(:displacement, constitutive_model, face_models)
+facet_models = ()
+solid = StructuralModel(:displacement, constitutive_model, facet_models)
 fluid = MTKLumpedCicuitModel(circ_sys, u0new, [p3D])
 coupler = LumpedFluidSolidCoupler(
     [

@@ -35,7 +35,7 @@
             @test all(typeof.(getcells(grid_hex)) .== Hexahedron) # Test if we really hit all elements
             test_detJ(grid_hex) # And for messed up elements
 
-            # Check for correct transfer of facesets
+            # Check for correct transfer of facetsets
             addfacetset!(grid_hex, "right_new", x -> x[1] ≈ 1.0)
             @test getfacetset(grid_hex, "right") == getfacetset(grid_hex, "right_new")
             addfacetset!(grid_hex, "left_new", x -> x[1] ≈ -1.0)

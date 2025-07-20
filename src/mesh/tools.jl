@@ -84,44 +84,44 @@ function refine_element_uniform(mgrid::SimpleMesh, cell::Hexahedron, cell_idx::I
 end
 
 
-function hexahedralize_local_face_transfer(cell::Hexahedron, offset::Int, facetid::Int)
+function hexahedralize_local_face_transfer(cell::Hexahedron, offset::Int, faceid::Int)
     # TODO extract the topology table for this one, because we also need it for AMR
-    if facetid == 1
+    if faceid == 1
         return OrderedSet([
             FacetIndex(offset+1,1),
             FacetIndex(offset+2,1),
             FacetIndex(offset+3,1),
             FacetIndex(offset+4,1),
         ])
-    elseif facetid == 2
+    elseif faceid == 2
         return OrderedSet([
             FacetIndex(offset+1,2),
             FacetIndex(offset+2,2),
             FacetIndex(offset+5,2),
             FacetIndex(offset+6,2),
         ])
-    elseif facetid == 3
+    elseif faceid == 3
         return OrderedSet([
             FacetIndex(offset+2,3),
             FacetIndex(offset+4,3),
             FacetIndex(offset+6,3),
             FacetIndex(offset+8,3),
         ])
-    elseif facetid == 4
+    elseif faceid == 4
         return OrderedSet([
             FacetIndex(offset+3,4),
             FacetIndex(offset+4,4),
             FacetIndex(offset+7,4),
             FacetIndex(offset+8,4),
         ])
-    elseif facetid == 5
+    elseif faceid == 5
         return OrderedSet([
             FacetIndex(offset+1,5),
             FacetIndex(offset+3,5),
             FacetIndex(offset+5,5),
             FacetIndex(offset+7,5),
         ])
-    elseif facetid == 6
+    elseif faceid == 6
         return OrderedSet([
             FacetIndex(offset+5,6),
             FacetIndex(offset+6,6),
@@ -129,7 +129,7 @@ function hexahedralize_local_face_transfer(cell::Hexahedron, offset::Int, faceti
             FacetIndex(offset+8,6),
         ])
     else
-        error("Invalid facet $facetid for Hexahedron")
+        error("Invalid face $faceid for Hexahedron")
     end
 end
 
@@ -176,74 +176,74 @@ function hexahedralize_cell(mgrid::SimpleMesh, cell::Wedge, cell_idx::Int, globa
     ]
 end
 
-function hexahedralize_local_face_transfer(cell::Wedge, offset::Int, facetid::Int)
+function hexahedralize_local_face_transfer(cell::Wedge, offset::Int, faceid::Int)
     # TODO extract the topology table for this one, because we also need it for AMR
-    if facetid == 1
+    if faceid == 1
         return OrderedSet([
             FacetIndex(offset+1,1),
             FacetIndex(offset+2,1),
             FacetIndex(offset+3,1),
         ])
-    elseif facetid == 2
+    elseif faceid == 2
         return OrderedSet([
             FacetIndex(offset+1,2),
             FacetIndex(offset+2,2),
             FacetIndex(offset+4,2),
             FacetIndex(offset+5,2),
         ])
-    elseif facetid == 3
+    elseif faceid == 3
         return OrderedSet([
             FacetIndex(offset+1,5),
             FacetIndex(offset+3,4),
             FacetIndex(offset+4,5),
             FacetIndex(offset+6,4),
         ])
-    elseif facetid == 4
+    elseif faceid == 4
         return OrderedSet([
             FacetIndex(offset+2,3),
             FacetIndex(offset+3,3),
             FacetIndex(offset+5,3),
             FacetIndex(offset+6,3),
         ])
-    elseif facetid == 5
+    elseif faceid == 5
         return OrderedSet([
             FacetIndex(offset+4,6),
             FacetIndex(offset+5,6),
             FacetIndex(offset+6,6),
         ])
     else
-        error("Invalid facet $facetid for Wedge")
+        error("Invalid face $faceid for Wedge")
     end
 end
 
 
-function hexahedralize_local_face_transfer(cell::Tetrahedron, offset::Int, facetid::Int)
-    if facetid == 1
+function hexahedralize_local_face_transfer(cell::Tetrahedron, offset::Int, faceid::Int)
+    if faceid == 1
         return OrderedSet([
             FacetIndex(offset+1,1),
             FacetIndex(offset+2,1),
             FacetIndex(offset+3,1),
         ])
-    elseif facetid == 2
+    elseif faceid == 2
         return OrderedSet([
             FacetIndex(offset+1,2),
             FacetIndex(offset+2,2),
             FacetIndex(offset+4,6),
         ])
-    elseif facetid == 3
+    elseif faceid == 3
         return OrderedSet([
             FacetIndex(offset+2,3),
             FacetIndex(offset+3,3),
             FacetIndex(offset+4,3),
         ])
-    elseif facetid == 4
+    elseif faceid == 4
         return OrderedSet([
             FacetIndex(offset+1,5),
             FacetIndex(offset+3,4),
             FacetIndex(offset+4,4),
         ])
     else
-        error("Invalid facet $facetid for Tetrahedron")
+        error("Invalid face $faceid for Tetrahedron")
     end
 end
 
@@ -290,7 +290,7 @@ function _uniform_refinement(mgrid::SimpleMesh{3,C,T}) where {C,T}
     cells = getcells(grid)
 
     nfacenods = length(mgrid.mfaces)
-    new_face_nodes = Array{Node{3,T}}(undef, nfacenods) # We have to add 1 center node per facet
+    new_face_nodes = Array{Node{3,T}}(undef, nfacenods) # We have to add 1 center node per face
     nedgenodes = length(mgrid.medges)
     new_edge_nodes = Array{Node{3,T}}(undef, nedgenodes) # We have to add 1 center node per edge
     ncellnodes = length(cells)
@@ -332,7 +332,7 @@ function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
     cells = getcells(grid)
 
     nfacenods = length(mgrid.mfaces)
-    new_face_nodes = Array{Node{3,T}}(undef, nfacenods) # We have to add 1 center node per facet
+    new_face_nodes = Array{Node{3,T}}(undef, nfacenods) # We have to add 1 center node per face
     nedgenodes = length(mgrid.medges)
     new_edge_nodes = Array{Node{3,T}}(undef, nedgenodes) # We have to add 1 center node per edge
     ncellnodes = length(cells)
@@ -349,7 +349,7 @@ function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
         for (edgeidx,gei) ∈ enumerate(global_edge_indices)
             new_edge_nodes[gei] = create_edge_center_node(grid, cell, edgeidx)
         end
-        # facet center nodes
+        # Face center nodes
         global_face_indices = global_faces(mgrid, cell)
         for (faceidx,gfi) ∈ enumerate(global_face_indices)
             new_face_nodes[gfi] = create_face_center_node(grid, cell, faceidx)
@@ -721,7 +721,7 @@ end
 
 function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
     actual_subdomains = subdomains === nothing ? Dict("" => 1:getncells(mesh)) : subdomains
-    # Cache for the cellid, local facetid pairs.
+    # Cache for the cellid, local faceid pairs.
     # These are 0 if not assigned and -1 if assigned more than once.
     face_elements = zeros(Int, num_faces(mesh))
     face_localfid  = zeros(Int, num_faces(mesh))

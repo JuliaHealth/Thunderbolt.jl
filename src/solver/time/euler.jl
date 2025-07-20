@@ -203,7 +203,7 @@ function _setup_local_solver_cache(local_solver::GenericLocalNonlinearSolver, ma
 end
 @inline function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::QuasiStaticFunction, solver::MultiLevelNewtonRaphsonSolver)
     @unpack integrator, dh = f
-    @unpack volume_model, face_model = integrator
+    @unpack volume_model, facet_model = integrator
     @unpack local_solver, newton = solver
 
     # TODO add an abstraction layer to autoamte the steps below
@@ -220,8 +220,8 @@ end
         local_solver_cache,
         f.lvh,
     )
-    face_wrapper = BackwardEulerStageFunctionWrapper(
-        face_model,
+    facet_wrapper = BackwardEulerStageFunctionWrapper(
+        facet_model,
         Q, Qprev,
         0.0,
         nothing, # inner model is volume only per construction
@@ -231,7 +231,7 @@ end
     # TODO call setup_operator here
     op = AssembledNonlinearOperator(
         allocate_matrix(dh),
-        NonlinearIntegrator(volume_wrapper, face_wrapper, integrator.syms, integrator.qrc, integrator.fqrc),
+        NonlinearIntegrator(volume_wrapper, facet_wrapper, integrator.syms, integrator.qrc, integrator.fqrc),
         dh,
         SequentialAssemblyStrategyCache(nothing),
     )
@@ -338,7 +338,7 @@ end
 update_stage!(stage::BackwardEulerStageCache, kΔt) = update_stage!(stage, stage.nlsolver.global_solver_cache.op, kΔt)
 function update_stage!(stage::BackwardEulerStageCache, op::AssembledNonlinearOperator, kΔt)
     op.integrator.volume_model.Δt = kΔt
-    op.integrator.face_model.Δt   = kΔt
+    op.integrator.facet_model.Δt   = kΔt
 end
 
 function perform_backward_euler_step!(f::QuasiStaticFunction, cache::BackwardEulerSolverCache, stage_info::BackwardEulerStageCache, t, Δt)

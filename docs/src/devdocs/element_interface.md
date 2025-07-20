@@ -11,7 +11,7 @@ Thunderbolt.AbstractVolumetricElementCache
 Thunderbolt.AbstractSurfaceElementCache
 Thunderbolt.AbstractInterfaceElementCache
 Thunderbolt.assemble_element!
-Thunderbolt.assemble_face!
+Thunderbolt.assemble_facet!
 Thunderbolt.assemble_interface!
 ```
 

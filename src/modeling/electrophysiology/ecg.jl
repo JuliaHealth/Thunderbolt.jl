@@ -24,7 +24,7 @@ function _compute_quadrature_fluxes_on_subdomain!(κ∇u,sdh,cv,u,integrator::Bi
             # dΩ = getdetJdV(cellvalues, qp)
             for i in 1:n_basefuncs
                 ∇Nᵢ = shape_gradient(cv, qp, i)
-                κ∇ucell[qp.i] += D_loc ⋅ ∇Nᵢ * uₑ[i]
+                κ∇ucell[qp.i] += D_loc ⋅ ∇Nᵢ ⊗ uₑ[i]
             end
         end
     end

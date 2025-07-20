@@ -209,7 +209,7 @@ function semidiscretize(model::QuasiStaticModel, discretization::FiniteElementDi
         lvh,
         NonlinearIntegrator(
             model,
-            model.face_models,
+            model.facet_models,
             [sym],
             qrc,
             _get_facet_quadrature_from_discretization(discretization, sym),

@@ -90,8 +90,8 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_face, ip, ip_geo)
+    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_facet, ip, ip_geo)
 
     ndofs = getnbasefunctions(ip)
 
@@ -169,7 +169,7 @@ end
 function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, uₑ, p, fv, symbol)
     reinit!(fv, facet[1], facet[2])
 
-    ndofs_face = getnbasefunctions(fv)
+    ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
@@ -189,7 +189,7 @@ function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, u�
             residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
 
             # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
-            for j in 1:ndofs_face
+            for j in 1:ndofs_facet
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
@@ -211,8 +211,8 @@ function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, met
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_face, ip, ip_geo)
+    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_facet, ip, ip_geo)
 
     drange = dof_range(dh, method.displacement_symbol)
 
