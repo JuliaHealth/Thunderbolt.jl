@@ -13,7 +13,12 @@ struct AnalyticalCoefficientCache{F<:Function, CSC}
     f::F
     coordinate_system_cache::CSC
 end
-
+function AnalyticalCoefficientCache(F::Function)
+    return AnalyticalCoefficientCache(
+        F,
+        ConstantCoefficient(nothing)
+    )
+end
 function setup_coefficient_cache(coeff::AnalyticalCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
     return AnalyticalCoefficientCache(
         coeff.f,
