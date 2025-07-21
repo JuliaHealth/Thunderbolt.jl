@@ -1,5 +1,5 @@
 @testset "Element API" begin
-    import Thunderbolt: assemble_element!, assemble_face!
+    import Thunderbolt: assemble_element!, assemble_facet!
     import Thunderbolt: setup_element_cache, setup_boundary_cache
     import Thunderbolt: BilinearMassIntegrator, BilinearDiffusionIntegrator
     import Thunderbolt: CompositeVolumetricElementCache, CompositeSurfaceElementCache
@@ -54,15 +54,15 @@
         @test iszero(Kₑ²)
 
         # Surface
-        for local_face_index in 1:nfacets(cell_cache_s)
-            assemble_face!(Kₑ¹, rₑ¹, uₑs, cell_cache_s, local_face_index, Thunderbolt.EmptySurfaceElementCache(), 0.0)
+        for local_facet_index in 1:nfacets(cell_cache_s)
+            assemble_facet!(Kₑ¹, rₑ¹, uₑs, cell_cache_s, local_facet_index, Thunderbolt.EmptySurfaceElementCache(), 0.0)
             @test iszero(Kₑ¹)
             @test iszero(rₑ¹)
 
-            assemble_face!(     rₑ², uₑs, cell_cache_s, local_face_index, Thunderbolt.EmptySurfaceElementCache(), 0.0)
+            assemble_facet!(     rₑ², uₑs, cell_cache_s, local_facet_index, Thunderbolt.EmptySurfaceElementCache(), 0.0)
             @test iszero(rₑ²)
 
-            assemble_face!(Kₑ²,      uₑs, cell_cache_s, local_face_index, Thunderbolt.EmptySurfaceElementCache(), 0.0)
+            assemble_facet!(Kₑ²,      uₑs, cell_cache_s, local_facet_index, Thunderbolt.EmptySurfaceElementCache(), 0.0)
             @test iszero(Kₑ²)
         end
     end
@@ -167,15 +167,15 @@
 
         element_cache = setup_boundary_cache(model, qrf, sdhv)
 
-        for local_face_index in 1:nfacets(cell_cache_v)
-            assemble_face!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, local_face_index, element_cache, 0.0)
+        for local_facet_index in 1:nfacets(cell_cache_v)
+            assemble_facet!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, local_facet_index, element_cache, 0.0)
             @test iszero(Kₑ¹) != has_jac
             @test iszero(rₑ¹) != has_jac
 
-            assemble_face!(     rₑ², uₑv, cell_cache_v, local_face_index, element_cache, 0.0)
+            assemble_facet!(     rₑ², uₑv, cell_cache_v, local_facet_index, element_cache, 0.0)
             @test rₑ² ≈ rₑ¹
 
-            assemble_face!(Kₑ²,      uₑv, cell_cache_v, local_face_index, element_cache, 0.0)
+            assemble_facet!(Kₑ²,      uₑv, cell_cache_v, local_facet_index, element_cache, 0.0)
             @test Kₑ² ≈ Kₑ¹
         end
 
@@ -186,17 +186,17 @@
 
         Kₑ¹ .= 0.0
         rₑ¹ .= 0.0
-        for local_face_index in 1:nfacets(cell_cache_v)
-            assemble_face!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, local_face_index, composite_element_cache, 0.0)
+        for local_facet_index in 1:nfacets(cell_cache_v)
+            assemble_facet!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, local_facet_index, composite_element_cache, 0.0)
         end
         @test 2Kₑ² ≈ Kₑ¹
         @test 2rₑ² ≈ rₑ¹
 
         Kₑ² .= 0.0
         rₑ² .= 0.0
-        for local_face_index in 1:nfacets(cell_cache_v)
-            assemble_face!(     rₑ², uₑv, cell_cache_v, local_face_index, composite_element_cache, 0.0)
-            assemble_face!(Kₑ²,      uₑv, cell_cache_v, local_face_index, composite_element_cache, 0.0)
+        for local_facet_index in 1:nfacets(cell_cache_v)
+            assemble_facet!(     rₑ², uₑv, cell_cache_v, local_facet_index, composite_element_cache, 0.0)
+            assemble_facet!(Kₑ²,      uₑv, cell_cache_v, local_facet_index, composite_element_cache, 0.0)
         end
         @test Kₑ² ≈ Kₑ¹
         @test rₑ² ≈ rₑ¹

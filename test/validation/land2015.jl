@@ -96,12 +96,12 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
     #     Thunderbolt.reinit!(fv, first(CellIterator(integrator.cache.inner_solver_cache.op.dh)), 1)
     #     for qp in QuadratureIterator(fv)
     #         r .= 0.0
-    #         Thunderbolt.assemble_face_pressure_qp!(J, r, u, p, qp, fv)
+    #         Thunderbolt.assemble_facet_pressure_qp!(J, r, u, p, qp, fv)
     #         for i in 1:24
     #             fill!(r2, 0.0)
     #             u2 .= u
     #             u2[i] += Δ
-    #             Thunderbolt.assemble_face_pressure_qp!(J2, r2, u2, p, qp, fv)
+    #             Thunderbolt.assemble_facet_pressure_qp!(J2, r2, u2, p, qp, fv)
     #             r2 -= r
     #             r2 /= Δ
     #             Jfd[:,i] .+= r2

@@ -29,8 +29,8 @@ function Base.show(io::IO, ::MIME"text/plain", descriptor::SurfaceSubdomainDesri
 end
 
 struct InterfaceIndex
-    a::FaceIndex
-    b::FaceIndex
+    a::FacetIndex
+    b::FacetIndex
 end
 
 struct InterfaceSubdomainDesriptor
@@ -44,7 +44,7 @@ end
 """
 SimpleMesh{sdim, C <: AbstractCell, T <: Real} <: AbstractGrid{sdim}
 
-A grid which also has information abouts its vertices, faces and edges.
+A grid which also has information abouts its vertices, facets and edges.
 
 It is also a glorified domain manager for mixed grids and actual subdomains.
 TODO investigate whetehr we can remove the subdomains without a significant performance hit.

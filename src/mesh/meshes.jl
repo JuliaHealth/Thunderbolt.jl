@@ -1,7 +1,7 @@
 
 # abstract type AbstractSurface end
 # abstract type AbstractPath end
-# struct ConformingFace3D <: AbstractSurface
+# struct ConformingFacet3D <: AbstractSurface
 #     cellidx_a::Int
 #     cellidx_b::Int
 #     defining_nodes::NTuple{3,Int}

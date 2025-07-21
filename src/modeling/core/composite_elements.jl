@@ -35,25 +35,25 @@ assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellC
     end
 end
 
-# If we compose a face cache into an element cache, then we loop over the faces of the elements and try to assemble
+# If we compose a facet cache into an element cache, then we loop over the facets of the elements and try to assemble
 function assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
     for local_facet_index ∈ 1:nfacets(cell)
         if is_facet_in_cache(FacetIndex(cellid(cell), local_facet_index), cell, facet_cache)
-            assemble_face!(Kₑ, uₑ, cell, local_facet_index, facet_cache, time)
+            assemble_facet!(Kₑ, uₑ, cell, local_facet_index, facet_cache, time)
         end
     end
 end
 function assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
     for local_facet_index ∈ 1:nfacets(cell)
         if is_facet_in_cache(FacetIndex(cellid(cell), local_facet_index), cell, facet_cache)
-            assemble_face!(Kₑ, residualₑ, uₑ, cell, local_facet_index, facet_cache, time)
+            assemble_facet!(Kₑ, residualₑ, uₑ, cell, local_facet_index, facet_cache, time)
         end
     end
 end
 function assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
     for local_facet_index ∈ 1:nfacets(cell)
         if is_facet_in_cache(FacetIndex(cellid(cell), local_facet_index), cell, facet_cache)
-            assemble_face!(residualₑ, uₑ, cell, local_facet_index, facet_cache, time)
+            assemble_facet!(residualₑ, uₑ, cell, local_facet_index, facet_cache, time)
         end
     end
 end
@@ -67,35 +67,35 @@ struct CompositeSurfaceElementCache{CacheTupleType <: Tuple} <: AbstractSurfaceE
     inner_caches::CacheTupleType
 end
 # Main entry point for bilinear operators
-assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_face!(Kₑ, cell, surface_cache.inner_caches, local_facet_index, time)
-@unroll function assemble_composite_face!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
+assemble_facet!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_facet!(Kₑ, cell, surface_cache.inner_caches, local_facet_index, time)
+@unroll function assemble_composite_facet!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_face!(Kₑ, cell, local_facet_index, inner_cache, time)
+        assemble_facet!(Kₑ, cell, local_facet_index, inner_cache, time)
     end
 end
 # Update element matrix in nonlinear operators
-assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_face!(Kₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
-@unroll function assemble_composite_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
+assemble_facet!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_facet!(Kₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
+@unroll function assemble_composite_facet!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_face!(Kₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        assemble_facet!(Kₑ, uₑ, cell, local_facet_index, inner_cache, time)
     end
 end
 # Update element matrix and residual in nonlinear operators
-assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_face!(Kₑ, residualₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
-@unroll function assemble_composite_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
+assemble_facet!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_facet!(Kₑ, residualₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
+@unroll function assemble_composite_facet!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_face!(Kₑ, residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        assemble_facet!(Kₑ, residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
     end
 end
 # Update residual in nonlinear operators
-assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_face!(residualₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
-@unroll function assemble_composite_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
+assemble_facet!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_facet!(residualₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
+@unroll function assemble_composite_facet!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_face!(residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
+        assemble_facet!(residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
     end
 end
 
-# If we compose a face cache into an element cache, then we loop over the faces of the elements and try to assemble
+# If we compose a facet cache into an element cache, then we loop over the facets of the elements and try to assemble
 # Update element matrix in nonlinear operators
 assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_element!(Kₑ, uₑ, cell, surface_cache.inner_caches, time)
 # Update element matrix and residual in nonlinear operators

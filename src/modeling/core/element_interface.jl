@@ -55,16 +55,16 @@ Interface:
 abstract type AbstractSurfaceElementCache end
 
 @doc raw"""
-    assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+    assemble_facet!(Kₑ::AbstractMatrix, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
 Main entry point for bilinear operators
 
-    assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
-Update face matrix in nonlinear operators
+    assemble_facet!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
+Update facet matrix in nonlinear operators
 
-    assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
-Update face matrix and residual in nonlinear operators
+    assemble_facet!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
+Update facet matrix and residual in nonlinear operators
 
-    assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+    assemble_facet!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
 Update residual in nonlinear operators
 
 The notation is as follows.
@@ -72,7 +72,7 @@ The notation is as follows.
 * $u_e$ the element unknowns
 * $residual_e$ the element residual
 """
-assemble_face!
+assemble_facet!
 
 
 """
@@ -80,14 +80,14 @@ assemble_face!
 """
 struct EmptySurfaceElementCache <: AbstractSurfaceElementCache end
 # Update element matrix in nonlinear operators
-assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptySurfaceElementCache, time)    = nothing
-assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptySurfaceElementCache, time) = nothing
+assemble_facet!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, facet_caches::EmptySurfaceElementCache, time)    = nothing
+assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, facet_caches::EmptySurfaceElementCache, time) = nothing
 # Update element matrix and residual in nonlinear operators
-assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceElementCache, time)    = nothing
-assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceElementCache, time) = nothing
+assemble_facet!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_facet_index::Int, facet_caches::EmptySurfaceElementCache, time)    = nothing
+assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_facet_index::Int, facet_caches::EmptySurfaceElementCache, time) = nothing
 # Update residual in nonlinear operators
-assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceElementCache, time)    = nothing
-assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceElementCache, time) = nothing
+assemble_facet!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_facet_index::Int, facet_caches::EmptySurfaceElementCache, time)    = nothing
+assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_facet_index::Int, facet_caches::EmptySurfaceElementCache, time) = nothing
 @inline is_facet_in_cache(::FacetIndex, cell, ::EmptySurfaceElementCache) = false
 
 """
@@ -101,16 +101,16 @@ Interface:
 abstract type AbstractInterfaceElementCache end
 
 @doc raw"""
-    assemble_interface!(Kₑ::AbstractMatrix, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+    assemble_interface!(Kₑ::AbstractMatrix, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
 Main entry point for bilinear operators
 
-    assemble_interface!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
-Update face matrix in nonlinear operators
+    assemble_interface!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
+Update facet matrix in nonlinear operators
 
-    assemble_interface!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
-Update face matrix and residual in nonlinear operators
+    assemble_interface!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
+Update facet matrix and residual in nonlinear operators
 
-    assemble_interface!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+    assemble_interface!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, facet_cache::AbstractSurfaceElementCache, time)
 Update residual in nonlinear operators
 
 The notation is as follows.
@@ -126,9 +126,9 @@ Utility to execute noop assembly.
 """
 struct EmptyInterfaceCache <: AbstractInterfaceElementCache end
 # Update element matrix in nonlinear operators
-assemble_interface!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptyInterfaceCache, time)            = nothing
+assemble_interface!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, facet_caches::EmptyInterfaceCache, time)            = nothing
 # Update element matrix and residual in nonlinear operators
-assemble_interface!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptyInterfaceCache, time) = nothing
+assemble_interface!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_facet_index::Int, facet_caches::EmptyInterfaceCache, time) = nothing
 # Update residual in nonlinear operators
-assemble_interface!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptyInterfaceCache, time) = nothing
+assemble_interface!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_facet_index::Int, facet_caches::EmptyInterfaceCache, time) = nothing
 

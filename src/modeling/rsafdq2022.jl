@@ -47,11 +47,11 @@ function assemble_LFSI_coupling_contribution_col!(C, R, dh::AbstractDofHandler, 
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_face, ip, ip_geo)
+    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_facet, ip, ip_geo)
 
-    for face ∈ FacetIterator(dh, method.facets)
-        assemble_LFSI_coupling_contribution_col_inner!(C, R, u, pressure, face, dh, fv, method.displacement_symbol)
+    for facet ∈ FacetIterator(dh, method.facets)
+        assemble_LFSI_coupling_contribution_col_inner!(C, R, u, pressure, facet, dh, fv, method.displacement_symbol)
     end
 end
 # Residual only
@@ -61,11 +61,11 @@ function assemble_LFSI_coupling_contribution_col!(C, dh::AbstractDofHandler, u::
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_face, ip, ip_geo)
+    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_facet, ip, ip_geo)
 
-    for face ∈ FacetIterator(dh, method.facets)
-        assemble_LFSI_coupling_contribution_col_inner!(C, u, pressure, face, dh, fv, method.displacement_symbol)
+    for facet ∈ FacetIterator(dh, method.facets)
+        assemble_LFSI_coupling_contribution_col_inner!(C, u, pressure, facet, dh, fv, method.displacement_symbol)
     end
 end
 
@@ -77,16 +77,16 @@ function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberT
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_face, ip, ip_geo)
+    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_facet, ip, ip_geo)
 
     volume = 0.0
     drange = dof_range(dh,method.displacement_symbol)
-    for face ∈ FacetIterator(dh, getfacetset(grid, setname))
-        reinit!(fv, face)
+    for facet ∈ FacetIterator(dh, getfacetset(grid, setname))
+        reinit!(fv, facet)
 
-        coords = getcoordinates(face)
-        ddofs = @view celldofs(face)[drange]
+        coords = getcoordinates(facet)
+        ddofs = @view celldofs(facet)[drange]
         uₑ = @view u[ddofs]
 
         for qp in QuadratureIterator(fv)
@@ -167,37 +167,37 @@ struct RSAFDQ2022Split{MODEL <: Union{CoupledModel, RSAFDQ2022Model}}
     model::MODEL
 end
 
-function assemble_tying_face_rsadfq!(Jₑ, residualₑ, uₑ, p, cell, local_face_index, fv, time)
-    reinit!(fv, cell, local_face_index)
+function assemble_tying_facet_rsadfq!(Jₑ, residualₑ, uₑ, p, cell, local_facet_index, fv, time)
+    reinit!(fv, cell, local_facet_index)
 
     for qp in QuadratureIterator(fv)
-        assemble_face_pressure_qp!(Jₑ, residualₑ, uₑ, p, qp, fv)
+        assemble_facet_pressure_qp!(Jₑ, residualₑ, uₑ, p, qp, fv)
     end
 end
 
-function assemble_tying_face_rsadfq!(Jₑ, uₑ, p, cell, local_face_index, fv, time)
-    reinit!(fv, cell, local_face_index)
+function assemble_tying_facet_rsadfq!(Jₑ, uₑ, p, cell, local_facet_index, fv, time)
+    reinit!(fv, cell, local_facet_index)
 
     for qp in QuadratureIterator(fv)
-        assemble_face_pressure_qp!(Jₑ, uₑ, p, qp, fv)
+        assemble_facet_pressure_qp!(Jₑ, uₑ, p, qp, fv)
     end
 end
 
 function assemble_tying!(Jₑ, residualₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
-    for local_face_index ∈ 1:nfacets(cell)
+    for local_facet_index ∈ 1:nfacets(cell)
         for (chamber_index,chamber) in pairs(tying_cache.chambers)
-            if (cellid(cell), local_face_index) ∈ chamber.facets
-                assemble_tying_face_rsadfq!(Jₑ, residualₑ, uₑ, uₜ[chamber_index], cell, local_face_index, tying_cache.fv, time)
+            if (cellid(cell), local_facet_index) ∈ chamber.facets
+                assemble_tying_facet_rsadfq!(Jₑ, residualₑ, uₑ, uₜ[chamber_index], cell, local_facet_index, tying_cache.fv, time)
             end
         end
     end
 end
 
 function assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
-    for local_face_index ∈ 1:nfacets(cell)
+    for local_facet_index ∈ 1:nfacets(cell)
         for (chamber_index,chamber) in pairs(tying_cache.chambers)
-            if (cellid(cell), local_face_index) ∈ chamber.facets
-                assemble_tying_face_rsadfq!(Jₑ, uₑ, uₜ[chamber_index], cell, local_face_index, tying_cache.fv, time)
+            if (cellid(cell), local_facet_index) ∈ chamber.facets
+                assemble_tying_facet_rsadfq!(Jₑ, uₑ, uₜ[chamber_index], cell, local_facet_index, tying_cache.fv, time)
             end
         end
     end

@@ -10,7 +10,7 @@ end
 
 """
     QuadratureIterator(::QuadratureRule)
-    QuadratureIterator(::FacetQuadratureRule, local_face_idx::Int)
+    QuadratureIterator(::FacetQuadratureRule, local_facet_idx::Int)
     QuadratureIterator(::CellValues)
     QuadratureIterator(::FacetValues)
 
@@ -19,9 +19,9 @@ A helper to loop over the quadrature points in some rule or cache with type [`Qu
 struct QuadratureIterator{QR<:QuadratureRule}
     qr::QR
 end
-QuadratureIterator(fqr::FacetQuadratureRule, local_face_idx::Int) = QuadratureIterator(fqr.face_rules[local_face_idx])
+QuadratureIterator(fqr::FacetQuadratureRule, local_facet_idx::Int) = QuadratureIterator(fqr.facet_rules[local_facet_idx])
 QuadratureIterator(cv::CellValues) = QuadratureIterator(cv.qr)
-QuadratureIterator(fv::FacetValues) = QuadratureIterator(fv.fqr.face_rules[fv.current_facet[]])
+QuadratureIterator(fv::FacetValues) = QuadratureIterator(fv.fqr.facet_rules[fv.current_facet[]])
 
 function Base.iterate(iterator::QuadratureIterator, i = 1)
     i > getnquadpoints(iterator.qr) && return nothing

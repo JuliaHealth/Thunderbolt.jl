@@ -19,7 +19,7 @@ A collection of compatible vector-valued interpolations over some (possilby diff
 """
 abstract type VectorInterpolationCollection <: InterpolationCollection end
 
-getinterpolation(qrc::InterpolationCollection, sdh::SubDofHandler) = getfacevalues(qrc, get_first_cell(sdh))
+getinterpolation(qrc::InterpolationCollection, sdh::SubDofHandler) = getfacetvalues(qrc, get_first_cell(sdh))
 
 """
     LagrangeCollection{order} <: InterpolationCollection
@@ -134,19 +134,19 @@ getcellvalues(qrc::CellValueCollection, sdh::SubDofHandler) = getcellvalues(qrc,
 """
     FacetValueCollection(::QuadratureRuleCollection, ::InterpolationCollection)
 
-Helper to construct and query the correct face values on mixed grids.
+Helper to construct and query the correct facet values on mixed grids.
 """
 struct FacetValueCollection{QRC <: FacetQuadratureRuleCollection, IPC <: InterpolationCollection}
     qrc::QRC
     ipc::IPC
 end
 
-getfacevalues(fv::FacetValueCollection, cell::CellType) where {CellType <: AbstractCell} = FacetValues(
+getfacetvalues(fv::FacetValueCollection, cell::CellType) where {CellType <: AbstractCell} = FacetValues(
     getquadraturerule(fv.qrc, cell),
     getinterpolation(fv.ipc, cell),
     Ferrite.geometric_interpolation(CellType)
 )
-getfacevalues(qrc::FacetValueCollection, sdh::SubDofHandler) = getfacevalues(qrc, get_first_cell(sdh))
+getfacetvalues(qrc::FacetValueCollection, sdh::SubDofHandler) = getfacetvalues(qrc, get_first_cell(sdh))
 
 
 """

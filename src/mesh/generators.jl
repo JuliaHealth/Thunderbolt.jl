@@ -33,7 +33,7 @@ function generate_ring_mesh(num_elements_circumferential::Int, num_elements_radi
                                  node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
     end
 
-    # Cell faces
+    # Cell facets
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FacetIndex[[FacetIndex(cl, 1) for cl in cell_array[:,:,1][:]];
                             [FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
@@ -42,7 +42,7 @@ function generate_ring_mesh(num_elements_circumferential::Int, num_elements_radi
                             #[FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]];
                             [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
-    # Cell face sets
+    # Cell facet sets
     offset = 0
     facetsets = Dict{String,OrderedSet{FacetIndex}}()
     facetsets["Myocardium"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
@@ -95,7 +95,7 @@ function generate_open_ring_mesh(num_elements_circumferential::Int, num_elements
                                  node_array[i,j,k+1], node_array[i + 1,j,k+1], node_array[i + 1,j+1,k+1], node_array[i,j+1,k+1])))
     end
 
-    # Cell faces
+    # Cell facets
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FacetIndex[[FacetIndex(cl, 1) for cl in cell_array[:,:,1][:]];
                             [FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
@@ -104,7 +104,7 @@ function generate_open_ring_mesh(num_elements_circumferential::Int, num_elements
                             [FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]];
                             [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
-    # Cell face sets
+    # Cell facet sets
     offset = 0
     facetsets = Dict{String,OrderedSet{FacetIndex}}()
 
@@ -174,7 +174,7 @@ function generate_quadratic_ring_mesh(num_elements_circumferential::Int, num_ele
         )))
     end
 
-    # Cell faces
+    # Cell facets
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FacetIndex[[FacetIndex(cl, 1) for cl in cell_array[:,:,1][:]];
                             [FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
@@ -183,7 +183,7 @@ function generate_quadratic_ring_mesh(num_elements_circumferential::Int, num_ele
                             #[FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]];
                             [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
-    # Cell face sets
+    # Cell facet sets
     offset = 0
     facetsets = Dict{String,OrderedSet{FacetIndex}}()
     facetsets["Myocardium"] = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
@@ -246,7 +246,7 @@ function generate_quadratic_open_ring_mesh(num_elements_circumferential::Int, nu
         )))
     end
 
-    # Cell faces
+    # Cell facets
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FacetIndex[[FacetIndex(cl, 1) for cl in cell_array[:,:,1][:]];
                             [FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
@@ -255,7 +255,7 @@ function generate_quadratic_open_ring_mesh(num_elements_circumferential::Int, nu
                             #[FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]];
                             [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
-    # Cell face sets
+    # Cell facet sets
     offset = 0
     facetsets = Dict{String,OrderedSet{FacetIndex}}()
     facetsets["Myocardium"] = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
@@ -326,13 +326,13 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
     nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,end]])
     nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,end]])
 
-    # Cell faces
+    # Cell facets
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FacetIndex[[FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
                           [FacetIndex(cl, 4) for cl in cell_array[:,end,:][:]];
                           [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
-    # Cell face sets
+    # Cell facet sets
     offset = 0
     facetsets = Dict{String,OrderedSet{FacetIndex}}()
     facetsets["Endocardium"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])

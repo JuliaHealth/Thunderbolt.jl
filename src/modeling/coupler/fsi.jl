@@ -50,10 +50,10 @@ function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::Hirschvogel2
     return -val
 end
 
-function assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, face, dh, fv, method)
-    reinit!(fv, face)
+function assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, facet, dh, fv, method)
+    reinit!(fv, facet)
 
-    coords = getcoordinates(face)
+    coords = getcoordinates(facet)
 
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
@@ -90,8 +90,8 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_face, ip, ip_geo)
+    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_facet, ip, ip_geo)
 
     ndofs = getnbasefunctions(ip)
 
@@ -101,12 +101,12 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
 
     drange = dof_range(dh, method.displacement_symbol)
 
-    for face ∈ FacetIterator(dh, method.facets)
-        ddofs = @view celldofs(face)[drange]
+    for facet ∈ FacetIterator(dh, method.facets)
+        ddofs = @view celldofs(facet)[drange]
         uₑ .= u[ddofs]
         fill!(Jₑ, 0.0)
         fill!(rₑ, 0.0)
-        assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, face, dh, fv, method.volume_method)
+        assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, facet, dh, fv, method.volume_method)
         C[ddofs] .+= Jₑ
         R[1] += rₑ[1]
     end
@@ -116,11 +116,11 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
     R[1] -= V⁰ᴰ
 end
 
-function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv::FacetValues, symbol::Symbol)
-    reinit!(fv, face)
+function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, facet, dh, fv::FacetValues, symbol::Symbol)
+    reinit!(fv, facet)
     drange = dof_range(dh, symbol)
 
-    ddofs = @view celldofs(face)[drange]
+    ddofs = @view celldofs(facet)[drange]
     uₑ = @view u[ddofs]
 
     for qp in QuadratureIterator(fv)
@@ -142,11 +142,11 @@ function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv
 end
 
 
-function assemble_LFSI_coupling_contribution_col_inner!(C, u, p, face, dh, fv::FacetValues, symbol::Symbol)
-    reinit!(fv, face)
+function assemble_LFSI_coupling_contribution_col_inner!(C, u, p, facet, dh, fv::FacetValues, symbol::Symbol)
+    reinit!(fv, facet)
     drange = dof_range(dh, symbol)
 
-    ddofs = @view celldofs(face)[drange]
+    ddofs = @view celldofs(facet)[drange]
     uₑ = @view u[ddofs]
 
     for qp in QuadratureIterator(fv)
@@ -167,9 +167,9 @@ function assemble_LFSI_coupling_contribution_col_inner!(C, u, p, face, dh, fv::F
 end
 
 function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, uₑ, p, fv, symbol)
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, facet[1], facet[2])
 
-    ndofs_face = getnbasefunctions(fv)
+    ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
@@ -189,7 +189,7 @@ function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, u�
             residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
 
             # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
-            for j in 1:ndofs_face
+            for j in 1:ndofs_facet
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
@@ -211,8 +211,8 @@ function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, met
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_face, ip, ip_geo)
+    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_facet, ip, ip_geo)
 
     drange = dof_range(dh, method.displacement_symbol)
 
@@ -223,8 +223,8 @@ function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, met
     rₑ = zeros(ndofs)
     uₑ = zeros(ndofs)
 
-    for face ∈ FacetIterator(dh, getfacetset(grid, setname))
-        dofs = celldofs(face)
+    for facet ∈ FacetIterator(dh, getfacetset(grid, setname))
+        dofs = celldofs(facet)
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
         uₑ .= @view u[dofs]

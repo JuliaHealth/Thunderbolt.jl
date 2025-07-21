@@ -277,18 +277,18 @@ function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id
     endocardiumlv = OrderedSet{FacetIndex}()
     endocardiumrv = OrderedSet{FacetIndex}()
     for (cellidx,cell) ∈ enumerate(grid.cells)
-        for (faceidx,facenodes) in enumerate(Ferrite.faces(cell))
-            indices = collect(facenodes)
+        for (facetidx,facetnodes) in enumerate(Ferrite.facets(cell))
+            indices = collect(facetnodes)
             if all(u_transmural[indices] .> 1.0-2e-2)
-                push!(endocardium, FacetIndex(cellidx, faceidx))
+                push!(endocardium, FacetIndex(cellidx, facetidx))
                 if all(u_transventricular[indices] .> 0.5) # Right
-                    push!(endocardiumrv, FacetIndex(cellidx, faceidx))
+                    push!(endocardiumrv, FacetIndex(cellidx, facetidx))
                 else
-                    push!(endocardiumlv, FacetIndex(cellidx, faceidx))
+                    push!(endocardiumlv, FacetIndex(cellidx, facetidx))
                 end
             end
             if all(u_transmural[indices] .< 1e-6)
-                push!(epicardium, FacetIndex(cellidx, faceidx))
+                push!(epicardium, FacetIndex(cellidx, facetidx))
             end
         end
     end

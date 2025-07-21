@@ -30,7 +30,7 @@ end
 
 @reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
-import Ferrite: vertices, edges, faces, sortedge, sortface
+import Ferrite: vertices, edges, facets, faces, sortedge, sortfacet_fast, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
 
@@ -131,7 +131,7 @@ export
     CellValueCollection,
     getcellvalues,
     FacetValueCollection,
-    getfacevalues,
+    getfacetvalues,
     # Mesh generators
     generate_mesh,
     generate_open_ring_mesh,
