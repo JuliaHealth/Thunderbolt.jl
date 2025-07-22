@@ -55,12 +55,13 @@ function ElectroMechanicalSynchronizer(transfer_op_EP_Mech, transfer_op_Mech_EP)
     )
 end
 
-
+function get_calcium_state_idx end
 
 function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::ElectroMechanicalSynchronizer)
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
     calcium_field_coeff = inner_integrator.cache.inner_solver_cache.op.integrator.volume_model.material_model.contraction_model.calcium_field
-    calcium_state_idx = 4
+    calcium_state_idx = get_calcium_state_idx(outer_integrator.subintegrator_tree[1][2].f.ode)
+    isnothing(calcium_state_idx) && return nothing # TODO: error?
     npoints = outer_integrator.subintegrator_tree[1][2].f.npoints
     calcium_in_EP = @view outer_integrator.subintegrator_tree[1][2].u[npoints * (calcium_state_idx-1)+1:npoints * calcium_state_idx]
     dh_mech = sync.transfer_op_EP_Mech.dh_to
