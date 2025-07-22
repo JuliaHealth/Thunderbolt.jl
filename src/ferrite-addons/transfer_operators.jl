@@ -50,7 +50,7 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
     field_name_from::Symbol
     field_name_to::Symbol
 
-    function NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol; subdomains_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers)) where sdim
+    function NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol; subdomains_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers), search_nneighbors = 3, strategy = Ferrite.NewtonLineSearchPointFinder(residual_tolerance=1e-6)) where sdim
         @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
         @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
 
@@ -94,7 +94,7 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
             _compute_dof_nodes_barrier!(nodes, sdh, Ferrite.dof_range(sdh, field_name_to), gip, dof_to_node_map, ref_coords)
         end
 
-        ph = PointEvalHandler(Ferrite.get_grid(dh_from), nodes; warn=false)
+        ph = PointEvalHandler(Ferrite.get_grid(dh_from), nodes; search_nneighbors = search_nneighbors, strategy = strategy, warn=false)
 
         n_missing = sum(x -> x === nothing, ph.cells)
         n_missing == 0 || @warn "Constructing the interpolation for $field_name_from to $field_name_to failed. $n_missing (out of $(length(ph.cells))) points not found."

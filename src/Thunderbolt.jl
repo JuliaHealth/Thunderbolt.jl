@@ -223,6 +223,9 @@ export
     # Coupling
     Coupling,
     CoupledModel,
+    ElectroMechanicalCoupledModel,
+    ElectroMechanicalCoupler,
+    ElectroMechanicalSynchronizer,
     # Discretization
     semidiscretize,
     FiniteElementDiscretization,

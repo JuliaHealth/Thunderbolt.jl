@@ -38,6 +38,9 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 
+[sources]
+OrdinaryDiffEqOperatorSplitting = {url = "https://github.com/SciML/OrdinaryDiffEqOperatorSplitting.jl.git", rev = "main"}
+
 [extensions]
 CuThunderboltExt = "CUDA"
 
@@ -55,7 +58,7 @@ Logging = "1.10"
 ModelingToolkit = "9"
 OrdinaryDiffEqCore = "1"
 OrdinaryDiffEqLowOrderRK = "1.2.0"
-OrdinaryDiffEqOperatorSplitting = "0.1"
+OrdinaryDiffEqOperatorSplitting = "0.2"
 Preferences = "1"
 SciMLBase = "2"
 UnPack = "1"

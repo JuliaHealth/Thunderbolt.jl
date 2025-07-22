@@ -219,3 +219,19 @@ function semidiscretize(model::QuasiStaticModel, discretization::FiniteElementDi
 
     return semidiscrete_problem
 end
+
+function Thunderbolt.semidiscretize(coupled_model::ElectroMechanicalCoupledModel, discretizations::Tuple, meshes::Tuple{<:Thunderbolt.AbstractGrid, <:Thunderbolt.AbstractGrid})
+    ep_sdp = semidiscretize(coupled_model.ep_model, discretizations[1], meshes[1])
+    mech_sdp = semidiscretize(coupled_model.structural_model, discretizations[2], meshes[2])
+    dh_mech_displacement = mech_sdp.dh
+    dh_ep_φₘ = ep_sdp.functions[1].dh
+    dh_mech_φₘ = create_dh_helper(get_grid(dh_mech_displacement), discretizations[1], :φₘ)
+    ep_mech_transfer_op = Thunderbolt.NodalIntergridInterpolation(dh_ep_φₘ, dh_mech_φₘ)
+    mech_ep_transfer_op = Thunderbolt.NodalIntergridInterpolation(dh_mech_φₘ, dh_ep_φₘ)
+    sync = ElectroMechanicalSynchronizer(ep_mech_transfer_op, mech_ep_transfer_op)
+    return GenericSplitFunction(
+        (ep_sdp, mech_sdp),
+        (Thunderbolt.OS.get_solution_indices(ep_sdp, 2), (last(Thunderbolt.OS.get_solution_indices(ep_sdp, 2))+1):((last(Thunderbolt.OS.get_solution_indices(ep_sdp, 2))) + solution_size(mech_sdp))),
+        (OS.NoExternalSynchronization(), sync)
+    )
+end
