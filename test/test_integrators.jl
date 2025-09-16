@@ -169,7 +169,7 @@ end
             )
             timestepper2_adaptive = Thunderbolt.ReactionTangentController(timestepper2, 0.5, 1.0, adaptive_tstep_range)
 
-            @testset "$tstepper" for (prob, timestepper) in (
+            @testset "$timestepper" for (prob, timestepper) in (
                     (prob1, timestepper1),
                     (prob2, timestepper2),
                     (prob1, timestepper1_adaptive),
@@ -222,11 +222,11 @@ end
                 @test integrator_NaN.sol.retcode ∈ (DiffEqBase.ReturnCode.Unstable, DiffEqBase.ReturnCode.DtNaN)
             end
 
-            integrator = DiffEqBase.init(prob, timestepper1, dt=dt, verbose=true, alias_u0=false)
+            integrator = DiffEqBase.init(prob1, timestepper1, dt=dt, verbose=true, alias_u0=false)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0) end
             @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
 
-            integrator_adaptive = DiffEqBase.init(prob, timestepper1_adaptive, dt=dt, verbose=true, alias_u0=false)
+            integrator_adaptive = DiffEqBase.init(prob1, timestepper1_adaptive, dt=dt, verbose=true, alias_u0=false)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0) end
             @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
 
