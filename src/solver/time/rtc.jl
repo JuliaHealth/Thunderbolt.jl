@@ -81,10 +81,10 @@ end
 end
 
 @inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController, q)
-    if integrator.dt == Δt_bounds[2]
-        integrator.dt = NaN # Force failure
+    if integrator.dt ≤ Δt_bounds[1] # Check for "≤" to also handle the boundary cases
+        error("RTC cannot recover from step rejection below Δt min") # Force failure
     else
-        integrator.dt = Δt_bounds[2]
+        integrator.dt = Δt_bounds[1]
     end
     return nothing # Do nothing
 end
