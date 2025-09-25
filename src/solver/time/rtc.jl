@@ -73,14 +73,19 @@ end
     @unpack σ_s, σ_c, Δt_bounds = alg
 
     if isinf(σ_s)
-        integrator._dt = R > σ_c ? Δt_bounds[1] : Δt_bounds[2]
+        integrator.dt = R > σ_c ? Δt_bounds[1] : Δt_bounds[2]
     else
-        integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
+        integrator.dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     end
     return nothing
 end
 
 @inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController, q)
+    if integrator.dt ≤ Δt_bounds[1] # Check for "≤" to also handle the boundary cases
+        error("RTC cannot recover from step rejection below Δt min") # Force failure
+    else
+        integrator.dt = Δt_bounds[1]
+    end
     return nothing # Do nothing
 end
 

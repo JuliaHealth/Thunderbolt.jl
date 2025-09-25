@@ -38,7 +38,7 @@
         Thunderbolt.transfer!(target_u, op, source_u)
         cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle,2}())
         for cc in CellIterator(target_dh.subdofhandlers[1])
-            reinit!(cvv, cc)
+            Ferrite.reinit!(cvv, cc)
             dofs_v = @view celldofs(cc)[v_range]
             dofs_w = @view celldofs(cc)[w_range]
             for qp in QuadratureIterator(cvv)
@@ -53,7 +53,7 @@
         Thunderbolt.transfer!(target_u, op, source_u)
         cvw = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle,1}())
         for cc in CellIterator(target_dh.subdofhandlers[1])
-            reinit!(cvw, cc)
+            Ferrite.reinit!(cvw, cc)
             dofs_v = @view celldofs(cc)[v_range]
             dofs_w = @view celldofs(cc)[w_range]
             for qp in QuadratureIterator(cvw)
@@ -99,7 +99,7 @@
         Thunderbolt.transfer!(target_u, op, source_u)
         cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle,2}())
         for cc in CellIterator(target_dh.subdofhandlers[1])
-            reinit!(cvv, cc)
+            Ferrite.reinit!(cvv, cc)
             dofs_v = @view celldofs(cc)[v_range]
             dofs_w = @view celldofs(cc)[w_range]
             for qp in QuadratureIterator(cvv)
@@ -114,7 +114,7 @@
         Thunderbolt.transfer!(target_u, op, source_u)
         cvw = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle,1}())
         for cc in CellIterator(target_dh.subdofhandlers[1])
-            reinit!(cvw, cc)
+            Ferrite.reinit!(cvw, cc)
             dofs_v = @view celldofs(cc)[v_range]
             dofs_w = @view celldofs(cc)[w_range]
             for qp in QuadratureIterator(cvw)

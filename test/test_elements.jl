@@ -16,7 +16,7 @@
     close!(dhs)
     sdhs = first(dhs.subdofhandlers)
     cell_cache_s = Ferrite.CellCache(sdhs)
-    reinit!(cell_cache_s, 1)
+    Ferrite.reinit!(cell_cache_s, 1)
     uₑs = [
         -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0
     ].*1e-4
@@ -27,7 +27,7 @@
     close!(dhv)
     sdhv = first(dhv.subdofhandlers)
     cell_cache_v = Ferrite.CellCache(sdhv)
-    reinit!(cell_cache_v, 1)
+    Ferrite.reinit!(cell_cache_v, 1)
     uₑv = [
         -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0,
         -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0,
