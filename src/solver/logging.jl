@@ -17,16 +17,16 @@ end
 
 function integration_step_monitor(integrator::SciMLBase.DEIntegrator, progress_monitor::DefaultProgressMonitor)
     # (; id)       = progress_monitor
-    (; t, dt, iter)    = integrator
+    (; tprev, t, dt, iter)    = integrator
     # push!(msgs, id => "$id: integrating on [$t, $(t+dt)] with Δt=$dt.")
-    @logmsg LogLevel(-100) "Integrating on [$t, $(t+dt)]." iter=iter Δt=dt _group=:timeintegration
+    @logmsg LogLevel(-100) "Integrating on [$tprev, $t]." iter=iter Δt=dt _group=:timeintegration
 end
 
 function integration_finalize_monitor(integrator, progress_monitor::DefaultProgressMonitor)
     # (; id)         = progress_monitor
-    (; t, iter) = integrator
+    (; tprev, t, iter) = integrator
     # push!(msgs, id => "$id: done at $t.")
-    @info "Finished integration at t=$t." iter=iter _group=:timeintegration
+    @info "Finished integration at t=$t (tprev=$tprev)." iter=iter _group=:timeintegration
 end
 
 #
