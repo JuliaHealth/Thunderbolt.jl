@@ -244,7 +244,7 @@ end
     inner_prob = LinearSolve.LinearProblem(
         getJ(op), residual; u0=Δu
     )
-    inner_cache = init(inner_prob, newton.inner_solver; alias_A=true, alias_b=true)
+    inner_cache = init(inner_prob, newton.inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b=true))
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 

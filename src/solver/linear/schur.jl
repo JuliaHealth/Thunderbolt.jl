@@ -24,7 +24,7 @@ A solver for block systems of the form
 with small zero block of size $N_2 \times N_2$ and invertible $A_{11}$ with size $N_1 \times N_1$.
 The inner linear solver is responsible to solve for $N_2$ systems of the form $A_{11} z_i = c_i$.
 """
-struct SchurComplementLinearSolver{ASolverType <: LinearSolve.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
+struct SchurComplementLinearSolver{ASolverType <: SciMLBase.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
     inner_alg::ASolverType
 end
 
@@ -76,7 +76,7 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     innersolve = LinearSolve.init(
         inner_prob,
         alg.inner_alg;
-        alias_A = true,
+        alias = LinearAliasSpecifier(alias_A = true),
         Pl, Pr,
         verbose,
         maxiters,

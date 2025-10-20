@@ -42,7 +42,7 @@ import SciMLBase
 @reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
-import LinearSolve
+import LinearSolve: LinearSolve, LinearAliasSpecifier
 
 import Base: *, +, -, @kwdef
 
