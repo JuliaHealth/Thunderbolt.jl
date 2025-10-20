@@ -43,6 +43,7 @@ import SciMLBase
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
+using LinearSolve: LinearAliasSpecifier
 
 import Base: *, +, -, @kwdef
 

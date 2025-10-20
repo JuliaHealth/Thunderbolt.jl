@@ -44,7 +44,7 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphs
     inner_prob = LinearSolve.LinearProblem(
         getJ(op), residual; u0=Δu
     )
-    inner_cache = init(inner_prob, inner_solver; alias_A=true, alias_b=true)
+    inner_cache = init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A=true, alias_b=true))
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
@@ -61,7 +61,7 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
     inner_prob = LinearSolve.LinearProblem(
         getJ(op), residual; u0=Δu
     )
-    inner_cache = init(inner_prob, inner_solver; alias_A=true, alias_b=true)
+    inner_cache = init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A=true, alias_b=true))
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 

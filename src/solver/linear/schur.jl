@@ -1,9 +1,8 @@
-abstract type AbstractLinearBlockAlgorithm <: LinearSolve.SciMLLinearSolveAlgorithm end # Why not the following? <: LinearSolve.AbstractLinearAlgorithm end
-
+abstract type AbstractLinearBlockAlgorithm <: SciMLBase.AbstractLinearAlgorithm end 
 abstract type AbstractLinear2x2BlockAlgorithm <: AbstractLinearBlockAlgorithm end
 
 @doc raw"""
-    SchurComplementLinearSolver(inner_alg::AbstractLinearAlgorithm)
+    SchurComplementLinearSolver(inner_alg::SciMLBase.AbstractLinearAlgorithm)
 
 A solver for block systems of the form
 ```math
@@ -24,7 +23,7 @@ A solver for block systems of the form
 with small zero block of size $N_2 \times N_2$ and invertible $A_{11}$ with size $N_1 \times N_1$.
 The inner linear solver is responsible to solve for $N_2$ systems of the form $A_{11} z_i = c_i$.
 """
-struct SchurComplementLinearSolver{ASolverType <: LinearSolve.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
+struct SchurComplementLinearSolver{ASolverType <: SciMLBase.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
     inner_alg::ASolverType
 end
 
@@ -48,9 +47,6 @@ struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
     innersolve::innerSolveType
     algscratch::scratchType
 end
-
-# FIXME This does not work for some reason...
-LinearSolve.default_alias_A(alg::AbstractLinearBlockAlgorithm, A::AbstractBlockMatrix, b) = true
 
 function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::AbstractBlockMatrix, b::AbstractVector, u::AbstractVector, Pl, Pr, maxiters::Int, abstol, reltol, verbose::Bool, assumptions::LinearSolve.OperatorAssumptions; zeroinit = true)
     # Check if input is okay
@@ -76,7 +72,7 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     innersolve = LinearSolve.init(
         inner_prob,
         alg.inner_alg;
-        alias_A = true,
+        alias = LinearAliasSpecifier(alias_A = true),
         Pl, Pr,
         verbose,
         maxiters,
