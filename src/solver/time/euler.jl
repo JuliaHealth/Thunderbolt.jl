@@ -418,40 +418,40 @@ end
 #                     ODE Problems                      #
 #########################################################
 
-# Multi-rate version
-Base.@kwdef struct ForwardEulerSolver{SolutionVectorType} <: AbstractSolver
-    rate::Int
-    solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
-end
+# # Multi-rate version
+# Base.@kwdef struct ForwardEulerSolver{SolutionVectorType} <: AbstractSolver
+#     rate::Int
+#     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
+# end
 
-mutable struct ForwardEulerSolverCache{VT,VTrate,VTprev,F} <: AbstractTimeSolverCache
-    rate::Int
-    du::VTrate
-    uₙ::VT
-    uₙ₋₁::VTprev
-    rhs!::F
-end
+# mutable struct ForwardEulerSolverCache{VT,VTrate,VTprev,F} <: AbstractTimeSolverCache
+#     rate::Int
+#     du::VTrate
+#     uₙ::VT
+#     uₙ₋₁::VTprev
+#     rhs!::F
+# end
 
-function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t, Δt)
-    @unpack rate, du, uₙ, rhs! = solver_cache
-    Δtsub = Δt/rate
-    for i ∈ 1:rate
-        @inbounds rhs!(du, uₙ, t, f.p)
-        @inbounds @.. uₙ = uₙ + Δtsub * du
-        t += Δtsub
-    end
+# function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t, Δt)
+#     @unpack rate, du, uₙ, rhs! = solver_cache
+#     Δtsub = Δt/rate
+#     for i ∈ 1:rate
+#         @inbounds rhs!(du, uₙ, t, f.p)
+#         @inbounds @.. uₙ = uₙ + Δtsub * du
+#         t += Δtsub
+#     end
 
-    return !any(isnan.(uₙ))
-end
+#     return !any(isnan.(uₙ))
+# end
 
-function setup_solver_cache(f::ODEFunction, solver::ForwardEulerSolver, t₀; u = nothing, uprev = nothing)
-    du = create_system_vector(solver.solution_vector_type, f)
-    u = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
-    return ForwardEulerSolverCache(
-        solver.rate,
-        du,
-        u,
-        u,
-        f.f
-    )
-end
+# function setup_solver_cache(f::ODEFunction, solver::ForwardEulerSolver, t₀; u = nothing, uprev = nothing)
+#     du = create_system_vector(solver.solution_vector_type, f)
+#     u = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
+#     return ForwardEulerSolverCache(
+#         solver.rate,
+#         du,
+#         u,
+#         u,
+#         f.f
+#     )
+# end

@@ -3,6 +3,7 @@
 mutable struct RSAFDQ2022SingleChamberTying{CVM}
     const pressure_dof_index_local::Int
     pressure_dof_index_global::Int
+    const pressure_parameter_index_local
     const facets::OrderedSet{FacetIndex}
     const volume_method::CVM
     const displacement_symbol::Symbol
@@ -215,11 +216,13 @@ function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural
         pressure_dof_index = num_unknowns_structure + i
         (; dh) = structural_problem
         chamber_facetset = getfacetset(get_grid(dh), coupling.chamber_surface_setname)
-        chamber_volume_idx_lumped = get_variable_symbol_index(circuit_model, coupling.lumped_model_symbol)
+        chamber_volume_idx_lumped   = get_variable_symbol_index(circuit_model, coupling.lumped_volume_symbol)
+        chamber_pressure_idx_lumped = get_parameter_symbol_index(circuit_model, coupling.lumped_pressure_symbol)
         # TODO rethink the next two lines
         tying = RSAFDQ2022SingleChamberTying(
             pressure_dof_index,
             pressure_dof_index,
+            chamber_pressure_idx_lumped,
             chamber_facetset,
             coupling.chamber_volume_method,
             coupler.displacement_symbol,
@@ -244,11 +247,12 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
     # ODE problem for blood circuit
-    circuit_fun = ODEFunction( #Not ModelingToolkit.ODEFunction :)
-            model.circuit_model,
-        (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, model.circuit_model),
-        zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers - TODO replace this hack with a proper transfer operator!
-    )
+    # circuit_fun = ODEFunction( #Not ModelingToolkit.ODEFunction :)
+    #         model.circuit_model,
+    #     (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, model.circuit_model),
+    #     zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers - TODO replace this hack with a proper transfer operator!
+    # )
+    circuit_fun = ODEFunction(model.circuit_model) #Not ModelingToolkit.ODEFunction :)
 
     # Tie problems
     # Fix dispatch....
@@ -273,7 +277,7 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
         ),
         (
             1:offset,
-            (offset+1):(offset+solution_size(circuit_fun))
+            (offset+1):(offset+solution_size(model.circuit_model))
         ),
         (
             VolumeTransfer0D3D(tying_info),

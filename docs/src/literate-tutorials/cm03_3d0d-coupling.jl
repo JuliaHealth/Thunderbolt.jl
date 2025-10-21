@@ -18,6 +18,18 @@ using CirculatorySystemModels, DynamicQuantities
 # Finally, we try to approach a valid initial state by solving a simpler model first.
 using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
+using ModelingToolkit: t_nounits as t, D_nounits as D
+
+function ϕRSAFDQ2022(t, tc, tr, TC, TR, THB)
+    c11 = 0 ≤ mod(t - tc, THB)
+    c12 = mod(t - tc, THB) ≤ TC
+
+    c21 = 0 ≤ mod(t - tr, THB)
+    c22 = mod(t - tr, THB) ≤ TR
+
+    return c11*c12 * 0.5(1-cos(π/TC*mod(t-tc,THB))) + c21*c22*0.5(1+cos(π/TR*mod(t-tr,THB)))
+end
+
 # We start by defining a MTK component to couple the circuit model with Thunderbolt.
 @mtkmodel PressureCouplingChamber begin
     @components begin
@@ -25,7 +37,7 @@ using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
         out = Pin()
     end
     @parameters begin
-        p3D, [description = "Pressure of the associated 3D chamber"]
+        p3D = 0.0, [description = "Pressure of the associated 3D chamber"]
     end
     @variables begin
         V(t), [description = "Volume"]
@@ -206,9 +218,10 @@ microstructure    = create_microstructure_model(
 );
 passive_material_model = Guccione1991PassiveModel()
 active_material_model  = Guccione1993ActiveModel()
-function calcium_profile_function(x::LVCoordinate,t)
+function calcium_profile_function(x::LVCoordinate,t_global)
     linear_interpolation(t,y1,y2,t1,t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
     ca_peak(x)                          = 1.0
+    t = t_global % 800.0
     if 0 ≤ t ≤ 120.0
         return linear_interpolation(t,        0.0, ca_peak(x),   0.0, 120.0)
     elseif t ≤ 272.0
@@ -240,12 +253,13 @@ coupler = LumpedFluidSolidCoupler(
         ChamberVolumeCoupling(
             "Endocardium",
             RSAFDQ2022SurrogateVolume(),
-            V0D
+            V0D,
+            p3D,
         )
     ],
     :displacement,
 )
-coupled_model = RSAFDQ2022Model(solid_model,fluid_model,coupler);
+coupled_model = RSAFDQ2022Model(solid_model, fluid_model, coupler);
 # !!! todo
 #     Once we figure out a nicer way to do this we should add more detailed docs here.
 
@@ -266,11 +280,11 @@ splitform = semidiscretize(
     mesh,
 )
 
-dt₀ = 1.0
-dtvis = 5.0
-tspan = (0.0, 1000.0)
+dt₀ = 5.0
+dtvis = 10.0
+tspan = (0.0, 3*800.0)
 # This speeds up the CI # hide
-# tspan = (0.0, dtvis)    # hide
+tspan = (0.0, 40.0)    # hide
 
 # The remaining code is very similar to how we use SciML solvers.
 chamber_solver = HomotopyPathSolver(
@@ -282,21 +296,59 @@ chamber_solver = HomotopyPathSolver(
         )
     )
 )
-blood_circuit_solver = ForwardEulerSolver(rate=ceil(Int, dt₀/0.001)) # Force time step to about 0.001
+blood_circuit_solver = Tsit5()
 timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
 u₀ = zeros(solution_size(splitform))
 u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
-# u₀solid_view[end] = 1.0 # FIXME there should be a query for this operation (set initial pressure)
 u₀fluid_view = @view  u₀[OS.get_solution_indices(splitform, 2)]
-for (i, unk) in enumerate(unknowns(circ_sys)) # FIXME there should be a query for this operation
-    isequal(circ_sys.LV.V, unknowns(circ_sys)[end])
-    j = findfirst(x->isequal(x, unk), first.(u0fluid))
-    u₀fluid_view[i] = last.(u0fluid)[j]
+for (sym, val) in u0fluid
+    u₀fluid_view[ModelingToolkit.variable_index(circ_sys, sym)] = val
+end
+
+OrdinaryDiffEqOperatorSplitting.recursive_null_parameters(::ModelingToolkit.System) = Thunderbolt.DiffEqBase.NullParameters()
+
+function OrdinaryDiffEqOperatorSplitting.build_subintegrator_tree_with_cache(
+        prob::OperatorSplittingProblem, alg::OrdinaryDiffEqTsit5.SciMLBase.AbstractODEAlgorithm,
+        f::F, p::P,
+        uprevouter::S, uouter::S,
+        solution_indices,
+        t0::T, dt::T, tf::T,
+        tstops, saveat, d_discontinuities, callback,
+        adaptive, verbose,
+        save_end = false,
+        controller = nothing
+    ) where {S, T, P, F}
+    uprev = @view uprevouter[solution_indices]
+    u = @view uouter[solution_indices]
+
+    # MTK generates the parameters from f
+    prob2 = if p isa Thunderbolt.DiffEqBase.NullParameters
+        OrdinaryDiffEqTsit5.SciMLBase.ODEProblem(f, u, (t0, min(t0 + dt, tf)))
+    else
+        OrdinaryDiffEqTsit5.SciMLBase.ODEProblem(f, u, (t0, min(t0 + dt, tf)), p)
+    end
+
+    integrator = Thunderbolt.DiffEqBase.__init(
+        prob2,
+        alg;
+        dt,
+        saveat = (),
+        d_discontinuities,
+        save_everystep = false,
+        advance_to_tstop = false,
+        adaptive,
+        controller,
+        verbose
+    )
+
+    return integrator, integrator.cache
 end
 
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
 integrator = init(problem, timestepper, dt=dt₀, verbose=true);
+
+
 
 
 ## f2 = Figure()

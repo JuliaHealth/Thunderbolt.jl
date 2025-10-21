@@ -4,7 +4,8 @@ Descriptor for which volume to couple with which variable for the constraint.
 struct ChamberVolumeCoupling{CVM}
     chamber_surface_setname::String
     chamber_volume_method::CVM
-    lumped_model_symbol::Union{Symbol,ModelingToolkit.Num}
+    lumped_volume_symbol::Union{Symbol,ModelingToolkit.Num}
+    lumped_pressure_symbol::Union{Symbol,ModelingToolkit.Num}
 end
 
 """

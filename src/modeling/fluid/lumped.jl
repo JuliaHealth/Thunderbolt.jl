@@ -1,7 +1,9 @@
 abstract type AbstractLumpedCirculatoryModel end
 
 """
-Keep the volume at a certain level.
+    DummyLumpedCircuitModel(volume_fun)
+
+Lock the volume at a certain value.
 """
 struct DummyLumpedCircuitModel{F} <: AbstractLumpedCirculatoryModel
     volume_fun::F
@@ -16,8 +18,8 @@ function default_initial_condition!(u, model::DummyLumpedCircuitModel)
     u[1] = model.volume_fun(0.0)
 end
 
-function lumped_driver!(du, u, t, external_input, model::DummyLumpedCircuitModel)
-    du[1] = model.volume_fun(0.0)-u[1]
+function (model::DummyLumpedCircuitModel)(du, u, p, t)
+    du[1] = model.volume_fun(t)-u[1]
 end
 
 """

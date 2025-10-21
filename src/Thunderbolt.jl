@@ -199,8 +199,6 @@ export
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
-    VolumeTransfer0D3D,
-    PressureTransfer3D0D,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     AnisotropicPlanarMicrostructure,
