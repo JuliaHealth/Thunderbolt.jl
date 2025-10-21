@@ -3,31 +3,41 @@ using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 using ModelingToolkit: t_nounits as t, D_nounits as D
 
 function ϕRSAFDQ2022(t, tc, tr, TC, TR, THB)
-    # c11 = 0 ≤ mod(t - tc, THB)
-    # c12 = mod(t - tc, THB) ≤ TC
-    
-    # c21 = 0 ≤ mod(t - tr, THB)
-    # c22 = mod(t - tr, THB) ≤ TR
-    
-    # return c11*c12 * 0.5(1-cos(π/TC*mod(t-tc,THB))) + c21*c22*0.5(1+cos(π/TR*mod(t-tr,THB)))
+    c11 = 0 ≤ mod(t - tc, THB)
+    c12 = mod(t - tc, THB) ≤ TC
 
-    c11 = 0 ≤ (t - tc)
-    c12 = (t - tc) ≤ TC
+    c21 = 0 ≤ mod(t - tr, THB)
+    c22 = mod(t - tr, THB) ≤ TR
+
+    return c11*c12 * 0.5(1-cos(π/TC*mod(t-tc,THB))) + c21*c22*0.5(1+cos(π/TR*mod(t-tr,THB)))
+
+    # c11 = 0 ≤ (t - tc)
+    # c12 = (t - tc) ≤ TC
     
-    c21 = 0 ≤ (t - tr)
-    c22 = (t - tr) ≤ TR
-    
-    return c11*c12 * 0.5(1-cos(π/TC*(t-tc))) + c21*c22*0.5(1+cos(π/TR*(t-tr)))
+    # c21 = 0 ≤ (t - tr)
+    # c22 = (t - tr) ≤ TR
+
+    # return c11*c12 * 0.5(1-cos(π/TC*(t-tc))) + c21*c22*0.5(1+cos(π/TR*(t-tr)))
 end
 
 @mtkmodel LeakyResistorDiode begin
-    @extend OnePort()
+    @components begin
+        out = Pin()
+        in = Pin()
+    end
     @parameters begin
         Rₘᵢₙ
         Rₘₐₓ
     end
+    @variables begin
+        Δp(t)
+        q(t)
+    end
     @equations begin
-            q ~ - (Δp / Rₘᵢₙ * (Δp < 0) + Δp / Rₘₐₓ * (Δp ≥ 0))
+        Δp ~ in.p - out.p
+        q ~ (Δp / Rₘᵢₙ * (Δp < 0) + Δp / Rₘₐₓ * (Δp ≥ 0))
+        in.p ~ out.p
+        out.q ~ q
     end
 end
 
@@ -54,9 +64,9 @@ end
     @equations begin
         E ~ Epass + Eactmax * ϕRSAFDQ2022(t, tC, tC+TC, TC, TR, τ)
         p ~ pₑₓ + E * (V - V0)
-        D(V) ~ in.q + out.q
-        0 ~ in.p - out.p
-        p ~ in.p
+        D(V) ~ in.q - out.q
+        p ~ out.p
+        # 0 ~ out.q + in.q
     end
 end
 
@@ -76,9 +86,10 @@ end
     end
     @equations begin
         D(p)  ~ (in.q - q) / C
-        D(q)  ~ - R/L   * ( q  + (out.p - p)/R)
-        p ~ in.p
-        q ~ out.q
+        D(q)  ~ - R/L   * ( q  - (in.p - p)/R)
+        p ~ out.p
+        # q ~ out.q
+        0 ~ in.q + q + out.q
     end
 end
 
@@ -146,9 +157,9 @@ end
         TV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Triscupid
         PV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Pulmonary
 
-        SYSₐᵣ = RSAFDQ2022Periphery(R = Rsysₐᵣ, L = Lsysₐᵣ, C = Csysₐᵣ)
+        SYSₐᵣ  = RSAFDQ2022Periphery(R = Rsysₐᵣ , L = Lsysₐᵣ , C = Csysₐᵣ)
         SYSᵥₑₙ = RSAFDQ2022Periphery(R = Rsysᵥₑₙ, L = Lsysᵥₑₙ, C = Csysᵥₑₙ)
-        PULₐᵣ = RSAFDQ2022Periphery(R = Rpulₐᵣ, L = Lpulₐᵣ, C = Cpulₐᵣ)
+        PULₐᵣ  = RSAFDQ2022Periphery(R = Rpulₐᵣ , L = Lpulₐᵣ , C = Cpulₐᵣ)
         PULᵥₑₙ = RSAFDQ2022Periphery(R = Rpulᵥₑₙ, L = Lpulᵥₑₙ, C = Cpulᵥₑₙ)
     end
 
@@ -184,5 +195,5 @@ u02 = [
     circ_sys2.PULₐᵣ.p => 35.0
     circ_sys2.PULᵥₑₙ.p => 24.0
 ]
-prob2 = OrdinaryDiffEqTsit5.ODEProblem(circ_sys2, u02, (0.0, 20.0))
+prob2 = OrdinaryDiffEqTsit5.ODEProblem(circ_sys2, u02, (0.0, 2.0))
 sol2 = solve(prob2, Tsit5())

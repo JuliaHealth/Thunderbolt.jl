@@ -2,14 +2,26 @@ using CirculatorySystemModels, DynamicQuantities
 using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 using ModelingToolkit: t_nounits as t, D_nounits as D
 
+@mtkmodel LeakyResistorDiode begin
+    @extend OnePort()
+    @parameters begin
+        Rₘᵢₙ
+        Rₘₐₓ
+    end
+    @equations begin
+        q ~ -(Δp / Rₘᵢₙ * (Δp < 0) + Δp / Rₘₐₓ * (Δp ≥ 0))
+    end
+end
+
 function ϕRSAFDQ2022(t, tc, tr, TC, TR, THB)
-    c11 = 0 ≤ mod(t - tc, THB)
-    c12 = mod(t - tc, THB) ≤ TC
+    return 0
+    # c11 = 0 ≤ mod(t - tc, THB)
+    # c12 = mod(t - tc, THB) ≤ TC
 
-    c21 = 0 ≤ mod(t - tr, THB)
-    c22 = mod(t - tr, THB) ≤ TR
+    # c21 = 0 ≤ mod(t - tr, THB)
+    # c22 = mod(t - tr, THB) ≤ TR
 
-    return c11*c12 * 0.5(1-cos(π/TC*mod(t-tc,THB))) + c21*c22*0.5(1+cos(π/TR*mod(t-tr,THB)))
+    # return c11*c12 * 0.5(1-cos(π/TC*mod(t-tc,THB))) + c21*c22*0.5(1+cos(π/TR*mod(t-tr,THB)))
 end
 
 @mtkmodel RSAFDQ2022Chamber begin
@@ -106,10 +118,12 @@ end
         TV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Triscupid
         PV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Pulmonary
 
-        SYSₐᵣ  = CRL(R = Rsysₐᵣ , L = Lsysₐᵣ , C = Csysₐᵣ)
-        SYSᵥₑₙ = CRL(R = Rsysᵥₑₙ, L = Lsysᵥₑₙ, C = Csysᵥₑₙ)
-        PULₐᵣ  = CRL(R = Rpulₐᵣ , L = Lpulₐᵣ , C = Cpulₐᵣ)
-        PULᵥₑₙ = CRL(R = Rpulᵥₑₙ, L = Lpulᵥₑₙ, C = Cpulᵥₑₙ)
+        # Systemic Circuit
+        SYSₐᵣ  = CRL(R = Rsysₐᵣ , L = Lsysₐᵣ , C = Csysₐᵣ)  # Arterial
+        SYSᵥₑₙ = CRL(R = Rsysᵥₑₙ, L = Lsysᵥₑₙ, C = Csysᵥₑₙ) # Venous
+        # Pulmonary Circuit
+        PULₐᵣ  = CRL(R = Rpulₐᵣ , L = Lpulₐᵣ , C = Cpulₐᵣ)  # Arterial
+        PULᵥₑₙ = CRL(R = Rpulᵥₑₙ, L = Lpulᵥₑₙ, C = Cpulᵥₑₙ) # Venous
     end
 
     @equations begin

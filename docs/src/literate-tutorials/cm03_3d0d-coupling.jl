@@ -14,239 +14,183 @@
 # We start by loading Thunderbolt and LinearSolve to use a custom direct solver of our choice.
 using Thunderbolt, LinearSolve
 # Furthermore we will use CirculatorySystemModels to define the blood circuit model.
-using CirculatorySystemModels
+using CirculatorySystemModels, DynamicQuantities
 # Finally, we try to approach a valid initial state by solving a simpler model first.
 using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
 # We start by defining a MTK component to couple the circuit model with Thunderbolt.
-@component function PressureCouplingChamber(;name)
-    @named in = CirculatorySystemModels.Pin()
-    @named out = CirculatorySystemModels.Pin()
-    sts = @variables begin
-        V(t) = 0.0#, [description = "Volume of the lumped 0D chamber"]
-        p(t)
+@mtkmodel PressureCouplingChamber begin
+    @components begin
+        in  = Pin()
+        out = Pin()
     end
-    ps = @parameters begin
-        p3D(t), [description = "Pressure of the associated 3D chamber"]
+    @parameters begin
+        p3D, [description = "Pressure of the associated 3D chamber"]
     end
-
-    D = Differential(t)
-
-    eqs = [
-        0 ~ in.p - out.p
-        p ~ in.p
+    @variables begin
+        V(t), [description = "Volume"]
+        p(t), [description = "Pressure"]
+    end
+    @equations begin
         p ~ p3D
         D(V) ~ in.q + out.q
-    ]
-
-    compose(ODESystem(eqs, t, sts, ps; name=name), in, out)
-end;
+        p ~ in.p
+        p ~ out.p
+    end
+end
 
 # [RegSalAfrFedDedQar:2022:cem](@citet) use a leaky diode for the heart valves, which is not part of CirculatorySystemModels.
-@component function LeakyResistorDiode(;name, Rₘᵢₙ, Rₘₐₓ)
-    @named oneport = CirculatorySystemModels.OnePort()
-    @unpack Δp, q = oneport
-    ps = @parameters Rₘᵢₙ = Rₘᵢₙ Rₘₐₓ = Rₘₐₓ
-    eqs = [
-        q ~ - (Δp / Rₘᵢₙ * (Δp < 0) + Δp / Rₘₐₓ * (Δp ≥ 0))
-    ]
-    extend(ODESystem(eqs, t, [], ps; name=name), oneport)
-end;
+@mtkmodel LeakyResistorDiode begin
+    @extend OnePort()
+    @parameters begin
+        Rₘᵢₙ
+        Rₘₐₓ
+    end
+    @equations begin
+        q ~ -(Δp / Rₘᵢₙ * (Δp < 0) + Δp / Rₘₐₓ * (Δp ≥ 0))
+    end
+end
 
-# These are the parameters from the paper [RegSalAfrFedDedQar:2022:cem](@cite)
-τ = 1.0e3
-##
-Rsysₐᵣ  = (0.8e3)
-Rpulₐᵣ  = (0.1625e3)
-Rsysᵥₑₙ = (0.26e3)
-Rpulᵥₑₙ = (0.1625e3)
-## 
-Csysₐᵣ  = (1.2)
-Cpulₐᵣ  = (10.0)
-Csysᵥₑₙ = (60.0)
-Cpulᵥₑₙ = (16.0)
-##
-Lsysₐᵣ  = (5e3)
-Lpulₐᵣ  = (5e2)
-Lsysᵥₑₙ = (5e2)
-Lpulᵥₑₙ = (5e2)
-## Valve stuff
-Rmin = (0.0075e3)
-Rmax = (75000.0e3)
-## Passive elastance
-Epassₗₐ = (0.15)
-Epassᵣₐ = (0.15)
-Epassᵣᵥ = (0.1)
-## Active elastance
-Eactmaxₗₐ = (0.1)
-Eactmaxᵣₐ = (0.1)
-Eactmaxᵣᵥ = (1.4)
-## "Initial volume"
-V0ₗₐ = (4.0)
-V0ᵣₐ = (4.0)
-V0ᵣᵥ = (10.0)
-## Event timings
-tCₗₐ = (0.6e3)
-TCₗₐ = (0.104e3)
-TRₗₐ = (0.68e3)
-TRᵣₐ = (0.56e3)
-tCᵣₐ = (0.064e3)
-TCᵣₐ = (0.64e3)
-tCᵣᵥ = (0.0e3)
-TCᵣᵥ = (0.272e3)
-TRᵣᵥ = (0.12e3)
-# τ = (0.8e3)
+@mtkmodel RSAFDQ2022Chamber begin
+    @components begin
+        in  = Pin()
+        out = Pin()
+    end
+    @parameters begin
+        Epass, [description = "Passive elastance"]
+        Eactmax, [description = "Active elastance"]
+        V0, [description = "Dead volume"]
+        tC
+        TC
+        TR
+        τ, [description = "Total beat time"]
+        pₑₓ
+    end
+    @variables begin
+        V(t), [description = "Volume"]
+        p(t), [description = "Pressure"]
+        E(t), [description = "Elastance"]
+    end
+    @equations begin
+        E ~ Epass + Eactmax * ϕRSAFDQ2022(t, tC, tC+TC, TC, TR, τ)
+        p ~ pₑₓ + E * (V - V0)
+        D(V) ~ in.q + out.q
+        p ~ in.p
+        out.p ~ in.p
+    end
+end
 
-## Extra parameters to emulate the LV
-V0ₗᵥ = (5.0)
-Epassₗᵥ = (0.125)
-Eactmaxₗᵥ = (2.4)
-TCₗᵥ = (0.30e3)
-TRₗᵥ = (0.15e3)
+@mtkmodel RSAFDQ2022CircuitModularLV begin
+    @structural_parameters begin
+        τ   = 800.0#ustrip(0.8u"s" |> us"ms") #, [unit = u"ms", description = "Contraction cycle length"]
+    end
+    # These are the converted parameters from the paper [RegSalAfrFedDedQar:2022:cem](@cite) Appendix A
+    @parameters begin
+        ## Systemic Circuit
+        Rsysₐᵣ  = 106.65789473684211#ustrip(0.800u"mmHg*s/mL" |> us"kPa*ms/mL")
+        Csysₐᵣ  = 9.000740192450037#ustrip(1.2u"mL/mmHg" |> us"mL/kPa")
+        Lsysₐᵣ  = 666.6118421052632#ustrip(5e-3u"mmHg*s^2/mL" |> us"kPa*ms^2/mL")
+        Rsysᵥₑₙ = 34.66381578947368#ustrip(0.260u"mmHg*s/mL" |> us"kPa*ms/mL")
+        Csysᵥₑₙ = 1200.0986923266717#ustrip(160.0u"mL/mmHg" |> us"mL/kPa")
+        Lsysᵥₑₙ = 66.66118421052632#ustrip(5e-4u"mmHg*s^2/mL" |> us"kPa*ms^2/mL")
+        ## Pulmonary Circuit
+        Rpulₐᵣ  = 21.66488486842105#ustrip(0.1625u"mmHg*s/mL" |> us"kPa*ms/mL")
+        Cpulₐᵣ  = 75.00616827041698#ustrip(10.00u"mL/mmHg" |> us"mL/kPa")
+        Lpulₐᵣ  = 66.66118421052632#ustrip(5e-4u"mmHg*s^2/mL" |> us"kPa*ms^2/mL")
+        Rpulᵥₑₙ = 21.66488486842105#ustrip(0.1625u"mmHg*s/mL" |> us"kPa*ms/mL")
+        Cpulᵥₑₙ = 120.00986923266716#ustrip(16.00u"mL/mmHg" |> us"mL/kPa")
+        Lpulᵥₑₙ = 66.66118421052632#ustrip(5e-4u"mmHg*s^2/mL" |> us"kPa*ms^2/mL")
+        ## Valves
+        Rₘᵢₙ = 1.0#ustrip(0.0075u"mmHg*s/mL" |> us"kPa*ms/mL")
+        Rₘₐₓ = 9.999177631578946e6#ustrip(75000.0u"mmHg*s/mL" |> us"kPa*ms/mL")
+        ## Left Atrium
+        Epassₗₐ   = 0.011999013157894737#ustrip(0.09u"mmHg/mL" |> us"kPa/mL")
+        Eactmaxₗₐ = 0.009332565789473684#ustrip(0.07u"mmHg/mL" |> us"kPa/mL")
+        V0ₗₐ = 4.0#ustrip(4.0u"mL" |> us"mL")
+        tCₗₐ = 600.0#ustrip(0.6u"s" |> us"ms")
+        TCₗₐ = 104.0#ustrip(0.104u"s" |> us"ms")
+        TRₗₐ = 680.0#ustrip(0.68u"s" |> us"ms")
+        ## Right Atrium
+        Epassᵣₐ   = 0.009332565789473684#ustrip(0.07u"mmHg/mL" |> us"kPa/mL")
+        Eactmaxᵣₐ = 0.007999342105263157#ustrip(0.06u"mmHg/mL" |> us"kPa/mL")
+        V0ᵣₐ = 4.0#ustrip(4.0u"mL" |> us"mL")
+        TRᵣₐ = 560.0#ustrip(0.56u"s" |> us"ms")
+        tCᵣₐ = 64.0#ustrip(0.064u"s" |> us"ms")
+        TCᵣₐ = 640.0#ustrip(0.64u"s" |> us"ms")
+        ## Right Ventricle
+        Epassᵣᵥ   = 0.0066661184210526315#ustrip(0.05u"mmHg/mL" |> us"kPa/mL")
+        Eactmaxᵣᵥ = 0.07332730263157895#ustrip(0.55u"mmHg/mL" |> us"kPa/mL")
+        V0ᵣᵥ = 10.0#ustrip(10.0u"mL" |> us"mL")
+        tCᵣᵥ = 0.0#ustrip(0.0u"s" |> us"ms")
+        TCᵣᵥ = 272.0#ustrip(0.272u"s" |> us"ms")
+        TRᵣᵥ = 120.0#ustrip(0.12u"s" |> us"ms")
+        ## External pressure
+        pₑₓ = 0.0#ustrip(0.0u"mmHg" |> us"kPa")
+    end
+    @components begin
+        LV = PressureCouplingChamber()
+        LA = RSAFDQ2022Chamber(Epass=Epassₗₐ, Eactmax=Eactmaxₗₐ, V0=V0ₗₐ, tC=tCₗₐ, TC=TCₗₐ, TR=TRₗₐ, τ, pₑₓ)
+        RV = RSAFDQ2022Chamber(Epass=Epassᵣᵥ, Eactmax=Eactmaxᵣᵥ, V0=V0ᵣᵥ, tC=tCᵣᵥ, TC=TCᵣᵥ, TR=TRᵣᵥ, τ, pₑₓ)
+        RA = RSAFDQ2022Chamber(Epass=Epassᵣₐ, Eactmax=Eactmaxᵣₐ, V0=V0ᵣₐ, tC=tCᵣₐ, TC=TCᵣₐ, TR=TRᵣₐ, τ, pₑₓ)
 
-Eshiftᵣᵥ = 0.0
-Eshiftₗₐ = 1.0-tCₗₐ/τ
-Eshiftᵣₐ = 1.0-tCᵣₐ/τ
+        MV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Mitral
+        AV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Aortic
+        TV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Triscupid
+        PV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Pulmonary
 
-LV_Vt0 = 500.0
-RV_Vt0 = 500.0
-LA_Vt0 = 20.0
-RA_Vt0 = 20.0
-# !!! todo
-#     I made some unit conversion error somewhere here.
-#     This needs to be fixed.
+        # Systemic Circuit
+        SYSₐᵣ  = CRL(R = Rsysₐᵣ , L = Lsysₐᵣ , C = Csysₐᵣ)  # Arterial
+        SYSᵥₑₙ = CRL(R = Rsysᵥₑₙ, L = Lsysᵥₑₙ, C = Csysᵥₑₙ) # Venous
+        # Pulmonary Circuit
+        PULₐᵣ  = CRL(R = Rpulₐᵣ , L = Lpulₐᵣ , C = Cpulₐᵣ)  # Arterial
+        PULᵥₑₙ = CRL(R = Rpulᵥₑₙ, L = Lpulᵥₑₙ, C = Cpulᵥₑₙ) # Venous
+    end
 
-# We now setup the model for the initial state
-## Start Modelling
-@independent_variables t
+    @equations begin
+        connect(LV.out, AV.in)
+        connect(AV.out, SYSₐᵣ.in)
+        connect(SYSₐᵣ.out, SYSᵥₑₙ.in)
+        connect(SYSᵥₑₙ.out, RA.in)
+        connect(RA.out, TV.in)
+        connect(TV.out, RV.in)
+        connect(RV.out, PV.in)
+        connect(PV.out, PULₐᵣ.in)
+        connect(PULₐᵣ.out, PULᵥₑₙ.in)
+        connect(PULᵥₑₙ.out, LA.in)
+        connect(LA.out, MV.in)
+        connect(MV.out, LV.in)
+    end
+end
 
-## Atria and ventricles
-@named LV = ShiChamber(V₀=V0ₗᵥ, p₀=0.0, Eₘᵢₙ=Epassₗᵥ, Eₘₐₓ=Epassₗᵥ+Eactmaxₗᵥ, τ=τ, τₑₛ=TCₗᵥ, τₑₚ=TCₗᵥ+TRₗᵥ, Eshift=0.0)
-@named LA = ShiChamber(V₀=V0ₗₐ, p₀=0.0, Eₘᵢₙ=Epassₗₐ, Eₘₐₓ=Epassₗₐ+Eactmaxₗₐ, τ=τ, τₑₛ=TCₗₐ, τₑₚ=TCₗₐ+TRₗₐ, Eshift=Eshiftₗₐ)
-@named RV = ShiChamber(V₀=V0ᵣᵥ, p₀=0.0, Eₘᵢₙ=Epassᵣᵥ, Eₘₐₓ=Epassᵣᵥ+Eactmaxᵣᵥ, τ=τ, τₑₛ=TCᵣᵥ, τₑₚ=TCᵣᵥ+TRᵣᵥ, Eshift=0.0)
-@named RA = ShiChamber(V₀=V0ᵣₐ, p₀=0.0, Eₘᵢₙ=Epassᵣₐ, Eₘₐₓ=Epassᵣₐ+Eactmaxᵣₐ, τ=τ, τₑₛ=TCᵣₐ, τₑₚ=TCₗₐ+TRₗₐ, Eshift=Eshiftᵣₐ)
-
-## Valves as leaky diodes
-@named AV = LeakyResistorDiode(Rₘᵢₙ = Rmin, Rₘₐₓ = Rmax)
-@named MV = LeakyResistorDiode(Rₘᵢₙ = Rmin, Rₘₐₓ = Rmax)
-@named TV = LeakyResistorDiode(Rₘᵢₙ = Rmin, Rₘₐₓ = Rmax)
-@named PV = LeakyResistorDiode(Rₘᵢₙ = Rmin, Rₘₐₓ = Rmax)
-
-####### Systemic Loop #######
-## Systemic Artery ##
-@named SYSAR = CRL(C=Csysₐᵣ, R=Rsysₐᵣ, L=Lsysₐᵣ)
-## Systemic Vein ##
-@named SYSVEN = CRL(C=Csysᵥₑₙ, R=Rsysᵥₑₙ, L=Lsysᵥₑₙ)
-
-####### Pulmonary Loop #######
-## Pulmonary Artery ##
-@named PULAR = CRL(C=Cpulₐᵣ, R=Rpulₐᵣ, L=Lpulₐᵣ)
-## Pulmonary Vein ##
-@named PULVEN = CRL(C=Cpulᵥₑₙ, R=Rpulᵥₑₙ, L=Lpulᵥₑₙ)
-
-##
-circ_eqs_init = [
-    connect(LV.out, AV.in)
-    connect(AV.out, SYSAR.in)
-    connect(SYSAR.out, SYSVEN.in)
-    connect(SYSVEN.out, RA.in)
-    connect(RA.out, TV.in)
-    connect(TV.out, RV.in)
-    connect(RV.out, PV.in)
-    connect(PV.out,  PULAR.in)
-    connect(PULAR.out, PULVEN.in)
-    connect(PULVEN.out, LA.in)
-    connect(LA.out, MV.in)
-    connect(MV.out, LV.in)
-]
 
 ## Compose the whole ODE system
-@named _circ_model_init = ODESystem(circ_eqs_init, t)
-@named circ_model_init = compose(_circ_model_init,
-    [LV, RV, LA, RA, AV, MV, PV, TV, SYSAR, SYSVEN, PULAR, PULVEN])
+@named circ_model = RSAFDQ2022CircuitModularLV()
+circ_sys = mtkcompile(circ_model)
 
-## And simplify it
-circ_sys_init = structural_simplify(circ_model_init)
-
-## Setup ODE with reasonable initial guess
-u0 = [
-    LV.V => LV_Vt0
-    RV.V => RV_Vt0
-    RA.V => RA_Vt0
-    LA.V => LA_Vt0
-    SYSAR.C.V => 100.0 * Csysₐᵣ
-    SYSAR.L.q => 0.0
-    SYSVEN.C.V => 0.0
-    SYSVEN.L.q => 0.0
-    PULAR.C.V => 30.0 * Cpulₐᵣ
-    PULAR.L.q => 0.0
-    PULVEN.C.V => 0.0
-    PULVEN.L.q => 0.0
-];
-
-# Simulate the full 0D model for a few heat beats using Tsit5.
-prob = OrdinaryDiffEqTsit5.ODEProblem(circ_sys_init, u0, (0.0, 20.0e3))
-# !!! todo
-#      Once Thudnerbolt is compatible with OrdinaryDiffEq we should remove the namespacing here.
-@time circ_sol_init = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3);
-
-# !!! tip
-#     We can visualize the last pressure-volume loop as follows with GLMakie
-#     ```julia
-#     using GLMakie
-#     f = Figure()
-#     axs = [
-#         Axis(f[1, 1], title="LV"),
-#         Axis(f[1, 2], title="RV"),
-#         Axis(f[2, 1], title="LA"),
-#         Axis(f[2, 2], title="RA")
-#     ]
-
-#     lines!(axs[1], circ_sol_init[LV.V], circ_sol_init[LV.p])
-#     lines!(axs[2], circ_sol_init[RV.V], circ_sol_init[RV.p])
-#     lines!(axs[3], circ_sol_init[LA.V], circ_sol_init[LA.p])
-#     lines!(axs[4], circ_sol_init[RA.V], circ_sol_init[RA.p])
-#     ```
-
-# With the solution we now extract the initial guess for the full problem.
-u0new = copy(circ_sol_init.u[end]);
-# !!! todo
-#     This is illegal.
-#     Figure out how to do the transfer correctly.
-
-# Now that we have a sensible initial guess we build actual 3d-0d coupled system
-# For this, we first instantiate the coupling component
-@named LVc = PressureCouplingChamber();
-# and connect it with the other equations
-circ_eqs = [
-    connect(LVc.out, AV.in)
-    connect(AV.out, SYSAR.in)
-    connect(SYSAR.out, SYSVEN.in)
-    connect(SYSVEN.out, RA.in)
-    connect(RA.out, TV.in)
-    connect(TV.out, RV.in)
-    connect(RV.out, PV.in)
-    connect(PV.out,  PULAR.in)
-    connect(PULAR.out, PULVEN.in)
-    connect(PULVEN.out, LA.in)
-    connect(LA.out, MV.in)
-    connect(MV.out, LVc.in)
-];
-
-# Now we compose the whole ODE system first
-@named _circ_model = ODESystem(circ_eqs, t)
-@named circ_model = compose(_circ_model,
-    [LVc, RV, LA, RA, AV, MV, PV, TV, SYSAR, SYSVEN, PULAR, PULVEN])
-circ_sys = structural_simplify(circ_model);
+## Precomputed initial guess
+u0fluid = [
+    circ_sys.LV.V => 94.6 #mL
+    circ_sys.LA.V => 51.81
+    circ_sys.RV.V => 109.9 # mL
+    circ_sys.RA.V => 45.6 # mL
+    circ_sys.SYSₐᵣ.C.V => 79.47
+    circ_sys.SYSₐᵣ.L.q => 0.0
+    circ_sys.SYSᵥₑₙ.C.V => 3341.88
+    circ_sys.SYSᵥₑₙ.L.q => 0.0602
+    circ_sys.PULₐᵣ.C.V => 277.89
+    circ_sys.PULₐᵣ.L.q => 0.056
+    circ_sys.PULᵥₑₙ.C.V => 298.75
+    circ_sys.PULᵥₑₙ.L.q => 0.068
+]
 
 # We now generate the mechanical subproblem as in the [first tutorial](@ref mechanics-tutorial_simple-active-stress)
-scaling_factor = 3.0;
+scaling_factor = 3.4;
 # !!! warning
 #     Tuning parameter until all bugs are fixed in this tutorial :)
 mesh = generate_ideal_lv_mesh(8,2,5;
     inner_radius = scaling_factor*0.7,
     outer_radius = scaling_factor*1.0,
-    longitudinal_upper = scaling_factor*0.2,
+    longitudinal_upper = 0.4,
     apex_inner = scaling_factor* 1.3,
     apex_outer = scaling_factor*1.5
 )
@@ -265,10 +209,10 @@ active_material_model  = Guccione1993ActiveModel()
 function calcium_profile_function(x::LVCoordinate,t)
     linear_interpolation(t,y1,y2,t1,t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
     ca_peak(x)                          = 1.0
-    if 0 ≤ t ≤ 300.0
-        return linear_interpolation(t,        0.0, ca_peak(x),   0.0, 300.0)
-    elseif t ≤ 500.0
-        return linear_interpolation(t, ca_peak(x),        0.0, 300.0, 500.0)
+    if 0 ≤ t ≤ 120.0
+        return linear_interpolation(t,        0.0, ca_peak(x),   0.0, 120.0)
+    elseif t ≤ 272.0
+        return linear_interpolation(t, ca_peak(x),        0.0, 120.0, 272.0)
     else
         return 0.0
     end
@@ -284,13 +228,13 @@ active_stress_model = ActiveStressModel(
     sarcomere_model,
     microstructure,
 )
-weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
+weak_boundary_conditions = (RobinBC(1.0, "Epicardium"),NormalSpringBC(100.0, "Base"))
 solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
 
 # The solid model is now couple with the circuit model by adding a Lagrange multipliers constraining the 3D chamber volume to match the chamber volume in the 0D model.
-p3D = LVc.p3D
-V0D = LVc.V
-fluid_model = MTKLumpedCicuitModel(circ_sys, u0new, [p3D])
+p3D = circ_sys.LV.p3D
+V0D = circ_sys.LV.V
+fluid_model = MTKLumpedCicuitModel(circ_sys, u0fluid, [p3D])
 coupler = LumpedFluidSolidCoupler(
     [
         ChamberVolumeCoupling(
@@ -326,7 +270,7 @@ dt₀ = 1.0
 dtvis = 5.0
 tspan = (0.0, 1000.0)
 # This speeds up the CI # hide
-tspan = (0.0, dtvis)    # hide
+# tspan = (0.0, dtvis)    # hide
 
 # The remaining code is very similar to how we use SciML solvers.
 chamber_solver = HomotopyPathSolver(
@@ -342,9 +286,14 @@ blood_circuit_solver = ForwardEulerSolver(rate=ceil(Int, dt₀/0.001)) # Force t
 timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
 u₀ = zeros(solution_size(splitform))
-u₀[OS.get_solution_indices(splitform, 2)] .= u0new;
-# !!! todo
-#     How to map this correctly? If I understand correctly, then there is no guarantee that the states match.
+u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
+# u₀solid_view[end] = 1.0 # FIXME there should be a query for this operation (set initial pressure)
+u₀fluid_view = @view  u₀[OS.get_solution_indices(splitform, 2)]
+for (i, unk) in enumerate(unknowns(circ_sys)) # FIXME there should be a query for this operation
+    isequal(circ_sys.LV.V, unknowns(circ_sys)[end])
+    j = findfirst(x->isequal(x, unk), first.(u0fluid))
+    u₀fluid_view[i] = last.(u0fluid)[j]
+end
 
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
 integrator = init(problem, timestepper, dt=dt₀, verbose=true);
