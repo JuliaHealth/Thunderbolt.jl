@@ -1826,7 +1826,9 @@ version = "1.15.0"
 
 [[deps.OrdinaryDiffEqOperatorSplitting]]
 deps = ["DataStructures", "DiffEqBase", "OrdinaryDiffEqCore", "SciMLBase", "TimerOutputs", "UnPack", "Unrolled"]
-git-tree-sha1 = "f5c1a97b42f3f6b0f8eb730ec7a136e4cb55ddbd"
+git-tree-sha1 = "6bc8da8dee592c377e5f9caa14c8dec156e5e1c8"
+repo-rev = "do/pp-ltg"
+repo-url = "https://github.com/SciML/OrdinaryDiffEqOperatorSplitting.jl.git"
 uuid = "760fc936-9fa0-4281-9c1a-468957eedc89"
 version = "0.2.1"
 

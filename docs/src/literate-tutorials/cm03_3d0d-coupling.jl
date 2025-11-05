@@ -284,7 +284,7 @@ dt₀ = 5.0
 dtvis = 10.0
 tspan = (0.0, 3*800.0)
 # This speeds up the CI # hide
-tspan = (0.0, 40.0)    # hide
+tspan = (0.0, 100.0)    # hide
 
 # The remaining code is very similar to how we use SciML solvers.
 chamber_solver = HomotopyPathSolver(
@@ -297,7 +297,8 @@ chamber_solver = HomotopyPathSolver(
     )
 )
 blood_circuit_solver = Tsit5()
-timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
+# timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
+timestepper = OrdinaryDiffEqOperatorSplitting.PalindromicPairLieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
 u₀ = zeros(solution_size(splitform))
 u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
@@ -308,48 +309,8 @@ end
 
 OrdinaryDiffEqOperatorSplitting.recursive_null_parameters(::ModelingToolkit.System) = Thunderbolt.DiffEqBase.NullParameters()
 
-function OrdinaryDiffEqOperatorSplitting.build_subintegrator_tree_with_cache(
-        prob::OperatorSplittingProblem, alg::OrdinaryDiffEqTsit5.SciMLBase.AbstractODEAlgorithm,
-        f::F, p::P,
-        uprevouter::S, uouter::S,
-        solution_indices,
-        t0::T, dt::T, tf::T,
-        tstops, saveat, d_discontinuities, callback,
-        adaptive, verbose,
-        save_end = false,
-        controller = nothing
-    ) where {S, T, P, F}
-    uprev = @view uprevouter[solution_indices]
-    u = @view uouter[solution_indices]
-
-    # MTK generates the parameters from f
-    prob2 = if p isa Thunderbolt.DiffEqBase.NullParameters
-        OrdinaryDiffEqTsit5.SciMLBase.ODEProblem(f, u, (t0, min(t0 + dt, tf)))
-    else
-        OrdinaryDiffEqTsit5.SciMLBase.ODEProblem(f, u, (t0, min(t0 + dt, tf)), p)
-    end
-
-    integrator = Thunderbolt.DiffEqBase.__init(
-        prob2,
-        alg;
-        dt,
-        saveat = (),
-        d_discontinuities,
-        save_everystep = false,
-        advance_to_tstop = false,
-        adaptive,
-        controller,
-        verbose
-    )
-
-    return integrator, integrator.cache
-end
-
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
-integrator = init(problem, timestepper, dt=dt₀, verbose=true);
-
-
-
+integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true; dtmax=10.0);
 
 ## f2 = Figure()
 ## axs = [
