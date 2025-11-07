@@ -141,7 +141,6 @@ export
     generate_quadratic_open_ring_mesh,
     generate_ideal_lv_mesh,
     # Generic models
-    ODEProblem,
     TransientDiffusionModel,
     AffineODEFunction,
     default_initial_condition!,

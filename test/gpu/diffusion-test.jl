@@ -24,7 +24,7 @@ dt₀   = 0.1f0
 dtvis = 1.0f0
 
 cputimestepper = BackwardEulerSolver(solution_vector_type=Vector{Float32}, system_matrix_type=ThreadedSparseMatrixCSR{Float32, Int32})
-cpuproblem     = ODEProblem(odefun, u₀, tspan)
+cpuproblem     = Thunderbolt.ODEProblem(odefun, u₀, tspan)
 cpuintegrator  = init(cpuproblem, cputimestepper, dt=dt₀)
 
 for (u, t) in TimeChoiceIterator(cpuintegrator, tspan[1]:dtvis:tspan[2])
@@ -37,7 +37,7 @@ end
 
 u₀gpu          = CuVector(u₀)
 gputimestepper = BackwardEulerSolver(solution_vector_type=CuVector{Float32}, system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSC{Float32, Int32})
-gpuproblem     = ODEProblem(odefun, u₀gpu, tspan)
+gpuproblem     = Thunderbolt.ODEProblem(odefun, u₀gpu, tspan)
 gpuintegrator  = init(gpuproblem, gputimestepper, dt=dt₀)
 
 for (u, t) in TimeChoiceIterator(gpuintegrator, tspan[1]:dtvis:tspan[2])
