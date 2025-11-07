@@ -230,7 +230,6 @@ export
     NewtonRaphsonSolver,
     MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,
-    ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,

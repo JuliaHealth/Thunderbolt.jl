@@ -280,11 +280,11 @@ splitform = semidiscretize(
     mesh,
 )
 
-dt₀ = 5.0
+dt₀ = 1.0
 dtvis = 10.0
 tspan = (0.0, 3*800.0)
 # This speeds up the CI # hide
-tspan = (0.0, 100.0)    # hide
+tspan = (0.0, 10.0)    # hide
 
 # The remaining code is very similar to how we use SciML solvers.
 chamber_solver = HomotopyPathSolver(
@@ -297,8 +297,7 @@ chamber_solver = HomotopyPathSolver(
     )
 )
 blood_circuit_solver = Tsit5()
-# timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
-timestepper = OrdinaryDiffEqOperatorSplitting.PalindromicPairLieTrotterGodunov((chamber_solver, blood_circuit_solver))
+timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
 u₀ = zeros(solution_size(splitform))
 u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
@@ -310,7 +309,7 @@ end
 OrdinaryDiffEqOperatorSplitting.recursive_null_parameters(::ModelingToolkit.System) = Thunderbolt.DiffEqBase.NullParameters()
 
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
-integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true; dtmax=10.0);
+integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
 
 ## f2 = Figure()
 ## axs = [
