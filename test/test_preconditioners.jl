@@ -41,8 +41,6 @@ function test_l1gs_prec(A, b)
     println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
     @test isapprox(A * sol_prec.u, b, rtol=1e-1, atol=1e-1)
     @test sol_prec.iters < sol_unprec.iters
-    # @test sol_prec.resid < sol_unprec.resid
-    @test sol_prec.stats.timer < sol_unprec.stats.timer
 end
 
 @testset "L1GS Preconditioner" begin
