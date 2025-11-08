@@ -13,190 +13,22 @@
 # ## Commented Program
 # We start by loading Thunderbolt and LinearSolve to use a custom direct solver of our choice.
 using Thunderbolt, LinearSolve
-# Furthermore we will use CirculatorySystemModels to define the blood circuit model.
-using CirculatorySystemModels, DynamicQuantities
 # Finally, we try to approach a valid initial state by solving a simpler model first.
-using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
+using OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
-using ModelingToolkit: t_nounits as t, D_nounits as D
-
-function ϕRSAFDQ2022(t, tc, tr, TC, TR, THB)
-    c11 = 0 ≤ mod(t - tc, THB)
-    c12 = mod(t - tc, THB) ≤ TC
-
-    c21 = 0 ≤ mod(t - tr, THB)
-    c22 = mod(t - tr, THB) ≤ TR
-
-    return c11*c12 * 0.5(1-cos(π/TC*mod(t-tc,THB))) + c21*c22*0.5(1+cos(π/TR*mod(t-tr,THB)))
-end
-
-# We start by defining a MTK component to couple the circuit model with Thunderbolt.
-@mtkmodel PressureCouplingChamber begin
-    @components begin
-        in  = Pin()
-        out = Pin()
-    end
-    @parameters begin
-        p3D = 0.0, [description = "Pressure of the associated 3D chamber"]
-    end
-    @variables begin
-        V(t), [description = "Volume"]
-        p(t), [description = "Pressure"]
-    end
-    @equations begin
-        p ~ p3D
-        D(V) ~ in.q + out.q
-        p ~ in.p
-        p ~ out.p
-    end
-end
-
-# [RegSalAfrFedDedQar:2022:cem](@citet) use a leaky diode for the heart valves, which is not part of CirculatorySystemModels.
-@mtkmodel LeakyResistorDiode begin
-    @extend OnePort()
-    @parameters begin
-        Rₘᵢₙ
-        Rₘₐₓ
-    end
-    @equations begin
-        q ~ -(Δp / Rₘᵢₙ * (Δp < 0) + Δp / Rₘₐₓ * (Δp ≥ 0))
-    end
-end
-
-@mtkmodel RSAFDQ2022Chamber begin
-    @components begin
-        in  = Pin()
-        out = Pin()
-    end
-    @parameters begin
-        Epass, [description = "Passive elastance"]
-        Eactmax, [description = "Active elastance"]
-        V0, [description = "Dead volume"]
-        tC
-        TC
-        TR
-        τ, [description = "Total beat time"]
-        pₑₓ
-    end
-    @variables begin
-        V(t), [description = "Volume"]
-        p(t), [description = "Pressure"]
-        E(t), [description = "Elastance"]
-    end
-    @equations begin
-        E ~ Epass + Eactmax * ϕRSAFDQ2022(t, tC, tC+TC, TC, TR, τ)
-        p ~ pₑₓ + E * (V - V0)
-        D(V) ~ in.q + out.q
-        p ~ in.p
-        out.p ~ in.p
-    end
-end
-
-@mtkmodel RSAFDQ2022CircuitModularLV begin
-    @structural_parameters begin
-        τ   = 800.0#ustrip(0.8u"s" |> us"ms") #, [unit = u"ms", description = "Contraction cycle length"]
-    end
-    # These are the converted parameters from the paper [RegSalAfrFedDedQar:2022:cem](@cite) Appendix A
-    @parameters begin
-        ## Systemic Circuit
-        Rsysₐᵣ  = 106.65789473684211#ustrip(0.800u"mmHg*s/mL" |> us"kPa*ms/mL")
-        Csysₐᵣ  = 9.000740192450037#ustrip(1.2u"mL/mmHg" |> us"mL/kPa")
-        Lsysₐᵣ  = 666.6118421052632#ustrip(5e-3u"mmHg*s^2/mL" |> us"kPa*ms^2/mL")
-        Rsysᵥₑₙ = 34.66381578947368#ustrip(0.260u"mmHg*s/mL" |> us"kPa*ms/mL")
-        Csysᵥₑₙ = 1200.0986923266717#ustrip(160.0u"mL/mmHg" |> us"mL/kPa")
-        Lsysᵥₑₙ = 66.66118421052632#ustrip(5e-4u"mmHg*s^2/mL" |> us"kPa*ms^2/mL")
-        ## Pulmonary Circuit
-        Rpulₐᵣ  = 21.66488486842105#ustrip(0.1625u"mmHg*s/mL" |> us"kPa*ms/mL")
-        Cpulₐᵣ  = 75.00616827041698#ustrip(10.00u"mL/mmHg" |> us"mL/kPa")
-        Lpulₐᵣ  = 66.66118421052632#ustrip(5e-4u"mmHg*s^2/mL" |> us"kPa*ms^2/mL")
-        Rpulᵥₑₙ = 21.66488486842105#ustrip(0.1625u"mmHg*s/mL" |> us"kPa*ms/mL")
-        Cpulᵥₑₙ = 120.00986923266716#ustrip(16.00u"mL/mmHg" |> us"mL/kPa")
-        Lpulᵥₑₙ = 66.66118421052632#ustrip(5e-4u"mmHg*s^2/mL" |> us"kPa*ms^2/mL")
-        ## Valves
-        Rₘᵢₙ = 1.0#ustrip(0.0075u"mmHg*s/mL" |> us"kPa*ms/mL")
-        Rₘₐₓ = 9.999177631578946e6#ustrip(75000.0u"mmHg*s/mL" |> us"kPa*ms/mL")
-        ## Left Atrium
-        Epassₗₐ   = 0.011999013157894737#ustrip(0.09u"mmHg/mL" |> us"kPa/mL")
-        Eactmaxₗₐ = 0.009332565789473684#ustrip(0.07u"mmHg/mL" |> us"kPa/mL")
-        V0ₗₐ = 4.0#ustrip(4.0u"mL" |> us"mL")
-        tCₗₐ = 600.0#ustrip(0.6u"s" |> us"ms")
-        TCₗₐ = 104.0#ustrip(0.104u"s" |> us"ms")
-        TRₗₐ = 680.0#ustrip(0.68u"s" |> us"ms")
-        ## Right Atrium
-        Epassᵣₐ   = 0.009332565789473684#ustrip(0.07u"mmHg/mL" |> us"kPa/mL")
-        Eactmaxᵣₐ = 0.007999342105263157#ustrip(0.06u"mmHg/mL" |> us"kPa/mL")
-        V0ᵣₐ = 4.0#ustrip(4.0u"mL" |> us"mL")
-        TRᵣₐ = 560.0#ustrip(0.56u"s" |> us"ms")
-        tCᵣₐ = 64.0#ustrip(0.064u"s" |> us"ms")
-        TCᵣₐ = 640.0#ustrip(0.64u"s" |> us"ms")
-        ## Right Ventricle
-        Epassᵣᵥ   = 0.0066661184210526315#ustrip(0.05u"mmHg/mL" |> us"kPa/mL")
-        Eactmaxᵣᵥ = 0.07332730263157895#ustrip(0.55u"mmHg/mL" |> us"kPa/mL")
-        V0ᵣᵥ = 10.0#ustrip(10.0u"mL" |> us"mL")
-        tCᵣᵥ = 0.0#ustrip(0.0u"s" |> us"ms")
-        TCᵣᵥ = 272.0#ustrip(0.272u"s" |> us"ms")
-        TRᵣᵥ = 120.0#ustrip(0.12u"s" |> us"ms")
-        ## External pressure
-        pₑₓ = 0.0#ustrip(0.0u"mmHg" |> us"kPa")
-    end
-    @components begin
-        LV = PressureCouplingChamber()
-        LA = RSAFDQ2022Chamber(Epass=Epassₗₐ, Eactmax=Eactmaxₗₐ, V0=V0ₗₐ, tC=tCₗₐ, TC=TCₗₐ, TR=TRₗₐ, τ, pₑₓ)
-        RV = RSAFDQ2022Chamber(Epass=Epassᵣᵥ, Eactmax=Eactmaxᵣᵥ, V0=V0ᵣᵥ, tC=tCᵣᵥ, TC=TCᵣᵥ, TR=TRᵣᵥ, τ, pₑₓ)
-        RA = RSAFDQ2022Chamber(Epass=Epassᵣₐ, Eactmax=Eactmaxᵣₐ, V0=V0ᵣₐ, tC=tCᵣₐ, TC=TCᵣₐ, TR=TRᵣₐ, τ, pₑₓ)
-
-        MV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Mitral
-        AV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Aortic
-        TV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Triscupid
-        PV = LeakyResistorDiode(Rₘᵢₙ, Rₘₐₓ) # Pulmonary
-
-        # Systemic Circuit
-        SYSₐᵣ  = CRL(R = Rsysₐᵣ , L = Lsysₐᵣ , C = Csysₐᵣ)  # Arterial
-        SYSᵥₑₙ = CRL(R = Rsysᵥₑₙ, L = Lsysᵥₑₙ, C = Csysᵥₑₙ) # Venous
-        # Pulmonary Circuit
-        PULₐᵣ  = CRL(R = Rpulₐᵣ , L = Lpulₐᵣ , C = Cpulₐᵣ)  # Arterial
-        PULᵥₑₙ = CRL(R = Rpulᵥₑₙ, L = Lpulᵥₑₙ, C = Cpulᵥₑₙ) # Venous
-    end
-
-    @equations begin
-        connect(LV.out, AV.in)
-        connect(AV.out, SYSₐᵣ.in)
-        connect(SYSₐᵣ.out, SYSᵥₑₙ.in)
-        connect(SYSᵥₑₙ.out, RA.in)
-        connect(RA.out, TV.in)
-        connect(TV.out, RV.in)
-        connect(RV.out, PV.in)
-        connect(PV.out, PULₐᵣ.in)
-        connect(PULₐᵣ.out, PULᵥₑₙ.in)
-        connect(PULᵥₑₙ.out, LA.in)
-        connect(LA.out, MV.in)
-        connect(MV.out, LV.in)
-    end
-end
-
-
-## Compose the whole ODE system
-@named circ_model = RSAFDQ2022CircuitModularLV()
-circ_sys = mtkcompile(circ_model)
+fluid_model_init = RSAFDQ2022LumpedCicuitModel()
+u0 = zeros(Thunderbolt.num_states(fluid_model_init))
+Thunderbolt.default_initial_condition!(u0, fluid_model_init)
+prob = ODEProblem((du, u, p, t) -> Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 100*fluid_model_init.THB), fluid_model_init)
+sol = solve(prob, Tsit5())
+# plot(sol, idxs=[1,2,3,4], tspan=(99*fluid_model_init.THB, 100*fluid_model_init.THB))
 
 ## Precomputed initial guess
-u0fluid = [
-    circ_sys.LV.V => 94.6 #mL
-    circ_sys.LA.V => 51.81
-    circ_sys.RV.V => 109.9 # mL
-    circ_sys.RA.V => 45.6 # mL
-    circ_sys.SYSₐᵣ.C.V => 79.47
-    circ_sys.SYSₐᵣ.L.q => 0.0
-    circ_sys.SYSᵥₑₙ.C.V => 3341.88
-    circ_sys.SYSᵥₑₙ.L.q => 0.0602
-    circ_sys.PULₐᵣ.C.V => 277.89
-    circ_sys.PULₐᵣ.L.q => 0.056
-    circ_sys.PULᵥₑₙ.C.V => 298.75
-    circ_sys.PULᵥₑₙ.L.q => 0.068
-]
+u₀fluid = sol.u[end]
+@info "Total blood volume: $(sum(u₀fluid[1:4])) + $(fluid_model_init.Csysₐᵣ*u₀fluid[5]) + $(fluid_model_init.Csysᵥₑₙ*u₀fluid[6]) + $(fluid_model_init.Cpulₐᵣ*u₀fluid[7]) + $(fluid_model_init.Cpulᵥₑₙ*u₀fluid[8])"
 
 # We now generate the mechanical subproblem as in the [first tutorial](@ref mechanics-tutorial_simple-active-stress)
-scaling_factor = 3.4;
+scaling_factor = 3.1;
 # !!! warning
 #     Tuning parameter until all bugs are fixed in this tutorial :)
 mesh = generate_ideal_lv_mesh(8,2,5;
@@ -245,16 +77,14 @@ weak_boundary_conditions = (RobinBC(1.0, "Epicardium"),NormalSpringBC(100.0, "Ba
 solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
 
 # The solid model is now couple with the circuit model by adding a Lagrange multipliers constraining the 3D chamber volume to match the chamber volume in the 0D model.
-p3D = circ_sys.LV.p3D
-V0D = circ_sys.LV.V
-fluid_model = MTKLumpedCicuitModel(circ_sys, u0fluid, [p3D])
+fluid_model = RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false)
 coupler = LumpedFluidSolidCoupler(
     [
         ChamberVolumeCoupling(
             "Endocardium",
             RSAFDQ2022SurrogateVolume(),
-            V0D,
-            p3D,
+            :Vₗᵥ,
+            :pₗᵥ,
         )
     ],
     :displacement,
@@ -302,11 +132,7 @@ timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 u₀ = zeros(solution_size(splitform))
 u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
 u₀fluid_view = @view  u₀[OS.get_solution_indices(splitform, 2)]
-for (sym, val) in u0fluid
-    u₀fluid_view[ModelingToolkit.variable_index(circ_sys, sym)] = val
-end
-
-OrdinaryDiffEqOperatorSplitting.recursive_null_parameters(::ModelingToolkit.System) = Thunderbolt.DiffEqBase.NullParameters()
+u₀fluid_view .= u₀fluid
 
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
 integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);

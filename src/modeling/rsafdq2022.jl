@@ -247,11 +247,6 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
     # ODE problem for blood circuit
-    # circuit_fun = ODEFunction( #Not ModelingToolkit.ODEFunction :)
-    #         model.circuit_model,
-    #     (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, model.circuit_model),
-    #     zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers - TODO replace this hack with a proper transfer operator!
-    # )
     circuit_fun = ODEFunction(model.circuit_model) #Not ModelingToolkit.ODEFunction :)
 
     # Tie problems
