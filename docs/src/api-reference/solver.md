@@ -30,18 +30,9 @@ MultiLevelNewtonRaphsonSolver
 
 ```@docs
 BackwardEulerSolver
-ForwardEulerSolver
 ForwardEulerCellSolver
 AdaptiveForwardEulerSubstepper
-LoadDrivenSolver
-```
-
-## Operator Splitting Module
-
-```@docs
-Thunderbolt.OS.LieTrotterGodunov
-Thunderbolt.OS.GenericSplitFunction
-Thunderbolt.OS.OperatorSplittingIntegrator
+HomotopyPathSolver
 ```
 
 ## Operator Splitting Adaptivity

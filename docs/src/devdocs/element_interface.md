@@ -46,5 +46,5 @@ Thunderbolt.BilinearDiffusionElementCache
 ### Elements
 
 ```@docs
-Thunderbolt.StructuralElementCache
+Thunderbolt.QuasiStaticElementCache
 ```
