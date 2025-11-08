@@ -46,7 +46,7 @@ function test_solve_contractile_ideal_lv_3D0D(mesh, constitutive_model, fluid_mo
     u₀ = zeros(solution_size(splitform))
     u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
     u₀fluid_view = @view  u₀[OS.get_solution_indices(splitform, 2)]
-    u₀fluid_view .= u₀fluid
+    u₀fluid_view .= sol.u[end]
 
     problem = OperatorSplittingProblem(splitform, u₀, tspan)
     integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
