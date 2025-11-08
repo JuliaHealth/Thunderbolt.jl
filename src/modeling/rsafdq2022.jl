@@ -72,36 +72,42 @@ end
 
 
 function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberTying)
-    check_subdomains(dh)
     grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_facet, ip, ip_geo)
 
     volume = 0.0
-    drange = dof_range(dh,method.displacement_symbol)
-    for facet ∈ FacetIterator(dh, getfacetset(grid, setname))
-        reinit!(fv, facet)
+    for (element_type, facet_subset) in grid.surface_subdomains[setname].data
+        (cellidx, _) = first(facet_subset)
+        for sdh in dh.subdofhandlers
+            if cellidx ∈ sdh.cellset
+                ip = Ferrite.getfieldinterpolation(sdh, method.displacement_symbol)
+                ip_geo = Ferrite.geometric_interpolation(element_type)
+                intorder = 2*Ferrite.getorder(ip)
+                ref_shape = Ferrite.getrefshape(ip)
+                qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+                fv = FacetValues(qr_facet, ip, ip_geo)
+                drange = dof_range(sdh, method.displacement_symbol)
+                for facet ∈ FacetIterator(sdh, facet_subset)
+                    reinit!(fv, facet)
 
-        coords = getcoordinates(facet)
-        ddofs = @view celldofs(facet)[drange]
-        uₑ = @view u[ddofs]
+                    coords = getcoordinates(facet)
+                    ddofs = @view celldofs(facet)[drange]
+                    uₑ = @view u[ddofs]
 
-        for qp in QuadratureIterator(fv)
-            dΓ = getdetJdV(fv, qp)
-            N = getnormal(fv, qp)
+                    for qp in QuadratureIterator(fv)
+                        dΓ = getdetJdV(fv, qp)
+                        N = getnormal(fv, qp)
 
-            ∇u = function_gradient(fv, qp, uₑ)
-            F = one(∇u) + ∇u
+                        ∇u = function_gradient(fv, qp, uₑ)
+                        F = one(∇u) + ∇u
 
-            d = function_value(fv, qp, uₑ)
+                        d = function_value(fv, qp, uₑ)
 
-            x = spatial_coordinate(fv, qp, coords)
+                        x = spatial_coordinate(fv, qp, coords)
 
-            volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
+                        volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
+                    end
+                end
+            end
         end
     end
     return volume

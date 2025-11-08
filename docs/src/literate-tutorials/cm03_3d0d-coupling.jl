@@ -180,7 +180,8 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     chamber_function = OS.get_operator(splitform, 1)
     (; dh) = chamber_function.structural_function
     store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, u[1:ndofs(dh)], :displacement) # TODO allow views
+    usolid_view = @view u[OS.get_solution_indices(splitform, 1)]
+    Thunderbolt.store_timestep_field!(io, t, dh, usolid_view, :displacement)
     Thunderbolt.finalize_timestep!(io, t)
 
     ## if t > 0.0
