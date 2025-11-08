@@ -40,16 +40,6 @@ end
 
 solution_size(f::NullFunction) = f.ndofs
 
-
-# TODO replace this with the original
-# struct ODEFunction{ODET,F,P} <: AbstractSemidiscreteFunction
-#     ode::ODET
-#     f::F
-#     p::P
-# end
-
-# solution_size(f::ODEFunction) = num_states(f.ode)
-
 # See https://github.com/JuliaGPU/Adapt.jl/issues/84 for the reason why hardcoding Int does not work
 struct PointwiseODEFunction{IndexType <: Integer, ODEType, xType} <: AbstractPointwiseFunction
     npoints::IndexType

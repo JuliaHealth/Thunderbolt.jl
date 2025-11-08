@@ -1,9 +1,7 @@
 [deps]
-DiffRules = "b552c78f-8df3-52c6-915a-8e097449b14b"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
-DynamicQuantities = "06fc5a27-2a28-4c7c-a15d-362465fb6821"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
