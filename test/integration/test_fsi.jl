@@ -49,7 +49,7 @@ function test_solve_contractile_ideal_lv_3D0D(mesh, constitutive_model, fluid_mo
     u₀fluid_view .= sol.u[end]
 
     problem = OperatorSplittingProblem(splitform, u₀, tspan)
-    integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
+    integrator = init(problem, timestepper, dt=Δt, verbose=true; dtmax=10.0);
     solve!(integrator)
     @test integrator.sol.retcode == ReturnCode.Success
     @test integrator.u ≉ u₀
