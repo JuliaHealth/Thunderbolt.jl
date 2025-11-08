@@ -1,5 +1,4 @@
 [deps]
-CirculatorySystemModels = "4211d73e-f4e8-40c4-b600-92e4b82f0e1a"
 DiffRules = "b552c78f-8df3-52c6-915a-8e097449b14b"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"

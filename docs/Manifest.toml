@@ -2,7 +2,7 @@
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "996ca24dd86331bebf2989bb85eeea85b0b1dbf4"
+project_hash = "98b9821c47888925706d50c0a17165f3288dc884"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "27cecae79e5cc9935255f90c53bb831cc3c870d7"
@@ -249,14 +249,6 @@ deps = ["ChunkCodecCore", "Zstd_jll"]
 git-tree-sha1 = "34d9873079e4cb3d0c62926a225136824677073f"
 uuid = "55437552-ac27-4d47-9aa3-63184e8fd398"
 version = "1.0.0"
-
-[[deps.CirculatorySystemModels]]
-deps = ["ModelingToolkit"]
-git-tree-sha1 = "4f6511d938700430a0515bb2aa95c30af7c487f2"
-repo-rev = "do/mtk-v10"
-repo-url = "https://github.com/termi-official/CirculatorySystemModels.jl"
-uuid = "4211d73e-f4e8-40c4-b600-92e4b82f0e1a"
-version = "0.4.1"
 
 [[deps.CloseOpenIntervals]]
 deps = ["Static", "StaticArrayInterface"]
