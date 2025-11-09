@@ -25,15 +25,6 @@ function DiffEqBase.ODEProblem(f::LumpedCirculatoryModelFunction,u0,tspan,p_; kw
     return prob
 end
 
-function get_parameter_symbol_index(model::AbstractLumpedCirculatoryModel, symbol::Symbol)
-    symbol == :pₗᵥ && return lumped_circuit_relative_lv_pressure_index(model)
-    symbol == :pᵣᵥ && return lumped_circuit_relative_rv_pressure_index(model)
-    symbol == :pₗₐ && return lumped_circuit_relative_la_pressure_index(model)
-    symbol == :pᵣₐ && return lumped_circuit_relative_ra_pressure_index(model)
-    error("Unnkown parameters symbol $symbol for model $model")
-end
-
-
 """
     DummyLumpedCircuitModel(volume_fun)
 
@@ -156,18 +147,37 @@ function get_variable_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::S
     @unpack lv_pressure_given, la_pressure_given, ra_pressure_given, rv_pressure_given = model
 
     # Try to query index
-    symbol == :Vₗₐ && return lumped_circuit_relative_la_pressure_index(model)
-    symbol == :Vₗᵥ && return lumped_circuit_relative_lv_pressure_index(model)
-    symbol == :Vᵣₐ && return lumped_circuit_relative_ra_pressure_index(model)
-    symbol == :Vᵣᵥ && return lumped_circuit_relative_rv_pressure_index(model)
+    symbol == :Vₗₐ && return 1
+    symbol == :Vₗᵥ && return 2
+    symbol == :Vᵣₐ && return 3
+    symbol == :Vᵣᵥ && return 4
 
     # Diagnostics
     valid_symbols = Set{Symbol}()
-    la_pressure_given && push!(valid_symbols, :Vₗₐ)
-    lv_pressure_given && push!(valid_symbols, :Vₗᵥ)
-    ra_pressure_given && push!(valid_symbols, :Vᵣₐ)
-    rv_pressure_given && push!(valid_symbols, :Vᵣᵥ)
+    push!(valid_symbols, :Vₗₐ)
+    push!(valid_symbols, :Vₗᵥ)
+    push!(valid_symbols, :Vᵣₐ)
+    push!(valid_symbols, :Vᵣᵥ)
     @error "Variable named '$symbol' not found. The following symbols are defined and accessible: $valid_symbols."
+end
+
+function get_parameter_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::Symbol)
+    @unpack lv_pressure_given, la_pressure_given, ra_pressure_given, rv_pressure_given = model
+
+    # Try to query index
+    symbol == :pₗₐ && return lumped_circuit_relative_la_pressure_index(model)
+    symbol == :pₗᵥ && return lumped_circuit_relative_lv_pressure_index(model)
+    symbol == :pᵣₐ && return lumped_circuit_relative_ra_pressure_index(model)
+    symbol == :pᵣᵥ && return lumped_circuit_relative_rv_pressure_index(model)
+
+    # Diagnostics
+    valid_symbols = Set{Symbol}([])
+    la_pressure_given && push!(valid_symbols, :pₗₐ)
+    lv_pressure_given && push!(valid_symbols, :pₗᵥ)
+    ra_pressure_given && push!(valid_symbols, :pᵣₐ)
+    rv_pressure_given && push!(valid_symbols, :pᵣᵥ)
+
+    @error "Variable named '$symbol' not found for model $model. The following symbols are defined and accessible: $valid_symbols."
 end
 
 function default_initial_condition!(u, model::RSAFDQ2022LumpedCicuitModel)

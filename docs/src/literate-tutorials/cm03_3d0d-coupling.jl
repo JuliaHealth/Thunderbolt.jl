@@ -28,7 +28,7 @@ u₀fluid = sol.u[end]
 @info "Total blood volume: $(sum(u₀fluid[1:4])) + $(fluid_model_init.Csysₐᵣ*u₀fluid[5]) + $(fluid_model_init.Csysᵥₑₙ*u₀fluid[6]) + $(fluid_model_init.Cpulₐᵣ*u₀fluid[7]) + $(fluid_model_init.Cpulᵥₑₙ*u₀fluid[8])"
 
 # We now generate the mechanical subproblem as in the [first tutorial](@ref mechanics-tutorial_simple-active-stress)
-scaling_factor = 3.1;
+scaling_factor = 3.7;
 # !!! warning
 #     Tuning parameter until all bugs are fixed in this tutorial :)
 mesh = generate_ideal_lv_mesh(8,2,5;

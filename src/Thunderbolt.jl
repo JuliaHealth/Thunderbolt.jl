@@ -50,8 +50,6 @@ import Base: *, +, -, @kwdef
 import ForwardDiff
 
 import ModelingToolkit
-import ModelingToolkit: @variables, @parameters, @component, @named,
-    compose, ODESystem, Differential
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
@@ -109,6 +107,7 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
+include("modeling/mtkmodels.jl")
 
 # TODO put exports into the individual submodules above!
 export
