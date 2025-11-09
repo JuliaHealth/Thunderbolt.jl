@@ -50,7 +50,7 @@ u: 11931-element Vector{Vector{Float64}}:
  [63.99669032244723, 117.38041416755063, 62.04992764998896, 149.21096297654444, 11.319141208644952, 3.9903998740495217, 4.831224380872002, 3.1654821861418836, 0.06916501545320265, 0.08690269378070858, 0.07701966675734155, 0.0882398340563524]
  [64.10079198906878, 117.55380932929918, 62.176016658822775, 149.35833811202073, 11.295010573762173, 3.990352984138106, 4.827997427577099, 3.165186764819986, 0.06893771251040942, 0.08696357980372327, 0.07688397157456074, 0.08820688785869524]</code></pre><p>plot(sol, idxs=[1,2,3,4], tspan=(99<em>fluid<em>model</em>init.THB, 100</em>fluid<em>model</em>init.THB))</p><pre><code class="language-julia hljs"># Precomputed initial guess
 u₀fluid = sol.u[end]
-@info &quot;Total blood volume: $(sum(u₀fluid[1:4])) + $(fluid_model_init.Csysₐᵣ*u₀fluid[5]) + $(fluid_model_init.Csysᵥₑₙ*u₀fluid[6]) + $(fluid_model_init.Cpulₐᵣ*u₀fluid[7]) + $(fluid_model_init.Cpulᵥₑₙ*u₀fluid[8])&quot;</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">[ Info: Total blood volume: 393.1889560892115 + 101.66345564540934 + 4788.81739818597 + 362.1295874619882 + 379.8536497430151</code></pre><p>We now generate the mechanical subproblem as in the <a href="../cm01_simple-active-stress/#mechanics-tutorial_simple-active-stress">first tutorial</a></p><pre><code class="language-julia hljs">scaling_factor = 3.1;</code></pre><div class="admonition is-warning" id="Warning-568fc5f9a305422c"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-568fc5f9a305422c" title="Permalink"></a></header><div class="admonition-body"><p>Tuning parameter until all bugs are fixed in this tutorial :)</p></div></div><pre><code class="language-julia hljs">mesh = generate_ideal_lv_mesh(8,2,5;
+@info &quot;Total blood volume: $(sum(u₀fluid[1:4])) + $(fluid_model_init.Csysₐᵣ*u₀fluid[5]) + $(fluid_model_init.Csysᵥₑₙ*u₀fluid[6]) + $(fluid_model_init.Cpulₐᵣ*u₀fluid[7]) + $(fluid_model_init.Cpulᵥₑₙ*u₀fluid[8])&quot;</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">[ Info: Total blood volume: 393.1889560892115 + 101.66345564540934 + 4788.81739818597 + 362.1295874619882 + 379.8536497430151</code></pre><p>We now generate the mechanical subproblem as in the <a href="../cm01_simple-active-stress/#mechanics-tutorial_simple-active-stress">first tutorial</a></p><pre><code class="language-julia hljs">scaling_factor = 3.7;</code></pre><div class="admonition is-warning" id="Warning-568fc5f9a305422c"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-568fc5f9a305422c" title="Permalink"></a></header><div class="admonition-body"><p>Tuning parameter until all bugs are fixed in this tutorial :)</p></div></div><pre><code class="language-julia hljs">mesh = generate_ideal_lv_mesh(8,2,5;
     inner_radius = scaling_factor*0.7,
     outer_radius = scaling_factor*1.0,
     longitudinal_upper = 0.4,
@@ -210,68 +210,68 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     #     notify(plv)
     # end
     # TODO plot other chambers
-end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">[ Info: Volume 3D 66.01091914609111
-[ Info: Chamber 1 p=0.0, V0=64.10079198906878
-[ Info: Volume 3D 64.11574218912084
-[ Info: Chamber 1 p=0.16166594115510777, V0=64.10079198906878
-[ Info: Volume 3D 64.10081886627877
-[ Info: Chamber 1 p=0.16218586397355922, V0=64.10079198906878
-[ Info: Volume 3D 64.10079189937913
-[ Info: Chamber 1 p=0.16215860261756213, V0=64.10079198906878
-[ Info: Volume 3D 64.10079189937913
-[ Info: Chamber 1 p=0.16215860261756213, V0=63.10697972101684
-[ Info: Volume 3D 63.11254682953347
-[ Info: Chamber 1 p=0.3447436407203441, V0=63.10697972101684
-[ Info: Volume 3D 63.107003274750035
-[ Info: Chamber 1 p=0.3449239724303044, V0=63.10697972101684
-[ Info: Volume 3D 63.107003274750035
-[ Info: Chamber 1 p=0.3449239724303044, V0=62.31535835406482
-[ Info: Volume 3D 62.31910962159885
-[ Info: Chamber 1 p=0.5281918228085465, V0=62.31535835406482
-[ Info: Volume 3D 62.315370216704316
-[ Info: Chamber 1 p=0.5284333098930308, V0=62.31535835406482
-[ Info: Volume 3D 62.315370216704316
-[ Info: Chamber 1 p=0.5284333098930308, V0=61.72262485124187
-[ Info: Volume 3D 61.72496365480524
-[ Info: Chamber 1 p=0.7138360640257261, V0=61.72262485124187
-[ Info: Volume 3D 61.722630994949434
-[ Info: Chamber 1 p=0.7141454432506213, V0=61.72262485124187
-[ Info: Volume 3D 61.722630994949434
-[ Info: Chamber 1 p=0.7141454432506213, V0=61.32690034323553
-[ Info: Volume 3D 61.32826811231563
-[ Info: Chamber 1 p=0.9033730143162386, V0=61.32690034323553
-[ Info: Volume 3D 61.32690393594705
-[ Info: Chamber 1 p=0.9037095563458241, V0=61.32690034323553
-[ Info: Volume 3D 61.32690393594705
-[ Info: Chamber 1 p=0.9037095563458241, V0=61.127915534541444
-[ Info: Volume 3D 61.12870929624683
-[ Info: Chamber 1 p=1.0984641619212239, V0=61.127915534541444
-[ Info: Volume 3D 61.127917908452254
-[ Info: Chamber 1 p=1.0987685718234597, V0=61.127915534541444
-[ Info: Volume 3D 61.127917908452254
-[ Info: Chamber 1 p=1.0987685718234597, V0=61.12699004549056
-[ Info: Volume 3D 61.127595625950995
-[ Info: Chamber 1 p=1.300667472114108, V0=61.12699004549056
-[ Info: Volume 3D 61.12699178440599
-[ Info: Chamber 1 p=1.300860713547166, V0=61.12699004549056
-[ Info: Volume 3D 61.12699178440599
-[ Info: Chamber 1 p=1.300860713547166, V0=61.217414565415766
-[ Info: Volume 3D 61.218020997889454
-[ Info: Chamber 1 p=1.5059916863135414, V0=61.217414565415766
-[ Info: Volume 3D 61.21741590438228
-[ Info: Chamber 1 p=1.5061072189395743, V0=61.217414565415766
-[ Info: Volume 3D 61.21741590438228
-[ Info: Chamber 1 p=1.5061072189395743, V0=61.30802483646343
-[ Info: Volume 3D 61.308561159115406
-[ Info: Chamber 1 p=1.7104224673046553, V0=61.30802483646343
-[ Info: Volume 3D 61.30802588022545
-[ Info: Chamber 1 p=1.7105427431365556, V0=61.30802483646343
-[ Info: Volume 3D 61.30802588022545
-[ Info: Chamber 1 p=1.7105427431365556, V0=61.39875095488253
-[ Info: Volume 3D 61.399227478644015
-[ Info: Chamber 1 p=1.9141217802795314, V0=61.39875095488253
-[ Info: Volume 3D 61.398751786539236
-[ Info: Chamber 1 p=1.914244027629674, V0=61.39875095488253</code></pre><div class="admonition is-success" id="Tip-acc9c55e3c94e263"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-acc9c55e3c94e263" title="Permalink"></a></header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[3]</dt><dd><div>F. Regazzoni, M. Salvador, P. C. Africa, M. Fedele, L. Dedè and A. Quarteroni. <em>A cardiac electromechanical model coupled with a lumped-parameter model for closed-loop blood circulation</em>. <a href="https://doi.org/10.1016/j.jcp.2022.111083">Journal of Computational Physics <strong>457</strong>, 111083</a> (2022).</div></dd></dl></div><h2 id="mechanics-tutorial_3d0dcoupling-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_3d0dcoupling-plain-program">Plain program</a><a id="mechanics-tutorial_3d0dcoupling-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_3d0dcoupling-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="../cm03_3d0d-coupling.jl"><code>cm03_3d0d-coupling.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">[ Info: Volume 3D 112.23695369430204
+[ Info: Chamber 1 p=0.0, V0=117.55380932929918
+[ Info: Volume 3D 117.62016991024106
+[ Info: Chamber 1 p=0.32336293181621645, V0=117.55380932929918
+[ Info: Volume 3D 117.55381416946261
+[ Info: Chamber 1 p=0.3177275535097761, V0=117.55380932929918
+[ Info: Volume 3D 117.55380907644388
+[ Info: Chamber 1 p=0.3177469758654815, V0=117.55380932929918
+[ Info: Volume 3D 117.55380907644388
+[ Info: Chamber 1 p=0.3177469758654815, V0=118.48189820251855
+[ Info: Volume 3D 118.48735051247465
+[ Info: Chamber 1 p=0.5585722935080324, V0=118.48189820251855
+[ Info: Volume 3D 118.4819173910609
+[ Info: Chamber 1 p=0.5582721162522551, V0=118.48189820251855
+[ Info: Volume 3D 118.4819173910609
+[ Info: Chamber 1 p=0.5582721162522551, V0=119.1540612294176
+[ Info: Volume 3D 119.15813146518052
+[ Info: Chamber 1 p=0.793240209382408, V0=119.1540612294176
+[ Info: Volume 3D 119.1540780352364
+[ Info: Chamber 1 p=0.7930988859366153, V0=119.1540612294176
+[ Info: Volume 3D 119.1540780352364
+[ Info: Chamber 1 p=0.7930988859366153, V0=119.58123372934067
+[ Info: Volume 3D 119.58401838888847
+[ Info: Chamber 1 p=1.0219980747375508, V0=119.58123372934067
+[ Info: Volume 3D 119.58124583494023
+[ Info: Chamber 1 p=1.0220481668913057, V0=119.58123372934067
+[ Info: Volume 3D 119.58124583494023
+[ Info: Chamber 1 p=1.0220481668913057, V0=119.77429689084185
+[ Info: Volume 3D 119.77623460281029
+[ Info: Chamber 1 p=1.2449025625908214, V0=119.77429689084185
+[ Info: Volume 3D 119.7743054671021
+[ Info: Chamber 1 p=1.2451071184357267, V0=119.77429689084185
+[ Info: Volume 3D 119.7743054671021
+[ Info: Chamber 1 p=1.2451071184357267, V0=119.77429788942305
+[ Info: Volume 3D 119.77578062895469
+[ Info: Chamber 1 p=1.462562398007963, V0=119.77429788942305
+[ Info: Volume 3D 119.77430409897379
+[ Info: Chamber 1 p=1.4628717431656417, V0=119.77429788942305
+[ Info: Volume 3D 119.77430409897379
+[ Info: Chamber 1 p=1.4628717431656417, V0=119.77429884381475
+[ Info: Volume 3D 119.77555784762671
+[ Info: Chamber 1 p=1.6789513610119515, V0=119.77429884381475
+[ Info: Volume 3D 119.77430338368217
+[ Info: Chamber 1 p=1.6792588369011274, V0=119.77429884381475
+[ Info: Volume 3D 119.77430338368217
+[ Info: Chamber 1 p=1.6792588369011274, V0=119.77429975429285
+[ Info: Volume 3D 119.77538638291054
+[ Info: Chamber 1 p=1.8940857797096837, V0=119.77429975429285
+[ Info: Volume 3D 119.77430319590046
+[ Info: Chamber 1 p=1.894388585330646, V0=119.77429975429285
+[ Info: Volume 3D 119.77430319590046
+[ Info: Chamber 1 p=1.894388585330646, V0=119.77430062110916
+[ Info: Volume 3D 119.77524899714632
+[ Info: Chamber 1 p=2.108063935497376, V0=119.77430062110916
+[ Info: Volume 3D 119.7743033080546
+[ Info: Chamber 1 p=2.108361062215076, V0=119.77430062110916
+[ Info: Volume 3D 119.7743033080546
+[ Info: Chamber 1 p=2.108361062215076, V0=119.77430144449535
+[ Info: Volume 3D 119.77513576555049
+[ Info: Chamber 1 p=2.3209701087363372, V0=119.77430144449535
+[ Info: Volume 3D 119.77430359250292
+[ Info: Chamber 1 p=2.3212613595482297, V0=119.77430144449535</code></pre><div class="admonition is-success" id="Tip-acc9c55e3c94e263"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-acc9c55e3c94e263" title="Permalink"></a></header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[3]</dt><dd><div>F. Regazzoni, M. Salvador, P. C. Africa, M. Fedele, L. Dedè and A. Quarteroni. <em>A cardiac electromechanical model coupled with a lumped-parameter model for closed-loop blood circulation</em>. <a href="https://doi.org/10.1016/j.jcp.2022.111083">Journal of Computational Physics <strong>457</strong>, 111083</a> (2022).</div></dd></dl></div><h2 id="mechanics-tutorial_3d0dcoupling-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_3d0dcoupling-plain-program">Plain program</a><a id="mechanics-tutorial_3d0dcoupling-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_3d0dcoupling-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="../cm03_3d0d-coupling.jl"><code>cm03_3d0d-coupling.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
 
 using OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
@@ -285,7 +285,7 @@ sol = solve(prob, Tsit5())
 u₀fluid = sol.u[end]
 @info &quot;Total blood volume: $(sum(u₀fluid[1:4])) + $(fluid_model_init.Csysₐᵣ*u₀fluid[5]) + $(fluid_model_init.Csysᵥₑₙ*u₀fluid[6]) + $(fluid_model_init.Cpulₐᵣ*u₀fluid[7]) + $(fluid_model_init.Cpulᵥₑₙ*u₀fluid[8])&quot;
 
-scaling_factor = 3.1;
+scaling_factor = 3.7;
 
 mesh = generate_ideal_lv_mesh(8,2,5;
     inner_radius = scaling_factor*0.7,
@@ -433,4 +433,4 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     #     notify(plv)
     # end
     # TODO plot other chambers
-end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../cm02_prestress/">« CM02: Prestressing (WIP)</a><a class="docs-footer-nextpage" href="../cm04_pericardium/">CM04: Pericadium (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Saturday 8 November 2025 15:37">Saturday 8 November 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../cm02_prestress/">« CM02: Prestressing (WIP)</a><a class="docs-footer-nextpage" href="../cm04_pericardium/">CM04: Pericadium (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.15.0 on <span class="colophon-date" title="Sunday 9 November 2025 21:26">Sunday 9 November 2025</span>. Using Julia version 1.12.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
