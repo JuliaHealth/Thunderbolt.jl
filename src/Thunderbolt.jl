@@ -50,8 +50,6 @@ import Base: *, +, -, @kwdef
 import ForwardDiff
 
 import ModelingToolkit
-import ModelingToolkit: @variables, @parameters, @component, @named,
-    compose, ODESystem, Differential
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
@@ -109,6 +107,7 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
+include("modeling/mtkmodels.jl")
 
 # TODO put exports into the individual submodules above!
 export
@@ -141,7 +140,6 @@ export
     generate_quadratic_open_ring_mesh,
     generate_ideal_lv_mesh,
     # Generic models
-    ODEProblem,
     TransientDiffusionModel,
     AffineODEFunction,
     default_initial_condition!,
@@ -200,8 +198,6 @@ export
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
-    VolumeTransfer0D3D,
-    PressureTransfer3D0D,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     AnisotropicPlanarMicrostructure,
@@ -232,7 +228,6 @@ export
     NewtonRaphsonSolver,
     MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,
-    ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,

@@ -15,7 +15,3 @@ Thunderbolt.QuasiStaticNonlinearProblem
 Thunderbolt.QuasiStaticODEProblem
 Thunderbolt.QuasiStaticDAEProblem
 ```
-
-```@docs
-OS.OperatorSplittingProblem
-```

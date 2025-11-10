@@ -3,6 +3,7 @@
 mutable struct RSAFDQ2022SingleChamberTying{CVM}
     const pressure_dof_index_local::Int
     pressure_dof_index_global::Int
+    const pressure_parameter_index_local
     const facets::OrderedSet{FacetIndex}
     const volume_method::CVM
     const displacement_symbol::Symbol
@@ -71,36 +72,42 @@ end
 
 
 function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberTying)
-    check_subdomains(dh)
     grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_facet, ip, ip_geo)
 
     volume = 0.0
-    drange = dof_range(dh,method.displacement_symbol)
-    for facet ∈ FacetIterator(dh, getfacetset(grid, setname))
-        reinit!(fv, facet)
+    for (element_type, facet_subset) in grid.surface_subdomains[setname].data
+        (cellidx, _) = first(facet_subset)
+        for sdh in dh.subdofhandlers
+            if cellidx ∈ sdh.cellset
+                ip = Ferrite.getfieldinterpolation(sdh, method.displacement_symbol)
+                ip_geo = Ferrite.geometric_interpolation(element_type)
+                intorder = 2*Ferrite.getorder(ip)
+                ref_shape = Ferrite.getrefshape(ip)
+                qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+                fv = FacetValues(qr_facet, ip, ip_geo)
+                drange = dof_range(sdh, method.displacement_symbol)
+                for facet ∈ FacetIterator(sdh, facet_subset)
+                    reinit!(fv, facet)
 
-        coords = getcoordinates(facet)
-        ddofs = @view celldofs(facet)[drange]
-        uₑ = @view u[ddofs]
+                    coords = getcoordinates(facet)
+                    ddofs = @view celldofs(facet)[drange]
+                    uₑ = @view u[ddofs]
 
-        for qp in QuadratureIterator(fv)
-            dΓ = getdetJdV(fv, qp)
-            N = getnormal(fv, qp)
+                    for qp in QuadratureIterator(fv)
+                        dΓ = getdetJdV(fv, qp)
+                        N = getnormal(fv, qp)
 
-            ∇u = function_gradient(fv, qp, uₑ)
-            F = one(∇u) + ∇u
+                        ∇u = function_gradient(fv, qp, uₑ)
+                        F = one(∇u) + ∇u
 
-            d = function_value(fv, qp, uₑ)
+                        d = function_value(fv, qp, uₑ)
 
-            x = spatial_coordinate(fv, qp, coords)
+                        x = spatial_coordinate(fv, qp, coords)
 
-            volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
+                        volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
+                    end
+                end
+            end
         end
     end
     return volume
@@ -215,11 +222,13 @@ function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural
         pressure_dof_index = num_unknowns_structure + i
         (; dh) = structural_problem
         chamber_facetset = getfacetset(get_grid(dh), coupling.chamber_surface_setname)
-        chamber_volume_idx_lumped = get_variable_symbol_index(circuit_model, coupling.lumped_model_symbol)
+        chamber_volume_idx_lumped   = get_variable_symbol_index(circuit_model, coupling.lumped_volume_symbol)
+        chamber_pressure_idx_lumped = get_parameter_symbol_index(circuit_model, coupling.lumped_pressure_symbol)
         # TODO rethink the next two lines
         tying = RSAFDQ2022SingleChamberTying(
             pressure_dof_index,
             pressure_dof_index,
+            chamber_pressure_idx_lumped,
             chamber_facetset,
             coupling.chamber_volume_method,
             coupler.displacement_symbol,
@@ -244,11 +253,7 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
     # ODE problem for blood circuit
-    circuit_fun = ODEFunction( #Not ModelingToolkit.ODEFunction :)
-            model.circuit_model,
-        (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, model.circuit_model),
-        zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers - TODO replace this hack with a proper transfer operator!
-    )
+    circuit_fun = ODEFunction(model.circuit_model) #Not ModelingToolkit.ODEFunction :)
 
     # Tie problems
     # Fix dispatch....
@@ -273,7 +278,7 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
         ),
         (
             1:offset,
-            (offset+1):(offset+solution_size(circuit_fun))
+            (offset+1):(offset+solution_size(model.circuit_model))
         ),
         (
             VolumeTransfer0D3D(tying_info),

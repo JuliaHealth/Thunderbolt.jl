@@ -152,6 +152,9 @@ function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegra
         chamber.V⁰ᴰval = outer_integrator.u[chamber.V⁰ᴰidx_global]
     end
 end
+function OS.backward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::VolumeTransfer0D3D)
+    nothing
+end
 
 """
     Utility function to synchronize the pressire in a split [`RSAFDQ2022Function`](@ref)
@@ -161,12 +164,12 @@ struct PressureTransfer3D0D{TP } <: AbstractTransferOperator
 end
 
 function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::PressureTransfer3D0D)
-    f = inner_integrator.f
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
-    for (chamber_idx,chamber) ∈ enumerate(sync.tying.chambers)
-        p = outer_integrator.u[chamber.pressure_dof_index_global]
-        # The pressure buffer is constructed in a way that the chamber index and
-        # pressure index coincides
-        f.p[chamber_idx] = p
+    for chamber ∈ sync.tying.chambers
+        pressure = outer_integrator.u[chamber.pressure_dof_index_global]
+        inner_integrator.p[chamber.pressure_parameter_index_local] = pressure
     end
+end
+function OS.backward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::PressureTransfer3D0D)
+    nothing
 end

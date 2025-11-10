@@ -1,4 +1,4 @@
-using Thunderbolt, Test, LinearSolve
+using Thunderbolt, Test, LinearSolve, DiffEqBase
 
 struct TimeFunctionCoefficient{F}
     f::F
