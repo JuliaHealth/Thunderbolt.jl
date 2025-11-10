@@ -67,7 +67,7 @@ cell_timestepper = AdaptiveForwardEulerSubstepper(;
     reaction_threshold=0.1,
 );
 
-timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
+timestepper = LieTrotterGodunov((heat_timestepper, cell_timestepper));
 
 dt₀   = 1.0
 dtvis = 25.0
@@ -75,12 +75,12 @@ tspan = (0.0, 1000.0);
 
 tspan = (0.0, dtvis);   # hide
 
-problem = OS.OperatorSplittingProblem(odeform, u₀, tspan);
+problem = OperatorSplittingProblem(odeform, u₀, tspan);
 
-integrator = OS.init(problem, timestepper, dt=dt₀);
+integrator = init(problem, timestepper, dt=dt₀);
 
 io = ParaViewWriter("EP01_spiral_wave")
-for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     (; dh) = odeform.functions[1]
     φ = u[odeform.solution_indices[1]]
     store_timestep!(io, t, dh.grid) do file
