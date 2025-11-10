@@ -1,201 +1,23 @@
 using Thunderbolt, LinearSolve
 
-using CirculatorySystemModels
+using OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
-using ModelingToolkit, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
+fluid_model_init = RSAFDQ2022LumpedCicuitModel()
+u0 = zeros(Thunderbolt.num_states(fluid_model_init))
+Thunderbolt.default_initial_condition!(u0, fluid_model_init)
+prob = ODEProblem((du, u, p, t) -> Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 100*fluid_model_init.THB), fluid_model_init)
+sol = solve(prob, Tsit5())
 
-@component function PressureCouplingChamber(;name)
-    @named in = CirculatorySystemModels.Pin()
-    @named out = CirculatorySystemModels.Pin()
-    sts = @variables begin
-        V(t) = 0.0#, [description = "Volume of the lumped 0D chamber"]
-        p(t)
-    end
-    ps = @parameters begin
-        p3D(t), [description = "Pressure of the associated 3D chamber"]
-    end
+# Precomputed initial guess
+u₀fluid = sol.u[end]
+@info "Total blood volume: $(sum(u₀fluid[1:4])) + $(fluid_model_init.Csysₐᵣ*u₀fluid[5]) + $(fluid_model_init.Csysᵥₑₙ*u₀fluid[6]) + $(fluid_model_init.Cpulₐᵣ*u₀fluid[7]) + $(fluid_model_init.Cpulᵥₑₙ*u₀fluid[8])"
 
-    D = Differential(t)
-
-    eqs = [
-        0 ~ in.p - out.p
-        p ~ in.p
-        p ~ p3D
-        D(V) ~ in.q + out.q
-    ]
-
-    compose(ODESystem(eqs, t, sts, ps; name=name), in, out)
-end;
-
-@component function LeakyResistorDiode(;name, Rₘᵢₙ, Rₘₐₓ)
-    @named oneport = CirculatorySystemModels.OnePort()
-    @unpack Δp, q = oneport
-    ps = @parameters Rₘᵢₙ = Rₘᵢₙ Rₘₐₓ = Rₘₐₓ
-    eqs = [
-        q ~ - (Δp / Rₘᵢₙ * (Δp < 0) + Δp / Rₘₐₓ * (Δp ≥ 0))
-    ]
-    extend(ODESystem(eqs, t, [], ps; name=name), oneport)
-end;
-
-τ = 1.0e3
-#
-Rsysₐᵣ  = (0.8e3)
-Rpulₐᵣ  = (0.1625e3)
-Rsysᵥₑₙ = (0.26e3)
-Rpulᵥₑₙ = (0.1625e3)
-#
-Csysₐᵣ  = (1.2)
-Cpulₐᵣ  = (10.0)
-Csysᵥₑₙ = (60.0)
-Cpulᵥₑₙ = (16.0)
-#
-Lsysₐᵣ  = (5e3)
-Lpulₐᵣ  = (5e2)
-Lsysᵥₑₙ = (5e2)
-Lpulᵥₑₙ = (5e2)
-# Valve stuff
-Rmin = (0.0075e3)
-Rmax = (75000.0e3)
-# Passive elastance
-Epassₗₐ = (0.15)
-Epassᵣₐ = (0.15)
-Epassᵣᵥ = (0.1)
-# Active elastance
-Eactmaxₗₐ = (0.1)
-Eactmaxᵣₐ = (0.1)
-Eactmaxᵣᵥ = (1.4)
-# "Initial volume"
-V0ₗₐ = (4.0)
-V0ᵣₐ = (4.0)
-V0ᵣᵥ = (10.0)
-# Event timings
-tCₗₐ = (0.6e3)
-TCₗₐ = (0.104e3)
-TRₗₐ = (0.68e3)
-TRᵣₐ = (0.56e3)
-tCᵣₐ = (0.064e3)
-TCᵣₐ = (0.64e3)
-tCᵣᵥ = (0.0e3)
-TCᵣᵥ = (0.272e3)
-TRᵣᵥ = (0.12e3)
-
-# Extra parameters to emulate the LV
-V0ₗᵥ = (5.0)
-Epassₗᵥ = (0.125)
-Eactmaxₗᵥ = (2.4)
-TCₗᵥ = (0.30e3)
-TRₗᵥ = (0.15e3)
-
-Eshiftᵣᵥ = 0.0
-Eshiftₗₐ = 1.0-tCₗₐ/τ
-Eshiftᵣₐ = 1.0-tCᵣₐ/τ
-
-LV_Vt0 = 500.0
-RV_Vt0 = 500.0
-LA_Vt0 = 20.0
-RA_Vt0 = 20.0
-
-# Start Modelling
-@independent_variables t
-
-# Atria and ventricles
-@named LV = ShiChamber(V₀=V0ₗᵥ, p₀=0.0, Eₘᵢₙ=Epassₗᵥ, Eₘₐₓ=Epassₗᵥ+Eactmaxₗᵥ, τ=τ, τₑₛ=TCₗᵥ, τₑₚ=TCₗᵥ+TRₗᵥ, Eshift=0.0)
-@named LA = ShiChamber(V₀=V0ₗₐ, p₀=0.0, Eₘᵢₙ=Epassₗₐ, Eₘₐₓ=Epassₗₐ+Eactmaxₗₐ, τ=τ, τₑₛ=TCₗₐ, τₑₚ=TCₗₐ+TRₗₐ, Eshift=Eshiftₗₐ)
-@named RV = ShiChamber(V₀=V0ᵣᵥ, p₀=0.0, Eₘᵢₙ=Epassᵣᵥ, Eₘₐₓ=Epassᵣᵥ+Eactmaxᵣᵥ, τ=τ, τₑₛ=TCᵣᵥ, τₑₚ=TCᵣᵥ+TRᵣᵥ, Eshift=0.0)
-@named RA = ShiChamber(V₀=V0ᵣₐ, p₀=0.0, Eₘᵢₙ=Epassᵣₐ, Eₘₐₓ=Epassᵣₐ+Eactmaxᵣₐ, τ=τ, τₑₛ=TCᵣₐ, τₑₚ=TCₗₐ+TRₗₐ, Eshift=Eshiftᵣₐ)
-
-# Valves as leaky diodes
-@named AV = LeakyResistorDiode(Rₘᵢₙ = Rmin, Rₘₐₓ = Rmax)
-@named MV = LeakyResistorDiode(Rₘᵢₙ = Rmin, Rₘₐₓ = Rmax)
-@named TV = LeakyResistorDiode(Rₘᵢₙ = Rmin, Rₘₐₓ = Rmax)
-@named PV = LeakyResistorDiode(Rₘᵢₙ = Rmin, Rₘₐₓ = Rmax)
-
-####### Systemic Loop #######
-# Systemic Artery ##
-@named SYSAR = CRL(C=Csysₐᵣ, R=Rsysₐᵣ, L=Lsysₐᵣ)
-# Systemic Vein ##
-@named SYSVEN = CRL(C=Csysᵥₑₙ, R=Rsysᵥₑₙ, L=Lsysᵥₑₙ)
-
-####### Pulmonary Loop #######
-# Pulmonary Artery ##
-@named PULAR = CRL(C=Cpulₐᵣ, R=Rpulₐᵣ, L=Lpulₐᵣ)
-# Pulmonary Vein ##
-@named PULVEN = CRL(C=Cpulᵥₑₙ, R=Rpulᵥₑₙ, L=Lpulᵥₑₙ)
-
-#
-circ_eqs_init = [
-    connect(LV.out, AV.in)
-    connect(AV.out, SYSAR.in)
-    connect(SYSAR.out, SYSVEN.in)
-    connect(SYSVEN.out, RA.in)
-    connect(RA.out, TV.in)
-    connect(TV.out, RV.in)
-    connect(RV.out, PV.in)
-    connect(PV.out,  PULAR.in)
-    connect(PULAR.out, PULVEN.in)
-    connect(PULVEN.out, LA.in)
-    connect(LA.out, MV.in)
-    connect(MV.out, LV.in)
-]
-
-# Compose the whole ODE system
-@named _circ_model_init = ODESystem(circ_eqs_init, t)
-@named circ_model_init = compose(_circ_model_init,
-    [LV, RV, LA, RA, AV, MV, PV, TV, SYSAR, SYSVEN, PULAR, PULVEN])
-
-# And simplify it
-circ_sys_init = structural_simplify(circ_model_init)
-
-# Setup ODE with reasonable initial guess
-u0 = [
-    LV.V => LV_Vt0
-    RV.V => RV_Vt0
-    RA.V => RA_Vt0
-    LA.V => LA_Vt0
-    SYSAR.C.V => 100.0 * Csysₐᵣ
-    SYSAR.L.q => 0.0
-    SYSVEN.C.V => 0.0
-    SYSVEN.L.q => 0.0
-    PULAR.C.V => 30.0 * Cpulₐᵣ
-    PULAR.L.q => 0.0
-    PULVEN.C.V => 0.0
-    PULVEN.L.q => 0.0
-];
-
-prob = OrdinaryDiffEqTsit5.ODEProblem(circ_sys_init, u0, (0.0, 20.0e3))
-
-@time circ_sol_init = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3);
-
-u0new = copy(circ_sol_init.u[end]);
-
-@named LVc = PressureCouplingChamber();
-
-circ_eqs = [
-    connect(LVc.out, AV.in)
-    connect(AV.out, SYSAR.in)
-    connect(SYSAR.out, SYSVEN.in)
-    connect(SYSVEN.out, RA.in)
-    connect(RA.out, TV.in)
-    connect(TV.out, RV.in)
-    connect(RV.out, PV.in)
-    connect(PV.out,  PULAR.in)
-    connect(PULAR.out, PULVEN.in)
-    connect(PULVEN.out, LA.in)
-    connect(LA.out, MV.in)
-    connect(MV.out, LVc.in)
-];
-
-@named _circ_model = ODESystem(circ_eqs, t)
-@named circ_model = compose(_circ_model,
-    [LVc, RV, LA, RA, AV, MV, PV, TV, SYSAR, SYSVEN, PULAR, PULVEN])
-circ_sys = structural_simplify(circ_model);
-
-scaling_factor = 3.0;
+scaling_factor = 3.7;
 
 mesh = generate_ideal_lv_mesh(8,2,5;
     inner_radius = scaling_factor*0.7,
     outer_radius = scaling_factor*1.0,
-    longitudinal_upper = scaling_factor*0.2,
+    longitudinal_upper = 0.4,
     apex_inner = scaling_factor* 1.3,
     apex_outer = scaling_factor*1.5
 )
@@ -209,13 +31,14 @@ microstructure    = create_microstructure_model(
 );
 passive_material_model = Guccione1991PassiveModel()
 active_material_model  = Guccione1993ActiveModel()
-function calcium_profile_function(x::LVCoordinate,t)
+function calcium_profile_function(x::LVCoordinate,t_global)
     linear_interpolation(t,y1,y2,t1,t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
     ca_peak(x)                          = 1.0
-    if 0 ≤ t ≤ 300.0
-        return linear_interpolation(t,        0.0, ca_peak(x),   0.0, 300.0)
-    elseif t ≤ 500.0
-        return linear_interpolation(t, ca_peak(x),        0.0, 300.0, 500.0)
+    t = t_global % 800.0
+    if 0 ≤ t ≤ 120.0
+        return linear_interpolation(t,        0.0, ca_peak(x),   0.0, 120.0)
+    elseif t ≤ 272.0
+        return linear_interpolation(t, ca_peak(x),        0.0, 120.0, 272.0)
     else
         return 0.0
     end
@@ -231,23 +54,22 @@ active_stress_model = ActiveStressModel(
     sarcomere_model,
     microstructure,
 )
-weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
+weak_boundary_conditions = (RobinBC(1.0, "Epicardium"),NormalSpringBC(100.0, "Base"))
 solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
 
-p3D = LVc.p3D
-V0D = LVc.V
-fluid_model = MTKLumpedCicuitModel(circ_sys, u0new, [p3D])
+fluid_model = RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false)
 coupler = LumpedFluidSolidCoupler(
     [
         ChamberVolumeCoupling(
             "Endocardium",
             RSAFDQ2022SurrogateVolume(),
-            V0D
+            :Vₗᵥ,
+            :pₗᵥ,
         )
     ],
     :displacement,
 )
-coupled_model = RSAFDQ2022Model(solid_model,fluid_model,coupler);
+coupled_model = RSAFDQ2022Model(solid_model, fluid_model, coupler);
 
 spatial_discretization_method = FiniteElementDiscretization(
     Dict(:displacement => LagrangeCollection{1}()^3),
@@ -266,10 +88,10 @@ splitform = semidiscretize(
 )
 
 dt₀ = 1.0
-dtvis = 5.0
-tspan = (0.0, 1000.0)
+dtvis = 10.0
+tspan = (0.0, 3*800.0)
 
-tspan = (0.0, dtvis)    # hide
+tspan = (0.0, 10.0)    # hide
 
 chamber_solver = HomotopyPathSolver(
     NewtonRaphsonSolver(;
@@ -280,15 +102,16 @@ chamber_solver = HomotopyPathSolver(
         )
     )
 )
-blood_circuit_solver = ForwardEulerSolver(rate=ceil(Int, dt₀/0.001)) # Force time step to about 0.001
+blood_circuit_solver = Tsit5()
 timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
 u₀ = zeros(solution_size(splitform))
-u₀[OS.get_solution_indices(splitform, 2)] .= u0new;
+u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
+u₀fluid_view = @view  u₀[OS.get_solution_indices(splitform, 2)]
+u₀fluid_view .= u₀fluid
 
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
-integrator = init(problem, timestepper, dt=dt₀, verbose=true);
-
+integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
 
 # f2 = Figure()
 # axs = [
@@ -325,7 +148,8 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     chamber_function = OS.get_operator(splitform, 1)
     (; dh) = chamber_function.structural_function
     store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, u[1:ndofs(dh)], :displacement) # TODO allow views
+    usolid_view = @view u[OS.get_solution_indices(splitform, 1)]
+    Thunderbolt.store_timestep_field!(io, t, dh, usolid_view, :displacement)
     Thunderbolt.finalize_timestep!(io, t)
 
     # if t > 0.0

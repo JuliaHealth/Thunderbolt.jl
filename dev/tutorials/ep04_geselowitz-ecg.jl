@@ -88,8 +88,8 @@ dtvis = 0.5
 Tₘₐₓ = 50.0
 Tₘₐₓ = dtvis # hide
 tspan = (0.0, Tₘₐₓ)
-problem = OS.OperatorSplittingProblem(heart_odeform, u₀, tspan)
-timestepper = OS.LieTrotterGodunov((
+problem = OperatorSplittingProblem(heart_odeform, u₀, tspan)
+timestepper = LieTrotterGodunov((
     BackwardEulerSolver(),
     ForwardEulerCellSolver(),
 ))

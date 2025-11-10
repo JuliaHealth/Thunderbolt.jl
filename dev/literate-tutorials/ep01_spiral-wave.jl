@@ -153,7 +153,7 @@ cell_timestepper = AdaptiveForwardEulerSubstepper(;
 
 # Now we can just instantiate the operator splitting algorithm of our choice.
 # Since our time integrators are both first order in time we opt for the standard first order accurrate operator splitting technique by Lie-Trotter (or Godunov).
-timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
+timestepper = LieTrotterGodunov((heat_timestepper, cell_timestepper));
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.
@@ -166,7 +166,7 @@ tspan = (0.0, dtvis);   # hide
 
 # Then we setup the problem.
 # We have a split function, so the correct problem is an OperatorSplittingProblem.
-problem = OS.OperatorSplittingProblem(odeform, u₀, tspan);
+problem = OperatorSplittingProblem(odeform, u₀, tspan);
 
 # !!! tip
 #     If we want to solve the problem on the GPU, or if we want to use special matrix and vector formats, we just need to adjust the vector and matrix types.
@@ -183,11 +183,11 @@ problem = OS.OperatorSplittingProblem(odeform, u₀, tspan);
 #         reaction_threshold=0.1f0,
 #     )
 #     ...
-#     problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
+#     problem = OperatorSplittingProblem(odeform, u₀gpu, tspan)
 #     ```
 
 # Now we initialize our time integrator as usual.
-integrator = OS.init(problem, timestepper, dt=dt₀);
+integrator = init(problem, timestepper, dt=dt₀);
 
 # !!! todo
 #     The post-processing API is not yet finished.
@@ -196,7 +196,7 @@ integrator = OS.init(problem, timestepper, dt=dt₀);
 
 # And finally we solve the problem in time.
 io = ParaViewWriter("EP01_spiral_wave")
-for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     (; dh) = odeform.functions[1]
     φ = u[odeform.solution_indices[1]]
     store_timestep!(io, t, dh.grid) do file
