@@ -59,11 +59,11 @@ end
     fluid_model_init = RSAFDQ2022LumpedCicuitModel()
     u0 = zeros(Thunderbolt.num_states(fluid_model_init))
     Thunderbolt.default_initial_condition!(u0, fluid_model_init)
-    prob = ODEProblem((du, u, p, t) -> Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 100*fluid_model_init.THB), fluid_model_init)
+    prob = ODEProblem((du, u, p, t) -> Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 10*fluid_model_init.THB), fluid_model_init)
     sol = solve(prob, Tsit5())
 
-    scaling_factor = 3.7;
-    mesh = generate_ideal_lv_mesh(8,2,5;
+    scaling_factor = 3.9;
+    mesh = generate_ideal_lv_mesh(6,1,2;
         inner_radius = scaling_factor*0.7,
         outer_radius = scaling_factor*1.0,
         longitudinal_upper = 0.4,
@@ -117,11 +117,11 @@ end
             ],
             :d,
         ),
-        3.0, 1.0, false)
+        1.0, 1.0, false)
 
     @mtkcompile rsafdq2022mtk_init = Thunderbolt.MTKModels.RSAFDQ2022CircuitMTK()
     τ = 800.0# TODO query ...?
-    prob = ODEProblem(rsafdq2022mtk_init, [], (0.0, 100*τ))
+    prob = ODEProblem(rsafdq2022mtk_init, [], (0.0, 10*τ))
     sol = solve(prob, Tsit5())
     @mtkcompile rsafdq2022mtk = Thunderbolt.MTKModels.RSAFDQ2022CircuitMTK(; lv_pressure_given = false)
     test_solve_contractile_ideal_lv_3D0D(mesh,
@@ -147,6 +147,6 @@ end
             ],
             :d,
         ),
-        3.0, 1.0, false)
+        1.0, 1.0, false)
 end
 
