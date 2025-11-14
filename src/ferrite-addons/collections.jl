@@ -19,7 +19,8 @@ A collection of compatible vector-valued interpolations over some (possilby diff
 """
 abstract type VectorInterpolationCollection <: InterpolationCollection end
 
-getinterpolation(qrc::InterpolationCollection, sdh::SubDofHandler) = getfacetvalues(qrc, get_first_cell(sdh))
+# Wildcard
+getinterpolation(ipc::InterpolationCollection, sdh::SubDofHandler) = getinterpolation(ipc, get_first_cell(sdh))
 
 """
     LagrangeCollection{order} <: InterpolationCollection
