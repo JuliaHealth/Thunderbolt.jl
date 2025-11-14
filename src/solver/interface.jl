@@ -62,7 +62,7 @@ function setup_operator(strategy::Union{SequentialAssemblyStrategy{<:AbstractCPU
 end
 function setup_assembled_operator(strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice}, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
     A  = create_system_matrix(system_matrix_type, dh)
-    A_ = if strategy.device isa AbstractCPUDevice && system_matrix_type isa SparseMatrixCSC #if "can assemble with system_matrix_type"
+    A_ = if strategy.device isa AbstractCPUDevice
         A
     else
         allocate_matrix(dh)
@@ -77,7 +77,7 @@ function setup_assembled_operator(strategy::SequentialAssemblyStrategy{<:Abstrac
 end
 function setup_assembled_operator(strategy::PerColorAssemblyStrategy, integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler)
     A  = create_system_matrix(system_matrix_type, dh)
-    A_ = if strategy.device isa AbstractCPUDevice && system_matrix_type isa SparseMatrixCSC #if "can assemble with system_matrix_type"
+    A_ = if strategy.device isa AbstractCPUDevice
         A
     else
         allocate_matrix(dh)
