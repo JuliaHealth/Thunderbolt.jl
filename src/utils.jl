@@ -287,6 +287,10 @@ function Ferrite.zero_out_columns!(K::SparseMatrixCSR, dofmapping::Dict)
     end
 end
 
+function Ferrite.start_assemble(K::ThreadedSparseMatrixCSR, args...; kwargs...)
+    start_assemble(K.A, args...;kwargs...)
+end
+
 # struct RHSDataCSR{T}
 #     m::T
 #     constrained_rows::SparseMatrixCSR{T, Int}
