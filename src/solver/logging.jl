@@ -88,5 +88,6 @@ function nonlinear_step_monitor(cache, time, f, u, monitor::VTKNewtonMonitor)
     end
 end
 
-function nonlinear_finalize_monitor(nlcache, time, f, progress_monitor::VTKNewtonMonitor)
+function nonlinear_finalize_monitor(nlcache, time, f, monitor::VTKNewtonMonitor)
+    nonlinear_finalize_monitor(nlcache, time,f, monitor.inner_monitor)
 end
