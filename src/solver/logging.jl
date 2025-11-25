@@ -80,6 +80,7 @@ end
 function nonlinear_step_monitor(cache, time, f, u, monitor::VTKNewtonMonitor)
     nonlinear_step_monitor(cache,time,f,u,monitor.inner_monitor)
 
+    mkpath(monitor.outdir)
     VTKGridFile(joinpath(monitor.outdir, "newton-monitor-t=$time-i=$(cache.iter).vtu"), f.dh) do vtk
         write_solution(vtk, f.dh, u)
         write_solution(vtk, f.dh, cache.linear_solver_cache.b, "_residual")
