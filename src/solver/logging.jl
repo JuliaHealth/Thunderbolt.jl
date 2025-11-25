@@ -19,7 +19,7 @@ function integration_step_monitor(integrator::SciMLBase.DEIntegrator, progress_m
     # (; id)       = progress_monitor
     (; tprev, t, dt, iter)    = integrator
     # push!(msgs, id => "$id: integrating on [$t, $(t+dt)] with Δt=$dt.")
-    @logmsg LogLevel(-100) "Integrating on [$tprev, $t]." iter=iter Δt=dt _group=:timeintegration
+    @logmsg LogLevel(-100) "Integrating on [$t, $(t+dt)]." iter=iter Δt=dt tprev=tprev _group=:timeintegration
 end
 
 function integration_finalize_monitor(integrator, progress_monitor::DefaultProgressMonitor)
