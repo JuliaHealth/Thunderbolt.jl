@@ -84,10 +84,8 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
 
         residualnorm = residual_norm(cache, f)
-        if residualnorm < cache.parameters.tol
-            if cache.iter == 1
-                push!(Θks, 0.0)
-            end
+        if residualnorm < cache.parameters.tol && cache.iter > 0
+            push!(Θks, 0.0)
             break
         elseif cache.iter > cache.parameters.max_iter
             push!(Θks,Inf)
@@ -120,12 +118,11 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
                 @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
                 return false
             end
-
-            # Late out on second iteration
-            if residualnorm < cache.parameters.tol
-                break
-            end
         end
+
+        # if incrementnorm < cache.parameters.tol
+        #     break
+        # end
 
         residualnormprev  = residualnorm
         incrementnormprev = incrementnorm
