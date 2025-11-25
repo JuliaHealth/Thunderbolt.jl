@@ -115,7 +115,7 @@ function nlsolve!(u::AbstractVector{T}, f::AbstractSemidiscreteFunction, cache::
                 push!(Θks, Θk)
             end
             # Try to prevent oversolving when we really just wanted to force the solve to happen once.
-            if iter == 1 && residualnormprev < eps(T) && residualnorm < eps(T) && incrementnorm < eps(T) && incrementnormprev < eps(T)
+            if cache.iter == 1 && residualnormprev < eps(T) && residualnorm < eps(T) && incrementnorm < eps(T) && incrementnormprev < eps(T)
                 break
             end
             if cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0
