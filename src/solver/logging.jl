@@ -19,7 +19,7 @@ function integration_step_monitor(integrator::SciMLBase.DEIntegrator, progress_m
     # (; id)       = progress_monitor
     (; tprev, t, dt, iter)    = integrator
     # push!(msgs, id => "$id: integrating on [$t, $(t+dt)] with Δt=$dt.")
-    @logmsg LogLevel(-100) "Integrating on [$tprev, $t]." iter=iter Δt=dt _group=:timeintegration
+    @logmsg LogLevel(-100) "Integrating on [$t, $(t+dt)]." iter=iter Δt=dt tprev=tprev _group=:timeintegration
 end
 
 function integration_finalize_monitor(integrator, progress_monitor::DefaultProgressMonitor)
@@ -39,15 +39,24 @@ function nonlinear_step_monitor(nlcache, time, f, u, progress_monitor::DefaultPr
     resnorm = norm(nlcache.residual)
     normΔu = norm(linear_solver_cache.u)
     if stats === nothing
-        @logmsg LogLevel(-100) "Nonlinear solve step" iter=iter resnorm=resnorm normΔu=normΔu _group=:nlsolve
+        @logmsg LogLevel(-100) "Nonlinear solve step" time=time iter=iter resnorm=resnorm normΔu=normΔu _group=:nlsolve
     else
-        @logmsg LogLevel(-100) "Nonlinear solve step" iter=iter stats=stats _group=:nlsolve
+        @logmsg LogLevel(-100) "Nonlinear solve step" time=time iter=iter resnorm=resnorm normΔu=normΔu stats=stats _group=:nlsolve
     end
 end
 
 function nonlinear_finalize_monitor(nlcache, time, f, progress_monitor::DefaultProgressMonitor)
     # (; id, msgs) = progress_monitor
-    # push!(msgs, id => "$id: done.")
+    (; iter, linear_solver_cache) = nlcache
+    stats = hasproperty(linear_solver_cache.cacheval, :stats) ? linear_solver_cache.cacheval.stats : nothing
+    # push!(msgs, id => "$id: $(nlcache.iter)\n\t||r||=$(norm(nlcache.residual)) ||Δu||=$(norm(linear_solver_cache.u))\n\t$stats")
+    resnorm = norm(nlcache.residual)
+    normΔu = norm(linear_solver_cache.u)
+    if stats === nothing
+        @logmsg LogLevel(-100) "Nonlinear solve converged" time=time iter=iter resnorm=resnorm normΔu=normΔu _group=:nlsolve
+    else
+        @logmsg LogLevel(-100) "Nonlinear solve converged" time=time iter=iter resnorm=resnorm normΔu=normΔu stats=stats _group=:nlsolve
+    end
 end
 
 #
@@ -71,6 +80,7 @@ end
 function nonlinear_step_monitor(cache, time, f, u, monitor::VTKNewtonMonitor)
     nonlinear_step_monitor(cache,time,f,u,monitor.inner_monitor)
 
+    mkpath(monitor.outdir)
     VTKGridFile(joinpath(monitor.outdir, "newton-monitor-t=$time-i=$(cache.iter).vtu"), f.dh) do vtk
         write_solution(vtk, f.dh, u)
         write_solution(vtk, f.dh, cache.linear_solver_cache.b, "_residual")
@@ -78,5 +88,6 @@ function nonlinear_step_monitor(cache, time, f, u, monitor::VTKNewtonMonitor)
     end
 end
 
-function nonlinear_finalize_monitor(nlcache, time, f, progress_monitor::VTKNewtonMonitor)
+function nonlinear_finalize_monitor(nlcache, time, f, monitor::VTKNewtonMonitor)
+    nonlinear_finalize_monitor(nlcache, time,f, monitor.inner_monitor)
 end

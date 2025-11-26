@@ -68,7 +68,7 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], 0)
 end
 
-function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t)
+function nlsolve!(u::AbstractVector{T}, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t) where T
     @unpack op, residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
     cache.iter = -1
@@ -84,10 +84,8 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
 
         residualnorm = residual_norm(cache, f)
-        if residualnorm < cache.parameters.tol
-            if cache.iter == 1
-                push!(Θks, 0.0)
-            end
+        if residualnorm < cache.parameters.tol && cache.iter > 0
+            push!(Θks, 0.0)
             break
         elseif cache.iter > cache.parameters.max_iter
             push!(Θks,Inf)
@@ -116,16 +114,19 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
             else
                 push!(Θks, Θk)
             end
+            # Try to prevent oversolving when we really just wanted to force the solve to happen once.
+            if cache.iter == 1 && residualnormprev < eps(T) && residualnorm < eps(T) && incrementnorm < eps(T) && incrementnormprev < eps(T)
+                break
+            end
             if cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0
                 @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
                 return false
             end
-
-            # Late out on second iteration
-            if residualnorm < cache.parameters.tol
-                break
-            end
         end
+
+        # if incrementnorm < cache.parameters.tol
+        #     break
+        # end
 
         residualnormprev  = residualnorm
         incrementnormprev = incrementnorm
