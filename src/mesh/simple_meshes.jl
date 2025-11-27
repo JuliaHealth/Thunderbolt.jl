@@ -117,7 +117,7 @@ subdomain_names(mesh::SimpleMesh) = collect(keys(mesh.volumetric_subdomains))
 function materialize_edges!(mesh::SimpleMesh)
     !isempty(mesh.medges) && return nothing
     next_edge_idx = 1
-    for cell ∈ getcells(grid)
+    for cell ∈ getcells(mesh)
         for e ∈ first.(sortedge.(edges(cell)))
             if !haskey(mesh.medges, e)
                 mesh.medges[e] = next_edge_idx
@@ -131,7 +131,7 @@ end
 function materialize_faces!(mesh::SimpleMesh)
     !isempty(mesh.mfaces) && return nothing
     next_face_idx = 1
-    for cell ∈ getcells(grid)
+    for cell ∈ getcells(mesh)
         for f ∈ first.(sortface.(faces(cell)))
             if !haskey(mesh.mfaces, f)
                 mesh.mfaces[f] = next_face_idx
@@ -145,7 +145,7 @@ end
 function materialize_vertices!(mesh::SimpleMesh)
     !isempty(mesh.mvertices) && return nothing
     next_vertex_idx = 1
-    for cell ∈ getcells(grid)
+    for cell ∈ getcells(mesh)
         for v ∈ vertices(cell)
             if !haskey(mesh.mvertices, v)
                 mesh.mvertices[v] = next_vertex_idx
