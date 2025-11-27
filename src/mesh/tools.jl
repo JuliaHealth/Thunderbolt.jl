@@ -285,6 +285,7 @@ function uniform_refinement(mesh::SimpleMesh)
 end
 
 function _uniform_refinement(mgrid::SimpleMesh{3,C,T}) where {C,T}
+    materialize_all_entities!(mgrid)
     grid = mgrid.grid
 
     cells = getcells(grid)
@@ -722,6 +723,7 @@ function remove_unattached_nodes!(grid::Grid)
 end
 
 function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
+    materialize_faces!(mesh)
     actual_subdomains = subdomains === nothing ? Dict("" => 1:getncells(mesh)) : subdomains
     # Cache for the cellid, local faceid pairs.
     # These are 0 if not assigned and -1 if assigned more than once.
