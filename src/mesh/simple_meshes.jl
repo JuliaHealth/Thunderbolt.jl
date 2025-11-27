@@ -114,13 +114,59 @@ elementtypes(::SimpleMesh{3,Hexahedron}) = @SVector [Hexahedron]
 
 subdomain_names(mesh::SimpleMesh) = collect(keys(mesh.volumetric_subdomains))
 
+function materialize_edges!(mesh::SimpleMesh)
+    !isempty(mesh.medges) && return nothing
+    next_edge_idx = 1
+    for cell ∈ getcells(grid)
+        for e ∈ first.(sortedge.(edges(cell)))
+            if !haskey(mesh.medges, e)
+                mesh.medges[e] = next_edge_idx
+                next_edge_idx += 1
+            end
+        end
+    end
+    return nothing
+end
+
+function materialize_faces!(mesh::SimpleMesh)
+    !isempty(mesh.mfaces) && return nothing
+    next_face_idx = 1
+    for cell ∈ getcells(grid)
+        for f ∈ first.(sortface.(faces(cell)))
+            if !haskey(mesh.mfaces, f)
+                mesh.mfaces[f] = next_face_idx
+                next_face_idx += 1
+            end
+        end
+    end
+    return nothing
+end
+
+function materialize_vertices!(mesh::SimpleMesh)
+    !isempty(mesh.mvertices) && return nothing
+    next_vertex_idx = 1
+    for cell ∈ getcells(grid)
+        for v ∈ vertices(cell)
+            if !haskey(mesh.mvertices, v)
+                mesh.mvertices[v] = next_vertex_idx
+                next_vertex_idx += 1
+            end
+        end
+    end
+    return nothing
+end
+
+function materialize_all_entities!(mesh::SimpleMesh)
+    materialize_faces!(mesh)
+    materialize_edges!(mesh)
+    materialize_vertices!(mesh)
+end
+
 function to_mesh(grid::Grid)
     mfaces = OrderedDict{NTuple{3,Int}, Int}()
     medges = OrderedDict{NTuple{2,Int}, Int}()
     mvertices = OrderedDict{Int, Int}()
-    next_face_idx = 1
-    next_edge_idx = 1
-    next_vertex_idx = 1
+
     number_of_cells_by_type = OrderedDict{DataType, Int}()
     for cell ∈ getcells(grid)
         cell_type = typeof(cell)
@@ -128,25 +174,6 @@ function to_mesh(grid::Grid)
             number_of_cells_by_type[cell_type] += 1
         else
             number_of_cells_by_type[cell_type] = 1
-        end
-
-        for v ∈ vertices(cell)
-            if !haskey(mvertices, v)
-                mvertices[v] = next_vertex_idx
-                next_vertex_idx += 1
-            end
-        end
-        for e ∈ first.(sortedge.(edges(cell)))
-            if !haskey(medges, e)
-                medges[e] = next_edge_idx
-                next_edge_idx += 1
-            end
-        end
-        for f ∈ first.(sortface.(faces(cell)))
-            if !haskey(mfaces, f)
-                mfaces[f] = next_face_idx
-                next_face_idx += 1
-            end
         end
     end
 

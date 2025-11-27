@@ -327,7 +327,9 @@ function hexahedralize(mesh::SimpleMesh{3})
 end
 
 function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
-    grid = mgrid.grid
+    materialize_edges!(mgrid)
+    materialize_faces!(mgrid)
+    (; grid) = mgrid
 
     cells = getcells(grid)
 
