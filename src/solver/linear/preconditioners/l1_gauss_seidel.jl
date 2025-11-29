@@ -2,6 +2,26 @@
 ## L1 Gauss Seidel Preconditioner ##
 ####################################
 
+using TimerOutputs
+
+# Global timer for L1GS preconditioner profiling
+const L1GS_TIMER = TimerOutput()
+
+"""
+    show_l1gs_timer()
+
+Display timing and allocation information for L1GS preconditioner operations.
+Call this after running your code to see detailed profiling results.
+"""
+show_l1gs_timer() = show(L1GS_TIMER)
+
+"""
+    reset_l1gs_timer!()
+
+Reset the L1GS timer to clear all accumulated timing data.
+"""
+reset_l1gs_timer!() = TimerOutputs.reset_timer!(L1GS_TIMER)
+
 ## Structs & Constructors ##
 """
     BlockPartitioning{Ti<:Integer, Backend}
@@ -153,29 +173,37 @@ function _blockpartitioning(builder::L1GSPrecBuilder{<:AbstractGPUDevice}, A::Ab
 end
 
 function LinearSolve.ldiv!(y::VectorType, P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType<:AbstractVector,Ti<:Integer,Backend}
-    # x: residual
-    # y: preconditioned residual
-    y .= x #works either way, whether x is GpuVectorType (e.g. CuArray) or Vector
-    @unpack partitioning, D_Dl1 = P
-    @unpack backend = partitioning
-    # The following code is required because there is no assumption on the compatibality of x with the backend.
-    _y = adapt(backend, y)
-    _forward_sweep!(_y, P)
-    copyto!(y, _y)
+    @timeit L1GS_TIMER "ldiv! (generic)" begin
+        # x: residual
+        # y: preconditioned residual
+        # FIXME: big memory issue
+        @timeit L1GS_TIMER "y .= x" y .= x #works either way, whether x is GpuVectorType (e.g. CuArray) or Vector
+        @unpack partitioning, D_Dl1 = P
+        @unpack backend = partitioning
+        # The following code is required because there is no assumption on the compatibality of x with the backend.
+        # FIXME: big memory issue
+        @timeit L1GS_TIMER "adapt(backend, y)" _y = adapt(backend, y)
+        @timeit L1GS_TIMER "_forward_sweep!" _forward_sweep!(_y, P)
+        @timeit L1GS_TIMER "copyto!(y, _y)" copyto!(y, _y)
+    end
     return nothing
 end
 
 function LinearSolve.ldiv!(y::Vector, P::L1GSPreconditioner{BlockPartitioning{Ti,CPU}}, x::Vector) where {Ti<:Integer}
-    # x: residual
-    # y: preconditioned residual
-    y .= x 
-    _forward_sweep!(y, P)
+    @timeit L1GS_TIMER "ldiv! (CPU)" begin
+        # x: residual
+        # y: preconditioned residual
+        # FIXME: big memory issue
+        @timeit L1GS_TIMER "y .= x" y .= x
+        @timeit L1GS_TIMER "_forward_sweep!" _forward_sweep!(y, P)
+    end
     return nothing
 end
 
 function (\)(P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType<:AbstractVector,Ti,Backend}
     # P is a preconditioner
     # x is a vector
+    # FIXME: big memory issue
     y = similar(x)
     LinearSolve.ldiv!(y, P, x)
     return y
@@ -327,24 +355,30 @@ _pack_strict_lower!(::AbstractMatrixSymmetry, ::CSRFormat, SLbuffer, A, start_id
 
 
 function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartitioning)
-    # No assumptions on A, i.e. A here might be in either backend compatible format or not. 
-    # So we have to convert it to backend compatible format, if it is not already.
-    # `partsize` is the size of each partition, `nparts` is the total number of partitions.
-    # `nchunks` is the number of CPU cores or GPU blocks.
-    # `chunksize` is the number of threads per block in GPU backend.
-    @unpack partsize, nparts, nchunks, chunksize, backend = partitioning
-    A = adapt(backend, _A)
-    N = size(A, 1)
-    D_Dl1 = adapt(backend, zeros(eltype(A), N)) # D + Dˡ
-    last_partsize = N - (nparts - 1) * partsize # size of the last partition
-    SLbuffer_size = (partsize * (partsize - 1) * (nparts-1)) ÷ 2 +  last_partsize * (last_partsize - 1) ÷ 2 
-    SLbuffer = adapt(backend, zeros(eltype(A), SLbuffer_size)) # strictly lower triangular part of all diagonal blocks stored in a 1D array
-    symA = isapprox(A, A', rtol=1e-12) ? SymmetricMatrix() : NonSymmetricMatrix()
-    ndrange = nchunks * chunksize
-    kernel = _precompute_blocks_kernel!(backend, chunksize, ndrange)
-    kernel(D_Dl1, SLbuffer, A, symA, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
-    synchronize(backend)
-    return D_Dl1, SLbuffer
+    @timeit L1GS_TIMER "_precompute_blocks" begin
+        # No assumptions on A, i.e. A here might be in either backend compatible format or not.
+        # So we have to convert it to backend compatible format, if it is not already.
+        # `partsize` is the size of each partition, `nparts` is the total number of partitions.
+        # `nchunks` is the number of CPU cores or GPU blocks.
+        # `chunksize` is the number of threads per block in GPU backend.
+        @unpack partsize, nparts, nchunks, chunksize, backend = partitioning
+        # FIXME: big memory issue
+        @timeit L1GS_TIMER "adapt(backend, _A)" A = adapt(backend, _A)
+        N = size(A, 1)
+        # FIXME: big memory issue
+        @timeit L1GS_TIMER "allocate D_Dl1" D_Dl1 = adapt(backend, zeros(eltype(A), N)) # D + Dˡ
+        last_partsize = N - (nparts - 1) * partsize # size of the last partition
+        SLbuffer_size = (partsize * (partsize - 1) * (nparts-1)) ÷ 2 +  last_partsize * (last_partsize - 1) ÷ 2
+        # FIXME: big memory issue
+        @timeit L1GS_TIMER "allocate SLbuffer" SLbuffer = adapt(backend, zeros(eltype(A), SLbuffer_size)) # strictly lower triangular part of all diagonal blocks stored in a 1D array
+        # FIXME: big memory issue
+        @timeit L1GS_TIMER "isapprox(A, A')" symA = isapprox(A, A', rtol=1e-12) ? SymmetricMatrix() : NonSymmetricMatrix()
+        ndrange = nchunks * chunksize
+        @timeit L1GS_TIMER "kernel setup" kernel = _precompute_blocks_kernel!(backend, chunksize, ndrange)
+        @timeit L1GS_TIMER "kernel execution" kernel(D_Dl1, SLbuffer, A, symA, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
+        @timeit L1GS_TIMER "synchronize" synchronize(backend)
+        return D_Dl1, SLbuffer
+    end
 end
 
 
@@ -367,13 +401,15 @@ end
 end
 
 function _forward_sweep!(y, P)
-    @unpack partitioning, D_Dl1, SLbuffer = P
-    @unpack partsize, nparts, nchunks, chunksize, backend = partitioning
-    ndrange = nchunks * chunksize
-    kernel = _forward_sweep_kernel!(backend, chunksize, ndrange)
-    size_A = convert(typeof(nparts), length(y))
-    kernel(y, D_Dl1, SLbuffer, size_A, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
-    synchronize(backend)
+    @timeit L1GS_TIMER "_forward_sweep! (internal)" begin
+        @timeit L1GS_TIMER "@unpack P" @unpack partitioning, D_Dl1, SLbuffer = P
+        @timeit L1GS_TIMER "@unpack partitioning" @unpack partsize, nparts, nchunks, chunksize, backend = partitioning
+        @timeit L1GS_TIMER "ndrange calc" ndrange = nchunks * chunksize
+        @timeit L1GS_TIMER "kernel construction" kernel = _forward_sweep_kernel!(backend, chunksize, ndrange)
+        @timeit L1GS_TIMER "convert size_A" size_A = convert(typeof(nparts), length(y))
+        @timeit L1GS_TIMER "kernel call" kernel(y, D_Dl1, SLbuffer, size_A, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
+        @timeit L1GS_TIMER "synchronize" synchronize(backend)
+    end
     return nothing
 end
 

@@ -35,8 +35,27 @@ function test_l1gs_prec(A, b)
     @test isapprox(A * sol_unprec.u, b, rtol=1e-1, atol=1e-1)
 
     # Test L1GS Preconditioner
+    # Reset timer before building preconditioner
+    Thunderbolt.Preconditioners.reset_l1gs_timer!()
+
     P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize)
+
+    println("\n" * "="^60)
+    println("Preconditioner Construction Timings:")
+    println("="^60)
+    Thunderbolt.Preconditioners.show_l1gs_timer()
+
+    # Reset timer before testing ldiv!
+    Thunderbolt.Preconditioners.reset_l1gs_timer!()
+
     sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P)
+
+    println("\n" * "="^60)
+    println("ldiv! Timings during solve:")
+    println("="^60)
+    Thunderbolt.Preconditioners.show_l1gs_timer()
+    println("="^60)
+
     println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
     println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
     @test isapprox(A * sol_prec.u, b, rtol=1e-1, atol=1e-1)
@@ -95,7 +114,7 @@ end
         end
 
         @testset "Symmetric A" begin
-            md = mdopen("HB/bcsstk15") 
+            md = mdopen("HB/bcsstk15")
             A = md.A
             b = ones(size(A, 1))
             test_l1gs_prec(A, b)
