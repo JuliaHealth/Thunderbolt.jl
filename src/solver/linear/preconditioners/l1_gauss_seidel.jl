@@ -114,8 +114,8 @@ struct L1GSPrecBuilder{DeviceType<:AbstractDevice}
     end
 end
 
-(builder::L1GSPrecBuilder)(A::AbstractMatrix, partsize::Ti) where {Ti<:Integer} =
-    build_l1prec(builder, A, partsize)
+(builder::L1GSPrecBuilder)(A::AbstractMatrix, partsize::Ti, isSymA::Bool = false) where {Ti<:Integer} =
+    build_l1prec(builder, A, partsize,isSymA)
 
 
 struct DiagonalPartsIterator{Ti}
@@ -135,18 +135,18 @@ struct DiagonalPartCache{Ti}
 end
 
 ## Preconditioner builder ##
-function build_l1prec(builder::L1GSPrecBuilder, A::MatrixType, partsize::Ti) where {Ti<:Integer,MatrixType}
+function build_l1prec(builder::L1GSPrecBuilder, A::MatrixType, partsize::Ti, isSymA::Bool) where {Ti<:Integer,MatrixType}
     partsize == 0 && error("partsize must be greater than 0")
-    _build_l1prec(builder, A, partsize)
+    _build_l1prec(builder, A, partsize, isSymA)
 end
 
-function _build_l1prec(builder::L1GSPrecBuilder, _A::MatrixType, partsize::Ti) where {Ti<:Integer,MatrixType}
+function _build_l1prec(builder::L1GSPrecBuilder, _A::MatrixType, partsize::Ti, isSymA::Bool) where {Ti<:Integer,MatrixType}
     # `nchunks` is either CPU cores or GPU blocks.
     # Each chunk will be assigned `nparts`, each of size `partsize`.
     # In GPU backend, `nchunks` is the number of blocks and `partsize` is the number of threads per block.
     A = get_data(_A) # for symmetric case
     partitioning = _blockpartitioning(builder, A, partsize)
-    D_Dl1, SLbuffer = _precompute_blocks(A, partitioning)
+    D_Dl1, SLbuffer = _precompute_blocks(A, partitioning, isSymA)
     L1GSPreconditioner(partitioning, D_Dl1, SLbuffer)
 end
 
@@ -354,7 +354,7 @@ _pack_strict_lower!(::AbstractMatrixSymmetry, ::CSRFormat, SLbuffer, A, start_id
     _pack_strict_lower_csr!(SLbuffer, getrowptr(A), colvals(A), getnzval(A), start_idx, end_idx, partsize, k)
 
 
-function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartitioning)
+function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartitioning, isSymA::Bool)
     @timeit L1GS_TIMER "_precompute_blocks" begin
         # No assumptions on A, i.e. A here might be in either backend compatible format or not.
         # So we have to convert it to backend compatible format, if it is not already.
@@ -362,17 +362,15 @@ function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartiti
         # `nchunks` is the number of CPU cores or GPU blocks.
         # `chunksize` is the number of threads per block in GPU backend.
         @unpack partsize, nparts, nchunks, chunksize, backend = partitioning
-        # FIXME: big memory issue
         @timeit L1GS_TIMER "adapt(backend, _A)" A = adapt(backend, _A)
         N = size(A, 1)
-        # FIXME: big memory issue
+        
         @timeit L1GS_TIMER "allocate D_Dl1" D_Dl1 = adapt(backend, zeros(eltype(A), N)) # D + Dˡ
         last_partsize = N - (nparts - 1) * partsize # size of the last partition
         SLbuffer_size = (partsize * (partsize - 1) * (nparts-1)) ÷ 2 +  last_partsize * (last_partsize - 1) ÷ 2
-        # FIXME: big memory issue
         @timeit L1GS_TIMER "allocate SLbuffer" SLbuffer = adapt(backend, zeros(eltype(A), SLbuffer_size)) # strictly lower triangular part of all diagonal blocks stored in a 1D array
-        # FIXME: big memory issue
-        @timeit L1GS_TIMER "isapprox(A, A')" symA = isapprox(A, A', rtol=1e-12) ? SymmetricMatrix() : NonSymmetricMatrix()
+        @timeit L1GS_TIMER "isapprox(A, A')" symA = isSymA ? SymmetricMatrix() : NonSymmetricMatrix()
+        
         ndrange = nchunks * chunksize
         @timeit L1GS_TIMER "kernel setup" kernel = _precompute_blocks_kernel!(backend, chunksize, ndrange)
         @timeit L1GS_TIMER "kernel execution" kernel(D_Dl1, SLbuffer, A, symA, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
