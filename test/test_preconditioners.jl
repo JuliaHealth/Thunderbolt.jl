@@ -49,7 +49,7 @@ function test_l1gs_prec(A, b, partsize=nothing)
     # Reset timer before testing ldiv!
     Thunderbolt.Preconditioners.reset_l1gs_timer!()
 
-    sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P)
+    sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P, verbose = verb)
 
     println("\n" * "="^60)
     println("ldiv! Timings during solve:")
@@ -127,12 +127,14 @@ end
                 println("\nTesting custom matrix from matrix.jld2")
                 data = load("matrix.jld2")
                 A = data["K"]
-                b = randn(size(A, 1))
+                x = ones(size(A, 1))
+                b = A * x
                 prob = LinearProblem(A, b)
                 # Test L1GS Preconditioner
                 # Reset timer before building preconditioner
                 Thunderbolt.Preconditioners.reset_l1gs_timer!()
-                partsize = 20
+                ncores = 10
+                partsize = 2
                 P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize)
 
                 println("\n" * "="^60)
@@ -143,8 +145,11 @@ end
                 # Reset timer before testing ldiv!
                 Thunderbolt.Preconditioners.reset_l1gs_timer!()
 
-                sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P)
+                # Enable residual printing
+                println("\nSolving with preconditioner:")
+                sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P,verbose = verb)
 
+                @test isapprox(A * sol_prec.u, b, rtol=1e-5, atol=1e-5)
                 println("\n" * "="^60)
                 println("ldiv! Timings during solve:")
                 println("="^60)

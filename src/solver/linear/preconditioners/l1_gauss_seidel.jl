@@ -176,12 +176,10 @@ function LinearSolve.ldiv!(y::VectorType, P::L1GSPreconditioner{BlockPartitionin
     @timeit L1GS_TIMER "ldiv! (generic)" begin
         # x: residual
         # y: preconditioned residual
-        # FIXME: big memory issue
         @timeit L1GS_TIMER "y .= x" y .= x #works either way, whether x is GpuVectorType (e.g. CuArray) or Vector
         @unpack partitioning, D_Dl1 = P
         @unpack backend = partitioning
         # The following code is required because there is no assumption on the compatibality of x with the backend.
-        # FIXME: big memory issue
         @timeit L1GS_TIMER "adapt(backend, y)" _y = adapt(backend, y)
         @timeit L1GS_TIMER "_forward_sweep!" _forward_sweep!(_y, P)
         @timeit L1GS_TIMER "copyto!(y, _y)" copyto!(y, _y)
@@ -191,9 +189,6 @@ end
 
 function LinearSolve.ldiv!(y::Vector, P::L1GSPreconditioner{BlockPartitioning{Ti,CPU}}, x::Vector) where {Ti<:Integer}
     @timeit L1GS_TIMER "ldiv! (CPU)" begin
-        # x: residual
-        # y: preconditioned residual
-        # FIXME: big memory issue
         @timeit L1GS_TIMER "y .= x" y .= x
         @timeit L1GS_TIMER "_forward_sweep!" _forward_sweep!(y, P)
     end
@@ -203,7 +198,6 @@ end
 function (\)(P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType<:AbstractVector,Ti,Backend}
     # P is a preconditioner
     # x is a vector
-    # FIXME: big memory issue
     y = similar(x)
     LinearSolve.ldiv!(y, P, x)
     return y
@@ -375,6 +369,16 @@ function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartiti
         @timeit L1GS_TIMER "kernel setup" kernel = _precompute_blocks_kernel!(backend, chunksize, ndrange)
         @timeit L1GS_TIMER "kernel execution" kernel(D_Dl1, SLbuffer, A, symA, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
         @timeit L1GS_TIMER "synchronize" synchronize(backend)
+
+        # # Check for problematic near-zero diagonals and warn user
+        # n_zeros = count(x -> abs(x) <= eps(eltype(D_Dl1)), D_Dl1)
+        # if n_zeros > 0
+        #     @warn "L1GS Preconditioner: Found $n_zeros near-zero diagonal entries (D+D^ℓ1 ≈ 0). " *
+        #           "These have been replaced with eps($(eltype(D_Dl1))) = $(eps(eltype(D_Dl1))) to prevent division by zero. " *
+        #           "This may indicate: (1) zero diagonal elements, (2) weak diagonal dominance, or (3) poor partitioning. " *
+        #           "Consider checking matrix properties or adjusting partition size."
+        # end
+
         return D_Dl1, SLbuffer
     end
 end
@@ -392,7 +396,19 @@ end
             b, d = _diag_offpart(symA, format_A, A, i, start_idx, end_idx)
             #@show i,b,d
             # Update the diagonal and off-diagonal values
-            D_Dl1[i] = b + d
+            # Handle near-zero diagonals: D_Dl1 = D + D^ℓ1 where D is diagonal, D^ℓ1 is sum of |off-diagonal|
+            val = b + d
+            if abs(val) < eps(eltype(D_Dl1))
+                @warn "L1GS Preconditioner: Near-zero diagonal entry detected at index $i (b + d ≈ 0). " 
+                @show b,d
+                # If b+d ≈ 0 (cancellation or both zero), use |b|+|d| to avoid cancellation
+                # This handles cases where diagonal and off-diagonal sum cancel out
+                abs_sum = abs(b) + abs(d)
+                D_Dl1[i] = abs_sum > eps(eltype(D_Dl1)) ? abs_sum : eps(eltype(D_Dl1))
+                # Note: Warning will be issued after kernel execution
+            else
+                D_Dl1[i] = val
+            end
             _pack_strict_lower!(symA, format_A, SLbuffer, A, start_idx, end_idx, partsize, k)
         end
     end
@@ -427,10 +443,10 @@ end
 
             # accumulate strictly‐lower * y
             acc = zero(eltype(y))
-            @inbounds for local_j in 1:(local_i-1) # iterate over the off-diagonal columns in row local_i 
-                # j’s global index:
+            @inbounds for local_j in 1:(local_i-1) # iterate over the off-diagonal columns in row local_i
+                # j's global index:
                 gj = start_idx + (local_j - 1)
-                off_idx = block_offset + row_offset + (local_j) 
+                off_idx = block_offset + row_offset + (local_j)
                 acc += SLbuffer[off_idx] * y[gj]
             end
 
