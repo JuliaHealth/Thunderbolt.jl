@@ -1,5 +1,6 @@
 using MatrixDepot, LinearSolve, SparseArrays, SparseMatricesCSR
 using KernelAbstractions
+using JLD2: load
 import Thunderbolt: ThreadedSparseMatrixCSR
 
 ##########################################
@@ -12,7 +13,7 @@ function poisson_test_matrix(N)
     return spdiagm(0 => 2 * ones(N), -1 => -ones(N - 1), 1 => -ones(N - 1))
 end
 
-function test_sym(testname,A, x,y_exp,D_Dl1_exp,SLbuffer_exp, partsize)
+function test_sym(testname, A, x, y_exp, D_Dl1_exp, SLbuffer_exp, partsize)
     @testset "$testname Symmetric" begin
         total_ncores = 8 # Assuming 8 cores for testing
         for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
@@ -26,9 +27,9 @@ function test_sym(testname,A, x,y_exp,D_Dl1_exp,SLbuffer_exp, partsize)
     end
 end
 
-function test_l1gs_prec(A, b)
+function test_l1gs_prec(A, b, partsize=nothing)
     ncores = 8 # Assuming 8 cores for testing
-    partsize = size(A, 1) / ncores |> ceil |> Int
+    partsize = partsize === nothing ? size(A, 1) / ncores |> ceil |> Int : partsize
 
     prob = LinearProblem(A, b)
     sol_unprec = solve(prob, KrylovJL_GMRES())
@@ -67,21 +68,21 @@ end
         N = 9
         A = poisson_test_matrix(N)
         x = 0:N-1 |> collect .|> Float64
-        y_exp = [0, 1/3, 2/3, 11/9, 4/3, 19/9, 2, 3.0, 8/3]
-        D_Dl1_exp = Float64.([2,3,3,3,3,3,3,3,3])
-        SLbuffer_exp = Float64.([-1,-1,-1,-1])
-        test_sym("CPU CSC",A, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
+        y_exp = [0, 1 / 3, 2 / 3, 11 / 9, 4 / 3, 19 / 9, 2, 3.0, 8 / 3]
+        D_Dl1_exp = Float64.([2, 3, 3, 3, 3, 3, 3, 3, 3])
+        SLbuffer_exp = Float64.([-1, -1, -1, -1])
+        test_sym("CPU CSC", A, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
         B = SparseMatrixCSR(A)
-        test_sym("CPU, CSR",B, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
+        test_sym("CPU, CSR", B, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
         C = ThreadedSparseMatrixCSR(B)
-        test_sym("CPU, Threaded CSR",C, x,y_exp,D_Dl1_exp,SLbuffer_exp, 2)
+        test_sym("CPU, Threaded CSR", C, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
 
 
         @testset "Non-Symmetric CSC" begin
             A2 = copy(A)
             A2[1, 8] = -1.0  # won't affect the result
             A2[2, 8] = -1.0  # 1/3 → 1/4
-            y2_exp = [0, 1/4, 2/3, 11/9, 4/3, 19/9, 2, 3.0, 8/3]
+            y2_exp = [0, 1 / 4, 2 / 3, 11 / 9, 4 / 3, 19 / 9, 2, 3.0, 8 / 3]
             D_Dl1_exp2 = Float64.([3, 4, 3, 3, 3, 3, 3, 3, 3])
             SLbuffer_exp2 = Float64.([-1, -1, -1, -1])
 
@@ -96,8 +97,8 @@ end
         @testset "Partsize" begin
             partsize = 3
             ncores = 2
-            D_Dl1_exp = Float64.([2,2,3,3,2,3,3,2,2])
-            SLbuffer_exp = Float64.([-1,0,-1,-1,0,-1,-1,0,-1])
+            D_Dl1_exp = Float64.([2, 2, 3, 3, 2, 3, 3, 2, 2])
+            SLbuffer_exp = Float64.([-1, 0, -1, -1, 0, -1, -1, 0, -1])
             builder = L1GSPrecBuilder(PolyesterDevice(ncores))
             P = builder(A, partsize)
             @test P.D_Dl1 ≈ D_Dl1_exp
@@ -118,6 +119,43 @@ end
             A = md.A
             b = ones(size(A, 1))
             test_l1gs_prec(A, b)
+        end
+
+        @testset "Custom matrix.jld2" begin
+            # Check if matrix.jld2 exists
+            if isfile("matrix.jld2")
+                println("\nTesting custom matrix from matrix.jld2")
+                data = load("matrix.jld2")
+                A = data["K"]
+                b = randn(size(A, 1))
+                prob = LinearProblem(A, b)
+                # Test L1GS Preconditioner
+                # Reset timer before building preconditioner
+                Thunderbolt.Preconditioners.reset_l1gs_timer!()
+                partsize = 20
+                P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize)
+
+                println("\n" * "="^60)
+                println("Preconditioner Construction Timings:")
+                println("="^60)
+                Thunderbolt.Preconditioners.show_l1gs_timer()
+
+                # Reset timer before testing ldiv!
+                Thunderbolt.Preconditioners.reset_l1gs_timer!()
+
+                sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P)
+
+                println("\n" * "="^60)
+                println("ldiv! Timings during solve:")
+                println("="^60)
+                Thunderbolt.Preconditioners.show_l1gs_timer()
+                println("="^60)
+
+                println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
+                println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
+            else
+                @warn "matrix.jld2 not found, skipping custom matrix test"
+            end
         end
     end
 end
