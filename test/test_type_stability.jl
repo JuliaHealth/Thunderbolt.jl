@@ -52,7 +52,6 @@
         contraction_model_set = [
             ConstantStretchModel(),
             PelceSunLangeveld1995Model(),
-            RDQ20MFModel(),
         ]
         Fᵃmodel_set = [
             GMKActiveDeformationGradientModel(),
@@ -60,7 +59,7 @@
             RLRSQActiveDeformationGradientModel(0.75),
         ]
         @testset failfast=true "Active Stress" for active_stress ∈ active_stress_set
-            @testset for contraction_model in contraction_model_set
+            @testset for contraction_model in [contraction_model_set; RDQ20MFModel()]
                 model = ActiveStressModel(
                     passive_spring,
                     active_stress,
