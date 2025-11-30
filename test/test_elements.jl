@@ -4,6 +4,8 @@
     import Thunderbolt: BilinearMassIntegrator, BilinearDiffusionIntegrator
     import Thunderbolt: CompositeVolumetricElementCache, CompositeSurfaceElementCache
 
+    setup_test_cache(kwargs...) = Thunderbolt.duplicate_for_device(PolyesterDevice(), setup_element_cache(kwargs...))
+
     grid = generate_grid(Hexahedron, (1,1,1))
     qrc  = QuadratureRuleCollection(3)
     qr   = QuadratureRule{RefHexahedron}(3)
@@ -83,7 +85,7 @@
         Kₑ¹ = zeros(ndofs(dhs), ndofs(dhs))
         Kₑ² = zeros(ndofs(dhs), ndofs(dhs))
 
-        element_cache = setup_element_cache(model, sdhs)
+        element_cache = setup_test_cache(model, sdhs)
 
         assemble_element!(Kₑ¹, cell_cache_s, element_cache, 0.0)
         @test !iszero(Kₑ¹)
@@ -114,7 +116,7 @@
         Kₑ¹ = zeros(ndofs(dhv), ndofs(dhv))
         Kₑ² = zeros(ndofs(dhv), ndofs(dhv))
 
-        element_cache = setup_element_cache(QuasiStaticModel(:u, model, ()), qr, sdhv)
+        element_cache = setup_test_cache(QuasiStaticModel(:u, model, ()), qr, sdhv)
 
         @test_opt assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, element_cache, 0.0)
                   assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, element_cache, 0.0)

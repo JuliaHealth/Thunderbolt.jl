@@ -1,4 +1,6 @@
 @testset "microstructures" begin
+    setup_test_cache(args...) = Thunderbolt.duplicate_for_device(PolyesterDevice(), Thunderbolt.setup_coefficient_cache(args...))
+
     ring_grid = generate_ring_mesh(80,1,1)
 
     qr_collection = QuadratureRuleCollection(2)
@@ -14,10 +16,10 @@
     close!(dh)
     sdh = first(dh.subdofhandlers)
 
-    cs_cache = Thunderbolt.setup_coefficient_cache(cartesian_coefficient, qr, sdh)
+    cs_cache = setup_test_cache(cartesian_coefficient, qr, sdh)
 
     @testset "Midmyocardial coordinate system" begin
-        cache2 = Thunderbolt.setup_coefficient_cache(ring_cs, qr, sdh)
+        cache2 = setup_test_cache(ring_cs, qr, sdh)
         for cellcache in CellIterator(ring_cs.dh)
             for qp in QuadratureIterator(qr)
                 x = evaluate_coefficient(cs_cache, cellcache, qp, 0.0)
@@ -39,7 +41,7 @@
                 γepi  = 0.0,
             )
         )
-        cache2 = Thunderbolt.setup_coefficient_cache(ms, qr, sdh)
+        cache2 = setup_test_cache(ms, qr, sdh)
         for cellcache in CellIterator(ring_grid)
             for qp in QuadratureIterator(qr)
                 x = evaluate_coefficient(cs_cache, cellcache, qp, 0.0)

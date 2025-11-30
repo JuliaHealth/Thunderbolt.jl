@@ -2,7 +2,7 @@
 const DEBUG = Preferences.@load_preference("use_debug", false)
 
 """
-    Thunderbolt.debug_mode(; enable=true)
+    debug_mode(; enable=true)
 
 Helper to turn on (`enable=true`) or off (`enable=false`) debug expressions in Ferrite.
 
@@ -60,35 +60,18 @@ function celldofsview(dh::Ferrite.AbstractDofHandler, i::Integer)
     return @views dh.cell_dofs[offset:(offset+ndofs-1)]
 end
 
-
-function calculate_element_volume(cell, cellvalues_u, uₑ)
-    reinit!(cellvalues_u, cell)
-    evol::Float64=0.0;
-    @inbounds for qp in QuadratureIterator(cellvalues_u)
-        dΩ = getdetJdV(cellvalues_u, qp)
-        ∇u = function_gradient(cellvalues_u, qp, uₑ)
-        F = one(∇u) + ∇u
-        J = det(F)
-        evol += J * dΩ
-    end
-    return evol
-end;
-
-function calculate_volume_deformed_mesh(w, dh::DofHandler, cellvalues_u)
-    evol::Float64 = 0.0;
-    @inbounds for cell in CellIterator(dh)
-        global_dofs = celldofs(cell)
-        nu = getnbasefunctions(cellvalues_u)
-        global_dofs_u = global_dofs[1:nu]
-        uₑ = w[global_dofs_u]
-        δevol = calculate_element_volume(cell, cellvalues_u, uₑ)
-        evol += δevol;
-    end
-    return evol
-end;
-
 @inline angle(v1::Vec{dim,T}, v2::Vec{dim,T}) where {dim, T} = acos((v1 ⋅ v2)/(norm(v1)*norm(v2)))
 @inline angle_deg(v1::Vec{dim,T}, v2::Vec{dim,T}) where {dim, T} =  rad2deg(angle(v1, v2))
+
+"""
+    normalize(v::Ferrite.Vec)
+
+Compute the normalized vector.
+"""
+function normalize(v::Ferrite.Vec)
+    all(isapprox.(v, 0.0)) && return zero(v)
+    return v / norm(v)
+end
 
 """
     unproject(v::Vec{dim,T}, n::Vec{dim,T}, α::T)::Vec{dim, T}
@@ -158,6 +141,12 @@ Returns new vectors which are orthogonal to each other.
 end
 
 orthogonalize_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3}) = orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂), v₃/norm(v₃))
+
+# Compute the relative rotation of `v_from_in` to `v_to` around `n` using the left hand rule.
+function compute_relative_rotation(v_from_in::Vec{3}, v_to::Vec{3}, n::Vec{3})
+    v_from = sign(v_from_in ⋅ v_to) * v_from_in
+    sign((v_from × v_to) ⋅ n) * acos(clamp(v_from ⋅ v_to, -0.9999, 0.9999))
+end
 
 """
 """

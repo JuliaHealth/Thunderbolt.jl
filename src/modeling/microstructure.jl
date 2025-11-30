@@ -27,6 +27,7 @@ struct AnisotropicPlanarMicrostructure{T} <: AbstractOrthotropicMicrostructure
     f::Vec{2,T}
     s::Vec{2,T}
 end
+Base.zero(::Type{AnisotropicPlanarMicrostructure{T}}) where T = AnisotropicPlanarMicrostructure(zero(Vec{3,T}), zero(Vec{3,T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::AnisotropicPlanarMicrostructure, λ::SVector{2})
@@ -41,6 +42,14 @@ end
 struct AnisotropicPlanarMicrostructureCache{FC, SC}
     fiber_cache::FC
     sheetlet_cache::SC
+end
+
+function duplicate_for_device(device, cache::AnisotropicPlanarMicrostructureCache)
+    return AnisotropicPlanarMicrostructureCache(
+        duplicate_for_device(device, cache.fiber_cache),
+        duplicate_for_device(device, cache.sheetlet_cache),
+        duplicate_for_device(device, cache.normal_cache),
+    )
 end
 
 function setup_coefficient_cache(coefficient::AnisotropicPlanarMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
@@ -61,6 +70,7 @@ end
 struct TransverselyIsotropicMicrostructure{dim, T} <: AbstractTransverselyIsotropicMicrostructure
     f::Vec{dim,T}
 end
+Base.zero(::Type{TransverselyIsotropicMicrostructure{T}}) where T = TransverselyIsotropicMicrostructure(zero(Vec{dim,T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::TransverselyIsotropicMicrostructure, λ::SVector{2})
@@ -74,6 +84,12 @@ end
 
 struct TransverselyIsotropicMicrostructureCache{FC}
     fiber_cache::FC
+end
+
+function duplicate_for_device(device, cache::TransverselyIsotropicMicrostructureCache)
+    return TransverselyIsotropicMicrostructureCache(
+        duplicate_for_device(device, cache.fiber_cache),
+    )
 end
 
 function setup_coefficient_cache(coefficient::TransverselyIsotropicMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
@@ -93,6 +109,7 @@ struct OrthotropicMicrostructure{T} <: AbstractOrthotropicMicrostructure
     s::Vec{3,T}
     n::Vec{3,T}
 end
+Base.zero(::Type{OrthotropicMicrostructure{T}}) where T = OrthotropicMicrostructure(zero(Vec{dim,T}), zero(Vec{dim,T}), zero(Vec{dim,T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::OrthotropicMicrostructure, λ::SVector{3})
@@ -109,6 +126,14 @@ struct OrthotropicMicrostructureCache{FC, SC, NC}
     fiber_cache::FC
     sheetlet_cache::SC
     normal_cache::NC
+end
+
+function duplicate_for_device(device, cache::OrthotropicMicrostructureCache)
+    return OrthotropicMicrostructureCache(
+        duplicate_for_device(device, cache.fiber_cache),
+        duplicate_for_device(device, cache.sheetlet_cache),
+        duplicate_for_device(device, cache.normal_cache),
+    )
 end
 
 function setup_coefficient_cache(coefficient::OrthotropicMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)

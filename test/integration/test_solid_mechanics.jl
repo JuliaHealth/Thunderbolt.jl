@@ -1,5 +1,5 @@
 using Thunderbolt
-
+import DiffEqBase
 
 function test_solve_passive_structure(mesh, constitutive_model)
     tspan = (0.0,1.0)

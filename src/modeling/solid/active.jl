@@ -126,3 +126,8 @@ function active_stress(sas::Guccione1993ActiveModel, F::Tensor{2, dim}, coeff::A
     T₀ = Tmax * Ca₀^2 / (Ca₀^2 + ECa₅₀²)
     return  T₀ * (f / λf) ⊗ coeff.f # We normalize here the fiber direction, as T₀ should contain all the active stress associated with the direction
 end
+
+# This is merely a helper function to use the same code path for active and passive simulations.
+function active_stress(::NullEnergyModel, F::Tensor, coeff)
+    return zero(F)
+end

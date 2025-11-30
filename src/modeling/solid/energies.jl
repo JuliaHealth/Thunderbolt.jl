@@ -30,7 +30,8 @@ Entry 1 from table 3 in [HarNef:2003:pgp](@cite).
     β::TD2  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty1)
-    mp.β * (I₃^mp.b + 1/(I₃^mp.b) - 2)^mp.a
+    I₃ < 0 && return NaN
+    return mp.β * (I₃^mp.b + 1/(I₃^mp.b) - 2)^mp.a
 end
 
 
@@ -48,7 +49,8 @@ Entry 2 from table 3 in [HarNef:2003:pgp](@cite).
     β::TD2  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty2)
-    mp.β * (√I₃-1)^mp.a
+    I₃ < 0 && return NaN
+    return mp.β * (√I₃-1)^mp.a
 end
 
 
@@ -63,8 +65,9 @@ Entry 3 from table 3 in [HarNef:2003:pgp](@cite).
     β::T  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty3)
+    I₃ < 0 && return NaN
     J = √I₃
-    mp.β * (I₃ - 2ln(J) + 4ln(J)^2)
+    mp.β * (I₃ - 2log(J) + 4log(J)^2)
 end
 
 
@@ -78,7 +81,9 @@ A compression model with $U(I_3) = \beta (I_3 -1 - 2\log(\sqrt{I_3}))^a$.
     β::TD  = 1.0
 end
 function U(I₃::T, mp::SimpleCompressionPenalty) where {T}
-    mp.β * (I₃ - 1 - 2*log(sqrt(I₃)))
+    I₃ < 0 && return NaN
+    J = √I₃
+    mp.β * (I₃ - 1 - 2*log(J))
 end
 
 
@@ -282,7 +287,7 @@ Base.@kwdef struct Guccione1991PassiveModel{CPT}
     Bᶠⁿ::Float64 =  14.4
     mpU::CPT = SimpleCompressionPenalty(50.0)
 end
-function Thunderbolt.Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991PassiveModel)
+function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991PassiveModel)
     @unpack C₀, Bᶠᶠ, Bˢˢ, Bⁿⁿ, Bⁿˢ, Bᶠˢ, Bᶠⁿ, mpU = mp
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
 
@@ -306,7 +311,7 @@ function Thunderbolt.Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccion
 
     Q = Bᶠᶠ*Eᶠᶠ^2 + Bˢˢ*Eˢˢ^2 + Bⁿⁿ*Eⁿⁿ^2 + Bⁿˢ*(Eⁿˢ^2+Eˢⁿ^2) + Bᶠˢ*(Eᶠˢ^2+Eˢᶠ^2) + Bᶠⁿ*(Eᶠⁿ^2+Eⁿᶠ^2)
 
-    return C₀*exp(Q)/2.0 + Thunderbolt.U(I₃, mpU)
+    return C₀*exp(Q)/2.0 + U(I₃, mpU)
 end
 
 @doc raw"""
@@ -320,7 +325,7 @@ Base.@kwdef struct SimpleActiveSpring
     aᶠ::Float64  = 1.0
 end
 
-function Thunderbolt.Ψ(F, Fᵃ, coeff::AbstractTransverselyIsotropicMicrostructure, mp::SimpleActiveSpring)
+function Ψ(F, Fᵃ, coeff::AbstractTransverselyIsotropicMicrostructure, mp::SimpleActiveSpring)
     @unpack aᶠ = mp
     f₀ = coeff.f
 

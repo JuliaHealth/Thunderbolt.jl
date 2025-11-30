@@ -96,6 +96,11 @@ function Base.show(io::IO, ::MIME"text/plain", mesh::SimpleMesh)
 end
 
 global_edges(mgrid::SimpleMesh, cell) = [mgrid.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell)))]
+# Get the edges of a specific face
+function Thunderbolt.global_edges(mesh, cell, lfi)
+    sface = first(sortface(faces(cell)[lfi]))
+    return [mesh.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell))) if sedge[1] ∈ sface && sedge[2] ∈ sface]
+end
 global_faces(mgrid::SimpleMesh, cell) = [mgrid.mfaces[sface] for sface ∈ first.(sortface.(faces(cell)))]
 global_vertices(mgrid::SimpleMesh, cell) = [mgrid.mvertices[v] for v ∈ vertices(cell)]
 

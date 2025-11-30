@@ -51,7 +51,7 @@ Base.@kwdef struct LVCoordinate{T}
     apicobasal::T
     rotational::T
 end
-
+Base.zero(::Type{LVCoordinate{T}}) where T = LVCoordinate(T(0.0),T(0.0),T(0.0))
 Base.eltype(::Type{LVCoordinate{T}}) where T = T
 Base.eltype(::LVCoordinate{T}) where T = T
 value_type(::LVCoordinateSystem{T}) where T = LVCoordinate{T}
@@ -333,7 +333,7 @@ Base.@kwdef struct BiVCoordinate{T}
     rotational::T
     transventricular::T
 end
-
+Base.zero(::Type{BiVCoordinate{T}}) where T = BiVCoordinate(T(0.0),T(0.0),T(0.0),T(0.0))
 Base.eltype(::Type{BiVCoordinate{T}}) where T = T
 Base.eltype(::BiVCoordinate{T}) where T = T
 value_type(::BiVCoordinateSystem) = BiVCoordinate
