@@ -6,7 +6,7 @@ import LinearSolve: \
 using Adapt
 using UnPack
 import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @print, functional,
-    synchronize
+    CPU,synchronize,GPU
 import SparseArrays: getcolptr,getnzval
 import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
