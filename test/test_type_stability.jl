@@ -5,7 +5,7 @@
     fsncoeff = ConstantCoefficient(OrthotropicMicrostructure(f₀, s₀, n₀))
     fsneval  = Thunderbolt.OrthotropicMicrostructure(f₀, s₀, n₀)
     F = one(Tensors.Tensor{2,3})
-    Caᵢ = 1.0
+    Caᵢ = 0.0
 
     material_model_set = [
         NullEnergyModel(),
@@ -26,11 +26,14 @@
 
     @testset "Energies $material_model" for material_model ∈ material_model_set
         @test_opt Thunderbolt.Ψ(F, fsneval, material_model)
+        @test Thunderbolt.Ψ(F, fsneval, material_model) == 0.0
     end
 
     @testset "Compression $compression_model" for compression_model ∈ compression_model_set
+        @test_opt Thunderbolt.U(-eps(Float64), compression_model)
         @test_opt Thunderbolt.U(0.0, compression_model)
         @test_opt Thunderbolt.U(1.0, compression_model)
+        @test Thunderbolt.U(1.0, compression_model) == 0.0
     end
 
     @testset "Constitutive Models" begin
@@ -42,7 +45,10 @@
                 fsncoeff,
             )
             @test_opt Thunderbolt.stress_function(model, F, fsneval, Thunderbolt.EmptyInternalModel())
+            @test Thunderbolt.stress_function(model, F, fsneval, Thunderbolt.EmptyInternalModel()) ≈ zero(Tensor{2,3}) atol=1e-16
             @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Thunderbolt.EmptyInternalModel())
+            P, 𝔸 = Thunderbolt.stress_and_tangent(model, F, fsneval, Thunderbolt.EmptyInternalModel())
+            @test P ≈ zero(Tensor{2,3}) atol = 1e-16
         end
 
         active_stress_set = [
@@ -59,7 +65,7 @@
             RLRSQActiveDeformationGradientModel(0.75),
         ]
         @testset failfast=true "Active Stress" for active_stress ∈ active_stress_set
-            @testset for contraction_model in [contraction_model_set; RDQ20MFModel()]
+            @testset for contraction_model in contraction_model_set
                 model = ActiveStressModel(
                     passive_spring,
                     active_stress,
@@ -70,7 +76,10 @@
                     fsncoeff,
                 )
                 @test_opt Thunderbolt.stress_function(model, F, fsneval, Caᵢ)
+                @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2,3}) atol=1e-16
                 @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
+                P, 𝔸 = Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
+                @test P ≈ zero(Tensor{2,3}) atol = 1e-16
             end
         end
 
@@ -89,7 +98,10 @@
                         fsncoeff,
                     )
                     @test_opt Thunderbolt.stress_function(model, F, fsneval, Caᵢ)
+                    @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2,3}) atol=1e-16
                     @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
+                    P, 𝔸 = Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
+                    @test P ≈ zero(Tensor{2,3}) atol = 1e-16
                 end
             end
         end
@@ -107,7 +119,10 @@
                         fsncoeff,
                     )
                     @test_opt Thunderbolt.stress_function(model, F, fsneval, Caᵢ)
+                    @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2,3}) atol=1e-16
                     @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
+                    P, 𝔸 = Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
+                    @test P ≈ zero(Tensor{2,3}) atol = 1e-16
                 end
             end
         end

@@ -57,7 +57,7 @@ end
 @doc raw"""
 An isochoric compression model where 
 
-$U(I_3) = \beta (I_3 - 2\log(\sqrt{I_3}) + 4\log(\sqrt{I_3})^2))$
+$U(I_3) = \beta (I_3 - 2\log(\sqrt{I_3}) + 4\log(\sqrt{I_3})^2) - 1)$
 
 Entry 3 from table 3 in [HarNef:2003:pgp](@cite).
 """
@@ -67,7 +67,7 @@ end
 function U(I₃, mp::HartmannNeffCompressionPenalty3)
     I₃ < 0 && return NaN
     J = √I₃
-    mp.β * (I₃ - 2log(J) + 4log(J)^2)
+    mp.β * (I₃ - 2log(J) + 4log(J)^2 - 1)
 end
 
 
@@ -152,7 +152,7 @@ function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::HolzapfelOgden2009M
     I₄ˢ = s₀ ⋅ C ⋅ s₀
     I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2.0
 
-    Ψᵖ = a/(2.0*b)*exp(b*(I₁-3.0)) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U(I₃, mpU)
+    Ψᵖ = a/(2.0*b)*(exp(b*(I₁-3.0))-1.0) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U(I₃, mpU)
     if I₄ᶠ >= 1.0
         Ψᵖ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
     end

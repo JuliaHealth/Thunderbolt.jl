@@ -2,7 +2,7 @@ using Thunderbolt
 import DiffEqBase
 
 function test_solve_passive_structure(mesh, constitutive_model)
-    tspan = (0.0,1.0)
+    tspan = (0.0, 1.0)
     Δt = 1.0
 
     # Clamp three sides
@@ -21,8 +21,10 @@ function test_solve_passive_structure(mesh, constitutive_model)
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3),
             dbcs,
+            [""],
+            Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
-        mesh
+        mesh,
     )
 
     problem = QuasiStaticProblem(quasistaticform, tspan)

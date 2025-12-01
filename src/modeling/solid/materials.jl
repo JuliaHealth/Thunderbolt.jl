@@ -61,7 +61,7 @@ end
 default_initial_state!(uq, model::PrestressedMechanicalModel) = default_initial_state!(uq, model.inner_model)
 
 function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler)
-    PrestressedMechanicalModelCoefficientCache(
+    return PrestressedMechanicalModelCoefficientCache(
         setup_coefficient_cache(m.inner_model, qr, sdh),
         setup_coefficient_cache(m.prestress_field, qr, sdh),
     )
@@ -229,7 +229,7 @@ function stress_function(model::ExtendedHillModel, F::Tensor{2}, coefficients, c
         F_ad ->
                 Ψ(F_ad,     coefficients, model.passive_spring)
             + N*Ψ(F_ad, Fᵃ, coefficients, model.active_spring),
-        F, :all)
+        F)
 
     return ∂Ψ∂F
 end
