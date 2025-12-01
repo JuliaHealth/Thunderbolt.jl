@@ -248,8 +248,7 @@ export
     store_timestep!,
     store_timestep_celldata!,
     store_timestep_field!,
-    store_coefficient!,
-    store_green_lagrange!,
+    # store_coefficient!,
     finalize_timestep!,
     finalize!,
     # Mechanical PDEs
