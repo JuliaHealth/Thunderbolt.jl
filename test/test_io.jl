@@ -18,7 +18,7 @@ using Thunderbolt, SHA
         apply_analytical!(coordinate_data, dh, :transventricular, x->0.5(x[3]+1)^2)
 
         pvd = ParaViewWriter(joinpath("testdata","cobivec"))
-        @t
+
         store_timestep!(pvd, 0.0, grid) do vtk
             store_timestep_field!(vtk, 0.0, dh, coordinate_data, :apicobasal)
             store_timestep_field!(vtk, 0.0, dh, coordinate_data, :transmural)
