@@ -3,21 +3,7 @@
 mutable struct ParaViewWriter{PVD}
     const filename::String
     const pvd::PVD
-    current_file::Union{WriteVTK.DatasetFile, Nothing}
-end
-
-Ferrite.create_vtk_grid(filename::AbstractString, mesh::SimpleMesh) = _thunderbolt_fix_create_vtk_grid(filename, mesh)
-
-function _thunderbolt_fix_create_vtk_grid(filename::AbstractString, grid::AbstractGrid{sdim}) where sdim
-    cls = WriteVTK.MeshCell[]
-    for cell in getcells(grid)
-        celltype = Ferrite.cell_to_vtkcell(typeof(cell))
-        push!(cls, WriteVTK.MeshCell(celltype, Ferrite.nodes_to_vtkorder(cell)))
-    end
-    T = Ferrite.get_coordinate_eltype(grid)
-    nodes_flat = reinterpret(T, getnodes(grid))
-    coords = reshape(nodes_flat, (sdim, getnnodes(grid)))
-    return  WriteVTK.vtk_grid(filename, coords, cls)
+    current_file::Union{VTKGridFile, Nothing}
 end
 
 function __paraview_collection(name::String; kwargs...)
@@ -28,10 +14,11 @@ end
 
 ParaViewWriter(filename::String; kwargs...) = ParaViewWriter(filename, __paraview_collection("$filename.pvd"; kwargs...), nothing)
 
-function store_timestep!(io::ParaViewWriter, t, grid::AbstractGrid)
+function store_timestep!(io::ParaViewWriter, t, grid::AbstractGrid; write_discontinuous = false)
     if io.current_file === nothing
         mkpath(io.filename)
-        io.current_file = _thunderbolt_fix_create_vtk_grid(io.filename * "/$t.vtu", grid)
+        vtk, cellnodes, node_mapping = Ferrite.create_vtk_grid(io.filename * "/$t.vtu", grid, write_discontinuous)
+        io.current_file = VTKGridFile(vtk, cellnodes, node_mapping)
     end
 end
 
@@ -50,7 +37,12 @@ function store_timestep_field!(io::ParaViewWriter, t, dh::AbstractDofHandler, u:
         return nothing
     end
     data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
-    WriteVTK.vtk_point_data(io.current_file, data, name)
+    if Ferrite.write_discontinuous(io.current_file)
+        data = Ferrite.evaluate_at_discontinuous_vtkgrid_nodes(dh, u, sym, io.current_file.cellnodes)
+    else
+        data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
+    end
+    Ferrite._vtk_write_node_data(io.current_file.vtk, data, name)
 end
 
 function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
@@ -59,7 +51,7 @@ function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
 end
 
 function finalize_timestep!(io::ParaViewWriter, t)
-    WriteVTK.vtk_save(io.current_file)
+    WriteVTK.vtk_save(io.current_file.vtk)
     io.pvd[t] = io.current_file
     io.current_file = nothing
     # This updates the PVD file
@@ -224,9 +216,14 @@ function reorder_nodal!(dh::DofHandler)
     for sdh in dh.subdofhandlers
         firstcellidx = first(sdh.cellset)
         celltype = typeof(getcells(grid,firstcellidx))
-        @assert sdh.field_interpolations[1] == Ferrite.geometric_interpolation(celltype)
+        vdim = Ferrite.n_components(sdh.field_interpolations[1])
         for i ∈ 1:getncells(grid)
-            dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(dh, i)-1)] .= getcells(grid,i).nodes
+            dof_offsets = dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(dh, i)-1)
+            for (j,dof_offset_idx) in enumerate(1:vdim:length(dof_offsets))
+                for d in 1:vdim
+                    dh.cell_dofs[dof_offsets[dof_offset_idx]+d-1] = vdim*(getcells(grid,i).nodes[j]-1) + d
+                end
+            end
         end
     end
 end
