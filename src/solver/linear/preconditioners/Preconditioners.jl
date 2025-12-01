@@ -13,7 +13,7 @@ import LinearAlgebra: Symmetric
 import Thunderbolt: ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice,
     default_backend, @debugonly
 using TimerOutputs: @timeit_debug
-timeit_debug_enabled() = true
+
 ## Generic Code #
 
 # CSR and CSC are exact the same in symmetric matrices,so we need to hold symmetry info
