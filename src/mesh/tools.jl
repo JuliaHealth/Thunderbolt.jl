@@ -798,43 +798,42 @@ function calculate_element_volume(cc, cellvalues)
     end
     return evol
 end
-function calculate_element_volume(cell, cellvalues_u, uₑ)
-    reinit!(cellvalues_u, cell)
-    evol = 0.0
-    @inbounds for qp in QuadratureIterator(cellvalues_u)
-        dΩ = getdetJdV(cellvalues_u, qp)
-        ∇u = function_gradient(cellvalues_u, qp, uₑ)
-        F = one(∇u) + ∇u
-        J = det(F)
-        evol += J * dΩ
-    end
-    return evol
-end
-function calculate_volume_deformed_mesh(w, dh::AbstractDofHandler, cellvalues_u)
-    evol::Float64 = 0.0;
-    @inbounds for cell in CellIterator(dh)
-        global_dofs = celldofs(cell)
-        nu = getnbasefunctions(cellvalues_u)
-        global_dofs_u = global_dofs[1:nu]
-        uₑ = w[global_dofs_u]
-        δevol = calculate_element_volume(cell, cellvalues_u, uₑ)
-        evol += δevol;
-    end
-    return evol
-end
+# function calculate_element_volume(cell, cellvalues_u, uₑ)
+#     reinit!(cellvalues_u, cell)
+#     evol = 0.0
+#     @inbounds for qp in QuadratureIterator(cellvalues_u)
+#         dΩ = getdetJdV(cellvalues_u, qp)
+#         ∇u = function_gradient(cellvalues_u, qp, uₑ)
+#         F = one(∇u) + ∇u
+#         J = det(F)
+#         evol += J * dΩ
+#     end
+#     return evol
+# end
+# function calculate_volume_deformed_mesh(w, dh::AbstractDofHandler, cellvalues_u)
+#     evol::Float64 = 0.0;
+#     @inbounds for cell in CellIterator(dh)
+#         global_dofs = celldofs(cell)
+#         nu = getnbasefunctions(cellvalues_u)
+#         global_dofs_u = global_dofs[1:nu]
+#         uₑ = w[global_dofs_u]
+#         δevol = calculate_element_volume(cell, cellvalues_u, uₑ)
+#         evol += δevol;
+#     end
+#     return evol
+# end
 function compute_center_of_mass(mesh::SimpleMesh{sdim}; domain_name = first(mesh.volumetric_subdomains.keys)) where sdim
     ∫x = zero(Vec{sdim,Float64})
     ∫1 = 0.0
 
-    # TODO this can be optimized with more work.
-    ipc = LagrangeCollection{1}()
+    order = Ferrite.getorder(Ferrite.geometric_interpolation(getcells(grid, 1)))
+    ipc = LagrangeCollection{order}()
     dh = DofHandler(mesh)
     add_subdomain!(dh, domain_name, :u => ipc)
     close!(dh)
 
     #
-    ipc = LagrangeCollection{1}()
-    qrc = QuadratureRuleCollection(2)
+    qrc = QuadratureRuleCollection(max(2Ferrite.getorder(ip)-1,2))
     for sdh in dh.subdofhandlers
         gip = geometric_interpolation(get_first_cell(sdh))
         ip = getinterpolation(ipc, sdh)
@@ -859,7 +858,7 @@ function compute_center_of_surface(grid::AbstractGrid{sdim}, name::String) where
     volumes      = zeros(getncells(grid))
     centerpoints = zeros(Vec{sdim}, getncells(grid))
     ip = Ferrite.geometric_interpolation(getcells(grid, 1))
-    qr = FacetQuadratureRule{Ferrite.getrefshape(ip)}(max(2getorder(ip)-1,2))
+    qr = FacetQuadratureRule{Ferrite.getrefshape(ip)}(max(2Ferrite.getorder(ip)-1,2))
     cellvalues_vol = FacetValues(qr, ip)
     @inbounds for cc in FacetIterator(grid, facets)
         i = cellid(cc)
@@ -868,8 +867,8 @@ function compute_center_of_surface(grid::AbstractGrid{sdim}, name::String) where
         # TODO use spatial_coordinate at reference element center
         nodes = getcells(grid, i).nodes
         for nodeid in nodes
-            x = get_node_coordinate(grid.nodes[nodeid])
-            centerpoints[i] += get_node_coordinate(grid.nodes[nodeid])
+            x = get_node_coordinate(getnodes(grid, nodeid))
+            centerpoints[i] += get_node_coordinate(getnodes(grid, nodeid))
         end
         centerpoints[i] /= length(nodes)
     end

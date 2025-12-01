@@ -234,8 +234,6 @@ export
     AdaptiveForwardEulerSubstepper,
     # Integrator
     # Utils
-    calculate_volume_deformed_mesh,
-    elementtypes,
     QuadraturePoint,
     QuadratureIterator,
     load_carp_grid,

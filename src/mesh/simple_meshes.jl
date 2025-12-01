@@ -258,6 +258,7 @@ end
 
 @inline Ferrite.CellIterator(mesh::SimpleMesh) = CellIterator(mesh.grid)
 @inline Ferrite.CellIterator(mesh::SimpleMesh, set::Union{Nothing, AbstractSet{<:Integer}, AbstractVector{<:Integer}}, flags::UpdateFlags) = CellIterator(mesh.grid, set, flags)
+@inline Ferrite.FacetIterator(mesh::SimpleMesh, facets) = Ferrite.FacetIterator(mesh.grid, facets)
 
 # https://github.com/Ferrite-FEM/Ferrite.jl/pull/987
 Ferrite.nfacets(cc::CellCache{<:Any, <:SimpleMesh}) = nfacets(cc.grid.grid.cells[cc.cellid[]])
