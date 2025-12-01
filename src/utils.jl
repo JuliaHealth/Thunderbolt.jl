@@ -149,14 +149,6 @@ function compute_relative_rotation(v_from_in::Vec{3}, v_to::Vec{3}, n::Vec{3})
 end
 
 """
-"""
-function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) where {ref_shape, order}
-    n_base = Ferrite.getnbasefunctions(ip)
-    positions = Ferrite.reference_coordinates(ip)
-    return QuadratureRule{ref_shape, Float64}(ones(length(positions)), positions)
-end
-
-"""
     ThreadedSparseMatrixCSR
 Threaded version of SparseMatrixCSR.
 
@@ -254,24 +246,6 @@ function Ferrite.apply_zero!(K::SparseMatrixCSR, f::AbstractVector, ch::Constrai
         K[d, d] = #m
         if length(f) != 0
             f[d] = 0.0
-        end
-    end
-end
-
-function Ferrite.zero_out_rows!(K::SparseMatrixCSR, dofs::Vector{Int}) # can be removed in 0.7 with #24711 merged
-    @debugonly @assert issorted(dofs)
-    for col in dofs
-        r = nzrange(K, col)
-        K.nzval[r] .= 0.0
-    end
-end
-
-function Ferrite.zero_out_columns!(K::SparseMatrixCSR, dofmapping::Dict)
-    colval = K.colval
-    nzval = K.nzval
-    @inbounds for i in eachindex(colval, nzval)
-        if haskey(dofmapping, colval[i])
-            nzval[i] = 0
         end
     end
 end
