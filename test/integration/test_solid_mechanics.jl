@@ -219,6 +219,7 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, su
             Dict(:d => LagrangeCollection{1}()^3),
             dbcs,
             subdomains,
+            Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh
     )
@@ -249,13 +250,15 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model, tmax, Δt = 1
 
     quasistaticform = semidiscretize(
         QuasiStaticModel(:d, constitutive_model, (
-            NormalSpringBC(0.1, "Epicardium"),
-            NormalSpringBC(0.1, "Base"),
+            RobinBC(0.1, "Epicardium"),
+            NormalSpringBC(1.0, "Base"),
             PressureFieldBC(ConstantCoefficient(0.01),"Endocardium")
         )),
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3),
             dbcs,
+            [""],
+            Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh
     )
