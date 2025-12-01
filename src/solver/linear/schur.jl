@@ -48,7 +48,7 @@ struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
     algscratch::scratchType
 end
 
-function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::AbstractBlockMatrix, b::AbstractVector, u::AbstractVector, Pl, Pr, maxiters::Int, abstol, reltol, verbose::Bool, assumptions::LinearSolve.OperatorAssumptions; zeroinit = true)
+function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::AbstractBlockMatrix, b::AbstractVector, u::AbstractVector, args...; kwargs...)
     # Check if input is okay
     bs = blocksizes(A)
     @assert size(bs) == (2,2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(size(bs))."
@@ -72,12 +72,8 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     innersolve = LinearSolve.init(
         inner_prob,
         alg.inner_alg;
-        alias = LinearAliasSpecifier(alias_A = true),
-        Pl, Pr,
-        verbose,
-        maxiters,
-        reltol,
-        abstol,
+        args...,
+        kwargs...,
     )
 
     # Storage for intermediate values

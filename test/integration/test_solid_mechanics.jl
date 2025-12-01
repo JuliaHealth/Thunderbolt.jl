@@ -31,7 +31,7 @@ function test_solve_passive_structure(mesh, constitutive_model)
 
     # Create sparse matrix and residual vector
     timestepper = HomotopyPathSolver(
-        NewtonRaphsonSolver(;max_iter=10)
+        NewtonRaphsonSolver(;max_iter=10, monitor=VTKNewtonMonitor(joinpath("testdata","newton-debug")))
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)
     u₀ = copy(integrator.u)
