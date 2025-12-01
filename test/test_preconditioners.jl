@@ -2,10 +2,14 @@ using MatrixDepot, LinearSolve, SparseArrays, SparseMatricesCSR
 using KernelAbstractions
 using JLD2: load
 import Thunderbolt: ThreadedSparseMatrixCSR
+using TimerOutputs
 
 ##########################################
 ## L1 Gauss Seidel Preconditioner - CPU ##
 ##########################################
+
+# Enable debug timings for Thunderbolt
+TimerOutputs.enable_debug_timings(Thunderbolt)
 
 function poisson_test_matrix(N)
     # Poisson's equation in 1D with Dirichlet BCs
@@ -34,27 +38,21 @@ function test_l1gs_prec(A, b, partsize=nothing)
     prob = LinearProblem(A, b)
     sol_unprec = solve(prob, KrylovJL_GMRES())
     @test isapprox(A * sol_unprec.u, b, rtol=1e-1, atol=1e-1)
-
-    # Test L1GS Preconditioner
-    # Reset timer before building preconditioner
-    Thunderbolt.Preconditioners.reset_l1gs_timer!()
-
+    TimerOutputs.reset_timer!()
     P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize)
 
     println("\n" * "="^60)
     println("Preconditioner Construction Timings:")
+    TimerOutputs.print_timer()
     println("="^60)
-    Thunderbolt.Preconditioners.show_l1gs_timer()
 
     # Reset timer before testing ldiv!
-    Thunderbolt.Preconditioners.reset_l1gs_timer!()
-
-    sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P, verbose = verb)
+    TimerOutputs.reset_timer!()
+    sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P)
 
     println("\n" * "="^60)
     println("ldiv! Timings during solve:")
-    println("="^60)
-    Thunderbolt.Preconditioners.show_l1gs_timer()
+    TimerOutputs.print_timer()
     println("="^60)
 
     println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
@@ -120,48 +118,5 @@ end
             b = ones(size(A, 1))
             test_l1gs_prec(A, b)
         end
-
-        @testset "Custom matrix.jld2" begin
-            # Check if matrix.jld2 exists
-            if isfile("matrix.jld2")
-                println("\nTesting custom matrix from matrix.jld2")
-                data = load("matrix.jld2")
-                A = data["K"]
-                x = ones(size(A, 1))
-                b = A * x
-                prob = LinearProblem(A, b)
-                # Test L1GS Preconditioner
-                # Reset timer before building preconditioner
-                Thunderbolt.Preconditioners.reset_l1gs_timer!()
-                ncores = 10
-                partsize = 2
-                P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize)
-
-                println("\n" * "="^60)
-                println("Preconditioner Construction Timings:")
-                println("="^60)
-                Thunderbolt.Preconditioners.show_l1gs_timer()
-
-                # Reset timer before testing ldiv!
-                Thunderbolt.Preconditioners.reset_l1gs_timer!()
-
-                # Enable residual printing
-                println("\nSolving with preconditioner:")
-                sol_prec = solve(prob, KrylovJL_GMRES(P); Pl=P,verbose = verb)
-
-                @test isapprox(A * sol_prec.u, b, rtol=1e-5, atol=1e-5)
-                println("\n" * "="^60)
-                println("ldiv! Timings during solve:")
-                println("="^60)
-                Thunderbolt.Preconditioners.show_l1gs_timer()
-                println("="^60)
-
-                println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
-                println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
-            else
-                @warn "matrix.jld2 not found, skipping custom matrix test"
-            end
-        end
     end
 end
-

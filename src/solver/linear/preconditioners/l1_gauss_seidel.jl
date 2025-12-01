@@ -2,26 +2,6 @@
 ## L1 Gauss Seidel Preconditioner ##
 ####################################
 
-using TimerOutputs
-
-# Global timer for L1GS preconditioner profiling
-const L1GS_TIMER = TimerOutput()
-
-"""
-    show_l1gs_timer()
-
-Display timing and allocation information for L1GS preconditioner operations.
-Call this after running your code to see detailed profiling results.
-"""
-show_l1gs_timer() = show(L1GS_TIMER)
-
-"""
-    reset_l1gs_timer!()
-
-Reset the L1GS timer to clear all accumulated timing data.
-"""
-reset_l1gs_timer!() = TimerOutputs.reset_timer!(L1GS_TIMER)
-
 ## Structs & Constructors ##
 """
     BlockPartitioning{Ti<:Integer, Backend}
@@ -115,8 +95,10 @@ struct L1GSPrecBuilder{DeviceType<:AbstractDevice}
 end
 
 (builder::L1GSPrecBuilder)(A::AbstractMatrix, partsize::Ti, isSymA::Bool = false) where {Ti<:Integer} =
-    build_l1prec(builder, A, partsize,isSymA)
+    build_l1prec(builder, A, partsize, isSymA)
 
+(builder::L1GSPrecBuilder)(A::Symmetric, partsize::Ti) where {Ti<:Integer} =
+    build_l1prec(builder, A, partsize, true)
 
 struct DiagonalPartsIterator{Ti}
     size_A::Ti
@@ -173,24 +155,24 @@ function _blockpartitioning(builder::L1GSPrecBuilder{<:AbstractGPUDevice}, A::Ab
 end
 
 function LinearSolve.ldiv!(y::VectorType, P::L1GSPreconditioner{BlockPartitioning{Ti,Backend}}, x::VectorType) where {VectorType<:AbstractVector,Ti<:Integer,Backend}
-    @timeit L1GS_TIMER "ldiv! (generic)" begin
+    @timeit_debug "ldiv! (generic)" begin
         # x: residual
         # y: preconditioned residual
-        @timeit L1GS_TIMER "y .= x" y .= x #works either way, whether x is GpuVectorType (e.g. CuArray) or Vector
-        @unpack partitioning, D_Dl1 = P
-        @unpack backend = partitioning
+        @timeit_debug "y .= x" y .= x #works either way, whether x is GpuVectorType (e.g. CuArray) or Vector
+        (; partitioning, D_Dl1) = P
+        (; backend) = partitioning
         # The following code is required because there is no assumption on the compatibality of x with the backend.
-        @timeit L1GS_TIMER "adapt(backend, y)" _y = adapt(backend, y)
-        @timeit L1GS_TIMER "_forward_sweep!" _forward_sweep!(_y, P)
-        @timeit L1GS_TIMER "copyto!(y, _y)" copyto!(y, _y)
+        @timeit_debug "adapt(backend, y)" _y = adapt(backend, y)
+        @timeit_debug "_forward_sweep!" _forward_sweep!(_y, P)
+        @timeit_debug "copyto!(y, _y)" copyto!(y, _y)
     end
     return nothing
 end
 
 function LinearSolve.ldiv!(y::Vector, P::L1GSPreconditioner{BlockPartitioning{Ti,CPU}}, x::Vector) where {Ti<:Integer}
-    @timeit L1GS_TIMER "ldiv! (CPU)" begin
-        @timeit L1GS_TIMER "y .= x" y .= x
-        @timeit L1GS_TIMER "_forward_sweep!" _forward_sweep!(y, P)
+    @timeit_debug "ldiv! (CPU)" begin
+        @timeit_debug "y .= x" y .= x
+        @timeit_debug "_forward_sweep!" _forward_sweep!(y, P)
     end
     return nothing
 end
@@ -349,35 +331,26 @@ _pack_strict_lower!(::AbstractMatrixSymmetry, ::CSRFormat, SLbuffer, A, start_id
 
 
 function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartitioning, isSymA::Bool)
-    @timeit L1GS_TIMER "_precompute_blocks" begin
+    @timeit_debug "_precompute_blocks" begin
         # No assumptions on A, i.e. A here might be in either backend compatible format or not.
         # So we have to convert it to backend compatible format, if it is not already.
         # `partsize` is the size of each partition, `nparts` is the total number of partitions.
         # `nchunks` is the number of CPU cores or GPU blocks.
         # `chunksize` is the number of threads per block in GPU backend.
-        @unpack partsize, nparts, nchunks, chunksize, backend = partitioning
-        @timeit L1GS_TIMER "adapt(backend, _A)" A = adapt(backend, _A)
+        (;partsize, nparts, nchunks, chunksize, backend) = partitioning
+        A = adapt(backend, _A)
         N = size(A, 1)
-        
-        @timeit L1GS_TIMER "allocate D_Dl1" D_Dl1 = adapt(backend, zeros(eltype(A), N)) # D + Dˡ
+
+        D_Dl1 = adapt(backend, zeros(eltype(A), N)) # D + Dˡ
         last_partsize = N - (nparts - 1) * partsize # size of the last partition
         SLbuffer_size = (partsize * (partsize - 1) * (nparts-1)) ÷ 2 +  last_partsize * (last_partsize - 1) ÷ 2
-        @timeit L1GS_TIMER "allocate SLbuffer" SLbuffer = adapt(backend, zeros(eltype(A), SLbuffer_size)) # strictly lower triangular part of all diagonal blocks stored in a 1D array
-        @timeit L1GS_TIMER "isapprox(A, A')" symA = isSymA ? SymmetricMatrix() : NonSymmetricMatrix()
-        
-        ndrange = nchunks * chunksize
-        @timeit L1GS_TIMER "kernel setup" kernel = _precompute_blocks_kernel!(backend, chunksize, ndrange)
-        @timeit L1GS_TIMER "kernel execution" kernel(D_Dl1, SLbuffer, A, symA, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
-        @timeit L1GS_TIMER "synchronize" synchronize(backend)
+        SLbuffer = adapt(backend, zeros(eltype(A), SLbuffer_size)) # strictly lower triangular part of all diagonal blocks stored in a 1D array
+        symA = isSymA ? SymmetricMatrix() : NonSymmetricMatrix()
 
-        # # Check for problematic near-zero diagonals and warn user
-        # n_zeros = count(x -> abs(x) <= eps(eltype(D_Dl1)), D_Dl1)
-        # if n_zeros > 0
-        #     @warn "L1GS Preconditioner: Found $n_zeros near-zero diagonal entries (D+D^ℓ1 ≈ 0). " *
-        #           "These have been replaced with eps($(eltype(D_Dl1))) = $(eps(eltype(D_Dl1))) to prevent division by zero. " *
-        #           "This may indicate: (1) zero diagonal elements, (2) weak diagonal dominance, or (3) poor partitioning. " *
-        #           "Consider checking matrix properties or adjusting partition size."
-        # end
+        ndrange = nchunks * chunksize
+        @timeit_debug "kernel setup" kernel = _precompute_blocks_kernel!(backend, chunksize, ndrange)
+        @timeit_debug "kernel execution" kernel(D_Dl1, SLbuffer, A, symA, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
+        @timeit_debug "synchronize" synchronize(backend)
 
         return D_Dl1, SLbuffer
     end
@@ -390,22 +363,19 @@ end
     format_A = sparsemat_format_type(A)
     # NOTE: `DiagonalPartsIterator` is logic agnostic. It essentially encapsulates the strided iterations over the diagonal blocks.
     for part in DiagonalPartsIterator(size_A, partsize, nparts, nchunks, chunksize, convert(Ti, initial_partition_idx))
-        @unpack k, partsize, start_idx, end_idx = part # NOTE: `partsize` here is the actual size of the partition
+        (;k, partsize, start_idx, end_idx) = part # NOTE: `partsize` here is the actual size of the partition
         # From start_idx to end_idx, extract the diagonal and off-diagonal values
         for i in start_idx:end_idx
             b, d = _diag_offpart(symA, format_A, A, i, start_idx, end_idx)
-            #@show i,b,d
             # Update the diagonal and off-diagonal values
             # Handle near-zero diagonals: D_Dl1 = D + D^ℓ1 where D is diagonal, D^ℓ1 is sum of |off-diagonal|
             val = b + d
             if abs(val) < eps(eltype(D_Dl1))
-                @warn "L1GS Preconditioner: Near-zero diagonal entry detected at index $i (b + d ≈ 0). " 
-                @show b,d
                 # If b+d ≈ 0 (cancellation or both zero), use |b|+|d| to avoid cancellation
                 # This handles cases where diagonal and off-diagonal sum cancel out
                 abs_sum = abs(b) + abs(d)
                 D_Dl1[i] = abs_sum > eps(eltype(D_Dl1)) ? abs_sum : eps(eltype(D_Dl1))
-                # Note: Warning will be issued after kernel execution
+                # Note: This case is rare (ill-conditioned matrices) but important for numerical stability
             else
                 D_Dl1[i] = val
             end
@@ -415,14 +385,14 @@ end
 end
 
 function _forward_sweep!(y, P)
-    @timeit L1GS_TIMER "_forward_sweep! (internal)" begin
-        @timeit L1GS_TIMER "@unpack P" @unpack partitioning, D_Dl1, SLbuffer = P
-        @timeit L1GS_TIMER "@unpack partitioning" @unpack partsize, nparts, nchunks, chunksize, backend = partitioning
-        @timeit L1GS_TIMER "ndrange calc" ndrange = nchunks * chunksize
-        @timeit L1GS_TIMER "kernel construction" kernel = _forward_sweep_kernel!(backend, chunksize, ndrange)
-        @timeit L1GS_TIMER "convert size_A" size_A = convert(typeof(nparts), length(y))
-        @timeit L1GS_TIMER "kernel call" kernel(y, D_Dl1, SLbuffer, size_A, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
-        @timeit L1GS_TIMER "synchronize" synchronize(backend)
+    @timeit_debug "_forward_sweep! (internal)" begin
+        (; partitioning, D_Dl1, SLbuffer) = P
+        (;partsize, nparts, nchunks, chunksize, backend) = partitioning
+        ndrange = nchunks * chunksize
+        @timeit_debug "kernel construction" kernel = _forward_sweep_kernel!(backend, chunksize, ndrange)
+        size_A = convert(typeof(nparts), length(y))
+        @timeit_debug "kernel call" kernel(y, D_Dl1, SLbuffer, size_A, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
+        @timeit_debug "synchronize" synchronize(backend)
     end
     return nothing
 end
