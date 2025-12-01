@@ -140,4 +140,10 @@
         @test length(surface_mesh.nodes) == 2 + 3*2*4 + 4 # nodes at base + nodes on loopes endo&epi + node loop on base
         @test length(surface_mesh.cells) == 2*4 + 2*4*(2+1) # cells at base + cells inside&outside
     end
+
+    @testset "Geometry Tools" begin
+        ring_mesh = generate_ring_mesh(5,4,4)
+        @test Thunderbolt.compute_center_of_mass(ring_mesh)    ≈ Vec((0.0,0.0,0.0)) atol=1e-16
+        @test Thunderbolt.compute_center_of_surface(ring_mesh) ≈ Vec((0.0,0.0,0.0)) atol=1e-16
+    end
 end
