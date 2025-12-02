@@ -27,7 +27,7 @@ using Thunderbolt, SHA
         end
 
         @test bytes2hex(open(SHA.sha1, joinpath("testdata","cobivec.pvd")))       == "957f820ffedfd8e3486643dc76c0231d4a836d61"
-        @test bytes2hex(open(SHA.sha1, joinpath("testdata","cobivec","0.0.vtu"))) == "a4f496ac89b21eef7a20ecdeef55b64c5441249f"
+        @test bytes2hex(open(SHA.sha1, joinpath("testdata","cobivec","0.0.vtu"))) == "858e79d126521b815c486ddfca79e422493215bd"
     end
 
     @testset "CoBiVeC" begin
