@@ -1,22 +1,21 @@
 # Time Integration
 
-## Load Stepping
+## [Homotopy path methods](@id theory_homotopy-path-methods)
 
-During load stepping we want to solve a nonlinear problem with pseudo-time $t$
-on some time interval $[t_0, t_1]$. An initial guess is provided for the first
-nonlinear solve. Formally we can write down the problem as follows. Find $u(t)$
-such that
+Homotopy path methods solve nonlinear problems with pseudo-time $t$ on some time interval $[t_0, t_1]$.
+An initial guess is provided for the first nonlinear solve.
+Formally we can write down the problem as follows.
+Find $u(t)$ such that
 
 ```math
 0 = F(u(t), p, t) \qquad \text{on} \; [t_0, t_1],
 ```
 
 where $u$ usually descibes the displacement of some mechanical system and the
-operator $F$ contains some mechanical load, hence the name *load stepping*. We
-obtain systems with this form if we assume that inertial terms are neglibile,
-or formally $||d^2_tu|| \approx 0$.
+operator $F$ contains some mechanical load, hence a subclass of these methods are so-called *load stepping techniques*.
+For mechanical problems we obtain systems with this form if we assume that inertial terms are neglibile ($||\rho d^2_tu|| \approx 0$).
 
-## Operator Splitting
+## [Operator Splitting](@id theory_operator-splitting)
 
 For operator splitting procedures we assume that we have some time-dependent
 problem with initial condition $u_0 := u(t_0)$ and an operator $F$ describing

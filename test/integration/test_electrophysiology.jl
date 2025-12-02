@@ -1,10 +1,11 @@
 using Thunderbolt
+using OrdinaryDiffEqOperatorSplitting
 
 @testset "EP wave propagation" begin
     function simple_initializer!(u₀, f::GenericSplitFunction)
         # TODO cleaner implementation. We need to extract this from the types or via dispatch.
         heatfun = f.functions[1]
-        heat_dofrange = f.dof_ranges[1]
+        heat_dofrange = f.solution_indices[1]
         odefun = f.functions[2]
         ionic_model = odefun.ode
 
@@ -25,7 +26,7 @@ using Thunderbolt
     end
 
     function solve_waveprop(mesh, coeff, subdomains, timestepper)
-        cs = CoordinateSystemCoefficient(CartesianCoordinateSystem(mesh))
+        cs = CartesianCoordinateSystem(mesh)
         model = MonodomainModel(
             ConstantCoefficient(1.0),
             ConstantCoefficient(1.0),
@@ -45,11 +46,12 @@ using Thunderbolt
             mesh
         )
 
-        u₀ = zeros(Float64, OS.function_size(odeform))
+        u₀ = zeros(Float64, solution_size(odeform))
         simple_initializer!(u₀, odeform)
 
         tspan = (0.0, 10.0)
         problem = OperatorSplittingProblem(odeform, u₀, tspan)
+        u₀ = copy(u₀)
 
         integrator = DiffEqBase.init(problem, timestepper, dt=1.0, verbose=true)
         DiffEqBase.solve!(integrator)

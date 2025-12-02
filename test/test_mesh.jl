@@ -26,13 +26,16 @@
         # Triangle
     ]
         dim = Ferrite.getrefdim(element_type)
-        grid = generate_grid(element_type, ntuple(_ -> 3, dim))
+        grid = generate_grid(element_type, ntuple(_ -> 4, dim))
+        addcellset!(grid, "right_cells", x -> x[1] ≥ 0.0)
+        addcellset!(grid, "left_cells", x -> x[1] ≤ 0.0)
+
         if dim == 3
             grid_hex = Thunderbolt.hexahedralize(grid)
             @test all(typeof.(getcells(grid_hex)) .== Hexahedron) # Test if we really hit all elements
             test_detJ(grid_hex) # And for messed up elements
 
-            # Check for correct transfer of facesets
+            # Check for correct transfer of facetsets
             addfacetset!(grid_hex, "right_new", x -> x[1] ≈ 1.0)
             @test getfacetset(grid_hex, "right") == getfacetset(grid_hex, "right_new")
             addfacetset!(grid_hex, "left_new", x -> x[1] ≈ -1.0)
@@ -45,6 +48,12 @@
             @test getfacetset(grid_hex, "front") == getfacetset(grid_hex, "front_new")
             addfacetset!(grid_hex, "back_new", x -> x[2] ≈ 1.0)
             @test getfacetset(grid_hex, "back") == getfacetset(grid_hex, "back_new")
+
+            # Check for correct transfer of cellsets
+            addcellset!(grid_hex, "right_cells_new", x -> x[1] ≥ 0.0)
+            @test getcellset(grid_hex, "right_cells") == getcellset(grid_hex, "right_cells_new")
+            addcellset!(grid_hex, "left_cells_new", x -> x[1] ≤ 0.0)
+            @test getcellset(grid_hex, "left_cells") == getcellset(grid_hex, "left_cells_new")
         end
 
         if element_type == Hexahedron
@@ -118,5 +127,23 @@
             @test all(typeof.(carp_grid.cells) .== element_type)
             test_detJ(carp_grid)
         end
+    end
+
+    @testset "Surface extraction" begin
+        LV_mesh = generate_ideal_lv_mesh(4,2,2)
+        surface_mesh = Thunderbolt.extract_outer_surface_mesh(LV_mesh)
+
+        @test length(surface_mesh.cellsets) == 3
+        @test length(surface_mesh.cellsets["Epicardium"]) == 3*4
+        @test length(surface_mesh.cellsets["Endocardium"]) == 3*4
+        @test length(surface_mesh.cellsets["Base"]) == 4*2
+        @test length(surface_mesh.nodes) == 2 + 3*2*4 + 4 # nodes at base + nodes on loopes endo&epi + node loop on base
+        @test length(surface_mesh.cells) == 2*4 + 2*4*(2+1) # cells at base + cells inside&outside
+    end
+
+    @testset "Geometry Tools" begin
+        ring_mesh = generate_ring_mesh(5,4,4)
+        @test Thunderbolt.compute_center_of_mass(ring_mesh) ≈ Vec((0.0,0.0,0.0)) atol=1e-16
+        @test Thunderbolt.compute_center_of_surface(ring_mesh, "Endocardium") ≈ Vec((0.0,0.0,0.0)) atol=1e-16
     end
 end

@@ -41,16 +41,38 @@ bibtex_plugin = CitationBibliography(
         "Home" => "index.md",
         "Tutorials" => [
             "Overview" => "tutorials/index.md",
+            "Continuum Mechanics" => [
+                "CM01: Simple Active Stress" => "tutorials/cm01_simple-active-stress.md",
+                "CM02: Prestressing (WIP)" => "tutorials/cm02_prestress.md",
+                "CM03: 0D Blood Circuit" => "tutorials/cm03_3d0d-coupling.md",
+                "CM04: Pericadium (TODO)" => "tutorials/cm04_pericardium.md",
+                "CM05: Four Chamber (TODO)" => "tutorials/cm05_fourchambers.md",
+                "CM06: Heart Valves (TODO)" => "tutorials/cm06_heartvalves.md",
+            ],
+            "Electrophysiology" => [
+                "EP01: Spiral Wave" => "tutorials/ep01_spiral-wave.md",
+                "EP02: Purkinje Network (TODO)" => "tutorials/ep02_purkinje.md",
+                "EP03: Defibrillation (TODO)" => "tutorials/ep03_bidomain.md",
+                "EP04: Monodomain ECG" => "tutorials/ep04_geselowitz-ecg.md",
+                "EP05: Eikonal Models (WIP)" => "tutorials/ep05_eikonal.md",
+                "EP06: Pacemakers (TODO)" => "tutorials/ep06_pacemaker.md",
+            ],
         ],
         "Topic Guides" => [
             "Overview" => "topics/index.md",
             "topics/operators.md",
             "topics/couplers.md",
             "topics/time-integration.md",
+            "topics/nonlinear-solver.md",
         ],
         "How-to guides" => [
             "Overview" => "howto/index.md",
             "howto/benchmarking.md",
+            "howto/custom-ep-cell-model.md",
+            "howto/custom-stimulation-protocols.md",
+            "howto/custom-energies.md",
+            "howto/custom-sarcomere.md",
+            "howto/custom-elements.md",
         ],
         "API Reference" => [
             "Overview" => "api-reference/index.md",
@@ -68,6 +90,7 @@ bibtex_plugin = CitationBibliography(
             "devdocs/element_interface.md",
             "devdocs/domain_management.md",
         ],
+        "vroom.md",
         "references.md",
         ],
     plugins = [
@@ -83,7 +106,7 @@ end
 # Deploy built documentation
 if !liveserver
     @timeit dto "deploydocs" deploydocs(
-        repo = "github.com/termi-official/Thunderbolt.jl.git",
+        repo = "github.com/JuliaHealth/Thunderbolt.jl.git",
         push_preview=true,
         versions = [
             "stable" => "v^",

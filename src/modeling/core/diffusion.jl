@@ -3,8 +3,10 @@
 
 Represents the integrand of the bilinear form ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
 """
-struct BilinearDiffusionIntegrator{CoefficientType} <: AbstractBilinearIntegrator
+struct BilinearDiffusionIntegrator{CoefficientType, QRC <: QuadratureRuleCollection} <: AbstractBilinearIntegrator
     D::CoefficientType
+    qrc::QRC
+    sym::Symbol
 end
 
 """
@@ -13,6 +15,13 @@ The cache associated with [`BilinearDiffusionIntegrator`](@ref) to assemble elem
 struct BilinearDiffusionElementCache{CoefficientCacheType, CV} <: AbstractVolumetricElementCache
     Dcache::CoefficientCacheType
     cellvalues::CV
+end
+
+function duplicate_for_device(device, cache::BilinearDiffusionElementCache)
+    return BilinearDiffusionElementCache(
+        duplicate_for_device(device, cache.Dcache),
+        duplicate_for_device(device, cache.cellvalues),
+    )
 end
 
 function assemble_element!(Kₑ::AbstractMatrix, cell, element_cache::BilinearDiffusionElementCache, time)
@@ -34,8 +43,12 @@ function assemble_element!(Kₑ::AbstractMatrix, cell, element_cache::BilinearDi
     end
 end
 
-function setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip, sdh::SubDofHandler)
-    ip_geo = geometric_subdomain_interpolation(sdh)
+function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::SubDofHandler)
+    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    qr = getquadraturerule(element_model.qrc, sdh)
+    field_name = first(sdh.dh.field_names)
+    ip         = Ferrite.getfieldinterpolation(sdh, field_name)
+    ip_geo     = geometric_subdomain_interpolation(sdh)
     BilinearDiffusionElementCache(setup_coefficient_cache(element_model.D, qr, sdh), CellValues(qr, ip, ip_geo))
 end
 

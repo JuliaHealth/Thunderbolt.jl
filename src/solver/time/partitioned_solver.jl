@@ -1,6 +1,8 @@
 abstract type AbstractPointwiseSolver <: AbstractSolver end
 abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
+SciMLBase.isadaptive(::AbstractPointwiseSolver) = false
+
 # Auxilliary functions to query the coordinate
 @inline getcoordinate(f::F, i::I)       where {F<:AbstractPointwiseSolverCache,I}                  = getcoordinate(f, i, f.xs)
 @inline getcoordinate(f::F, i::I, x::X) where {F<:AbstractPointwiseSolverCache,I,X<:Nothing}       = nothing
@@ -8,11 +10,11 @@ abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
 # Redirect to inner solve
 function perform_step!(f::PointwiseODEFunction, cache::AbstractPointwiseSolverCache, t::Real, Δt::Real)
-    _pointwise_step_outer_kernel!(f, t, Δt, cache, cache.uₙ)
+    @timeit_debug "reaction solve" _pointwise_step_outer_kernel!(f, t, Δt, cache, cache.uₙ)
 end
 
 # This controls the outer loop over the ODEs
-function _pointwise_step_outer_kernel!(f::PointwiseODEFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::Vector)
+function _pointwise_step_outer_kernel!(f::PointwiseODEFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::Union{Vector,SubArray{<:Any,1,<:Vector}})
     @unpack npoints = f
 
     @batch minbatch=cache.batch_size_hint for i ∈ 1:npoints
@@ -36,7 +38,6 @@ struct ForwardEulerCellSolverCache{duType, uType, dumType, umType, xType} <: Abs
     # These vectors hold the data
     uₙ::uType
     uₙ₋₁::uType
-    tmp::uType
     # These array view the data above to give easy indices of the form [ode index, local state index]
     dumat::dumType
     uₙmat::umType
@@ -62,19 +63,18 @@ Adapt.@adapt_structure ForwardEulerCellSolverCache
     return true
 end
 
-function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSolver, t₀)
+function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSolver, t₀; u = nothing, uprev=nothing)
     @unpack npoints, ode = f
     ndofs_local = num_states(ode)
 
     du      = create_system_vector(solver.solution_vector_type, f)
     dumat   = reshape(du, (npoints,ndofs_local))
-    uₙ      = create_system_vector(solver.solution_vector_type, f)
-    uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
-    tmp     = create_system_vector(solver.solution_vector_type, f)
+    uₙ      = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
+    uₙ₋₁    = uₙ
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
     xs      = f.x === nothing ? nothing : Adapt.adapt(solver.solution_vector_type, f.x)
 
-    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, tmp, dumat, uₙmat, solver.batch_size_hint, xs)
+    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.batch_size_hint, xs)
 end
 
 Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: AbstractVector{T}} <: AbstractPointwiseSolver
@@ -135,14 +135,14 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
     return true
 end
 
-function setup_solver_cache(f::PointwiseODEFunction, solver::AdaptiveForwardEulerSubstepper, t₀)
+function setup_solver_cache(f::PointwiseODEFunction, solver::AdaptiveForwardEulerSubstepper, t₀; u = nothing, uprev=nothing)
     @unpack npoints, ode = f
     ndofs_local = num_states(ode)
 
     du      = create_system_vector(solver.solution_vector_type, f)
     dumat   = reshape(du, (npoints,ndofs_local))
-    uₙ      = create_system_vector(solver.solution_vector_type, f)
-    uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
+    uₙ      = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
+    uₙ₋₁    = uₙ
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
     xs      = if f.x === nothing
         nothing

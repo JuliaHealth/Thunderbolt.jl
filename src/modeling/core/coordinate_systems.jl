@@ -1,12 +1,17 @@
+abstract type CoordinateSystemCoefficient end
+
 """
     CartesianCoordinateSystem(mesh)
 
 Standard cartesian coordinate system.
 """
-struct CartesianCoordinateSystem{sdim}
+struct CartesianCoordinateSystem{sdim,T} <: CoordinateSystemCoefficient
+    function CartesianCoordinateSystem{sdim}() where sdim
+        return new{sdim,Float32}()
+    end
 end
 
-value_type(::CartesianCoordinateSystem{sdim}) where sdim = Vec{sdim, Float32}
+value_type(::CartesianCoordinateSystem{sdim, T}) where {sdim, T} = Vec{sdim, T}
 
 CartesianCoordinateSystem(mesh::AbstractGrid{sdim}) where sdim = CartesianCoordinateSystem{sdim}()
 
@@ -22,14 +27,14 @@ getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) 
     LVCoordinateSystem(dh, u_transmural, u_apicobasal)
 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
-circumferential coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
+rotational coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
 """
-struct LVCoordinateSystem{DH <: AbstractDofHandler, IPC}
+struct LVCoordinateSystem{T, DH <: AbstractDofHandler, IPC} <: CoordinateSystemCoefficient
     dh::DH
     ip_collection::IPC # TODO special dof handler with type stable interpolation
-    u_transmural::Vector{Float64}
-    u_apicobasal::Vector{Float64}
-    u_circumferential::Vector{Float64}
+    u_transmural::Vector{T}
+    u_apicobasal::Vector{T}
+    u_rotational::Vector{T}
 end
 
 
@@ -39,15 +44,17 @@ end
 LV only part of the universal ventricular coordinate, containing
     * transmural
     * apicobasal
-    * circumferential
+    * rotational
 """
-struct LVCoordinate{T}
+Base.@kwdef struct LVCoordinate{T}
     transmural::T
-    apicaobasal::T
-    circumferential::T
+    apicobasal::T
+    rotational::T
 end
-
-value_type(::LVCoordinateSystem) = LVCoordinate{Float32}
+Base.zero(::Type{LVCoordinate{T}}) where T = LVCoordinate(T(0.0),T(0.0),T(0.0))
+Base.eltype(::Type{LVCoordinate{T}}) where T = T
+Base.eltype(::LVCoordinate{T}) where T = T
+value_type(::LVCoordinateSystem{T}) where T = LVCoordinate{T}
 
 
 """
@@ -67,15 +74,12 @@ Requires a mesh with facetsets
     * Endocardium
 and a nodeset
     * Apex
-
-!!! warning
-    The circumferential coordinate is not yet implemented and is guaranteed to evaluate to NaN.
 """
-function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""])
+function compute_lv_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::Vector{String} = [""]; up = Vec((T(0.0),T(0.0),T(-1.0)))) where T
+    @assert abs.(up) ≈ Vec((T(0.0),T(0.0),T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
-    cellvalues = getcellvalues(cv_collection, getcells(mesh, 1))
 
     dh = DofHandler(mesh)
     for name in subdomains
@@ -86,7 +90,6 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     # Assemble Laplacian
     # TODO use bilinear operator for performance
     K = allocate_matrix(dh)
-
     assembler = start_assemble(K)
     for sdh in dh.subdofhandlers
         cellvalues = getcellvalues(cv_collection, getcells(mesh, first(sdh.cellset)))
@@ -114,6 +117,7 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     end
 
     # Transmural coordinate
+    begin
     ch = ConstraintHandler(dh);
     dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
@@ -126,39 +130,63 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    transmural = K_transmural \ f;
-
-    # Apicobasal coordinate
-    #TODO refactor check for node set existence
-    if !haskey(mesh.grid.nodesets, "Apex") #TODO this is just a hotfix, assuming that z points towards the apex
-        apex_node_index = 1
-        nodes = getnodes(mesh)
-        for (i,node) ∈ enumerate(nodes)
-            if nodes[i].x[3] > nodes[apex_node_index].x[3]
-                apex_node_index = i
-            end
-        end
-        addnodeset!(mesh, "Apex", OrderedSet{Int}((apex_node_index)))
+    sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
+    transmural = sol.u
     end
 
+    # Apicobasal coordinate
+    begin
+    # apicobasal = zeros(ndofs(dh))
+    # apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
+    # apicobasal .-= minimum(apicobasal)
+    # apicobasal = abs.(apicobasal)
+    # apicobasal ./= maximum(apicobasal)
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getnodeset(mesh, "Apex"), (x, t) -> 1)
+    dbc = Dirichlet(:coordinates, getnodeset(mesh, "ApexInOut"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
 
-    K_apicobasal = copy(K)
+    K_apicobasal = K
     f = zeros(ndofs(dh))
 
     apply!(K_apicobasal, f, ch)
-    apicobasal = K_apicobasal \ f;
+    sol = solve(LinearSolve.LinearProblem(K_apicobasal, f), LinearSolve.KrylovJL_CG())
+    apicobasal = sol.u
+    end
 
-    circumferential = zeros(ndofs(dh))
-    circumferential .= NaN
+    rotational = zeros(ndofs(dh))
+    rotational .= NaN
 
-    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
+    qrn  = NodalQuadratureRuleCollection(ip_collection) # FIXME ip_collection from grid
+    cvcn = CellValueCollection(qrn, ip_collection)
+    for sdh in dh.subdofhandlers
+        cellvalues = getcellvalues(cvcn, getcells(mesh, first(sdh.cellset)))
+        @inbounds for cell in CellIterator(sdh)
+            reinit!(cellvalues, cell)
+            coords = getcoordinates(cell)
+            dofs = celldofs(cell)
+
+            for qp in QuadratureIterator(cellvalues)
+                dΩ = getdetJdV(cellvalues, qp)
+
+                x_dof = spatial_coordinate(cellvalues, qp, coords)
+
+                x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
+                xlen = norm(x_planar)
+                if xlen < 1e-8
+                    rotational[dofs[qp.i]] = 0.0
+                else
+                    x = x_planar / xlen
+                    rotational[dofs[qp.i]] = 1/2 + atan(x[1], x[2])/(2π) # TODO tilted coordinate system
+                end
+            end
+        end
+    end
+
+    return LVCoordinateSystem(dh, ip_collection, T.(transmural), T.(apicobasal), T.(rotational))
 end
 
 """
@@ -170,7 +198,8 @@ Requires a mesh with facetsets
     * Endocardium
     * Myocardium
 """
-function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""])
+function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::Vector{String} = [""]; up = Vec((T(0.0),T(0.0),T(1.0)))) where T
+    @assert abs.(up) ≈ Vec((T(0.0),T(0.0),T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -220,30 +249,47 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
     close!(ch)
     update!(ch, 0.0);
 
-    K_transmural = copy(K)
+    K_transmural = K
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    transmural = K_transmural \ f;
+    sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
+    transmural = sol.u
 
-    ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 0)
-    Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Myocardium"), (x, t) -> 0.15)
-    Ferrite.add!(ch, dbc);
-    close!(ch)
-    update!(ch, 0.0);
+    # Apicobasal coordinate
+    apicobasal = zeros(ndofs(dh))
+    apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
+    apicobasal .-= minimum(apicobasal)
+    apicobasal = abs.(apicobasal)
+    apicobasal ./= maximum(apicobasal)
+    apicobasal .*= 0.15
 
-    K_apicobasal = copy(K)
-    f = zeros(ndofs(dh))
+    # Rotational coordinate
+    rotational = zeros(ndofs(dh))
+    rotational .= NaN
 
-    apply!(K_apicobasal, f, ch)
-    apicobasal = K_apicobasal \ f;
+    qrn  = NodalQuadratureRuleCollection(ip_collection) # FIXME ip_collection from grid
+    cvcn = CellValueCollection(qrn, ip_collection)
+    for sdh in dh.subdofhandlers
+        cellvalues = getcellvalues(cvcn, getcells(mesh, first(sdh.cellset)))
+        @inbounds for cell in CellIterator(sdh)
+            reinit!(cellvalues, cell)
+            coords = getcoordinates(cell)
+            dofs = celldofs(cell)
+            for qp in QuadratureIterator(cellvalues)
+                dΩ = getdetJdV(cellvalues, qp)
 
-    circumferential = zeros(ndofs(dh))
-    circumferential .= NaN
+                x_dof = spatial_coordinate(cellvalues, qp, coords)
 
-    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
+                x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
+                x = x_planar / norm(x_planar)
+
+                rotational[dofs[qp.i]] = 1/2 + atan(x[1], x[2])/(2π) # TODO tilted coordinate system
+            end
+        end
+    end
+
+    return LVCoordinateSystem(dh, ip_collection, T.(transmural), T.(apicobasal), T.(rotational))
 end
 
 """
@@ -252,22 +298,23 @@ end
 Store the LV coordinate system in a vtk file.
 """
 function vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
-    vtk_point_data(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
-    vtk_point_data(vtk, cs.dh, cs.u_transmural, "transmural_")
+    Ferrite.write_solution(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
+    Ferrite.write_solution(vtk, cs.dh, cs.u_rotational, "rotational_")
+    Ferrite.write_solution(vtk, cs.dh, cs.u_transmural, "transmural_")
 end
 
 """
     BiVCoordinateSystem(dh, u_transmural, u_apicobasal, u_rotational, u_transventricular)
 
-Universal ventricular coordinate, containing the transmural, apicobasal, circumferential 
+Universal ventricular coordinate, containing the transmural, apicobasal, rotational 
 and transventricular coordinates.
 """
-struct BiVCoordinateSystem{DH <: Ferrite.AbstractDofHandler}
+struct BiVCoordinateSystem{T, DH <: Ferrite.AbstractDofHandler} <: CoordinateSystemCoefficient
     dh::DH
-    u_transmural::Vector{Float32}
-    u_apicobasal::Vector{Float32}
-    u_rotational::Vector{Float32}
-    u_transventricular::Vector{Float32}
+    u_transmural::Vector{T}
+    u_apicobasal::Vector{T}
+    u_rotational::Vector{T}
+    u_transventricular::Vector{T}
 end
 
 
@@ -280,21 +327,23 @@ Biventricular universal coordinate, containing
     * rotational
     * transventricular
 """
-struct BiVCoordinate{T}
+Base.@kwdef struct BiVCoordinate{T}
     transmural::T
-    apicaobasal::T
+    apicobasal::T
     rotational::T
     transventricular::T
 end
-
+Base.zero(::Type{BiVCoordinate{T}}) where T = BiVCoordinate(T(0.0),T(0.0),T(0.0),T(0.0))
+Base.eltype(::Type{BiVCoordinate{T}}) where T = T
+Base.eltype(::BiVCoordinate{T}) where T = T
 value_type(::BiVCoordinateSystem) = BiVCoordinate
 
 getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
 
 function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
-    vtk_point_data(vtk, bivcs.dh, bivcs.u_transmural, "_transmural")
-    vtk_point_data(vtk, bivcs.dh, bivcs.u_apicobasal, "_apicobasal")
-    vtk_point_data(vtk, bivcs.dh, bivcs.u_rotational, "_rotational")
-    vtk_point_data(vtk, bivcs.dh, bivcs.u_transventricular, "_transventricular")
+    Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_transmural, "_transmural")
+    Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_apicobasal, "_apicobasal")
+    Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_rotational, "_rotational")
+    Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_transventricular, "_transventricular")
 end
 

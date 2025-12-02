@@ -2,21 +2,7 @@ using Test, Tensors, Thunderbolt, StaticArrays
 
 import Thunderbolt: OrderedSet, to_mesh
 
-# Credits to Knut for the trick
-const RUN_JET_TESTS = VERSION >= v"1.9" && isempty(VERSION.prerelease)
-if RUN_JET_TESTS
-    using Pkg: Pkg
-    Pkg.add("JET")
-    using JET: @test_call, @test_opt
-else
-    # Just eat the macros on incompatible versions
-    macro test_call(args...)
-        nothing
-    end
-    macro test_opt(args...)
-        nothing
-    end
-end
+using JET: @test_call, @test_opt
 
 function generate_mixed_grid_2D()
     nodes = Node.([
@@ -43,16 +29,16 @@ function generate_mixed_dimensional_grid_3D()
     nodes = Node.([
         Vec((-1.0, -1.0, -1.0)),
         Vec((1.0, -1.0, -1.0)),
-        Vec((1.0, 1.0, -1.0)),
         Vec((-1.0, 1.0, -1.0)),
+        Vec((1.0, 1.0, -1.0)),
         Vec((-1.0, -1.0, 1.0)),
         Vec((1.0, -1.0, 1.0)),
-        Vec((1.0, 1.0, 1.0)),
         Vec((-1.0, 1.0, 1.0)),
+        Vec((1.0, 1.0, 1.0)),
         Vec((0.0,0.0,0.0)),
     ])
     elements = [
-        Hexahedron((1,2,3,4,5,6,7,8)),
+        Hexahedron((1,2,4,3,5,6,8,7)),
         Line((8,9)),
     ]
     cellsets = Dict((
@@ -60,12 +46,12 @@ function generate_mixed_dimensional_grid_3D()
         "Purkinje" => OrderedSet([2])
     ))
     facetsets = Dict((
-        "left" => OrderedSet([FacetIndex(1,1)]),
-        "right" => OrderedSet([FacetIndex(1,2)]),
-        "top" => OrderedSet([FacetIndex(1,3)]),
-        "bottom" => OrderedSet([FacetIndex(1,4)]),
-        "front" => OrderedSet([FacetIndex(1,5)]),
-        "back" => OrderedSet([FacetIndex(1,6)]),
+        "bottom" => OrderedSet([FacetIndex(1,1)]),
+        "front" => OrderedSet([FacetIndex(1,2)]),
+        "right" => OrderedSet([FacetIndex(1,3)]),
+        "back" => OrderedSet([FacetIndex(1,4)]),
+        "left" => OrderedSet([FacetIndex(1,5)]),
+        "top" => OrderedSet([FacetIndex(1,6)]),
     ))
     return Grid(elements, nodes; cellsets, facetsets)
 end
@@ -75,6 +61,7 @@ include("test_sarcomere.jl")
 include("test_operators.jl")
 
 include("test_solver.jl")
+include("test_preconditioners.jl")
 
 include("test_transfer.jl")
 
@@ -85,9 +72,13 @@ include("test_mesh.jl")
 include("test_coefficients.jl")
 include("test_microstructures.jl")
 
-include("integration/test_passive_structure.jl") # TODO make this a tutorial
+include("test_io.jl")
+
 include("integration/test_solid_mechanics.jl")
 include("integration/test_electrophysiology.jl")
 include("integration/test_ecg.jl")
+include("integration/test_fsi.jl")
 
 include("test_aqua.jl")
+
+include("validation/land2015.jl")

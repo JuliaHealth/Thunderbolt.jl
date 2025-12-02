@@ -1,8 +1,11 @@
 module Thunderbolt
 
+import KernelAbstractions as KA
+
 using TimerOutputs
 
 import Unrolled: @unroll
+import FastBroadcast: @..
 
 using Reexport, UnPack
 import LinearAlgebra: mul!
@@ -14,40 +17,56 @@ using JLD2
 import WriteVTK
 import ReadVTK
 
-# This is a standalone module which will be a custom package in the future
-include("solver/operator_splitting.jl")
-@reexport using .OS
-solution_size(f::GenericSplitFunction) = OS.function_size(f)
-# include("solver/local_time_stepping.jl")
-# include("solver/multilevel.jl")
+import OrdinaryDiffEqOperatorSplitting as OS
+import OrdinaryDiffEqOperatorSplitting: GenericSplitFunction
+export OS, GenericSplitFunction
+function solution_size(gsf::GenericSplitFunction)
+    alldofs = Set{Int}()
+    for solution_indices in gsf.solution_indices
+        union!(alldofs, solution_indices)
+    end
+    return length(alldofs)
+end
 
 @reexport using Ferrite
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
-import Ferrite: vertices, edges, faces, sortedge, sortface
+import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
+import Ferrite: vertices, edges, facets, faces, sortedge, sortfacet_fast, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
 
+import Preferences
+
+import Logging: Logging, LogLevel, @info, @logmsg
+
+import SciMLBase
+@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
-@reexport import LinearSolve
+import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
+import LinearSolve
+using LinearSolve: LinearAliasSpecifier
 
-import Base: *, +, -
+import Base: *, +, -, @kwdef
 
-@reexport import CommonSolve: init, solve, solve!, step!
+import ForwardDiff
 
 import ModelingToolkit
-import ModelingToolkit: @variables, @parameters, @component, @named,
-        compose, ODESystem, Differential
 
 # Accelerator support libraries
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
 
-include("utils.jl")
-
 include("mesh/meshes.jl")
 
-include("transfer_operators.jl")
+include("utils.jl")
+
+include("devices.jl")
+include("strategy.jl")
+
+include("ferrite-addons/parallel_duplication_api.jl")
+include("ferrite-addons/InternalVariableHandler.jl")
+include("ferrite-addons/transfer_operators.jl")
+
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
 # This is simply because there is no modeling interface, but just individual physics modules and couplers.
@@ -62,21 +81,26 @@ include("modeling/fluid_mechanics.jl")
 include("modeling/multiphysics.jl")
 
 include("modeling/functions.jl")
-include("modeling/problems.jl") # Utility for compat against DiffEqBase
+include("modeling/problems.jl")
+
+include("gpu/gpu_utils.jl")
 
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 include("discretization/operator.jl")
 
+include("solver/logging.jl")
 include("solver/interface.jl")
 include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
+include("solver/linear/preconditioners/Preconditioners.jl")
+@reexport using .Preconditioners 
 
 
-include("processing/ecg.jl")
+include("modeling/electrophysiology/ecg.jl")
 
-include("io.jl")
+include("ferrite-addons/io.jl")
 
 include("disambiguation.jl")
 
@@ -84,17 +108,18 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
-include("accelerator/grid.jl")
-include("accelerator/dofhandler.jl")
+include("modeling/mtkmodels.jl")
 
 # TODO put exports into the individual submodules above!
 export
+    # Devices
+    SequentialCPUDevice,
+    PolyesterDevice,
     # Coefficients
     ConstantCoefficient,
     FieldCoefficient,
     AnalyticalCoefficient,
     FieldCoefficient,
-    CoordinateSystemCoefficient,
     SpectralTensorCoefficient,
     SpatiallyHomogeneousDataField,
     evaluate_coefficient,
@@ -107,7 +132,7 @@ export
     CellValueCollection,
     getcellvalues,
     FacetValueCollection,
-    getfacevalues,
+    getfacetvalues,
     # Mesh generators
     generate_mesh,
     generate_open_ring_mesh,
@@ -116,16 +141,16 @@ export
     generate_quadratic_open_ring_mesh,
     generate_ideal_lv_mesh,
     # Generic models
-    ODEProblem,
     TransientDiffusionModel,
-    TransientDiffusionFunction,
+    AffineODEFunction,
+    default_initial_condition!,
     # Local API
     PointwiseODEProblem,
     PointwiseODEFunction,
     # Mechanics
-    StructuralModel,
+    QuasiStaticModel,
     QuasiStaticProblem,
-    QuasiStaticNonlinearFunction,
+    QuasiStaticFunction,
     PK1Model,
     PrestressedMechanicalModel,
     # Passive material models
@@ -145,9 +170,10 @@ export
     LinearSpringModel,
     SimpleActiveSpring,
     # Contraction model
+    CaDrivenInternalSarcomereModel,
     ConstantStretchModel,
     PelceSunLangeveld1995Model,
-    SteadyStateSarcomereModel,
+    RDQ20MFModel,
     # Active model
     ActiveMaterialAdapter,
     GMKActiveDeformationGradientModel,
@@ -173,8 +199,6 @@ export
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
-    VolumeTransfer0D3D,
-    PressureTransfer3D0D,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     AnisotropicPlanarMicrostructure,
@@ -182,9 +206,13 @@ export
     OrthotropicMicrostructure,
     TransverselyIsotropicMicrostructureModel,
     TransverselyIsotropicMicrostructure,
-    create_simple_microstructure_model,
+    ODB25LTMicrostructureParameters,
+    create_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,
+    LVCoordinate,
+    BiVCoordinateSystem,
+    BiVCoordinate,
     CartesianCoordinateSystem,
     compute_lv_coordinate_system,
     compute_midmyocardial_section_coordinate_system,
@@ -199,17 +227,13 @@ export
     # Solver
     SchurComplementLinearSolver,
     NewtonRaphsonSolver,
-    LoadDrivenSolver,
-    ForwardEulerSolver,
+    MultiLevelNewtonRaphsonSolver,
+    HomotopyPathSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,
     # Integrator
-    get_parent_index,
-    get_parent_value,
     # Utils
-    calculate_volume_deformed_mesh,
-    elementtypes,
     QuadraturePoint,
     QuadratureIterator,
     load_carp_grid,
@@ -222,8 +246,7 @@ export
     store_timestep!,
     store_timestep_celldata!,
     store_timestep_field!,
-    store_coefficient!,
-    store_green_lagrange!,
+    # store_coefficient!,
     finalize_timestep!,
     finalize!,
     # Mechanical PDEs

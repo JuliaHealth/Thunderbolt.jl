@@ -51,12 +51,11 @@ Ferrite internal code.
 
 ## Getting started
 
-If you are new to the Thunderbolt project, then it is suggested to start with the tutorials
+If you are new to the Thunderbolt project, it is suggested to start with the tutorials
 section before tackling more complex problems.
 
-More information coming soon...
-
-TODO refer to an example project via DrWatson.jl.
+!!! todo
+    We should provide a template for computational studies, possibly via DrWatson.jl ([DrWatsonSim.jl](https://github.com/sebastianpech/DrWatsonSim.jl)?), to guide users towards best practices for computational studies.
 
 ### Getting help
 
@@ -71,12 +70,8 @@ Installing Thunderbolt can then be done from the Pkg REPL; press `]` at the `jul
 enter `pkg>` mode:
 
 ```
-pkg> add Ferrite#b6976d3, https://github.com/termi-official/Thunderbolt.jl#main
+pkg> add https://github.com/JuliaHealth/Thunderbolt.jl#main
 ```
-
-!!! note
-    The package is under development, which is why you will need the currently (unreleased)
-    1.0 version of Ferrite.jl and the (unregistered) Thunderbolt.jl package.
 
 This will install Thunderbolt and all necessary dependencies. Press backspace to get back to the
 `julia>` prompt. (See the [documentation for Pkg](https://pkgdocs.julialang.org/), Julia's
@@ -92,9 +87,9 @@ You are now all set to start using Thunderbolt!
 
 ## Contributing to Thunderbolt
 
-Thunderbolt is under very active development. If you find a bug, then please open an [issue on GitHub](https://github.com/termi-official/Thunderbolt.jl/issues) with a reproducer.
+Thunderbolt is under very active development. If you find a bug, then please open an [issue on GitHub](https://github.com/JuliaHealth/Thunderbolt.jl/issues) with a reproducer.
 If you are interested in joining development, then either comment an issue or reach out via [Zulip](https://julialang.zulipchat.com), via mail or via 
-[Slack](https://julialang.slack.com). Alternatively open a [discussion](https://github.com/termi-official/Thunderbolt.jl/discussions) if you have something 
+[Slack](https://julialang.slack.com). Alternatively open a [discussion](https://github.com/JuliaHealth/Thunderbolt.jl/discussions) if you have something 
 specific in mind - please just check for open discussion before opening a new one.
 
 A detailed contributor guide is coming soon...

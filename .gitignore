@@ -30,3 +30,13 @@ Manifest.toml
 *.pdf
 *.png
 *.pvsm
+*.avi
+*.eps
+*.sqlite
+*.jld2
+
+# Documenter files
+docs/src/tutorials
+docs/src/howto
+
+.vscode

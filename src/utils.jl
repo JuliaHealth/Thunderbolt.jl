@@ -1,45 +1,77 @@
-# TODO remove these once they are merged
-module FerriteUtils
-include("ferrite-addons/PR883.jl")
+
+const DEBUG = Preferences.@load_preference("use_debug", false)
+
+"""
+    debug_mode(; enable=true)
+
+Helper to turn on (`enable=true`) or off (`enable=false`) debug expressions in Ferrite.
+
+Debug mode influences `Ferrite.@debug expr`: when debug mode is enabled, `expr` is
+evaluated, and when debug mode is disabled `expr` is ignored.
+"""
+function debug_mode(; enable = true)
+    if DEBUG == enable == true
+        @info "Debug mode already enabled."
+    elseif DEBUG == enable == false
+        @info "Debug mode already disabled."
+    else
+        Preferences.@set_preferences!("use_debug" => enable)
+        @info "Debug mode $(enable ? "en" : "dis")abled. Restart the Julia session for this change to take effect!"
+    end
+    return
 end
 
-include("collections.jl")
-include("quadrature_iterator.jl")
+@static if DEBUG
+    @eval begin
+        macro debugonly(ex)
+            return :($(esc(ex)))
+        end
+    end
+else
+    @eval begin
+        macro debugonly(ex)
+            return nothing
+        end
+    end
+end
 
-function celldofsview(dh::DofHandler, i::Int)
+# TODO remove these once they are merged
+module FerriteUtils
+using Ferrite
+import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
+import Adapt
+
+include("ferrite-addons/gpu/device_dofhandler.jl")
+include("ferrite-addons/gpu/device_grid.jl")
+include("ferrite-addons/PR883.jl")
+include("ferrite-addons/gpu/device_memalloc.jl")
+include("ferrite-addons/gpu/device_iterator.jl")
+include("ferrite-addons/gpu/adapt.jl")
+
+end
+
+include("ferrite-addons/collections.jl")
+include("ferrite-addons/quadrature_iterator.jl")
+
+
+function celldofsview(dh::Ferrite.AbstractDofHandler, i::Integer) 
     ndofs = ndofs_per_cell(dh, i)
     offset = dh.cell_dofs_offset[i]
     return @views dh.cell_dofs[offset:(offset+ndofs-1)]
 end
 
-function calculate_element_volume(cell, cellvalues_u, uₑ)
-    reinit!(cellvalues_u, cell)
-    evol::Float64=0.0;
-    @inbounds for qp in QuadratureIterator(cellvalues_u)
-        dΩ = getdetJdV(cellvalues_u, qp)
-        ∇u = function_gradient(cellvalues_u, qp, uₑ)
-        F = one(∇u) + ∇u
-        J = det(F)
-        evol += J * dΩ
-    end
-    return evol
-end;
-
-function calculate_volume_deformed_mesh(w, dh::DofHandler, cellvalues_u)
-    evol::Float64 = 0.0;
-    @inbounds for cell in CellIterator(dh)
-        global_dofs = celldofs(cell)
-        nu = getnbasefunctions(cellvalues_u)
-        global_dofs_u = global_dofs[1:nu]
-        uₑ = w[global_dofs_u]
-        δevol = calculate_element_volume(cell, cellvalues_u, uₑ)
-        evol += δevol;
-    end
-    return evol
-end;
-
 @inline angle(v1::Vec{dim,T}, v2::Vec{dim,T}) where {dim, T} = acos((v1 ⋅ v2)/(norm(v1)*norm(v2)))
 @inline angle_deg(v1::Vec{dim,T}, v2::Vec{dim,T}) where {dim, T} =  rad2deg(angle(v1, v2))
+
+"""
+    normalize(v::Ferrite.Vec)
+
+Compute the normalized vector.
+"""
+function normalize(v::Ferrite.Vec)
+    all(isapprox.(v, 0.0)) && return zero(v)
+    return v / norm(v)
+end
 
 """
     unproject(v::Vec{dim,T}, n::Vec{dim,T}, α::T)::Vec{dim, T}
@@ -51,9 +83,9 @@ resulting vector is `α` (given in radians).
          and `v \\cdot n = 0`.
 """
 @inline function unproject(v::Vec{dim,T}, n::Vec{dim,T}, α::T)::Vec{dim, T} where {dim, T}
-    @debug @assert norm(v) ≈ 1.0
-    @debug @assert norm(n) ≈ 1.0
-    @debug @assert v ⋅ n ≈ 0.0
+    @debugonly @assert norm(v) ≈ 1.0
+    @debugonly @assert norm(n) ≈ 1.0
+    @debugonly @assert v ⋅ n ≈ 0.0
 
     α ≈ π/2.0 && return n # special case to prevent division by 0
 
@@ -69,7 +101,7 @@ Perform a Rodrigues' rotation of the vector `v` around the axis `a` with `θ` ra
 !!! note It is assumed that the vectors are normalized, i.e. `||v|| = 1` and `||a|| = 1`.
 """
 @inline function rotate_around(v::Vec{dim,T}, a::Vec{dim,T}, θ::T)::Vec{dim,T} where {dim, T}
-    @debug @assert norm(n) ≈ 1.0
+    @debugonly @assert norm(n) ≈ 1.0
 
     return v * cos(θ) + (a × v) * sin(θ) + a * (a ⋅ v) * (1-cos(θ))
 end
@@ -110,12 +142,10 @@ end
 
 orthogonalize_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3}) = orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂), v₃/norm(v₃))
 
-"""
-"""
-function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) where {ref_shape, order}
-    n_base = Ferrite.getnbasefunctions(ip)
-    positions = Ferrite.reference_coordinates(ip)
-    return QuadratureRule{ref_shape, Float64}(ones(length(positions)), positions)
+# Compute the relative rotation of `v_from_in` to `v_to` around `n` using the left hand rule.
+function compute_relative_rotation(v_from_in::Vec{3}, v_to::Vec{3}, n::Vec{3})
+    v_from = sign(v_from_in ⋅ v_to) * v_from_in
+    sign((v_from × v_to) ⋅ n) * acos(clamp(v_from ⋅ v_to, -0.9999, 0.9999))
 end
 
 """
@@ -140,7 +170,7 @@ function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::Abstr
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
-    
+
     @batch minbatch = size(y, 1) ÷ Threads.nthreads() for row in 1:size(y, 1)
         @inbounds begin
             v = zero(eltype(y))
@@ -220,22 +250,8 @@ function Ferrite.apply_zero!(K::SparseMatrixCSR, f::AbstractVector, ch::Constrai
     end
 end
 
-function Ferrite.zero_out_rows!(K::SparseMatrixCSR, dofs::Vector{Int}) # can be removed in 0.7 with #24711 merged
-    Ferrite.@debug @assert issorted(dofs)
-    for col in dofs
-        r = nzrange(K, col)
-        K.nzval[r] .= 0.0
-    end
-end
-
-function Ferrite.zero_out_columns!(K::SparseMatrixCSR, dofmapping::Dict)
-    colval = K.colval
-    nzval = K.nzval
-    @inbounds for i in eachindex(colval, nzval)
-        if haskey(dofmapping, colval[i])
-            nzval[i] = 0
-        end
-    end
+function Ferrite.start_assemble(K::ThreadedSparseMatrixCSR, args...; kwargs...)
+    start_assemble(K.A, args...;kwargs...)
 end
 
 # struct RHSDataCSR{T}
@@ -339,7 +355,7 @@ end
 
 """
 """
-struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{<:Int}, DofMapType <: AbstractVector{<:ElementDofPair}} <: AbstractVector{T}
+struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{<:Integer}, DofMapType <: AbstractVector{<:ElementDofPair}} <: AbstractVector{T}
     # Buffer for the per element data
     eadata::DenseDataRange{EADataType, IndexType}
     # Map from global dof index to element index and local dof index
@@ -347,7 +363,7 @@ struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{
 end
 
 Base.size(v::EAVector) = size(v.eadata)
-Base.getindex(v::EAVector, i::Int) = getindex(v.eadata, i)
+Base.getindex(v::EAVector, i::Integer) = getindex(v.eadata, i)
 
 function Base.show(io::IO, mime::MIME"text/plain", data::EAVector{T, EADataType, IndexType}) where {T, EADataType, IndexType}
     println(io, "EAVector{T=", T, ", EADataType=", EADataType, ", IndexType=", IndexType, "} with storate for ", size(data.eadata), " entries." )
@@ -355,19 +371,20 @@ end
 
 @inline get_data_for_index(r::EAVector, i::Integer) = get_data_for_index(r.eadata, i)
 
-function EAVector(dh::DofHandler)
+EAVector(dh::DofHandler) = EAVector(Float64, Int, dh)
+function EAVector(::Type{ValueType}, ::Type{IndexType}, dh::DofHandler) where {ValueType,IndexType}
     @assert length(dh.field_names) == 1
     map  = create_dof_to_element_map(dh)
     grid = get_grid(dh)
 
     num_entries = length(dh.cell_dofs)
-    eadata      = zeros(num_entries)
-    eaoffsets   = Int64[]
+    eadata      = zeros(ValueType, num_entries)
+    eaoffsets   = IndexType[]
     next_offset = 1
     push!(eaoffsets, next_offset)
     for i in 1:getncells(grid)
         next_offset += ndofs_per_cell(dh, i)
-        push!(eaoffsets, next_offset)
+        push!(eaoffsets, IndexType(next_offset))
     end
 
     return EAVector(
@@ -389,11 +406,6 @@ end
         be_range = get_data_for_index(bes.eadata, edp.element_index)
         b[dof] += be_range[edp.local_dof_index]
     end
-end
-
-struct ChunkLocalAssemblyData{CellCacheType, ElementCacheType}
-    cc::CellCacheType
-    ec::ElementCacheType
 end
 
 create_dof_to_element_map(dh::DofHandler) = create_dof_to_element_map(Int, dh::DofHandler)
@@ -432,6 +444,8 @@ end
 # To handle embedded elements in the same code
 _inner_product_helper(a::Vec, B::Union{Tensor, SymmetricTensor}, c::Vec) = a ⋅ B ⋅ c
 _inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector) = Vec(a.data) ⋅ B ⋅ Vec(c.data)
+_inner_product_helper(a::Vec, B::AbstractFloat, c::Vec) = a ⋅ c * B
+_inner_product_helper(a::SVector, B::AbstractFloat, c::SVector) = Vec(a.data) ⋅ Vec(c.data) * B
 
 
 function geometric_subdomain_interpolation(sdh::SubDofHandler)
@@ -451,14 +465,81 @@ function adapt_vector_type(::Type{<:Vector}, v::VT) where VT
     return v
 end
 
-function _get_vertex(val::Vec, grid::AbstractGrid)
+function get_closest_vertex(val::Vec, grid::AbstractGrid)
+    distance = Inf
+    closest_vertex = VertexIndex(1, 1)
+    snap_size = 1e-8
     for (cell_idx, cell) in enumerate(getcells(grid))
         for (vertex_idx, vertex) in enumerate(vertices(cell))
-            for node_idx in vertex # ?
-                val ≈ get_node_coordinate(grid, node_idx) && return VertexIndex(cell_idx, vertex_idx)
+            distance2 = norm(val - get_node_coordinate(grid, vertex))
+            if distance2 < distance
+                distance = distance2
+                closest_vertex = VertexIndex(cell_idx, vertex_idx)
+                if distance ≤ snap_size
+                    return closest_vertex
+                end
             end
         end
     end
-    @error "No vertices found with specified coordinates"
-    return nothing
+    return closest_vertex
+end
+
+@generated function dot_2_1(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_2_1t(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_3_1(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_3_1t(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
 end

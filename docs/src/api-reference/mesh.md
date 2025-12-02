@@ -10,14 +10,17 @@ Thunderbolt.to_mesh
 Thunderbolt.elementtypes
 ```
 
-## Coordinate Systems
+## [Coordinate Systems](@id coordinate-system-api)
 
 ```@docs
-Thunderbolt.CartesianCoordinateSystem
-Thunderbolt.LVCoordinateSystem
+CartesianCoordinateSystem
+LVCoordinateSystem
+LVCoordinate
+BiVCoordinateSystem
+BiVCoordinate
 ```
 
-## Mesh Generators
+## [Mesh Generators](@id mesh-generator-api)
 
 ```@docs
 generate_mesh
@@ -28,7 +31,7 @@ generate_quadratic_open_ring_mesh
 generate_ideal_lv_mesh
 ```
 
-## Utility
+## [Utility](@id mesh-utility-api)
 
 ```@docs
 Thunderbolt.hexahedralize

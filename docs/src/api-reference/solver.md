@@ -10,10 +10,19 @@ DocTestSetup = :(using Thunderbolt)
 SchurComplementLinearSolver
 ```
 
+## Preconditioners
+
+```@docs
+Thunderbolt.Preconditioners.BlockPartitioning
+Thunderbolt.Preconditioners.L1GSPrecBuilder
+Thunderbolt.Preconditioners.L1GSPreconditioner
+```
+
 ## Nonlinear
 
 ```@docs
 NewtonRaphsonSolver
+MultiLevelNewtonRaphsonSolver
 ```
 
 
@@ -21,18 +30,9 @@ NewtonRaphsonSolver
 
 ```@docs
 BackwardEulerSolver
-ForwardEulerSolver
 ForwardEulerCellSolver
 AdaptiveForwardEulerSubstepper
-LoadDrivenSolver
-```
-
-## Operator Splitting Module
-
-```@docs
-Thunderbolt.OS.LieTrotterGodunov
-Thunderbolt.OS.GenericSplitFunction
-Thunderbolt.OS.OperatorSplittingIntegrator
+HomotopyPathSolver
 ```
 
 ## Operator Splitting Adaptivity

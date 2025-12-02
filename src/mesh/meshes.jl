@@ -1,7 +1,7 @@
 
 # abstract type AbstractSurface end
 # abstract type AbstractPath end
-# struct ConformingFace3D <: AbstractSurface
+# struct ConformingFacet3D <: AbstractSurface
 #     cellidx_a::Int
 #     cellidx_b::Int
 #     defining_nodes::NTuple{3,Int}
@@ -24,48 +24,3 @@ include("tools.jl")
 include("generators.jl")
 
 Ferrite.PointEvalHandler(mesh::SimpleMesh{sdim}, points::AbstractVector{Vec{sdim, T}}) where {sdim, T} = Ferrite.PointEvalHandler(mesh.grid, points)
-
-
-# TODO where to put this?
-"""
-    ApproximationDescriptor(symbol, interpolation_collection)
-"""
-struct ApproximationDescriptor
-    sym::Symbol
-    ipc::InterpolationCollection
-end
-
-function add_subdomain!(dh::DofHandler{<:Any, <:SimpleMesh}, name::String, approxmations::Vector{ApproximationDescriptor})
-    mesh = dh.grid
-    cells = mesh.grid.cells
-    haskey(mesh.volumetric_subdomains, name) || error("Volumetric Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.volumetric_subdomains))")
-    for (celltype, cellset) in mesh.volumetric_subdomains[name].data
-        dh_solid_quad = SubDofHandler(dh, OrderedSet{Int}([idx.idx for idx in cellset]))
-        for ad in approxmations
-            # add!(dh_solid_quad, ad.sym, getinterpolation(ad.ipc, celltype))
-            add!(dh_solid_quad, ad.sym, getinterpolation(ad.ipc, cells[first(dh_solid_quad.cellset)]))
-        end
-    end
-end
-
-# function add_surface_subdomain!(dh::DofHandler{<:Any, <:SimpleMesh}, name::String, approxmations::Vector{ApproximationDescriptor})
-#     mesh = dh.grid
-#     haskey(mesh.surface_subdomains, name) || error("Surface Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.surface_subdomains))")
-#     for (celltype, cellset) in mesh.surface_subdomains[name].data
-#         dh_solid_quad = SubDofHandler(dh, cellset)
-#         for ad in approxmations
-#             add!(dh_solid_quad, ad.sym, getinterpolation(ipc, celltype))
-#         end
-#     end
-# end
-
-# function add_interface_subdomain!(dh::DofHandler{<:Any, <:SimpleMesh}, name::String, approxmations::Vector{ApproximationDescriptor})
-#     mesh = dh.grid
-#     haskey(mesh.interface_subdomains, name) || error("Interface Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.interface_subdomains))")
-#     for (celltype, cellset) in mesh.interface_subdomains[name].data
-#         dh_solid_quad = SubDofHandler(dh, cellset)
-#         for ad in approxmations
-#             add!(dh_solid_quad, ad.sym, getinterpolation(ipc, celltype))
-#         end
-#     end
-# end

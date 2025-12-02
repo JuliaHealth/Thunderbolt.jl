@@ -1,9 +1,8 @@
-abstract type AbstractLinearBlockAlgorithm <: LinearSolve.SciMLLinearSolveAlgorithm end # Why not the following? <: LinearSolve.AbstractLinearAlgorithm end
-
+abstract type AbstractLinearBlockAlgorithm <: LinearSolve.SciMLLinearSolveAlgorithm end
 abstract type AbstractLinear2x2BlockAlgorithm <: AbstractLinearBlockAlgorithm end
 
 @doc raw"""
-    SchurComplementLinearSolver(inner_alg::AbstractLinearAlgorithm)
+    SchurComplementLinearSolver(inner_alg::SciMLBase.AbstractLinearAlgorithm)
 
 A solver for block systems of the form
 ```math
@@ -24,7 +23,7 @@ A solver for block systems of the form
 with small zero block of size $N_2 \times N_2$ and invertible $A_{11}$ with size $N_1 \times N_1$.
 The inner linear solver is responsible to solve for $N_2$ systems of the form $A_{11} z_i = c_i$.
 """
-struct SchurComplementLinearSolver{ASolverType <: LinearSolve.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
+struct SchurComplementLinearSolver{ASolverType <: SciMLBase.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
     inner_alg::ASolverType
 end
 
@@ -49,10 +48,7 @@ struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
     algscratch::scratchType
 end
 
-# FIXME This does not work for some reason...
-LinearSolve.default_alias_A(alg::AbstractLinearBlockAlgorithm, A::AbstractBlockMatrix, b) = true
-
-function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::AbstractBlockMatrix, b::AbstractVector, u::AbstractVector, Pl, Pr, maxiters::Int, abstol, reltol, verbose::Bool, assumptions::LinearSolve.OperatorAssumptions; zeroinit = true)
+function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::AbstractBlockMatrix, b::AbstractVector, u::AbstractVector, args...; kwargs...)
     # Check if input is okay
     bs = blocksizes(A)
     @assert size(bs) == (2,2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(size(bs))."
@@ -75,13 +71,9 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     @assert A₁₁ === inner_prob.A
     innersolve = LinearSolve.init(
         inner_prob,
-        alg.inner_alg;
-        alias_A = true,
-        Pl, Pr,
-        verbose,
-        maxiters,
-        reltol,
-        abstol,
+        alg.inner_alg,
+        args...;
+        kwargs...,
     )
 
     # Storage for intermediate values

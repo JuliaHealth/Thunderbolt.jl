@@ -1,0 +1,11 @@
+[deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CirculatorySystemModels = "4211d73e-f4e8-40c4-b600-92e4b82f0e1a"
+Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
+KrylovPreconditioners = "45d422c2-293f-44ce-8315-2cb988662dec"
+LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
+Thunderbolt = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
+UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"

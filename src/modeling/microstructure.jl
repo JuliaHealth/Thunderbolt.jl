@@ -27,6 +27,7 @@ struct AnisotropicPlanarMicrostructure{T} <: AbstractOrthotropicMicrostructure
     f::Vec{2,T}
     s::Vec{2,T}
 end
+Base.zero(::Type{AnisotropicPlanarMicrostructure{T}}) where T = AnisotropicPlanarMicrostructure(zero(Vec{3,T}), zero(Vec{3,T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::AnisotropicPlanarMicrostructure, λ::SVector{2})
@@ -41,6 +42,14 @@ end
 struct AnisotropicPlanarMicrostructureCache{FC, SC}
     fiber_cache::FC
     sheetlet_cache::SC
+end
+
+function duplicate_for_device(device, cache::AnisotropicPlanarMicrostructureCache)
+    return AnisotropicPlanarMicrostructureCache(
+        duplicate_for_device(device, cache.fiber_cache),
+        duplicate_for_device(device, cache.sheetlet_cache),
+        duplicate_for_device(device, cache.normal_cache),
+    )
 end
 
 function setup_coefficient_cache(coefficient::AnisotropicPlanarMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
@@ -61,6 +70,7 @@ end
 struct TransverselyIsotropicMicrostructure{dim, T} <: AbstractTransverselyIsotropicMicrostructure
     f::Vec{dim,T}
 end
+Base.zero(::Type{TransverselyIsotropicMicrostructure{T}}) where T = TransverselyIsotropicMicrostructure(zero(Vec{dim,T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::TransverselyIsotropicMicrostructure, λ::SVector{2})
@@ -74,6 +84,12 @@ end
 
 struct TransverselyIsotropicMicrostructureCache{FC}
     fiber_cache::FC
+end
+
+function duplicate_for_device(device, cache::TransverselyIsotropicMicrostructureCache)
+    return TransverselyIsotropicMicrostructureCache(
+        duplicate_for_device(device, cache.fiber_cache),
+    )
 end
 
 function setup_coefficient_cache(coefficient::TransverselyIsotropicMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
@@ -93,6 +109,7 @@ struct OrthotropicMicrostructure{T} <: AbstractOrthotropicMicrostructure
     s::Vec{3,T}
     n::Vec{3,T}
 end
+Base.zero(::Type{OrthotropicMicrostructure{T}}) where T = OrthotropicMicrostructure(zero(Vec{dim,T}), zero(Vec{dim,T}), zero(Vec{dim,T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::OrthotropicMicrostructure, λ::SVector{3})
@@ -111,6 +128,14 @@ struct OrthotropicMicrostructureCache{FC, SC, NC}
     normal_cache::NC
 end
 
+function duplicate_for_device(device, cache::OrthotropicMicrostructureCache)
+    return OrthotropicMicrostructureCache(
+        duplicate_for_device(device, cache.fiber_cache),
+        duplicate_for_device(device, cache.sheetlet_cache),
+        duplicate_for_device(device, cache.normal_cache),
+    )
+end
+
 function setup_coefficient_cache(coefficient::OrthotropicMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
     return OrthotropicMicrostructureCache(
         setup_coefficient_cache(coefficient.fiber_coefficient, qr, sdh),
@@ -127,40 +152,55 @@ function evaluate_coefficient(fsn::OrthotropicMicrostructureCache, cell_cache, q
     return OrthotropicMicrostructure(orthogonalize_system(f, s, n)...)
 end
 
+"""
+Linear transmural distribution of the microstructure with three angles to describe all reachable physiological angles.
+"""
+Base.@kwdef struct ODB25LTMicrostructureParameters{T}
+    αendo::T = deg2rad(60.0)
+    αepi::T  = deg2rad(-60.0)
+    βendo::T = 0.0
+    βepi::T  = 0.0
+    γendo::T = 0.0
+    γepi::T  = 0.0
+end
 
 """
-    streeter_type_fsn(transmural_direction::Vec{3}, circumferential_direction::Vec{3}, apicobasal_direction::Vec{3}, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal=true)
+    compute_local_microstructure(params::..., x, axes)
 
 Compute fiber, sheetlet and normal direction from the transmural, circumferential, apicobasal directions
 in addition to given helix, transversal and sheetlet angles. The theory is based on the classical work by
 [StreSpoPatRosSon:1969:foc](@citet).
 """
-function streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal=true)
-    # First we construct the helix rotation ...
-    f₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle)
-    f₀ /= norm(f₀)
+function compute_local_microstructure(p::ODB25LTMicrostructureParameters, x::Union{LVCoordinate, BiVCoordinate}, axes::Union{LVCoordinate, BiVCoordinate})
+    (; αendo, αepi, βendo, βepi, γendo, γepi) = p
+
+    # linear interpolation of rotation angle
+    α = (1-x.transmural) * αendo + (x.transmural) * αepi
+    β = (1-x.transmural) * βendo + (x.transmural) * βepi
+    γ = (1-x.transmural) * γendo + (x.transmural) * γepi
+
+    circumferential_direction = axes.rotational
+    transmural_direction      = axes.transmural
+    apicobasal_direction      = axes.apicobasal
+
+    # First we abc_fsn the helix rotation ...
+    f₀ = rotate_around(circumferential_direction, transmural_direction, α)
+    f₀ = normalize(f₀)
     # ... followed by the transversal_angle ...
-    f₀ = rotate_around(f₀, apicobasal_direction, transversal_angle)
-    f₀ /= norm(f₀)
+    f₀ = rotate_around(f₀, apicobasal_direction, -β)
+    f₀ = normalize(f₀)
 
     # Then we construct the the orthogonal sheetlet vector ...
-    s₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle+π/2.0)
-    s₀ /= norm(f₀)
-    # FIXME this does not preserve the sheetlet angle
-    s₀ = unproject(s₀, -transmural_direction, sheetlet_pseudo_angle)
-    if make_orthogonal
-        s₀ = orthogonalize(s₀/norm(s₀), f₀)
-    end
-    # TODO replace above with an implementation of the following pseudocode
-    # 1. Compute plane via P = I - f₀ ⊗ f₀
-    # 2. Eigen decomposition E of P
-    # 3. Compute a generalized eigenvector s' from the non-zero eigenvalue (with ||s'||=1) from E such that <f₀,s'> minimal
-    # 4. Compute s₀ by rotating s' around f₀ such that cos(sheetlet angle) = <s',f₀>
-    s₀ /= norm(s₀)
+    s₀ = rotate_around(circumferential_direction, transmural_direction, α+π/2.0)
+    s₀ = normalize(s₀)
+    s₀ = orthogonalize(s₀, f₀)
+    s₀ = normalize(s₀)
+    s₀ = rotate_around(s₀, f₀, -γ)
+    s₀ = normalize(s₀)
 
     # Compute normal :)
     n₀ = f₀ × s₀
-    n₀ /= norm(n₀)
+    n₀ = normalize(n₀)
 
     return OrthotropicMicrostructure(f₀, s₀, n₀)
 end
@@ -169,11 +209,17 @@ end
     create_simple_microstructure_model(coordinate_system, ip_component::VectorInterpolationCollection; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0, make_orthogonal=true)
 
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
-
-!!! note
-    FIXME! Sheetlet angle construction is broken (i.e. does not preserve input angle).
 """
-function create_simple_microstructure_model(coordinate_system, ip_collection::VectorizedInterpolationCollection{3}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true)
+function create_simple_microstructure_model(coordinate_system, ip_collection::VectorizedInterpolationCollection{3}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, endo_rot_angle = 0.0, epi_rot_angle = 0.0)
+    return create_microstructure_model(coordinate_system, ip_collection, ODB25LTMicrostructureParameters(endo_helix_angle, epi_helix_angle, endo_transversal_angle, epi_transversal_angle, endo_rot_angle, epi_rot_angle))
+end
+
+"""
+    create_microstructure_model(coordinate_system::CoordinateSystemCoefficient, ip::VectorInterpolationCollection, parameters)
+
+Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
+"""
+function create_microstructure_model(coordinate_system::CoordinateSystemCoefficient, ip_collection::VectorizedInterpolationCollection{3}, parameters)
     @unpack dh = coordinate_system
 
     # TODO this storage is redundant, can we reduce the memory footprint?
@@ -202,19 +248,26 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
                 apicobasal_direction /= norm(apicobasal_direction)
                 transmural_direction = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
                 transmural_direction /= norm(transmural_direction)
-                circumferential_direction = apicobasal_direction × transmural_direction
+                apicobasal_direction = apicobasal_direction - (apicobasal_direction ⋅ transmural_direction) * transmural_direction # We do this fix to ensure local orthogonality
+                circumferential_direction = transmural_direction × apicobasal_direction
                 circumferential_direction /= norm(circumferential_direction)
+                axes = LVCoordinate(;
+                    transmural = transmural_direction,
+                    rotational = circumferential_direction,
+                    apicobasal = apicobasal_direction,
+                )
+                # TODO grab these via some interface!
+                x = LVCoordinate(;
+                    transmural = function_value(cv, qp, coordinate_system.u_transmural[dof_indices]),
+                    rotational = function_value(cv, qp, coordinate_system.u_rotational[dof_indices]),
+                    apicobasal = function_value(cv, qp, coordinate_system.u_apicobasal[dof_indices]),
+                )
 
-                transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
+                coeff = compute_local_microstructure(parameters, x, axes)
 
-                # linear interpolation of rotation angle
-                helix_angle       = (1-transmural) * endo_helix_angle + (transmural) * epi_helix_angle
-                transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
-
-                coeff = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
-                f_buf[qp.i, cellindex] = coeff.f
-                s_buf[qp.i, cellindex] = coeff.s
-                n_buf[qp.i, cellindex] = coeff.n
+                f_buf[qp.i, cellindex] = Tv(coeff.f)
+                s_buf[qp.i, cellindex] = Tv(coeff.s)
+                n_buf[qp.i, cellindex] = Tv(coeff.n)
             end
         end
     end

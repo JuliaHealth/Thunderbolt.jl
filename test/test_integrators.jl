@@ -1,51 +1,50 @@
-import Thunderbolt: OS, ThunderboltTimeIntegrator
+import Thunderbolt: Thunderbolt, ThunderboltTimeIntegrator
+using DiffEqBase, OrdinaryDiffEqOperatorSplitting, Thunderbolt
+using OrdinaryDiffEqLowOrderRK
 # using BenchmarkTools
 using UnPack
+using Test
+
+# For testing purposes
+struct DummyForwardEuler <: Thunderbolt.AbstractSolver
+end
+
+DiffEqBase.isadaptive(::DummyForwardEuler) = false
+
+mutable struct DummyForwardEulerCache{duType, uType, duMatType} <: Thunderbolt.AbstractTimeSolverCache
+    du::duType
+    dumat::duMatType
+    uₙ::uType
+    uₙ₋₁::uType
+end
+
+# Dispatch for leaf construction
+Thunderbolt.num_states(::ODEFunction) = 2                   # FIXME
+Thunderbolt.transmembranepotential_index(::ODEFunction) = 1 # FIXME
+
+function Thunderbolt.setup_solver_cache(f::Any, solver::DummyForwardEuler, t₀; u = nothing, uprev = nothing)
+    n = u === nothing ? Thunderbolt.num_states(f) : length(u)
+    du      = zeros(n)
+    uₙ      = u === nothing ? zeros(n) : u
+    uₙ₋₁    = uprev === nothing ? zeros(n) : uprev
+    dumat = reshape(du, (:,1))
+
+    return DummyForwardEulerCache(du, dumat, uₙ, uₙ₋₁)
+end
+
+# Dispatch innermost solve
+function Thunderbolt.OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache)
+    (; f, dt, u, p, t) = integ
+    (; du) = cache
+
+    f isa Thunderbolt.PointwiseODEFunction ? f.ode(du, u, p, t) : f(du, u, p, t)
+    @. u += dt * du
+    cache.dumat[:,1] .= du
+
+    return true
+end
 
 @testset "Operator Splitting API" begin
-
-    ODEFunction = Thunderbolt.DiffEqBase.ODEFunction
-
-    # For testing purposes
-    struct DummyForwardEuler <: Thunderbolt.AbstractSolver
-    end
-
-    mutable struct DummyForwardEulerCache{duType, uType, duMatType} <: Thunderbolt.AbstractTimeSolverCache
-        du::duType
-        dumat::duMatType
-        uₙ::uType
-        uₙ₋₁::uType
-    end
-
-    # Dispatch for leaf construction
-    function OS.construct_inner_cache(f::ODEFunction, alg::DummyForwardEuler, u::AbstractArray, uprev::AbstractArray)
-        dumat = reshape(uprev, (:,1))
-        DummyForwardEulerCache(copy(uprev), dumat, copy(uprev), copy(uprev))
-    end
-    Thunderbolt.num_states(::Any) = 2
-    Thunderbolt.transmembranepotential_index(::Any) = 1
-
-    function Thunderbolt.setup_solver_cache(f::PointwiseODEFunction, solver::DummyForwardEuler, t₀)
-        @unpack npoints, ode = f
-
-        du      = Thunderbolt.create_system_vector(Vector{Float64}, f)
-        uₙ      = Thunderbolt.create_system_vector(Vector{Float64}, f)
-        uₙ₋₁    = Thunderbolt.create_system_vector(Vector{Float64}, f)
-        dumat = reshape(du, (:,1))
-
-        return DummyForwardEulerCache(du, dumat, uₙ, uₙ₋₁)
-    end
-
-    # Dispatch innermost solve
-    function OS.advance_solution_to!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache, tend)
-        @unpack f, dt, u, p, t = integ
-        @unpack du = cache
-
-        f isa Thunderbolt.PointwiseODEFunction ? f.ode(du, u, p, t) : f(du, u, p, t)
-        @. u += dt * du
-        cache.dumat[:,1] .= du
-    end
-
     # Operator splitting
 
     # Reference
@@ -81,6 +80,7 @@ using UnPack
     )
 
     fsplit1 = GenericSplitFunction((f1,fpw), (f1dofs, f2dofs))
+    fsplit1b = GenericSplitFunction((f1,f2), (f1dofs, f2dofs))
 
     # Now the usual setup just with our new problem type.
     # u0 = rand(3)
@@ -88,7 +88,8 @@ using UnPack
         0.9059606424982555
         0.5755174199139956]
     tspan = (0.0,100.0)
-    prob = OperatorSplittingProblem(fsplit1, u0, tspan)
+    prob1 = OperatorSplittingProblem(fsplit1, u0, tspan)
+    probb = OperatorSplittingProblem(fsplit1b, u0, tspan)
 
     # Now some recursive splitting
     function ode3(du, u, p, t)
@@ -103,10 +104,13 @@ using UnPack
     f1dofs = [1,2,3]
     f2dofs = [1,3]
     f3dofs = [1,3]
-    fsplit2_inner = GenericSplitFunction((fpw,f3), (f3dofs, f3dofs))
+    fsplit2_inner = GenericSplitFunction((fpw,f3), (f2dofs, f3dofs))
     fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), (f1dofs, f2dofs))
+    fsplit2_innerb = GenericSplitFunction((f2,f3), (f2dofs, f3dofs))
+    fsplit2_outerb = GenericSplitFunction((f1,fsplit2_innerb), (f1dofs, f2dofs))
 
     prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
+    prob2b = OperatorSplittingProblem(fsplit2_outerb, u0, tspan)
 
     function ode_NaN(du, u, p, t)
         du[1] = NaN
@@ -122,6 +126,9 @@ using UnPack
     f_NaN_dofs = f3dofs
     fsplit_NaN = GenericSplitFunction((f1,fpw_NaN), (f1dofs, f_NaN_dofs))
     prob_NaN = OperatorSplittingProblem(fsplit_NaN, u0, tspan)
+
+    fsplit_NaNb = GenericSplitFunction((f1,f_NaN), (f1dofs, f_NaN_dofs))
+    prob_NaNb = OperatorSplittingProblem(fsplit_NaNb, u0, tspan)
 
     fsplit_multiple_pwode_outer = GenericSplitFunction((fpw,fsplit2_inner), (f3dofs, f2dofs))
 
@@ -141,102 +148,188 @@ using UnPack
     fsplit_force_half = GenericSplitFunction((f1,fpw_force_half), (f1dofs, f2dofs))
     prob_force_half = OperatorSplittingProblem(fsplit_force_half, u0, tspan)
 
-    dt = 0.01π
-    adaptive_tstep_range = (dt * 1, dt * 5)
-    @testset "OperatorSplitting" begin
+    dt = 0.1π
+    adaptive_tstep_range = (dt * 1, dt * 1)
+    @testset "Internal consistency" failfast = true begin
         for TimeStepperType in (LieTrotterGodunov,)
-            timestepper = TimeStepperType(
+            timestepper0 = TimeStepperType(
+                (Euler(), Euler())
+            )
+            timestepper1 = TimeStepperType(
                 (DummyForwardEuler(), DummyForwardEuler())
             )
-            timestepper_adaptive = Thunderbolt.ReactionTangentController(timestepper, 0.5, 1.0, adaptive_tstep_range)
-            timestepper_inner = TimeStepperType(
+            timestepper1_adaptive = Thunderbolt.ReactionTangentController(timestepper1, 0.5, 1.0, adaptive_tstep_range)
+            timestepper1_inner = TimeStepperType(
                 (DummyForwardEuler(), DummyForwardEuler())
             )
-            timestepper_inner_adaptive = Thunderbolt.ReactionTangentController(timestepper_inner, 0.5, 1.0, adaptive_tstep_range) #TODO: Copy the controller instead
+            timestepper1_inner_adaptive = Thunderbolt.ReactionTangentController(timestepper1_inner, 0.5, 1.0, adaptive_tstep_range) #TODO: Copy the controller instead
+
             timestepper2 = TimeStepperType(
-                (DummyForwardEuler(), timestepper_inner)
+                (DummyForwardEuler(), timestepper1_inner)
             )
             timestepper2_adaptive = Thunderbolt.ReactionTangentController(timestepper2, 0.5, 1.0, adaptive_tstep_range)
 
-            for (tstepper1, tstepper_inner, tstepper2) in (
-                    (timestepper, timestepper_inner, timestepper2),
-                    (timestepper_adaptive, timestepper_inner_adaptive, timestepper2_adaptive)
-                    )
+            @testset "$timestepper" for (prob, timestepper) in (
+                    (prob1, timestepper1),
+                    (prob2, timestepper2),
+                    (prob1, timestepper1_adaptive),
+                    (prob2, timestepper2_adaptive),
+                )
                 # The remaining code works as usual.
-                integrator = DiffEqBase.init(prob, tstepper1, dt=dt, verbose=true)
+                integrator = DiffEqBase.init(prob, timestepper, dt=dt, verbose=true, alias_u0=false)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 ufinal = copy(integrator.u)
                 @test ufinal ≉ u0 # Make sure the solve did something
+                @test integrator.uprev ≉ u0
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
 
-                DiffEqBase.reinit!(integrator, u0; tspan)
+                DiffEqBase.reinit!(integrator)
+                # integrator.dt = dt
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+                lastu = copy(integrator.u)
+                for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+                    lastu .= u
+                end
+                @test lastu ≈ integrator.u
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+                @test isapprox(ufinal, integrator.u, atol=1e-6)
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
+
+                DiffEqBase.reinit!(integrator)
+                # integrator.dt = dt
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+                for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
+                end
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+                @test isapprox(ufinal, integrator.u, atol=1e-6)
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
+
+                DiffEqBase.reinit!(integrator)
+                # integrator.dt = dt
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+                DiffEqBase.solve!(integrator)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
+            end
+
+            @testset "NaNs" begin
+                integrator_NaN = DiffEqBase.init(prob_NaN, timestepper1, dt=dt, verbose=true, alias_u0=false)
+                @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Default
+                DiffEqBase.solve!(integrator_NaN)
+                @test integrator_NaN.sol.retcode ∈ (DiffEqBase.ReturnCode.Unstable, DiffEqBase.ReturnCode.DtNaN)
+            end
+
+            integrator = DiffEqBase.init(prob1, timestepper1, dt=dt, verbose=true, alias_u0=false)
+            for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0) end
+            @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+
+            integrator_adaptive = DiffEqBase.init(prob1, timestepper1_adaptive, dt=dt, verbose=true, alias_u0=false)
+            for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0) end
+            @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+
+            @test  isapprox(integrator_adaptive.u, integrator.u, atol=1e-4)
+            @testset "Multiple `PointwiseODEFunction`s" begin
+                integrator_multiple_pwode = DiffEqBase.init(prob_multiple_pwode, timestepper2_adaptive, dt=dt, verbose=true, alias_u0=false)
+                @test_throws AssertionError("No or multiple integrators using PointwiseODEFunction found") DiffEqBase.solve!(integrator_multiple_pwode)
+            end
+            @testset "σ_s = Inf, R = σ_c" begin
+                timestepper_stepfunc_adaptive = Thunderbolt.ReactionTangentController(timestepper1, Inf, 0.5, adaptive_tstep_range)
+                integrator_stepfunc_adaptive = DiffEqBase.init(prob_force_half, timestepper_stepfunc_adaptive, dt=dt, verbose=true, alias_u0=false)
+                DiffEqBase.solve!(integrator_stepfunc_adaptive)
+                @test integrator_stepfunc_adaptive.sol.retcode == DiffEqBase.ReturnCode.Success
+                @test integrator_stepfunc_adaptive.dtcache == timestepper_stepfunc_adaptive.Δt_bounds[2]
+            end
+        end
+    end
+
+    @testset "OrdinaryDiffEqLowOrderRK compat" failfast=true begin
+        for TimeStepperType in (LieTrotterGodunov,)
+            timestepper = TimeStepperType(
+                (DummyForwardEuler(), Euler())
+            )
+            timestepper_inner = TimeStepperType(
+                (Euler(), DummyForwardEuler())
+            )
+            timestepper2 = TimeStepperType(
+                (DummyForwardEuler(), timestepper_inner)
+            )
+
+            for (tstepper1, tstepper2) in (
+                    (timestepper, timestepper2),
+                )
+                # The remaining code works as usual.
+                integrator = DiffEqBase.init(probb, tstepper1, dt=dt, verbose=true, alias_u0=false)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+                DiffEqBase.solve!(integrator)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
+                ufinal = copy(integrator.u)
+                @test ufinal ≉ u0 # Make sure the solve did something
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
+
+                DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
                 end
                 @test  isapprox(ufinal, integrator.u, atol=1e-8)
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
 
-                DiffEqBase.reinit!(integrator, u0; tspan)
+                DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
                 end
                 @test  isapprox(ufinal, integrator.u, atol=1e-8)
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
 
-                DiffEqBase.reinit!(integrator, u0; tspan)
+                DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
 
-                integrator2 = DiffEqBase.init(prob2, tstepper2, dt=dt, verbose=true)
+                integrator2 = DiffEqBase.init(prob2b, tstepper2, dt=dt, verbose=true, alias_u0=false)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 ufinal2 = copy(integrator2.u)
                 @test ufinal2 ≉ u0 # Make sure the solve did something
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
 
-                DiffEqBase.reinit!(integrator2, u0; tspan)
+                DiffEqBase.reinit!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
                 end
                 @test isapprox(ufinal2, integrator2.u, atol=1e-8)
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
 
-                DiffEqBase.reinit!(integrator2, u0; tspan)
+                DiffEqBase.reinit!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
+                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.t    == tspan[2]
+
                 @testset "NaNs" begin
-                    integrator_NaN = DiffEqBase.init(prob_NaN, tstepper1, dt=dt, verbose=true)
+                    integrator_NaN = DiffEqBase.init(prob_NaNb, tstepper1, dt=dt, verbose=true, alias_u0=false)
                     @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Default
                     DiffEqBase.solve!(integrator_NaN)
-                    @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Failure
+                    @test integrator_NaN.sol.retcode ∈ (DiffEqBase.ReturnCode.Unstable, DiffEqBase.ReturnCode.DtNaN)
                 end
             end
-            integrator = DiffEqBase.init(prob, timestepper, dt=dt, verbose=true)
+            integrator = DiffEqBase.init(probb, timestepper, dt=dt, verbose=true, alias_u0=false)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0) end
-            integrator_adaptive = DiffEqBase.init(prob, timestepper_adaptive, dt=dt, verbose=true)
-            for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0) end
-            @test  isapprox(integrator_adaptive.u, integrator.u, atol=1e-5)
-            @testset "Multiple `PointwiseODEFunction`s" begin
-                integrator_multiple_pwode = DiffEqBase.init(prob_multiple_pwode, timestepper2_adaptive, dt=dt, verbose=true)
-                @test_throws AssertionError("No or multiple integrators using PointwiseODEFunction found") DiffEqBase.solve!(integrator_multiple_pwode)
-            end
-            @testset "σ_s = Inf, R = σ_c" begin
-                timestepper_stepfunc_adaptive = Thunderbolt.ReactionTangentController(timestepper, Inf, 0.5, adaptive_tstep_range)
-                integrator_stepfunc_adaptive = DiffEqBase.init(prob_force_half, timestepper_stepfunc_adaptive, dt=dt, verbose=true)
-                DiffEqBase.solve!(integrator_stepfunc_adaptive)
-                @test integrator_stepfunc_adaptive._dt == timestepper_stepfunc_adaptive.Δt_bounds[2]
-            end
+            @test integrator.u ≉ u0 # Make sure the solve did something
         end
     end
-
-# tnext = tspan[1]+0.01
-# @btime OS.advance_solution_to!($integrator, $tnext) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
-#   326.743 ns (8 allocations: 416 bytes) for 1 (OUTDATED
-#   89.949 ns (0 allocations: 0 bytes) for 2 (OUTDATED
-#   31.418 ns (0 allocations: 0 bytes) for 3
-# @btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
-#   431.632 μs (10000 allocations: 507.81 KiB) for 1 (OUTDATED
-#   105.712 μs (0 allocations: 0 bytes) for 2 (OUTDATED)
-#   1.852 μs (0 allocations: 0 bytes) for 3
-
 end

@@ -25,12 +25,13 @@ with $a,b \geq 1$.
 Entry 1 from table 3 in [HarNef:2003:pgp](@cite).
 """
 @Base.kwdef struct HartmannNeffCompressionPenalty1{TD1, TD2}
-    a::TD1  = 1.0
-    b::TD1  = 2.0
+    a::TD1  = 1
+    b::TD1  = 2
     β::TD2  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty1)
-    mp.β * (I₃^mp.b + 1/I₃^mp.b - 2)^mp.a
+    I₃ < 0 && return NaN
+    return mp.β * (I₃^mp.b + 1/(I₃^mp.b) - 2)^mp.a
 end
 
 
@@ -48,24 +49,25 @@ Entry 2 from table 3 in [HarNef:2003:pgp](@cite).
     β::TD2  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty2)
-    mp.β * (√I₃-1)^mp.a
+    I₃ < 0 && return NaN
+    return mp.β * (√I₃-1)^mp.a
 end
 
 
 @doc raw"""
 An isochoric compression model where 
 
-$U(I_3) = \beta (I_3 - 2\log(\sqrt{I_3}) + 4\log(\sqrt{I_3})^2))$
+$U(I_3) = \beta (I_3 - 2\log(\sqrt{I_3}) + 4\log(\sqrt{I_3})^2) - 1)$
 
 Entry 3 from table 3 in [HarNef:2003:pgp](@cite).
 """
-@Base.kwdef struct HartmannNeffCompressionPenalty3{TD1, TD2}
-    a::TD1  = 1.0
-    b::TD1  = 2.0
-    β::TD2  = 1.0
+@Base.kwdef struct HartmannNeffCompressionPenalty3{T}
+    β::T  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty3)
-    mp.β * (I₃^mp.b + 1/I₃^mp.b - 2)^mp.a
+    I₃ < 0 && return NaN
+    J = √I₃
+    mp.β * (I₃ - 2log(J) + 4log(J)^2 - 1)
 end
 
 
@@ -79,7 +81,9 @@ A compression model with $U(I_3) = \beta (I_3 -1 - 2\log(\sqrt{I_3}))^a$.
     β::TD  = 1.0
 end
 function U(I₃::T, mp::SimpleCompressionPenalty) where {T}
-    mp.β * (I₃ - 1 - 2*log(sqrt(I₃)))
+    I₃ < 0 && return NaN
+    J = √I₃
+    mp.β * (I₃ - 1 - 2*log(J))
 end
 
 
@@ -148,7 +152,7 @@ function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::HolzapfelOgden2009M
     I₄ˢ = s₀ ⋅ C ⋅ s₀
     I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2.0
 
-    Ψᵖ = a/(2.0*b)*exp(b*(I₁-3.0)) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U(I₃, mpU)
+    Ψᵖ = a/(2.0*b)*(exp(b*(I₁-3.0))-1.0) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U(I₃, mpU)
     if I₄ᶠ >= 1.0
         Ψᵖ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
     end
@@ -283,7 +287,7 @@ Base.@kwdef struct Guccione1991PassiveModel{CPT}
     Bᶠⁿ::Float64 =  14.4
     mpU::CPT = SimpleCompressionPenalty(50.0)
 end
-function Thunderbolt.Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991PassiveModel)
+function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991PassiveModel)
     @unpack C₀, Bᶠᶠ, Bˢˢ, Bⁿⁿ, Bⁿˢ, Bᶠˢ, Bᶠⁿ, mpU = mp
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
 
@@ -307,7 +311,7 @@ function Thunderbolt.Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccion
 
     Q = Bᶠᶠ*Eᶠᶠ^2 + Bˢˢ*Eˢˢ^2 + Bⁿⁿ*Eⁿⁿ^2 + Bⁿˢ*(Eⁿˢ^2+Eˢⁿ^2) + Bᶠˢ*(Eᶠˢ^2+Eˢᶠ^2) + Bᶠⁿ*(Eᶠⁿ^2+Eⁿᶠ^2)
 
-    return C₀*exp(Q)/2.0 + Thunderbolt.U(I₃, mpU)
+    return C₀*exp(Q)/2.0 + U(I₃, mpU)
 end
 
 @doc raw"""
@@ -321,7 +325,7 @@ Base.@kwdef struct SimpleActiveSpring
     aᶠ::Float64  = 1.0
 end
 
-function Thunderbolt.Ψ(F, Fᵃ, coeff::AbstractTransverselyIsotropicMicrostructure, mp::SimpleActiveSpring)
+function Ψ(F, Fᵃ, coeff::AbstractTransverselyIsotropicMicrostructure, mp::SimpleActiveSpring)
     @unpack aᶠ = mp
     f₀ = coeff.f
 
@@ -438,17 +442,17 @@ end
 
 
 @doc raw"""
-    BioNeoHooekean
+    BioNeoHookean
     
 A simple isotropic Neo-Hookean model of the form
 
 $\Psi = \alpha (\bar{I_1}-3)$
 """
-Base.@kwdef struct BioNeoHooekean{TD,TU} #<: IsotropicMaterialModel
+Base.@kwdef struct BioNeoHookean{TD,TU} #<: IsotropicMaterialModel
     α::TD = 1.0
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, coeff, mp::BioNeoHooekean)
+function Ψ(F, coeff, mp::BioNeoHookean)
     # Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack α, mpU = mp
     C = tdot(F)

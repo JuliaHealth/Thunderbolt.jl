@@ -5,22 +5,33 @@ Classical Newton-Raphson solver to solve nonlinear problems of the form `F(u) = 
 To use the Newton-Raphson solver you have to dispatch on
 * [update_linearization!](@ref)
 """
-Base.@kwdef struct NewtonRaphsonSolver{T, solverType} <: AbstractNonlinearSolver
+Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType} <: AbstractNonlinearSolver
     # Convergence tolerance
     tol::T = 1e-4
     # Maximum number of iterations
     max_iter::Int = 100
     inner_solver::solverType = LinearSolve.KrylovJL_GMRES()
+    monitor::MonitorType = DefaultProgressMonitor()
+    enforce_monotonic_convergence::Bool = true
 end
 
-mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, InnerSolverCacheType} <: AbstractNonlinearSolverCache
+mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, NewtonType <: NewtonRaphsonSolver{T}, InnerSolverCacheType} <: AbstractNonlinearSolverCache
     # The nonlinear operator
     op::OpType
     # Cache for the right hand side f(u)
     residual::ResidualType
     #
-    const parameters::NewtonRaphsonSolver{T}
+    const parameters::NewtonType
     linear_solver_cache::InnerSolverCacheType
+    Θks::Vector{T} # TODO modularize this
+    #
+    iter::Int
+end
+
+function Base.show(io::IO, cache::NewtonRaphsonSolverCache)
+    println(io, "NewtonRaphsonSolverCache:")
+    Base.show(io, cache.parameters)
+    Base.show(io, cache.op)
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphsonSolver{T}) where {T}
@@ -33,11 +44,11 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphs
     inner_prob = LinearSolve.LinearProblem(
         getJ(op), residual; u0=Δu
     )
-    inner_cache = init(inner_prob, inner_solver; alias_A=true, alias_b=true)
+    inner_cache = init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A=true, alias_b=true))
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
-    NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
+    NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], 0)
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::NewtonRaphsonSolver{T}) where {T}
@@ -50,50 +61,77 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
     inner_prob = LinearSolve.LinearProblem(
         getJ(op), residual; u0=Δu
     )
-    inner_cache = init(inner_prob, inner_solver; alias_A=true, alias_b=true)
+    inner_cache = init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A=true, alias_b=true))
+    @assert inner_cache.alg == inner_solver
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
-    NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
+    NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], 0)
 end
 
-function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t)
-    @unpack op, residual, linear_solver_cache = cache
-    newton_itr = -1
+function nlsolve!(u::AbstractVector{T}, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t) where T
+    @unpack op, residual, linear_solver_cache, Θks = cache
+    monitor = cache.parameters.monitor
+    cache.iter = -1
     Δu = linear_solver_cache.u
+    residualnormprev = 0.0
+    incrementnormprev = 0.0
+    resize!(Θks, 0)
     while true
-        newton_itr += 1
-
-        residual .= 0.0
+        cache.iter += 1
+        fill!(residual, 0.0)
         @timeit_debug "update operator" update_linearization!(op, residual, u, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
         linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
 
-        # vtk_grid("newton-debug-$newton_itr", problem.structural_problem.dh) do vtk
-        #     vtk_point_data(vtk, f.structural_problem.dh, u[Block(1)])
-        #     vtk_point_data(vtk, f.structural_problem.dh, residual[Block(1)], :residual)
-        # end
-
         residualnorm = residual_norm(cache, f)
-        @info "Newton itr $newton_itr: ||r||=$residualnorm"
-        if residualnorm < cache.parameters.tol #|| (newton_itr > 0 && norm(Δu) < cache.parameters.tol)
+        if residualnorm < cache.parameters.tol && cache.iter > 0
+            push!(Θks, 0.0)
             break
-        elseif newton_itr > cache.parameters.max_iter
-            @warn "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm"
+        elseif cache.iter > cache.parameters.max_iter
+            push!(Θks,Inf)
+            @debug "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm" _group=:nlsolve
             return false
         elseif any(isnan.(residualnorm))
-            @warn "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm"
+            push!(Θks,Inf)
+            @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
             return false
         end
 
         @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
-        @info "Linear solver stats: $(sol.stats) - norm(Δu) = $(norm(Δu))"
+        nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
         solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
         eliminate_constraints_from_increment!(Δu, f, cache)
 
         u .-= Δu # Current guess
+        incrementnorm = norm(Δu)
+
+        if cache.iter > 0
+            Θk = min(residualnorm/residualnormprev, incrementnorm/incrementnormprev)
+            if residualnormprev ≈ 0.0 || incrementnormprev ≈ 0.0
+                push!(Θks, 0.0)
+            else
+                push!(Θks, Θk)
+            end
+            # Try to prevent oversolving when we really just wanted to force the solve to happen once.
+            if cache.iter == 1 && residualnormprev < eps(T) && residualnorm < eps(T) && incrementnorm < eps(T) && incrementnormprev < eps(T)
+                break
+            end
+            if cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0
+                @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
+                return false
+            end
+        end
+
+        # if incrementnorm < cache.parameters.tol
+        #     break
+        # end
+
+        residualnormprev  = residualnorm
+        incrementnormprev = incrementnorm
     end
+    nonlinear_finalize_monitor(cache, t, f, monitor)
     return true
 end

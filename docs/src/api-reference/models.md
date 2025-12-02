@@ -2,7 +2,7 @@
 DocTestSetup = :(using Thunderbolt)
 ```
 
-# Models
+# [Models](@id models-api)
 
 ## Coefficient
 
@@ -12,17 +12,16 @@ FieldCoefficient
 AnalyticalCoefficient
 SpectralTensorCoefficient
 SpatiallyHomogeneousDataField
-CoordinateSystemCoefficient
 evaluate_coefficient
 ```
 
-## Microstructure
+## [Microstructure](@id microstructure-api)
 
 ```@docs
 AnisotropicPlanarMicrostructureModel
 OrthotropicMicrostructureModel
-create_simple_microstructure_model
-Thunderbolt.streeter_type_fsn
+create_microstructure_model
+ODB25LTMicrostructureParameters
 ```
 
 ## Boundary Conditions
@@ -38,7 +37,7 @@ PressureFieldBC
 ## Solid Mechanics
 
 ```@docs
-StructuralModel
+QuasiStaticModel
 ExtendedHillModel
 GeneralizedHillModel
 ActiveStressModel
@@ -57,7 +56,7 @@ LinYinPassiveModel
 LinYinActiveModel
 HumphreyStrumpfYinModel
 Guccione1991PassiveModel
-Thunderbolt.BioNeoHooekean
+Thunderbolt.BioNeoHookean
 ```
 
 ### Active Energies

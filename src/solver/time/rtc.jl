@@ -32,8 +32,8 @@ end
 
 @inline DiffEqBase.get_tmp_cache(integrator::OS.OperatorSplittingIntegrator, alg::OS.AbstractOperatorSplittingAlgorithm, cache::ReactionTangentControllerCache) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
 
-@inline function OS.advance_solution_to!(subintegrators::Tuple, cache::ReactionTangentControllerCache, tnext) 
-    OS.advance_solution_to!(subintegrators, cache.ltg_cache, tnext)
+@inline function OS.advance_solution_to!(outer_integrator::OS.OperatorSplittingIntegrator, subintegrators::Tuple, solution_indices::Tuple, synchronizers::Tuple, cache::ReactionTangentControllerCache, tnext)
+    OS.advance_solution_to!(outer_integrator, subintegrators, solution_indices, synchronizers, cache.ltg_cache, tnext)
 end
 
 @inline DiffEqBase.isadaptive(::ReactionTangentController) = true
@@ -44,7 +44,7 @@ Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) 
 It is assumed that the problem containing the reaction tangent is a [`PointwiseODEFunction`](@ref).
 """
 @inline function get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
-    R, _ = _get_reaction_tangent(integrator.subintegrators)
+    R, _ = _get_reaction_tangent(integrator.subintegrator_tree)
     return R
 end
 
@@ -73,35 +73,39 @@ end
     @unpack σ_s, σ_c, Δt_bounds = alg
 
     if isinf(σ_s)
-        integrator._dt = R > σ_c ? Δt_bounds[1] : Δt_bounds[2]
+        integrator.dt = R > σ_c ? Δt_bounds[1] : Δt_bounds[2]
     else
-        integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
+        integrator.dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     end
     return nothing
 end
 
 @inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController, q)
+    if integrator.dt ≤ Δt_bounds[1] # Check for "≤" to also handle the boundary cases
+        error("RTC cannot recover from step rejection below Δt min") # Force failure
+    else
+        integrator.dt = Δt_bounds[1]
+    end
     return nothing # Do nothing
 end
 
-# Dispatch for outer construction
-function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::ReactionTangentController; dt, kwargs...)
-    @unpack f = prob
-    @assert f isa GenericSplitFunction
+function OS.build_subintegrator_tree_with_cache(
+    prob::OS.OperatorSplittingProblem, alg::ReactionTangentController,
+    uprevouter::AbstractVector, uouter::AbstractVector,
+    solution_indices,
+    t0, dt, tf,
+    tstops, saveat, d_discontinuities, callback,
+    adaptive, verbose,
+)
+    subintegrators, inner_cache = OS.build_subintegrator_tree_with_cache(
+        prob, alg.ltg, uprevouter, uouter, solution_indices,
+        t0, dt, tf,
+        tstops, saveat, d_discontinuities, callback,
+        adaptive, verbose,
+    )
 
-    u          = copy(prob.u0)
-    uprev      = copy(prob.u0)
-
-    # Build inner integrator
-    return OS.construct_inner_cache(f, alg, u, uprev)
-end
-
-# Dispatch for recursive construction
-function OS.construct_inner_cache(f::OS.AbstractOperatorSplitFunction, alg::ReactionTangentController, u::AbstractArray{T}, uprev::AbstractArray) where T <: Number
-    ltg_cache = OS.construct_inner_cache(f, alg.ltg, u, uprev)
-    return ReactionTangentControllerCache(ltg_cache, zero(T))
-end
-
-function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::ReactionTangentControllerCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
-    OS.build_subintegrators_recursive(f, synchronizers, p, cache.ltg_cache, u, uprev, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+    return subintegrators, ReactionTangentControllerCache(
+        inner_cache,
+        zero(eltype(uouter)),
+    )
 end
