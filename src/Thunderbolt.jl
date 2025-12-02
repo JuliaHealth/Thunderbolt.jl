@@ -37,7 +37,8 @@ import Ferrite:
     AbstractRefShape,
     AbstractCell,
     get_grid,
-    get_coordinate_eltype
+    get_coordinate_eltype,
+    addfacetset!
 import Ferrite: vertices, edges, facets, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 
@@ -45,6 +46,7 @@ import Preferences
 
 import Logging: Logging, LogLevel, @info, @logmsg
 
+import SymbolicIndexingInterface
 import SciMLBase
 @reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
 using SciMLBase: recursivecopy!, recursivecopy
