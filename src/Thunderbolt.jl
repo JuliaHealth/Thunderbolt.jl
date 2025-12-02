@@ -30,16 +30,15 @@ end
 
 @reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
-import Ferrite: vertices, edges, facets, faces, sortedge, sortfacet_fast, sortface
+import Ferrite: vertices, edges, facets, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
-import Ferrite: reference_shape_value
 
 import Preferences
 
 import Logging: Logging, LogLevel, @info, @logmsg
 
 import SciMLBase
-@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
+@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator, recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
@@ -52,9 +51,7 @@ import ForwardDiff
 import ModelingToolkit
 
 # Accelerator support libraries
-import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
-import Adapt:
-    Adapt, adapt_structure, adapt
+import Adapt: @adapt_structure, Adapt
 
 include("mesh/meshes.jl")
 

@@ -83,7 +83,7 @@ function OS.build_subintegrator_tree_with_cache(
     # )
     sol = DummyODESolution()
 
-    if controller === nothing && adaptive && DiffEqBase.isadaptive(alg)
+    if controller === nothing && adaptive && SciMLBase.isadaptive(alg)
         controller = default_controller(alg, cache)
     end
 

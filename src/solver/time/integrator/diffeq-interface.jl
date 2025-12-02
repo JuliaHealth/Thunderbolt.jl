@@ -66,7 +66,7 @@ DiffEqBase.get_tstops_array(integ::ThunderboltTimeIntegrator) = get_tstops(integ
 DiffEqBase.get_tstops_max(integ::ThunderboltTimeIntegrator) = maximum(get_tstops_array(integ))
 
 
-DiffEqBase.has_reinit(integrator::ThunderboltTimeIntegrator) = true
+SciMLBase.has_reinit(integrator::ThunderboltTimeIntegrator) = true
 function DiffEqBase.reinit!(
     integrator::ThunderboltTimeIntegrator,
     u0 = integrator.sol.prob.u0;
@@ -81,8 +81,8 @@ function DiffEqBase.reinit!(
     reinit_retcode = true,
     reinit_cache = true,
 )
-    SciMLBase.recursivecopy!(integrator.u, u0)
-    SciMLBase.recursivecopy!(integrator.uprev, integrator.u)
+    recursivecopy!(integrator.u, u0)
+    recursivecopy!(integrator.uprev, integrator.u)
     integrator.t = t0
     integrator.tprev = t0
 
@@ -103,7 +103,7 @@ function DiffEqBase.reinit!(
         DiffEqBase.initialize!(saving_callback, u0, t0, integrator)
     end
     if reinit_retcode
-        integrator.sol = DiffEqBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Default)
+        integrator.sol = SciMLBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Default)
     end
 
     tType = typeof(integrator.t)
@@ -194,15 +194,15 @@ function update_uprev!(integrator::ThunderboltTimeIntegrator)
     # # OrdinaryDiffEqCore.update_uprev!(integrator) # FIXME recover
     # if alg_extrapolates(integrator.alg)
     #     if isinplace(integrator.sol.prob)
-    #         SciMLBase.recursivecopy!(integrator.uprev2, integrator.uprev)
+    #         recursivecopy!(integrator.uprev2, integrator.uprev)
     #     else
     #         integrator.uprev2 = integrator.uprev
     #     end
     # end
     # if isinplace(integrator.sol.prob) # This should be dispatched in the integrator directly
-        SciMLBase.recursivecopy!(integrator.uprev, integrator.u)
+        recursivecopy!(integrator.uprev, integrator.u)
         if integrator.alg isa OrdinaryDiffEqCore.DAEAlgorithm
-            SciMLBase.recursivecopy!(integrator.duprev, integrator.du)
+            recursivecopy!(integrator.duprev, integrator.du)
         end
     # else
     #     integrator.uprev = integrator.u

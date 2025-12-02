@@ -13,7 +13,7 @@ end
 Base.setindex!(m::LumpedCirculatoryModelFunction{<:Any,T}, val::T, i::Int) where T = m.p[i] = val
 
 #FIXME
-OS.recursive_null_parameters(f::LumpedCirculatoryModelFunction) = DiffEqBase.NullParameters()
+OS.recursive_null_parameters(f::LumpedCirculatoryModelFunction) = SciMLBase.NullParameters()
 
 function ODEFunction(model::AbstractLumpedCirculatoryModel)
     return LumpedCirculatoryModelFunction(model, zeros(num_unknown_pressures(model)))

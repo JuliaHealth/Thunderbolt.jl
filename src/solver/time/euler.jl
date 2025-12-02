@@ -272,14 +272,14 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::BackwardEul
         _u = vtype(undef, solution_size(f))
         @warn "Cannot initialize u for $(typeof(solver))."
     else
-        _u = alias_u ? u : SciMLBase.recursivecopy(u)
+        _u = alias_u ? u : recursivecopy(u)
     end
 
     if uprev === nothing
         _uprev = vtype(undef, solution_size(f))
         _uprev .= u
     else
-        _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
+        _uprev = alias_uprev ? uprev : recursivecopy(uprev)
     end
 
     cache       = BackwardEulerSolverCache(

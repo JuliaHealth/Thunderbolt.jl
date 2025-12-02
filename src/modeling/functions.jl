@@ -1,6 +1,6 @@
 # For the mapping against the SciML ecosystem, a "Thunderbolt function" is essentially equivalent to a "SciML function" with parameters, which does not have all evaluation information
 """
-    AbstractSemidiscreteFunction <: DiffEqBase.AbstractDiffEqFunction{iip=true}
+    AbstractSemidiscreteFunction <: SciMLBase.AbstractDiffEqFunction{iip=true}
 
 Supertype for all functions coming from PDE discretizations.
 
@@ -9,7 +9,7 @@ Supertype for all functions coming from PDE discretizations.
     solution_size(::AbstractSemidiscreteFunction)
     get_strategy(::AbstractSemidiscreteFunction)
 """
-abstract type AbstractSemidiscreteFunction <: DiffEqBase.AbstractDiffEqFunction{true} end
+abstract type AbstractSemidiscreteFunction <: SciMLBase.AbstractDiffEqFunction{true} end
 get_strategy(::AbstractSemidiscreteFunction) = SequentialAssemblyStrategy(SequentialCPUDevice())
 
 abstract type AbstractPointwiseFunction <: AbstractSemidiscreteFunction end

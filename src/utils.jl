@@ -38,7 +38,6 @@ end
 # TODO remove these once they are merged
 module FerriteUtils
 using Ferrite
-import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt
 
 include("ferrite-addons/gpu/device_dofhandler.jl")
@@ -320,7 +319,7 @@ mtk_parameter_query_filter(discard_me, sym) = false
 mtk_parameter_query_filter(param::ModelingToolkit.BasicSymbolic, sym) = true
 
 function query_mtk_parameter_by_symbol(sys, sym::Symbol)
-    symbol_list = ModelingToolkit.parameter_symbols(sys)
+    symbol_list = SymbolicIndexingInterface.parameter_symbols(sys)
     idx = findfirst(param->mtk_parameter_query_filter(param,sym), symbol_list)
     idx === nothing && @error "Symbol $sym not found for system $sys."
     return symbol_list[idx]

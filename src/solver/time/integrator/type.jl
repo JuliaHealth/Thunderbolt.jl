@@ -148,7 +148,7 @@ function SciMLBase.__init(
     tdir = tf > t0 ? 1.0 : -1.0
     tType = typeof(dt)
 
-    dtchangeable = DiffEqBase.isadaptive(alg)
+    dtchangeable = SciMLBase.isadaptive(alg)
 
     dtmin = dtmin === nothing ? tType(0.0) : tType(dtmin)
     dtmax = dtmax === nothing ? tType(tf - t0) : tType(dtmax)
@@ -292,7 +292,7 @@ function SciMLBase.solve!(integrator::ThunderboltTimeIntegrator)
         end
         OrdinaryDiffEqCore.handle_tstop!(integrator)
     end
-    OrdinaryDiffEqCore.postamble!(integrator)
+    SciMLBase.postamble!(integrator)
     if integrator.sol.retcode != SciMLBase.ReturnCode.Default
         return integrator.sol
     end

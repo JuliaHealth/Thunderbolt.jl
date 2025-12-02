@@ -146,13 +146,13 @@ struct VolumeTransfer0D3D{TP} <: AbstractTransferOperator
     tying::TP
 end
 
-function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::VolumeTransfer0D3D)
+function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::SciMLBase.DEIntegrator, sync::VolumeTransfer0D3D)
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
     for chamber ∈ sync.tying.chambers
         chamber.V⁰ᴰval = outer_integrator.u[chamber.V⁰ᴰidx_global]
     end
 end
-function OS.backward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::VolumeTransfer0D3D)
+function OS.backward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::SciMLBase.DEIntegrator, sync::VolumeTransfer0D3D)
     nothing
 end
 
@@ -163,13 +163,13 @@ struct PressureTransfer3D0D{TP } <: AbstractTransferOperator
     tying::TP
 end
 
-function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::PressureTransfer3D0D)
+function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::SciMLBase.DEIntegrator, sync::PressureTransfer3D0D)
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
     for chamber ∈ sync.tying.chambers
         pressure = outer_integrator.u[chamber.pressure_dof_index_global]
         inner_integrator.p[chamber.pressure_parameter_index_local] = pressure
     end
 end
-function OS.backward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::PressureTransfer3D0D)
+function OS.backward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::SciMLBase.DEIntegrator, sync::PressureTransfer3D0D)
     nothing
 end

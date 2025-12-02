@@ -29,14 +29,14 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::HomotopyPat
         _u = vtype(undef, solution_size(f))
         @warn "Cannot initialize u for $(typeof(solver))."
     else
-        _u = alias_u ? u : SciMLBase.recursivecopy(u)
+        _u = alias_u ? u : recursivecopy(u)
     end
 
     if uprev === nothing
         _uprev = vtype(undef, solution_size(f))
         _uprev .= u
     else
-        _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
+        _uprev = alias_uprev ? uprev : recursivecopy(uprev)
     end
 
     solver_cache = HomotopyPathSolverCache(
@@ -284,4 +284,4 @@ end
 
 # default_controller(::HomotopyPathSolver, cache) = ExperimentalDiscreteContinuationController(; Θmin=1/8, p=1)
 default_controller(::HomotopyPathSolver, cache) = Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin=1/8, p=1)
-DiffEqBase.isadaptive(::HomotopyPathSolver) = true
+SciMLBase.isadaptive(::HomotopyPathSolver) = true

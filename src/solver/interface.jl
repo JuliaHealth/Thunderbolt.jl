@@ -1,4 +1,4 @@
-abstract type AbstractSolver <: DiffEqBase.AbstractDEAlgorithm end
+abstract type AbstractSolver <: SciMLBase.AbstractDEAlgorithm end
 abstract type AbstractNonlinearSolver <: AbstractSolver end
 
 abstract type AbstractNonlinearSolverCache end
@@ -113,7 +113,7 @@ function setup_assembled_nonlinear_operator(strategy::PerColorAssemblyStrategy, 
 end
 
 # # TODO correct dispatches
-# function setup_coupling_operator(first_problem::DiffEqBase.AbstractDEProblem, second_problem::DiffEqBase.AbstractDEProblem, relevant_couplings, solver::AbstractNonlinearSolver)
+# function setup_coupling_operator(first_problem::SciMLBase.AbstractDEProblem, second_problem::SciMLBase.AbstractDEProblem, relevant_couplings, solver::AbstractNonlinearSolver)
 #     NullOperator{Float64,solution_size(second_problem),solution_size(first_problem)}()
 # end
 
@@ -141,7 +141,7 @@ function update_constraints_block!(f::AbstractSemidiscreteFunction, i::Block, so
     apply!(u, getch(f))
 end
 
-update_constraints_block!(f::DiffEqBase.AbstractDiffEqFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
+update_constraints_block!(f::SciMLBase.AbstractDiffEqFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
 
 update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
 
