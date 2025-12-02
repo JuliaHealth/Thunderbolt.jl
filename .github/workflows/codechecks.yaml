@@ -61,7 +61,7 @@ jobs:
     steps:
       - uses: julia-actions/setup-julia@latest
         with:
-          version: ${{ matrix.julia-version }}
+          version: '1'
 
       - uses: actions/checkout@v6
       - name: Install JuliaFormatter and format
