@@ -2,7 +2,7 @@ module Preconditioners
 
 using SparseArrays, SparseMatricesCSR
 using LinearSolve
-import LinearSolve: \
+import Base: \
 using Adapt
 using UnPack
 import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @print, functional,

@@ -2,18 +2,20 @@ module Thunderbolt
 
 import KernelAbstractions as KA
 
-using TimerOutputs
+using TimerOutputs: @timeit_debug
 
 import Unrolled: @unroll
 import FastBroadcast: @..
 
-using Reexport, UnPack
-import LinearAlgebra: mul!
-using SparseMatricesCSR, Polyester, LinearAlgebra
-using OrderedCollections
+using UnPack: @unpack # TODO remove this package
+using Reexport: @reexport
+using LinearAlgebra: mul!
+import Polyester: @batch
+using SparseMatricesCSR, LinearAlgebra
+using OrderedCollections: OrderedDict, OrderedSet
 using BlockArrays, SparseArrays, StaticArrays
 
-using JLD2
+using JLD2: jldopen
 import WriteVTK
 import ReadVTK
 
@@ -38,7 +40,8 @@ import Preferences
 import Logging: Logging, LogLevel, @info, @logmsg
 
 import SciMLBase
-@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator, recursivecopy!, recursivecopy
+@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
+using SciMLBase: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
