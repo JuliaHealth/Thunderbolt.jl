@@ -1,4 +1,4 @@
-abstract type AbstractLinearBlockAlgorithm <: SciMLBase.AbstractLinearAlgorithm end 
+abstract type AbstractLinearBlockAlgorithm <: LinearSolve.SciMLLinearSolveAlgorithm end
 abstract type AbstractLinear2x2BlockAlgorithm <: AbstractLinearBlockAlgorithm end
 
 @doc raw"""
@@ -71,8 +71,8 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     @assert A₁₁ === inner_prob.A
     innersolve = LinearSolve.init(
         inner_prob,
-        alg.inner_alg;
-        args...,
+        alg.inner_alg,
+        args...;
         kwargs...,
     )
 
