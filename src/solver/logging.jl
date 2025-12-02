@@ -76,6 +76,7 @@ Base.@kwdef struct VTKNewtonMonitor{MonitorType}
     outdir::String
     inner_monitor::MonitorType = DefaultProgressMonitor()
 end
+VTKNewtonMonitor(outdir::String) = VTKNewtonMonitor(outdir, DefaultProgressMonitor())
 
 function nonlinear_step_monitor(cache, time, f, u, monitor::VTKNewtonMonitor)
     nonlinear_step_monitor(cache,time,f,u,monitor.inner_monitor)
