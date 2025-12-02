@@ -1,6 +1,12 @@
 
 # Utility which holds partial information for assembly.
-struct DeviceDofHandlerData{sdim, GridType<:Ferrite.AbstractGrid{sdim}, IndexType, IndexVectorType <: AbstractVector{IndexType},Ti<: Integer} <: Ferrite.AbstractDofHandler
+struct DeviceDofHandlerData{
+    sdim,
+    GridType <: Ferrite.AbstractGrid{sdim},
+    IndexType,
+    IndexVectorType <: AbstractVector{IndexType},
+    Ti <: Integer,
+} <: Ferrite.AbstractDofHandler
     grid::GridType
     cell_dofs::IndexVectorType
     cell_dofs_offset::IndexVectorType
@@ -9,17 +15,24 @@ struct DeviceDofHandlerData{sdim, GridType<:Ferrite.AbstractGrid{sdim}, IndexTyp
 end
 
 # # Utility which holds partial information for assembly.
-struct DeviceSubDofHandler{Ti<:Integer,IPVectorType,IndexType, IndexVectorType <: AbstractVector{IndexType},DHDataType<:DeviceDofHandlerData} <: Ferrite.AbstractDofHandler
+struct DeviceSubDofHandler{
+    Ti <: Integer,
+    IPVectorType,
+    IndexType,
+    IndexVectorType <: AbstractVector{IndexType},
+    DHDataType <: DeviceDofHandlerData,
+} <: Ferrite.AbstractDofHandler
     cellset::IndexVectorType
     field_names::IndexVectorType
-    field_interpolations::IPVectorType 
+    field_interpolations::IPVectorType
     ndofs_per_cell::Ti
-    dh_data::DHDataType 
+    dh_data::DHDataType
 end
 
 
 
-struct DeviceDofHandler{DHType <: Ferrite.AbstractDofHandler, SDHTupleType} <: Ferrite.AbstractDofHandler
+struct DeviceDofHandler{DHType <: Ferrite.AbstractDofHandler, SDHTupleType} <:
+       Ferrite.AbstractDofHandler
     dh::DHType
     subdofhandlers::SDHTupleType
 end
@@ -36,9 +49,9 @@ Ferrite.get_grid(sdh::DeviceSubDofHandler) = sdh.dh_data.grid
 cell_dof_offset(dh::DeviceDofHandlerData, i::Integer) = dh.cell_dofs_offset[i]
 Ferrite.get_grid(dh::DeviceDofHandlerData) = dh.grid
 
-function celldofsview(sdh::DeviceSubDofHandler, i::Ti) where {Ti<:Integer}
+function celldofsview(sdh::DeviceSubDofHandler, i::Ti) where {Ti <: Integer}
     offset = cell_dof_offset(sdh.dh_data, i)
     ndofs = ndofs_per_cell(sdh)
-    view = @view sdh.dh_data.cell_dofs[offset:(offset + ndofs - convert(Ti, 1))]
+    view = @view sdh.dh_data.cell_dofs[offset:(offset+ndofs-convert(Ti, 1))]
     return view
 end

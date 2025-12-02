@@ -31,7 +31,13 @@ function solution_size(gsf::GenericSplitFunction)
 end
 
 @reexport using Ferrite
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
+import Ferrite:
+    AbstractDofHandler,
+    AbstractGrid,
+    AbstractRefShape,
+    AbstractCell,
+    get_grid,
+    get_coordinate_eltype
 import Ferrite: vertices, edges, facets, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 
@@ -95,7 +101,7 @@ include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
 include("solver/linear/preconditioners/Preconditioners.jl")
-@reexport using .Preconditioners 
+@reexport using .Preconditioners
 
 
 include("modeling/electrophysiology/ecg.jl")

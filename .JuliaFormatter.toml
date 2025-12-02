@@ -1,0 +1,6 @@
+style = "sciml"
+align_assignment = true
+margin = 100
+remove_extra_newlines = false
+whitespace_in_kwargs = true
+whitespace_typedefs = true

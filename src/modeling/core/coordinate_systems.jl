@@ -5,22 +5,25 @@ abstract type CoordinateSystemCoefficient end
 
 Standard cartesian coordinate system.
 """
-struct CartesianCoordinateSystem{sdim,T} <: CoordinateSystemCoefficient
-    function CartesianCoordinateSystem{sdim}() where sdim
-        return new{sdim,Float32}()
+struct CartesianCoordinateSystem{sdim, T} <: CoordinateSystemCoefficient
+    function CartesianCoordinateSystem{sdim}() where {sdim}
+        return new{sdim, Float32}()
     end
 end
 
 value_type(::CartesianCoordinateSystem{sdim, T}) where {sdim, T} = Vec{sdim, T}
 
-CartesianCoordinateSystem(mesh::AbstractGrid{sdim}) where sdim = CartesianCoordinateSystem{sdim}()
+CartesianCoordinateSystem(mesh::AbstractGrid{sdim}) where {sdim} = CartesianCoordinateSystem{sdim}()
 
 """
     getcoordinateinterpolation(cs::CartesianCoordinateSystem, cell::AbstractCell)
 
 Get interpolation function for the cartesian coordinate system.
 """
-getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) where {sdim, CellType <: AbstractCell} = Ferrite.geometric_interpolation(CellType)^sdim
+getcoordinateinterpolation(
+    cs::CartesianCoordinateSystem{sdim},
+    cell::CellType,
+) where {sdim, CellType <: AbstractCell} = Ferrite.geometric_interpolation(CellType)^sdim
 
 
 """
@@ -51,10 +54,10 @@ Base.@kwdef struct LVCoordinate{T}
     apicobasal::T
     rotational::T
 end
-Base.zero(::Type{LVCoordinate{T}}) where T = LVCoordinate(T(0.0),T(0.0),T(0.0))
-Base.eltype(::Type{LVCoordinate{T}}) where T = T
-Base.eltype(::LVCoordinate{T}) where T = T
-value_type(::LVCoordinateSystem{T}) where T = LVCoordinate{T}
+Base.zero(::Type{LVCoordinate{T}}) where {T} = LVCoordinate(T(0.0), T(0.0), T(0.0))
+Base.eltype(::Type{LVCoordinate{T}}) where {T} = T
+Base.eltype(::LVCoordinate{T}) where {T} = T
+value_type(::LVCoordinateSystem{T}) where {T} = LVCoordinate{T}
 
 
 """
@@ -62,7 +65,8 @@ value_type(::LVCoordinateSystem{T}) where T = LVCoordinate{T}
 
 Get interpolation function for the LV coordinate system.
 """
-getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = getinterpolation(cs.ip_collection, cell)
+getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) =
+    getinterpolation(cs.ip_collection, cell)
 
 
 """
@@ -75,8 +79,12 @@ Requires a mesh with facetsets
 and a nodeset
     * Apex
 """
-function compute_lv_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::Vector{String} = [""]; up = Vec((T(0.0),T(0.0),T(-1.0)))) where T
-    @assert abs.(up) ≈ Vec((T(0.0),T(0.0),T(1.0))) "Custom up vector not yet supported."
+function compute_lv_coordinate_system(
+    mesh::SimpleMesh{3, <:Any, T},
+    subdomains::Vector{String} = [""];
+    up = Vec((T(0.0), T(0.0), T(-1.0))),
+) where {T}
+    @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -103,9 +111,9 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::V
             for qp in QuadratureIterator(cellvalues)
                 dΩ = getdetJdV(cellvalues, qp)
 
-                for i in 1:n_basefuncs
+                for i = 1:n_basefuncs
                     ∇v = shape_gradient(cellvalues, qp, i)
-                    for j in 1:n_basefuncs
+                    for j = 1:n_basefuncs
                         ∇u = shape_gradient(cellvalues, qp, j)
                         Ke[i, j] += (∇v ⋅ ∇u) * dΩ
                     end
@@ -118,43 +126,43 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::V
 
     # Transmural coordinate
     begin
-    ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
-    Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Epicardium"), (x, t) -> 1)
-    Ferrite.add!(ch, dbc);
-    close!(ch)
-    update!(ch, 0.0);
+        ch = ConstraintHandler(dh);
+        dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
+        Ferrite.add!(ch, dbc);
+        dbc = Dirichlet(:coordinates, getfacetset(mesh, "Epicardium"), (x, t) -> 1)
+        Ferrite.add!(ch, dbc);
+        close!(ch)
+        update!(ch, 0.0);
 
-    K_transmural = copy(K)
-    f = zeros(ndofs(dh))
+        K_transmural = copy(K)
+        f = zeros(ndofs(dh))
 
-    apply!(K_transmural, f, ch)
-    sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
-    transmural = sol.u
+        apply!(K_transmural, f, ch)
+        sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
+        transmural = sol.u
     end
 
     # Apicobasal coordinate
     begin
-    # apicobasal = zeros(ndofs(dh))
-    # apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
-    # apicobasal .-= minimum(apicobasal)
-    # apicobasal = abs.(apicobasal)
-    # apicobasal ./= maximum(apicobasal)
-    ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 1)
-    Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getnodeset(mesh, "ApexInOut"), (x, t) -> 0)
-    Ferrite.add!(ch, dbc);
-    close!(ch)
-    update!(ch, 0.0);
+        # apicobasal = zeros(ndofs(dh))
+        # apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
+        # apicobasal .-= minimum(apicobasal)
+        # apicobasal = abs.(apicobasal)
+        # apicobasal ./= maximum(apicobasal)
+        ch = ConstraintHandler(dh);
+        dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 1)
+        Ferrite.add!(ch, dbc);
+        dbc = Dirichlet(:coordinates, getnodeset(mesh, "ApexInOut"), (x, t) -> 0)
+        Ferrite.add!(ch, dbc);
+        close!(ch)
+        update!(ch, 0.0);
 
-    K_apicobasal = K
-    f = zeros(ndofs(dh))
+        K_apicobasal = K
+        f = zeros(ndofs(dh))
 
-    apply!(K_apicobasal, f, ch)
-    sol = solve(LinearSolve.LinearProblem(K_apicobasal, f), LinearSolve.KrylovJL_CG())
-    apicobasal = sol.u
+        apply!(K_apicobasal, f, ch)
+        sol = solve(LinearSolve.LinearProblem(K_apicobasal, f), LinearSolve.KrylovJL_CG())
+        apicobasal = sol.u
     end
 
     rotational = zeros(ndofs(dh))
@@ -198,8 +206,12 @@ Requires a mesh with facetsets
     * Endocardium
     * Myocardium
 """
-function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::Vector{String} = [""]; up = Vec((T(0.0),T(0.0),T(1.0)))) where T
-    @assert abs.(up) ≈ Vec((T(0.0),T(0.0),T(1.0))) "Custom up vector not yet supported."
+function compute_midmyocardial_section_coordinate_system(
+    mesh::SimpleMesh{3, <:Any, T},
+    subdomains::Vector{String} = [""];
+    up = Vec((T(0.0), T(0.0), T(1.0))),
+) where {T}
+    @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -227,9 +239,9 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3,<:An
             for qp in QuadratureIterator(cellvalues)
                 dΩ = getdetJdV(cellvalues, qp)
 
-                for i in 1:n_basefuncs
+                for i = 1:n_basefuncs
                     ∇v = shape_gradient(cellvalues, qp, i)
-                    for j in 1:n_basefuncs
+                    for j = 1:n_basefuncs
                         ∇u = shape_gradient(cellvalues, qp, j)
                         Ke[i, j] += (∇v ⋅ ∇u) * dΩ
                     end
@@ -333,12 +345,13 @@ Base.@kwdef struct BiVCoordinate{T}
     rotational::T
     transventricular::T
 end
-Base.zero(::Type{BiVCoordinate{T}}) where T = BiVCoordinate(T(0.0),T(0.0),T(0.0),T(0.0))
-Base.eltype(::Type{BiVCoordinate{T}}) where T = T
-Base.eltype(::BiVCoordinate{T}) where T = T
+Base.zero(::Type{BiVCoordinate{T}}) where {T} = BiVCoordinate(T(0.0), T(0.0), T(0.0), T(0.0))
+Base.eltype(::Type{BiVCoordinate{T}}) where {T} = T
+Base.eltype(::BiVCoordinate{T}) where {T} = T
 value_type(::BiVCoordinateSystem) = BiVCoordinate
 
-getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
+getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) =
+    Ferrite.getfieldinterpolation(cs.dh, (1, 1))
 
 function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
     Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_transmural, "_transmural")
@@ -346,4 +359,3 @@ function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
     Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_rotational, "_rotational")
     Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_transventricular, "_transventricular")
 end
-

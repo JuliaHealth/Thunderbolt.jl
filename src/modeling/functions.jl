@@ -80,7 +80,13 @@ abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 A discrete nonlinear (possibly multi-level) problem with time dependent terms.
 Abstractly written we want to solve the problem G(u, q, t) = 0, L(u, q, dₜq, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticFunction{I <: AbstractNonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler, LVH <: InternalVariableHandler, AS <: AbstractAssemblyStrategy} <: AbstractQuasiStaticFunction
+struct QuasiStaticFunction{
+    I <: AbstractNonlinearIntegrator,
+    DH <: Ferrite.AbstractDofHandler,
+    CH <: ConstraintHandler,
+    LVH <: InternalVariableHandler,
+    AS <: AbstractAssemblyStrategy,
+} <: AbstractQuasiStaticFunction
     dh::DH
     ch::CH
     lvh::LVH
@@ -101,7 +107,7 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     for sdh in f.lvh.dh.subdofhandlers
         qr = getquadraturerule(f.integrator.qrc, sdh)
         # ivsize_per_qp = sum(sdh.field_n_components; init=0) # FIXME broken...
-        ivsize_per_qp = sum(Ferrite.n_components.(sdh.field_interpolations); init=0)
+        ivsize_per_qp = sum(Ferrite.n_components.(sdh.field_interpolations); init = 0)
         ivsize_per_qp == 0 && continue
         material_model = get_material_model(f, sdh)
         for cell in CellIterator(sdh)
@@ -114,7 +120,8 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     end
 end
 
-gather_internal_variable_infos(model::QuasiStaticModel) = gather_internal_variable_infos(model.material_model)
+gather_internal_variable_infos(model::QuasiStaticModel) =
+    gather_internal_variable_infos(model.material_model)
 gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]
 
 @unroll function __get_material_model_multi(materials, domains, sdh)
@@ -125,8 +132,12 @@ gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableI
         end
         idx += 1
     end
-    error("MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.")
+    error(
+        "MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.",
+    )
 end
-__get_material_model(model::MultiMaterialModel, sdh) = __get_material_model_multi(model.materials, model.domains, sdh)
+__get_material_model(model::MultiMaterialModel, sdh) =
+    __get_material_model_multi(model.materials, model.domains, sdh)
 __get_material_model(model::AbstractMaterialModel, sdh) = model
-get_material_model(f::QuasiStaticFunction, sdh) = __get_material_model(f.integrator.volume_model.material_model, sdh)
+get_material_model(f::QuasiStaticFunction, sdh) =
+    __get_material_model(f.integrator.volume_model.material_model, sdh)

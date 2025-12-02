@@ -12,28 +12,54 @@ The next timestep length is calculated as
 - `σ_c::T`: offset in R axis
 - `Δt_bounds::NTuple{2,T}`: lower and upper timestep length bounds
 """
-struct ReactionTangentController{LTG <: OS.LieTrotterGodunov, T <: Real} <: OS.AbstractOperatorSplittingAlgorithm
+struct ReactionTangentController{LTG <: OS.LieTrotterGodunov, T <: Real} <:
+       OS.AbstractOperatorSplittingAlgorithm
     ltg::LTG
     σ_s::T
     σ_c::T
-    Δt_bounds::NTuple{2,T}
+    Δt_bounds::NTuple{2, T}
 end
 
-mutable struct ReactionTangentControllerCache{T <: Real, LTGCache <: OS.LieTrotterGodunovCache, uType} <: OS.AbstractOperatorSplittingCache
+mutable struct ReactionTangentControllerCache{
+    T <: Real,
+    LTGCache <: OS.LieTrotterGodunovCache,
+    uType,
+} <: OS.AbstractOperatorSplittingCache
     const ltg_cache::LTGCache
     u::uType
     uprev::uType # True previous solution
     R::T
-    function ReactionTangentControllerCache(ltg_cache::LTGCache, R::T) where {T, LTGCache <: OS.LieTrotterGodunovCache}
+    function ReactionTangentControllerCache(
+        ltg_cache::LTGCache,
+        R::T,
+    ) where {T, LTGCache <: OS.LieTrotterGodunovCache}
         uType = typeof(ltg_cache.u)
         return new{T, LTGCache, uType}(ltg_cache, ltg_cache.u, ltg_cache.uprev, R)
     end
 end
 
-@inline DiffEqBase.get_tmp_cache(integrator::OS.OperatorSplittingIntegrator, alg::OS.AbstractOperatorSplittingAlgorithm, cache::ReactionTangentControllerCache) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
+@inline DiffEqBase.get_tmp_cache(
+    integrator::OS.OperatorSplittingIntegrator,
+    alg::OS.AbstractOperatorSplittingAlgorithm,
+    cache::ReactionTangentControllerCache,
+) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
 
-@inline function OS.advance_solution_to!(outer_integrator::OS.OperatorSplittingIntegrator, subintegrators::Tuple, solution_indices::Tuple, synchronizers::Tuple, cache::ReactionTangentControllerCache, tnext)
-    OS.advance_solution_to!(outer_integrator, subintegrators, solution_indices, synchronizers, cache.ltg_cache, tnext)
+@inline function OS.advance_solution_to!(
+    outer_integrator::OS.OperatorSplittingIntegrator,
+    subintegrators::Tuple,
+    solution_indices::Tuple,
+    synchronizers::Tuple,
+    cache::ReactionTangentControllerCache,
+    tnext,
+)
+    OS.advance_solution_to!(
+        outer_integrator,
+        subintegrators,
+        solution_indices,
+        synchronizers,
+        cache.ltg_cache,
+        tnext,
+    )
 end
 
 @inline DiffEqBase.isadaptive(::ReactionTangentController) = true
@@ -63,12 +89,19 @@ end
     return (R, n_reaction_tangents)
 end
 
-@inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController)
+@inline function OS.stepsize_controller!(
+    integrator::OS.OperatorSplittingIntegrator,
+    alg::ReactionTangentController,
+)
     integrator.cache.R = get_reaction_tangent(integrator)
     return nothing
 end
 
-@inline function OS.step_accept_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController, q)
+@inline function OS.step_accept_controller!(
+    integrator::OS.OperatorSplittingIntegrator,
+    alg::ReactionTangentController,
+    q,
+)
     @unpack R = integrator.cache
     @unpack σ_s, σ_c, Δt_bounds = alg
 
@@ -80,7 +113,11 @@ end
     return nothing
 end
 
-@inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController, q)
+@inline function OS.step_reject_controller!(
+    integrator::OS.OperatorSplittingIntegrator,
+    alg::ReactionTangentController,
+    q,
+)
     if integrator.dt ≤ Δt_bounds[1] # Check for "≤" to also handle the boundary cases
         error("RTC cannot recover from step rejection below Δt min") # Force failure
     else
@@ -90,22 +127,37 @@ end
 end
 
 function OS.build_subintegrator_tree_with_cache(
-    prob::OS.OperatorSplittingProblem, alg::ReactionTangentController,
-    uprevouter::AbstractVector, uouter::AbstractVector,
+    prob::OS.OperatorSplittingProblem,
+    alg::ReactionTangentController,
+    uprevouter::AbstractVector,
+    uouter::AbstractVector,
     solution_indices,
-    t0, dt, tf,
-    tstops, saveat, d_discontinuities, callback,
-    adaptive, verbose,
+    t0,
+    dt,
+    tf,
+    tstops,
+    saveat,
+    d_discontinuities,
+    callback,
+    adaptive,
+    verbose,
 )
     subintegrators, inner_cache = OS.build_subintegrator_tree_with_cache(
-        prob, alg.ltg, uprevouter, uouter, solution_indices,
-        t0, dt, tf,
-        tstops, saveat, d_discontinuities, callback,
-        adaptive, verbose,
+        prob,
+        alg.ltg,
+        uprevouter,
+        uouter,
+        solution_indices,
+        t0,
+        dt,
+        tf,
+        tstops,
+        saveat,
+        d_discontinuities,
+        callback,
+        adaptive,
+        verbose,
     )
 
-    return subintegrators, ReactionTangentControllerCache(
-        inner_cache,
-        zero(eltype(uouter)),
-    )
+    return subintegrators, ReactionTangentControllerCache(inner_cache, zero(eltype(uouter)))
 end

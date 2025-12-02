@@ -3,7 +3,8 @@
 
 Represents the integrand of the bilinear form ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
 """
-struct BilinearDiffusionIntegrator{CoefficientType, QRC <: QuadratureRuleCollection} <: AbstractBilinearIntegrator
+struct BilinearDiffusionIntegrator{CoefficientType, QRC <: QuadratureRuleCollection} <:
+       AbstractBilinearIntegrator
     D::CoefficientType
     qrc::QRC
     sym::Symbol
@@ -24,7 +25,12 @@ function duplicate_for_device(device, cache::BilinearDiffusionElementCache)
     )
 end
 
-function assemble_element!(Kₑ::AbstractMatrix, cell, element_cache::BilinearDiffusionElementCache, time)
+function assemble_element!(
+    Kₑ::AbstractMatrix,
+    cell,
+    element_cache::BilinearDiffusionElementCache,
+    time,
+)
     @unpack cellvalues, Dcache = element_cache
     n_basefuncs = getnbasefunctions(cellvalues)
 
@@ -33,11 +39,11 @@ function assemble_element!(Kₑ::AbstractMatrix, cell, element_cache::BilinearDi
     for qp in QuadratureIterator(cellvalues)
         D_loc = evaluate_coefficient(Dcache, cell, qp, time)
         dΩ = getdetJdV(cellvalues, qp)
-        for i in 1:n_basefuncs
+        for i = 1:n_basefuncs
             ∇Nᵢ = shape_gradient(cellvalues, qp, i)
-            for j in 1:n_basefuncs
+            for j = 1:n_basefuncs
                 ∇Nⱼ = shape_gradient(cellvalues, qp, j)
-                Kₑ[i,j] -= _inner_product_helper(∇Nⱼ, D_loc, ∇Nᵢ) * dΩ
+                Kₑ[i, j] -= _inner_product_helper(∇Nⱼ, D_loc, ∇Nᵢ) * dΩ
             end
         end
     end
@@ -45,11 +51,14 @@ end
 
 function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::SubDofHandler)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
-    qr = getquadraturerule(element_model.qrc, sdh)
+    qr         = getquadraturerule(element_model.qrc, sdh)
     field_name = first(sdh.dh.field_names)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo     = geometric_subdomain_interpolation(sdh)
-    BilinearDiffusionElementCache(setup_coefficient_cache(element_model.D, qr, sdh), CellValues(qr, ip, ip_geo))
+    BilinearDiffusionElementCache(
+        setup_coefficient_cache(element_model.D, qr, sdh),
+        CellValues(qr, ip, ip_geo),
+    )
 end
 
 @doc raw"""
