@@ -13,7 +13,7 @@ struct KeFeMemShape{Tv <: Real} <: AbstractMemShape{Tv} end
 # Group Memory Allocation #
 ###########################
 
-# some abstract types to represent group memory allocation on the different devices 
+# some abstract types to represent group memory allocation on the different devices
 # two types of memory allocation are considered: shared memory and global memory
 # group memory: these are the memory allocation for the entire group (e.g. shared memory -> one per block , global memory -> one per grid)
 # those memory are gonna further reduced to cell memory (i.e. memory per cell) in the device iterator

@@ -2,12 +2,12 @@
 """
     coeffs_kernel!(Vals, sdh, coeff_cache, cv, t)
 
-Compute and store coefficient values at quadrature points for all cells in the grid 
+Compute and store coefficient values at quadrature points for all cells in the grid
     (i.e. we store n_cells * n_quadoints values).
 
 # Arguments
-- `Vals::Vector{<:Any}`: Output vector to store computed coefficient values. This vector has length 
-    equal to n_cells * n_quadpoints. 
+- `Vals::Vector{<:Any}`: Output vector to store computed coefficient values. This vector has length
+    equal to n_cells * n_quadpoints.
 - `sdh::DeviceSubDofHandler`: device instance of `SubDofHandler`.
 - `coeff_cache`: Cache object used for coefficient evaluation.
 - `cv::CellValues`: CellValues object containing quadrature rule and basis function information.

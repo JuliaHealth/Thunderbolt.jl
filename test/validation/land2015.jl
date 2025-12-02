@@ -20,7 +20,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
         # mesh = generate_mesh(celltype, (120, 12, 12), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((10.0, 1.0, 1.0)))
         # order = 1
 
-        # passive_material_model = Thunderbolt.BioNeoHooekean() 
+        # passive_material_model = Thunderbolt.BioNeoHooekean()
         passive_material_model = Guccione1991PassiveModel(;
             C₀ = 2.0,
             Bᶠᶠ = 8.0,
@@ -114,7 +114,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
 
     #     J = zeros(24,24)
     #     Jfd = zeros(24,24)
-    #     J2 = zeros(24,24) 
+    #     J2 = zeros(24,24)
     #     u = [0.0, 0.0, 0.0, 0.007235528439120246, 0.0060324697675344045, 0.015372134435205851, 0.0071031026769519156, 2.8930799182463867e-15, 0.01835586270885209, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -4.104130228714606e-5, -0.0001549268822641951, 0.015176858354351867, -3.724030034936616e-5, 1.95950293563689e-15, 0.01818622905111361, 0.0, 0.0, 0.0]
     #     u2 = zeros(24)
     #     r = zeros(24)

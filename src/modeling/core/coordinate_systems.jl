@@ -318,7 +318,7 @@ end
 """
     BiVCoordinateSystem(dh, u_transmural, u_apicobasal, u_rotational, u_transventricular)
 
-Universal ventricular coordinate, containing the transmural, apicobasal, rotational 
+Universal ventricular coordinate, containing the transmural, apicobasal, rotational
 and transventricular coordinates.
 """
 struct BiVCoordinateSystem{T, DH <: Ferrite.AbstractDofHandler} <: CoordinateSystemCoefficient

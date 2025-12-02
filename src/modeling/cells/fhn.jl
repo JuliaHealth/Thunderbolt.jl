@@ -1,6 +1,6 @@
 """
 The classical neuron electrophysiology model independently found by [Fit:1961:ips](@citet) and [NagARiYos:1962:apt](@citet).
-This model is less stiff and cheaper than any cardiac electrophysiology model, which maks it 
+This model is less stiff and cheaper than any cardiac electrophysiology model, which maks it
 a good choice for quick testing if things work at all.
 """
 Base.@kwdef struct ParametrizedFHNModel{T} <: AbstractIonicModel

@@ -1,5 +1,5 @@
-# in subdofhandlers and in grid there are some vectors that incorporate many objects of different types but they 
-# only share the same abstract type. 
+# in subdofhandlers and in grid there are some vectors that incorporate many objects of different types but they
+# only share the same abstract type.
 # one way to solve this (not the optimal way memory wise) is to convert the vector to a vector of Union types if
 # there are multiple concrete types in the vector , otherwise convert the vector to a vector of the concrete type.
 function convert_vec_to_concrete(vec::Vector)

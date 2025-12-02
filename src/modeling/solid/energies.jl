@@ -36,7 +36,7 @@ end
 
 
 @doc raw"""
-An isochoric compression model where 
+An isochoric compression model where
 
 $U(I_3) = \beta (\sqrt{I_3}-1)^a$
 
@@ -55,7 +55,7 @@ end
 
 
 @doc raw"""
-An isochoric compression model where 
+An isochoric compression model where
 
 $U(I_3) = \beta (I_3 - 2\log(\sqrt{I_3}) + 4\log(\sqrt{I_3})^2) - 1)$
 
@@ -169,7 +169,7 @@ end
 
 
 @doc raw"""
-This is the Fung-type transverse isotropic material model for the passive 
+This is the Fung-type transverse isotropic material model for the passive
 response of cardiac tissue proposed by [LinYIn:1998:mcl](@citet).
 
 
@@ -199,7 +199,7 @@ function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYin
 end
 
 @doc raw"""
-This is the transverse isotropic material model for the active 
+This is the transverse isotropic material model for the active
 response of cardiac tissue proposed by [LinYIn:1998:mcl](@citet).
 
 $\Psi=C_0 + C_1*(I_1-3)(I_4-1) + C_2(I_1-3)^2 + C_3*(I_4-1)^2 + C_3*(I_1-3) + C_5*(I_4-1)$
@@ -227,7 +227,7 @@ function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYin
 end
 
 @doc raw"""
-This is the transverse isotropic material model for the active 
+This is the transverse isotropic material model for the active
 response of cardiac tissue proposed by [HumStrYin:1990:dcr](@citet).
 
 $\Psi = C_1(\sqrt{I_4}-1)^2 + C_2(\sqrt{I_4}-1)^3 + C_3(\sqrt{I_4}-1)(I_1-3) + C_3(I_1-3)^2$
@@ -328,7 +328,7 @@ end
     SimpleActiveSpring
 
 A simple linear fiber spring as for example found in [GokMenKuh:2014:ghm](@cite).
-    
+
 $\Psi^{\rm{a}} = \frac{a^{\rm{f}}}{2}(I_e^{\rm{e}}-1)^2$
 """
 Base.@kwdef struct SimpleActiveSpring
@@ -453,7 +453,7 @@ end
 
 @doc raw"""
     BioNeoHookean
-    
+
 A simple isotropic Neo-Hookean model of the form
 
 $\Psi = \alpha (\bar{I_1}-3)$

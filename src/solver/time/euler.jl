@@ -221,7 +221,7 @@ function _setup_local_solver_cache(
         zeros(singleQsize),
         # Globally requested tolerance
         Inf,
-        # Local convergence 
+        # Local convergence
         SciMLBase.ReturnCode.Default,
     )
 end

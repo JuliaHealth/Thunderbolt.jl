@@ -129,7 +129,7 @@ Ferrite.geometric_interpolation(qv::QuadratureValues) = geometric_interpolation(
 
 Ferrite.getdetJdV(qv::QuadratureValues) = @inbounds getdetJdV(qv.v, qv.q_point)
 
-# Accessors for function values 
+# Accessors for function values
 Ferrite.getnbasefunctions(qv::QuadratureValues) = getnbasefunctions(qv.v)
 Ferrite.function_interpolation(qv::QuadratureValues) = function_interpolation(qv.v)
 Ferrite.function_difforder(qv::QuadratureValues) = function_difforder(qv.v)
@@ -145,7 +145,7 @@ Ferrite.shape_gradient_type(qv::QuadratureValues) = shape_gradient_type(qv.v)
 
 
 
-#= Proposed syntax, for heatflow in general 
+#= Proposed syntax, for heatflow in general
 function assemble_element!(Ke::Matrix, fe::Vector, cellvalues)
     n_basefuncs = getnbasefunctions(cellvalues)
     for qv in Ferrite.QuadratureValuesIterator(cellvalues)
@@ -163,13 +163,13 @@ function assemble_element!(Ke::Matrix, fe::Vector, cellvalues)
     return Ke, fe
 end
 
-Where the default for a QuadratureValuesIterator would be to return a 
-`QuadratureValues` as above, but custom `AbstractValues` can be created where 
-for example the element type would be a static QuadPointValue type which doesn't 
-use heap allocated buffers, e.g. by only saving the cell and coordinates during reinit, 
-and then calculating all values for each element in the iterator. 
+Where the default for a QuadratureValuesIterator would be to return a
+`QuadratureValues` as above, but custom `AbstractValues` can be created where
+for example the element type would be a static QuadPointValue type which doesn't
+use heap allocated buffers, e.g. by only saving the cell and coordinates during reinit,
+and then calculating all values for each element in the iterator.
 
-References: 
+References:
 https://github.com/JuliaHealth/Thunderbolt.jl/pull/53/files#diff-2b486be5a947c02ef2a38ff3f82af3141193af0b6f01ed9d5129b914ed1d84f6
 https://github.com/Ferrite-FEM/Ferrite.jl/compare/master...kam/StaticValues2
 =#
@@ -191,7 +191,7 @@ end
 
 Ferrite.getdetJdV(qv::StaticQuadratureValues) = qv.detJdV
 
-# Accessors for function values 
+# Accessors for function values
 Ferrite.getnbasefunctions(qv::StaticQuadratureValues) = length(qv.N)
 # function_interpolation(qv::StaticQuadratureValues) = function_interpolation(qv.v) # Not included
 Ferrite.shape_value_type(::StaticQuadratureValues{<:Any, N_t}) where {N_t} = N_t
@@ -205,7 +205,7 @@ Ferrite.shape_gradient_type(::StaticQuadratureValues{<:Any, <:Any, dNdx_t}) wher
 @propagate_inbounds Ferrite.geometric_value(qv::StaticQuadratureValues, i::Int) = qv.M[i]
 
 # StaticInterpolationValues: interpolation and precalculated values for all quadrature points
-# Can be both for function and geometric shape functions. 
+# Can be both for function and geometric shape functions.
 # DiffOrder parameter?
 # TODO: Could perhaps denote this just InterpolationValues and replace GeometryMapping
 # Just need to make Nξ::AbstractMatrix instead as in GeometryMapping to make it equivalent (except fieldnames)
@@ -234,7 +234,7 @@ Ferrite.shape_value(siv::StaticInterpolationValues, qp::Int, i::Int) = siv.Nξ[i
 Ferrite.getnbasefunctions(siv::StaticInterpolationValues) = getnbasefunctions(siv.ip)
 
 
-# Dispatch on DiffOrder parameter? 
+# Dispatch on DiffOrder parameter?
 # Reuse functions for GeometryMapping - same signature but need access functions
 # Or merge GeometryMapping and StaticInterpolationValues => InterpolationValues
 @propagate_inbounds @inline function Ferrite.calculate_mapping(

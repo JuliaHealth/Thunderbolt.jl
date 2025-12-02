@@ -1,6 +1,6 @@
 using Thunderbolt, DelimitedFiles, Test
 #! format: off
-# JuliaFormatter fucks up the comments 
+# JuliaFormatter fucks up the comments
 @testset "Sarcomere Models" begin
 
     @testset "RDQ20MFModel" begin

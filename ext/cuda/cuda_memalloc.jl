@@ -4,11 +4,11 @@
 # Shared Memory Allocation  #
 #############################
 
-# since shared memory allocation has to be done at the kernel level, 
+# since shared memory allocation has to be done at the kernel level,
 #we need to define a function that will be called at the kernel level
 struct DynamicSharedMemFunction{N, Tv <: Real, Ti <: Integer}
     mem_size::NTuple{N, Ti} # e.g. (3rd order tensor, 2nd order tensor)
-    offset::Ti # nonzero when memory shape is of type KeFe 
+    offset::Ti # nonzero when memory shape is of type KeFe
 end
 
 
