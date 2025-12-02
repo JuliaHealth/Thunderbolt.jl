@@ -9,7 +9,7 @@ import FastBroadcast: @..
 
 using UnPack: @unpack # TODO remove this package
 using Reexport: @reexport
-using LinearAlgebra: mul!
+import LinearAlgebra: mul!
 import Polyester: @batch
 using SparseMatricesCSR, LinearAlgebra
 using OrderedCollections: OrderedDict, OrderedSet
@@ -53,14 +53,15 @@ import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
 using LinearSolve: LinearAliasSpecifier
 
-import Base: *, +, -, @kwdef
+using Base: @kwdef
+import Base: *, +, -
 
 import ForwardDiff
 
 import ModelingToolkit
 
 # Accelerator support libraries
-import Adapt: @adapt_structure, Adapt
+using Adapt: @adapt_structure, Adapt
 
 include("mesh/meshes.jl")
 
