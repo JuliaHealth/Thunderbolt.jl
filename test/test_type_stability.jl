@@ -1,11 +1,11 @@
 @testset "Type Stability" begin
-    f₀ = Tensors.Vec{3,Float64}((1.0,0.0,0.0))
-    s₀ = Tensors.Vec{3,Float64}((0.0,1.0,0.0))
-    n₀ = Tensors.Vec{3,Float64}((0.0,0.0,1.0))
+    f₀     = Tensors.Vec{3, Float64}((1.0, 0.0, 0.0))
+    s₀     = Tensors.Vec{3, Float64}((0.0, 1.0, 0.0))
+    n₀     = Tensors.Vec{3, Float64}((0.0, 0.0, 1.0))
     fsncoeff = ConstantCoefficient(OrthotropicMicrostructure(f₀, s₀, n₀))
     fsneval  = Thunderbolt.OrthotropicMicrostructure(f₀, s₀, n₀)
-    F = one(Tensors.Tensor{2,3})
-    Caᵢ = 0.0
+    F        = one(Tensors.Tensor{2, 3})
+    Caᵢ    = 0.0
 
     material_model_set = [
         NullEnergyModel(),
@@ -40,25 +40,28 @@
         passive_spring = HolzapfelOgden2009Model()
 
         @testset failfast=true "PK1 Stress" begin
-            model = PK1Model(
-                passive_spring,
-                fsncoeff,
+            model = PK1Model(passive_spring, fsncoeff)
+            @test_opt Thunderbolt.stress_function(
+                model,
+                F,
+                fsneval,
+                Thunderbolt.EmptyInternalModel(),
             )
-            @test_opt Thunderbolt.stress_function(model, F, fsneval, Thunderbolt.EmptyInternalModel())
-            @test Thunderbolt.stress_function(model, F, fsneval, Thunderbolt.EmptyInternalModel()) ≈ zero(Tensor{2,3}) atol=1e-16
-            @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Thunderbolt.EmptyInternalModel())
-            P, 𝔸 = Thunderbolt.stress_and_tangent(model, F, fsneval, Thunderbolt.EmptyInternalModel())
-            @test P ≈ zero(Tensor{2,3}) atol = 1e-16
+            @test Thunderbolt.stress_function(model, F, fsneval, Thunderbolt.EmptyInternalModel()) ≈
+                  zero(Tensor{2, 3}) atol=1e-16
+            @test_opt Thunderbolt.stress_and_tangent(
+                model,
+                F,
+                fsneval,
+                Thunderbolt.EmptyInternalModel(),
+            )
+            P, 𝔸 =
+                Thunderbolt.stress_and_tangent(model, F, fsneval, Thunderbolt.EmptyInternalModel())
+            @test P ≈ zero(Tensor{2, 3}) atol = 1e-16
         end
 
-        active_stress_set = [
-            SimpleActiveStress(),
-            PiersantiActiveStress(),
-        ]
-        contraction_model_set = [
-            ConstantStretchModel(),
-            PelceSunLangeveld1995Model(),
-        ]
+        active_stress_set = [SimpleActiveStress(), PiersantiActiveStress()]
+        contraction_model_set = [ConstantStretchModel(), PelceSunLangeveld1995Model()]
         Fᵃmodel_set = [
             GMKActiveDeformationGradientModel(),
             GMKIncompressibleActiveDeformationGradientModel(),
@@ -69,17 +72,14 @@
                 model = ActiveStressModel(
                     passive_spring,
                     active_stress,
-                    CaDrivenInternalSarcomereModel(
-                        contraction_model,
-                        ConstantCoefficient(1.0),
-                    ),
+                    CaDrivenInternalSarcomereModel(contraction_model, ConstantCoefficient(1.0)),
                     fsncoeff,
                 )
                 @test_opt Thunderbolt.stress_function(model, F, fsneval, Caᵢ)
-                @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2,3}) atol=1e-16
+                @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2, 3}) atol=1e-16
                 @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
                 P, 𝔸 = Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
-                @test P ≈ zero(Tensor{2,3}) atol = 1e-16
+                @test P ≈ zero(Tensor{2, 3}) atol = 1e-16
             end
         end
 
@@ -91,17 +91,14 @@
                         passive_spring,
                         ActiveMaterialAdapter(passive_spring),
                         Fᵃmodel,
-                        CaDrivenInternalSarcomereModel(
-                            contraction_model,
-                            ConstantCoefficient(1.0),
-                        ),
+                        CaDrivenInternalSarcomereModel(contraction_model, ConstantCoefficient(1.0)),
                         fsncoeff,
                     )
                     @test_opt Thunderbolt.stress_function(model, F, fsneval, Caᵢ)
-                    @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2,3}) atol=1e-16
+                    @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2, 3}) atol=1e-16
                     @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
                     P, 𝔸 = Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
-                    @test P ≈ zero(Tensor{2,3}) atol = 1e-16
+                    @test P ≈ zero(Tensor{2, 3}) atol = 1e-16
                 end
             end
         end
@@ -112,26 +109,20 @@
                         passive_spring,
                         ActiveMaterialAdapter(passive_spring),
                         Fᵃmodel,
-                        CaDrivenInternalSarcomereModel(
-                            contraction_model,
-                            ConstantCoefficient(1.0),
-                        ),
+                        CaDrivenInternalSarcomereModel(contraction_model, ConstantCoefficient(1.0)),
                         fsncoeff,
                     )
                     @test_opt Thunderbolt.stress_function(model, F, fsneval, Caᵢ)
-                    @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2,3}) atol=1e-16
+                    @test Thunderbolt.stress_function(model, F, fsneval, Caᵢ) ≈ zero(Tensor{2, 3}) atol=1e-16
                     @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
                     P, 𝔸 = Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
-                    @test P ≈ zero(Tensor{2,3}) atol = 1e-16
+                    @test P ≈ zero(Tensor{2, 3}) atol = 1e-16
                 end
             end
         end
     end
 
-    @testset "Cell Model $model" for model ∈ [
-        Thunderbolt.FHNModel(),
-        Thunderbolt.PCG2019()
-    ]
+    @testset "Cell Model $model" for model ∈ [Thunderbolt.FHNModel(), Thunderbolt.PCG2019()]
         du = Thunderbolt.default_initial_state(model)
         u = copy(du)
         @test_opt Thunderbolt.cell_rhs!(du, u, nothing, 0.0, model)
