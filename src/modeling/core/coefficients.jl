@@ -152,11 +152,10 @@ function compute_nodal_values(csc::CoordinateSystemCoefficient, dh::DofHandler, 
         ip = Ferrite.getfieldinterpolation(sdh, field_name)
         rdim = Ferrite.getrefdim(ip)
         positions = Vec{rdim, T}.(Ferrite.reference_coordinates(ip))
+        #! format: off
         # This little trick uses the delta property of interpolations
-        qr = QuadratureRule{Ferrite.getrefshape(ip)}(
-            [T(1.0) for _ = 1:length(positions)],
-            positions,
-        )
+        qr = QuadratureRule{Ferrite.getrefshape(ip)}([T(1.0) for _ = 1:length(positions)], positions)
+        #! format: on
         cc = setup_coefficient_cache(csc, qr, sdh)
         _compute_nodal_values!(nodal_values, qr, cc, sdh)
     end

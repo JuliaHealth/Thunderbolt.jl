@@ -1,5 +1,6 @@
 using Thunderbolt, DelimitedFiles, Test
-
+#! format: off
+# JuliaFormatter fucks up the comments 
 @testset "Sarcomere Models" begin
 
     @testset "RDQ20MFModel" begin
@@ -33,12 +34,12 @@ using Thunderbolt, DelimitedFiles, Test
                 t < t0 ? c0 : c0 + ((cmax - c0) / β * (exp(-(t - t0) / τ1) - exp(-(t - t0) / τ2)))
 
             # SL transient
-            SL0 = 2.2;       # µm
-            SL1 = SL0 * 0.97; # µm
-            SLt0 = 50.0;      # ms
+            SL0  = 2.2;        # µm
+            SL1  = SL0 * 0.97; # µm
+            SLt0 = 50.0;       # ms
             SLt1 = 350.0;      # ms
-            SLτ0 = 50.0;    # ms
-            SLτ1 = 20.0;    # ms
+            SLτ0 = 50.0;       # ms
+            SLτ1 = 20.0;       # ms
 
             stretch_fun(t) =
                 (
@@ -50,8 +51,13 @@ using Thunderbolt, DelimitedFiles, Test
                 )/SL0;
 
             sarcomere_model = Thunderbolt.RDQ20MFModel()
-            sarcomere_fun   = Thunderbolt.StandaloneSarcomereModel(model         = sarcomere_model, calcium       = calcium_fun, fiber_stretch = stretch_fun,             # This mirrors the original implementation. Using AD or forward differences yields a different trajectory.
-            fiber_velocity = t->(stretch_fun(t)-stretch_fun(t-dt))/dt)
+            sarcomere_fun   = Thunderbolt.StandaloneSarcomereModel(
+                model         = sarcomere_model,
+                calcium       = calcium_fun,
+                # This mirrors the original implementation. Using AD or forward differences yields a different trajectory.
+                fiber_stretch = stretch_fun,
+                fiber_velocity = t->(stretch_fun(t)-stretch_fun(t-dt))/dt
+            )
             du              = zeros(Thunderbolt.num_states(sarcomere_model))
             # Initial state for the test below
             u = zeros(Thunderbolt.num_states(sarcomere_model))
@@ -103,3 +109,4 @@ using Thunderbolt, DelimitedFiles, Test
     end
 
 end
+#! format: on
