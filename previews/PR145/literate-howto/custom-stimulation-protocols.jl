@@ -6,7 +6,7 @@
 # We start by define a struct holding all the parameters and make it callable.
 # The return value is the stimulus strength.
 # If you want to have parameters with spatial variation, which can be exchanged easily, then simply add a field with custom type and a function which accepts a coordinate `x` and a time `t` as input.
-# 
+#
 # Here we want to have a very simple S1S2 protocol with two spherical stimulus applied in a modular fashion.
 # Hence, we define a struct holding two callable functions and the windows for the Stimuli.
 using Thunderbolt, StaticArrays
