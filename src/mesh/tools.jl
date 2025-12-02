@@ -833,7 +833,7 @@ function compute_center_of_mass(mesh::SimpleMesh{sdim}; domain_name = first(mesh
     close!(dh)
 
     #
-    qrc = QuadratureRuleCollection(max(2Ferrite.getorder(ip)-1,2))
+    qrc = QuadratureRuleCollection(max(2Ferrite.getorder(Ferrite.geometric_interpolation(getcells(mesh, 1)))-1,2))
     for sdh in dh.subdofhandlers
         gip = geometric_interpolation(get_first_cell(sdh))
         ip = getinterpolation(ipc, sdh)
