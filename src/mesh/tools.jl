@@ -722,17 +722,17 @@ function remove_unattached_nodes!(grid::Grid)
     return nothing
 end
 
-function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
-    materialize_faces!(mesh)
+function extract_boundary_faces(mesh::SimpleMesh{3}; subdomains = nothing)
     actual_subdomains = subdomains === nothing ? Dict("" => 1:getncells(mesh)) : subdomains
+    materialize_faces!(mesh)
     # Cache for the cellid, local faceid pairs.
     # These are 0 if not assigned and -1 if assigned more than once.
-    face_elements = zeros(Int, num_faces(mesh))
+    face_elements  = zeros(Int, num_faces(mesh))
     face_localfid  = zeros(Int, num_faces(mesh))
-    for (_, subdomain) in actual_subdomains
-        for cellid in subdomain
+    for (_, subdomain) ∈ actual_subdomains
+        for cellid ∈ subdomain
             cell = getcells(mesh, cellid)
-            for (j,global_faceid) in enumerate(global_faces(mesh, cell))
+            for (j,global_faceid) ∈ enumerate(global_faces(mesh, cell))
                 if face_elements[global_faceid] == 0
                     face_elements[global_faceid] = cellid
                     face_localfid[global_faceid] = j
@@ -743,6 +743,15 @@ function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
             end
         end
     end
+
+    return face_elements, face_localfid
+end
+function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
+    materialize_faces!(mesh)
+    actual_subdomains = subdomains === nothing ? Dict("" => 1:getncells(mesh)) : subdomains
+    # Cache for the cellid, local faceid pairs.
+    # These are 0 if not assigned and -1 if assigned more than once.
+    face_elements, face_localfid = extract_boundary_faces(mesh; subdomains)
 
     # Sparse index map from face_elements to the index of the cells in the new surface grid
     next_cellid = 1
@@ -778,4 +787,92 @@ function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
     remove_unattached_nodes!(surface_grid)
 
     return surface_grid
+end
+
+# TODO do this via the operator post-processing interface
+function calculate_element_volume(cc, cellvalues)
+    reinit!(cellvalues, cc)
+    evol =0.0
+    @inbounds for qp in QuadratureIterator(cellvalues)
+        evol += 1 * getdetJdV(cellvalues, qp)
+    end
+    return evol
+end
+# function calculate_element_volume(cell, cellvalues_u, uₑ)
+#     reinit!(cellvalues_u, cell)
+#     evol = 0.0
+#     @inbounds for qp in QuadratureIterator(cellvalues_u)
+#         dΩ = getdetJdV(cellvalues_u, qp)
+#         ∇u = function_gradient(cellvalues_u, qp, uₑ)
+#         F = one(∇u) + ∇u
+#         J = det(F)
+#         evol += J * dΩ
+#     end
+#     return evol
+# end
+# function calculate_volume_deformed_mesh(w, dh::AbstractDofHandler, cellvalues_u)
+#     evol::Float64 = 0.0;
+#     @inbounds for cell in CellIterator(dh)
+#         global_dofs = celldofs(cell)
+#         nu = getnbasefunctions(cellvalues_u)
+#         global_dofs_u = global_dofs[1:nu]
+#         uₑ = w[global_dofs_u]
+#         δevol = calculate_element_volume(cell, cellvalues_u, uₑ)
+#         evol += δevol;
+#     end
+#     return evol
+# end
+function compute_center_of_mass(mesh::SimpleMesh{sdim}; domain_name = first(mesh.volumetric_subdomains.keys)) where sdim
+    ∫x = zero(Vec{sdim,Float64})
+    ∫1 = 0.0
+
+    order = Ferrite.getorder(Ferrite.geometric_interpolation(getcells(mesh, 1)))
+    ipc = LagrangeCollection{order}()
+    dh = DofHandler(mesh)
+    add_subdomain!(dh, domain_name, :u => ipc)
+    close!(dh)
+
+    #
+    qrc = QuadratureRuleCollection(max(2Ferrite.getorder(Ferrite.geometric_interpolation(getcells(mesh, 1)))-1,2))
+    for sdh in dh.subdofhandlers
+        gip = geometric_interpolation(get_first_cell(sdh))
+        ip = getinterpolation(ipc, sdh)
+        qr = getquadraturerule(qrc, sdh)
+        cv = CellValues(qr, ip, gip)
+        for cell in CellIterator(sdh)
+            reinit!(cv, cell)
+            coords = getcoordinates(cell)
+            for qp in QuadratureIterator(cv)
+                dΩ = getdetJdV(cv, qp)
+                x = spatial_coordinate(cv, qp, coords)
+                ∫x += x * dΩ
+                ∫1 += dΩ
+            end
+        end
+    end
+
+    return ∫x / ∫1
+end
+function compute_center_of_surface(grid::AbstractGrid{sdim}, name::String) where sdim
+    facets = getfacetset(grid, name)
+    volumes      = zeros(getncells(grid))
+    centerpoints = zeros(Vec{sdim}, getncells(grid))
+    ip = Ferrite.geometric_interpolation(getcells(grid, 1))
+    qr = FacetQuadratureRule{Ferrite.getrefshape(ip)}(max(2Ferrite.getorder(ip)-1,2))
+    cellvalues_vol = FacetValues(qr, ip)
+    @inbounds for cc in FacetIterator(grid, facets)
+        i = cellid(cc)
+        volumes[i] = calculate_element_volume(cc, cellvalues_vol)
+
+        # TODO use spatial_coordinate at reference element center
+        nodes = getcells(grid, i).nodes
+        for nodeid in nodes
+            x = get_node_coordinate(getnodes(grid, nodeid))
+            centerpoints[i] += get_node_coordinate(getnodes(grid, nodeid))
+        end
+        centerpoints[i] /= length(nodes)
+    end
+
+    center = sum(centerpoints .* volumes) ./ sum(volumes)
+    return Vec((center[1], center[2], center[3]))
 end

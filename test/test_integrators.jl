@@ -189,8 +189,11 @@ end
                 DiffEqBase.reinit!(integrator)
                 # integrator.dt = dt
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
+                lastu = copy(integrator.u)
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+                    lastu .= u
                 end
+                @test lastu ≈ integrator.u
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 @test isapprox(ufinal, integrator.u, atol=1e-6)
                 @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)

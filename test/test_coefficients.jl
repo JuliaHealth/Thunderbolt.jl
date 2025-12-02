@@ -1,4 +1,6 @@
 @testset "Coefficient API" begin
+    device = PolyesterDevice()
+
     grid = generate_grid(Line, (2,))
     cell_cache = Ferrite.CellCache(grid)
     qp1 = QuadraturePoint(1, Vec((0.0,)))
@@ -10,9 +12,13 @@
     close!(dh)
     sdh = first(dh.subdofhandlers)
 
+    function setup_test_cache(coefficient)
+         return Thunderbolt.duplicate_for_device(device, Thunderbolt.setup_coefficient_cache(coefficient, qr, sdh))
+    end
+
     @testset "ConstantCoefficient($val" for val ∈ [1.0, one(Tensor{2,2})]
         cc = ConstantCoefficient(val)
-        coeff_cache = Thunderbolt.setup_coefficient_cache(cc, qr, sdh)
+        coeff_cache = setup_test_cache(cc)
         Ferrite.reinit!(cell_cache, 1)
         @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ val
@@ -30,7 +36,7 @@
         data_scalar[1,2] = -1.0
         data_scalar[2,1] = -1.0
         fcs = FieldCoefficient(data_scalar, ip_collection)
-        coeff_cache = Thunderbolt.setup_coefficient_cache(fcs, qr, sdh)
+        coeff_cache = setup_test_cache(fcs)
         Ferrite.reinit!(cell_cache, 1)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈  0.0
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 1.0) ≈  0.0
@@ -47,7 +53,7 @@
         data_vector[1,2] = Vec((0.0,-1.0))
         data_vector[2,1] = Vec((-1.0,-0.0))
         fcv = FieldCoefficient(data_vector, ip_collection^2)
-        coeff_cache = Thunderbolt.setup_coefficient_cache(fcv, qr, sdh)
+        coeff_cache = setup_test_cache(fcv)
         Ferrite.reinit!(cell_cache, 1)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ Vec((0.0,0.0))
         @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 1.0) ≈ Vec((-0.1,0.0))
@@ -60,7 +66,7 @@
 
     @testset "Cartesian Coordinate System" begin
         ccsc = CartesianCoordinateSystem(grid)
-        coeff_cache = Thunderbolt.setup_coefficient_cache(ccsc, qr, sdh)
+        coeff_cache = setup_test_cache(ccsc)
         Ferrite.reinit!(cell_cache, 1)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ Vec((-0.5,))
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 1.0) ≈ Vec((-0.5,))
@@ -80,7 +86,7 @@
             (x,t) -> norm(x)+t,
             CartesianCoordinateSystem(grid),
         )
-        coeff_cache = Thunderbolt.setup_coefficient_cache(ac, qr, sdh)
+        coeff_cache = setup_test_cache(ac)
         Ferrite.reinit!(cell_cache, 1)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈  0.5
         @test evaluate_coefficient(coeff_cache, cell_cache, qp2, 0.0) ≈  0.45
@@ -103,7 +109,7 @@
             ConstantCoefficient(SVector((eigval,0.0))),
         )
         st = Tensor{2,2}((-1.0,0.0,0.0,0.0))
-        coeff_cache = Thunderbolt.setup_coefficient_cache(stc, qr, sdh)
+        coeff_cache = setup_test_cache(stc)
         for i in 1:2
             Ferrite.reinit!(cell_cache, i)
             @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
@@ -118,14 +124,14 @@
             ConstantCoefficient(TransverselyIsotropicMicrostructure(eigvec)),
             ConstantCoefficient(SVector((eigval,eigval))),
         )
-        coeff_cache = Thunderbolt.setup_coefficient_cache(stc2, qr, sdh)
+        coeff_cache = setup_test_cache(stc2)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ st2
 
         stc3 = SpectralTensorCoefficient(
             ConstantCoefficient(AnisotropicPlanarMicrostructure(Vec((1.0,0.0)), Vec((0.0,1.0)))),
             ConstantCoefficient(SVector((eigval,eigval))),
         )
-        coeff_cache = Thunderbolt.setup_coefficient_cache(stc3, qr, sdh)
+        coeff_cache = setup_test_cache(stc3)
         @test evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0) ≈ st2
 
         @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
@@ -136,7 +142,7 @@
             [1.0, 2.0],
             [Vec((0.1,)), Vec((0.2,)), Vec((0.3,))]
         )
-        coeff_cache = Thunderbolt.setup_coefficient_cache(shdc, qr, sdh)
+        coeff_cache = setup_test_cache(shdc)
         for i in 1:2
             Ferrite.reinit!(cell_cache, i)
             @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)
@@ -168,7 +174,7 @@
             ConstantCoefficient(2.0),
             ConstantCoefficient(0.5),
         )
-        coeff_cache = Thunderbolt.setup_coefficient_cache(ctdc, qr, sdh)
+        coeff_cache = setup_test_cache(ctdc)
         for i in 1:2
             Ferrite.reinit!(cell_cache, i)
             @test_opt evaluate_coefficient(coeff_cache, cell_cache, qp1, 0.0)

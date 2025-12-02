@@ -71,47 +71,50 @@ function assemble_LFSI_coupling_contribution_col!(C, dh::AbstractDofHandler, u::
 end
 
 
-function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberTying)
+# TODO use an operator for this
+function compute_chamber_volume(dh, u, setname, method::Thunderbolt.RSAFDQ2022SingleChamberTying)
     grid = dh.grid
 
     volume = 0.0
-    for (element_type, facet_subset) in grid.surface_subdomains[setname].data
-        (cellidx, _) = first(facet_subset)
-        for sdh in dh.subdofhandlers
-            if cellidx ∈ sdh.cellset
-                ip = Ferrite.getfieldinterpolation(sdh, method.displacement_symbol)
-                ip_geo = Ferrite.geometric_interpolation(element_type)
-                intorder = 2*Ferrite.getorder(ip)
-                ref_shape = Ferrite.getrefshape(ip)
-                qr_facet = FacetQuadratureRule{ref_shape}(intorder)
-                fv = FacetValues(qr_facet, ip, ip_geo)
-                drange = dof_range(sdh, method.displacement_symbol)
-                for facet ∈ FacetIterator(sdh, facet_subset)
-                    reinit!(fv, facet)
+    # TODO function barrier
+    for facetset in values(grid.surface_subdomains[setname].data)
+        # TODO move out of loop and refactor
+        cell = getcells(grid, first(facetset)[1])
+        sdhi = typeof(cell) == Hexahedron ? 1 : min(2, length(dh.subdofhandlers)) # :) We can find it by searching the element index of the first element in the facetset in the sdh cellsets.
+        sdh = dh.subdofhandlers[sdhi]
+        ip = Ferrite.getfieldinterpolation(sdh, method.displacement_symbol)
+        drange = dof_range(sdh,method.displacement_symbol)
+        for facet ∈ FacetIterator(sdh, facetset)
+            ip_geo = Ferrite.geometric_interpolation(typeof(cell))
+            intorder = 2*Ferrite.getorder(ip)
+            ref_shape = Ferrite.getrefshape(ip)
+            qr_facet = FacetQuadratureRule{ref_shape}(intorder)
+            fv = FacetValues(qr_facet, ip, ip_geo)
 
-                    coords = getcoordinates(facet)
-                    ddofs = @view celldofs(facet)[drange]
-                    uₑ = @view u[ddofs]
+            Ferrite.reinit!(fv, facet)
 
-                    for qp in QuadratureIterator(fv)
-                        dΓ = getdetJdV(fv, qp)
-                        N = getnormal(fv, qp)
+            coords = getcoordinates(facet)
+            ddofs = @view celldofs(facet)[drange]
+            uₑ = @view u[ddofs]
 
-                        ∇u = function_gradient(fv, qp, uₑ)
-                        F = one(∇u) + ∇u
+            for qp in QuadratureIterator(fv)
+                dΓ = getdetJdV(fv, qp)
+                N = getnormal(fv, qp)
 
-                        d = function_value(fv, qp, uₑ)
+                ∇u = function_gradient(fv, qp, uₑ)
+                F = one(∇u) + ∇u
 
-                        x = spatial_coordinate(fv, qp, coords)
+                d = function_value(fv, qp, uₑ)
 
-                        volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
-                    end
-                end
+                x = spatial_coordinate(fv, qp, coords)
+
+                volume += Thunderbolt.volume_integral(x, d, F, N, method.volume_method) * dΓ
             end
         end
     end
     return volume
 end
+
 
 """
 Compute the chamber volume as a surface integral via the integral

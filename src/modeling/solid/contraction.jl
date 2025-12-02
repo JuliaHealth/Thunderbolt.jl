@@ -22,10 +22,19 @@ struct EmptyRateDependentCondensationMaterialStateCache <: RateDependentCondensa
 function setup_contraction_model_cache(contraction_model::AbstractSteadyStateSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
     return EmptyTrivialCondensationMaterialStateCache()
 end
+function duplicate_for_device(device, cache::EmptyTrivialCondensationMaterialStateCache)
+    return EmptyTrivialCondensationMaterialStateCache()
+end
 function setup_contraction_model_cache(contraction_model::AbstractRateIndependentSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
     return EmptyRateIndependentCondensationMaterialStateCache()
 end
+function duplicate_for_device(device, cache::EmptyRateIndependentCondensationMaterialStateCache)
+    return EmptyRateIndependentCondensationMaterialStateCache()
+end
 function setup_contraction_model_cache(contraction_model::AbstractRateDependentSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return EmptyRateDependentCondensationMaterialStateCache()
+end
+function duplicate_for_device(device, cache::EmptyRateDependentCondensationMaterialStateCache)
     return EmptyRateDependentCondensationMaterialStateCache()
 end
 
@@ -82,15 +91,36 @@ struct TrivialCaDrivenCondensationSarcomereCache{ModelType, ModelCacheType, Calc
     model_cache::ModelCacheType
     calcium_cache::CalciumCacheType
 end
+function duplicate_for_device(device, cache::TrivialCaDrivenCondensationSarcomereCache)
+    return TrivialCaDrivenCondensationSarcomereCache(
+        duplicate_for_device(device, cache.model),
+        duplicate_for_device(device, cache.model_cache),
+        duplicate_for_device(device, cache.calcium_cache),
+    )
+end
 struct RateIndependentCaDrivenCondensationSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: RateIndependentCondensationMaterialStateCache
     model::ModelType
     model_cache::ModelCacheType
     calcium_cache::CalciumCacheType
 end
+function duplicate_for_device(device, cache::RateIndependentCaDrivenCondensationSarcomereCache)
+    return RateIndependentCaDrivenCondensationSarcomereCache(
+        duplicate_for_device(device, cache.model),
+        duplicate_for_device(device, cache.model_cache),
+        duplicate_for_device(device, cache.calcium_cache),
+    )
+end
 struct RateDependentCaDrivenCondensationSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <: RateDependentCondensationMaterialStateCache
     model::ModelType
     model_cache::ModelCacheType
     calcium_cache::CalciumCacheType
+end
+function duplicate_for_device(device, cache::RateDependentCaDrivenCondensationSarcomereCache)
+    return RateDependentCaDrivenCondensationSarcomereCache(
+        duplicate_for_device(device, cache.model),
+        duplicate_for_device(device, cache.model_cache),
+        duplicate_for_device(device, cache.calcium_cache),
+    )
 end
 function setup_contraction_model_cache(wrapper::CaDrivenInternalSarcomereModel, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_contraction_model_cache_from_wrapper(wrapper.model, wrapper.calcium_field, qr, sdh)

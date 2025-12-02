@@ -3,21 +3,7 @@
 mutable struct ParaViewWriter{PVD}
     const filename::String
     const pvd::PVD
-    current_file::Union{WriteVTK.DatasetFile, Nothing}
-end
-
-Ferrite.create_vtk_grid(filename::AbstractString, mesh::SimpleMesh) = _thunderbolt_fix_create_vtk_grid(filename, mesh)
-
-function _thunderbolt_fix_create_vtk_grid(filename::AbstractString, grid::AbstractGrid{sdim}) where sdim
-    cls = WriteVTK.MeshCell[]
-    for cell in getcells(grid)
-        celltype = Ferrite.cell_to_vtkcell(typeof(cell))
-        push!(cls, WriteVTK.MeshCell(celltype, Ferrite.nodes_to_vtkorder(cell)))
-    end
-    T = Ferrite.get_coordinate_eltype(grid)
-    nodes_flat = reinterpret(T, getnodes(grid))
-    coords = reshape(nodes_flat, (sdim, getnnodes(grid)))
-    return  WriteVTK.vtk_grid(filename, coords, cls)
+    current_file::Union{VTKGridFile, Nothing}
 end
 
 function __paraview_collection(name::String; kwargs...)
@@ -28,10 +14,11 @@ end
 
 ParaViewWriter(filename::String; kwargs...) = ParaViewWriter(filename, __paraview_collection("$filename.pvd"; kwargs...), nothing)
 
-function store_timestep!(io::ParaViewWriter, t, grid::AbstractGrid)
+function store_timestep!(io::ParaViewWriter, t, grid::AbstractGrid; write_discontinuous = false)
     if io.current_file === nothing
         mkpath(io.filename)
-        io.current_file = _thunderbolt_fix_create_vtk_grid(io.filename * "/$t.vtu", grid)
+        vtk, cellnodes, node_mapping = Ferrite.create_vtk_grid(io.filename * "/$t.vtu", grid, write_discontinuous)
+        io.current_file = VTKGridFile(vtk, cellnodes, node_mapping)
     end
 end
 
@@ -50,7 +37,12 @@ function store_timestep_field!(io::ParaViewWriter, t, dh::AbstractDofHandler, u:
         return nothing
     end
     data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
-    WriteVTK.vtk_point_data(io.current_file, data, name)
+    if Ferrite.write_discontinuous(io.current_file)
+        data = Ferrite.evaluate_at_discontinuous_vtkgrid_nodes(dh, u, sym, io.current_file.cellnodes)
+    else
+        data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
+    end
+    Ferrite._vtk_write_node_data(io.current_file.vtk, data, name)
 end
 
 function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
@@ -59,7 +51,7 @@ function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
 end
 
 function finalize_timestep!(io::ParaViewWriter, t)
-    WriteVTK.vtk_save(io.current_file)
+    WriteVTK.vtk_save(io.current_file.vtk)
     io.pvd[t] = io.current_file
     io.current_file = nothing
     # This updates the PVD file
@@ -70,104 +62,77 @@ function finalize!(io::ParaViewWriter)
     close!(io.pvd)
 end
 
-#### Storing coefficients
-function store_coefficient!(io, t, coefficient::AnisotropicPlanarMicrostructureModel, name)
-    store_coefficient!(io, t, coefficient.fiber_coefficient, name*".f", t)
-    store_coefficient!(io, t, coefficient.sheetlet_coefficient, name*".s", t)
-end
+# #### Storing coefficients
+# # TODO use operator task API
+# function store_coefficient!(io::ParaViewWriter, t, coefficient, name)
+#     error("Unimplemented")
+# end
 
-function store_coefficient!(io, t, coefficient::OrthotropicMicrostructureModel, name)
-    store_coefficient!(io, t, coefficient.fiber_coefficient, name*".f", t)
-    store_coefficient!(io, t, coefficient.sheetlet_coefficient, name*".s", t)
-    store_coefficient!(io, t, coefficient.normal_coefficient, name*".n", t)
-end
+# function store_coefficient!(io, t, coefficient::AnisotropicPlanarMicrostructureModel, name)
+#     store_coefficient!(io, t, coefficient.fiber_coefficient, name*".f", t)
+#     store_coefficient!(io, t, coefficient.sheetlet_coefficient, name*".s", t)
+# end
 
-# TODO split up compute from store
-function store_coefficient!(io::ParaViewWriter, t, coefficient::FieldCoefficient, name)
-    error("Unimplemented")
-end
+# function store_coefficient!(io, t, coefficient::OrthotropicMicrostructureModel, name)
+#     store_coefficient!(io, t, coefficient.fiber_coefficient, name*".f", t)
+#     store_coefficient!(io, t, coefficient.sheetlet_coefficient, name*".s", t)
+#     store_coefficient!(io, t, coefficient.normal_coefficient, name*".n", t)
+# end
 
-# TODO split up compute from store
-function store_coefficient!(io::ParaViewWriter, t, coefficient::ConstantCoefficient{T}, name) where {T}
-    data = zeros(T, getncells(grid::AbstractGrid))
-    qrc = QuadratureRuleCollection(1)
-    for cell_cache in CellIterator(dh)
-        qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
-        data[cellid(cell_cache)] = evaluate_coefficient(coefficient, cell_cache, first(QuadratureIterator(qr)), t)
-    end
-    WriteVTK.vtk_cell_data(io.current_file, data, name)
-end
+# function store_coefficient!(io, dh, coefficient::SpectralTensorCoefficient, name, t)
+#     store_coefficient!(io, dh, coefficient.eigenvalues, name*".λ", t)
+#     store_coefficient!(io, dh, coefficient.eigenvectors, name*".ev", t)
+# end
 
-# TODO split up compute from store
-function store_coefficient!(io::ParaViewWriter, dh::DofHandler{sdim}, coefficient::AnalyticalCoefficient{<:Any,<:CoordinateSystemCoefficient}, name, t::TimeType, qr_collection::QuadratureRuleCollection) where {sdim, TimeType}
-    check_subdomains(dh)
-    T = Base.return_types(c.f, (Vec{sdim}, TimeType)) # Extract the return type from the function
-    @assert length(T) == 1 "Cannot deduce return type for analytical coefficient! Found: $T"
-    _store_coefficient(T, io, dh, coefficient, name, t, qr_collection)
-end
+# # TODO split up compute from store
+# function store_coefficient!(io::ParaViewWriter, t, coefficient::ConstantCoefficient{T}, name) where {T}
+#     data = zeros(T, getncells(grid::AbstractGrid))
+#     qrc = QuadratureRuleCollection(1)
+#     for cell_cache in CellIterator(dh)
+#         qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
+#         data[cellid(cell_cache)] = evaluate_coefficient(coefficient, cell_cache, first(QuadratureIterator(qr)), t)
+#     end
+#     WriteVTK.vtk_cell_data(io.current_file, data, name)
+# end
 
-function _store_coefficient!(::Union{Type{<:Tuple{T}},Type{<:SVector{T}}}, tlen::Int, io::ParaViewWriter, dh, coefficient::AnalyticalCoefficient, t, qr_collection) where {T}
-    data = zeros(T, getncells(grid::AbstractGrid), tlen)
-    for cell_cache in CellIterator(dh) # TODO subdomain support
-        qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
-        for qp ∈ QuadratureIterator(qr)
-            tval = evaluate_coefficient(coefficient, cell_cache, qp, t)
-            for i ∈ 1:tlen
-                data[cellid(cell_cache), i] += tval[I]
-            end
-        end
-        data[cellid(cell_cache),:] ./= getnquadpoints(qr)
-    end
-    for i ∈ 1:tlen
-        WriteVTK.vtk_cell_data(io.current_file, data[:,i], name*".$i") # TODO component names
-    end
-end
+# # TODO split up compute from store
+# function store_coefficient!(io::ParaViewWriter, dh::DofHandler{sdim}, coefficient::AnalyticalCoefficient{<:Any,<:CoordinateSystemCoefficient}, name, t::TimeType, qr_collection::QuadratureRuleCollection) where {sdim, TimeType}
+#     T = Base.return_types(c.f, (Vec{sdim}, TimeType)) # Extract the return type from the function
+#     @assert length(T) == 1 "Cannot deduce return type for analytical coefficient! Found: $T"
+#     _store_coefficient(T, io, dh, coefficient, name, t, qr_collection)
+# end
 
-function _store_coefficient!(T::Type, tlen::Int, io::ParaViewWriter, dh, coefficient::AnalyticalCoefficient, t, qr_collection)
-    data = zeros(T, getncells(grid::AbstractGrid))
-    for cell_cache in CellIterator(dh) # TODO subdomain support
-        qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
-        for qp ∈ QuadratureIterator(qr)
-            data[cellid(cell_cache)] += evaluate_coefficient(coefficient, cell_cache, qp, t)
-        end
-        data[cellid(cell_cache)] /= getnquadpoints(qr)
-    end
-    WriteVTK.vtk_cell_data(io.current_file, data, name)
-end
+# function _store_coefficient!(::Union{Type{<:Tuple{T}},Type{<:SVector{T}}}, tlen::Int, io::ParaViewWriter, dh, coefficient::AnalyticalCoefficient, t, qr_collection) where {T}
+#     data = zeros(T, getncells(grid::AbstractGrid), tlen)
+#     for sdh in dh.subdofhandlers
+#         for cell_cache in CellIterator(sdh)
+#             qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
+#             for qp ∈ QuadratureIterator(qr)
+#                 tval = evaluate_coefficient(coefficient, cell_cache, qp, t)
+#                 for i ∈ 1:tlen
+#                     data[cellid(cell_cache), i] += tval[I]
+#                 end
+#             end
+#             data[cellid(cell_cache),:] ./= getnquadpoints(qr)
+#         end
+#     end
+#     for i ∈ 1:tlen
+#         WriteVTK.vtk_cell_data(io.current_file, data[:,i], name*".$i") # TODO component names
+#     end
+# end
 
-function store_coefficient!(io, dh, coefficient::SpectralTensorCoefficient, name, t)
-    check_subdomains(dh)
-    store_coefficient!(io, dh, coefficient.eigenvalues, name*".λ", t) # FIXME. PLS...
-    store_coefficient!(io, dh, coefficient.eigenvectors, name*".ev.", t)
-end
+# function _store_coefficient!(T::Type, tlen::Int, io::ParaViewWriter, dh, coefficient::AnalyticalCoefficient, t, qr_collection)
+#     data = zeros(T, getncells(grid::AbstractGrid))
+#     for cell_cache in CellIterator(dh) # TODO subdomain support
+#         qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
+#         for qp ∈ QuadratureIterator(qr)
+#             data[cellid(cell_cache)] += evaluate_coefficient(coefficient, cell_cache, qp, t)
+#         end
+#         data[cellid(cell_cache)] /= getnquadpoints(qr)
+#     end
+#     WriteVTK.vtk_cell_data(io.current_file, data, name)
+# end
 
-# TODO split up compute from store
-# TODO revisit if this might be expressed as some cofficient which is then stored (likely FieldCoefficient) - I think this is basically similar to `interpolate_gradient_field` in FerriteViz
-function store_green_lagrange!(io::ParaViewWriter, dh, u::AbstractVector, a_coeff, b_coeff, cv, name, t)
-    check_subdomains(dh)
-    # TODO subdomain support
-    # field_idx = find_field(dh, :displacement) # TODO abstraction layer
-    for cell_cache ∈ CellIterator(dh)
-        reinit!(cv, cell_cache)
-        global_dofs = celldofs(cell_cache)
-        # field_dofs  = dof_range(sdh, field_idx)
-        uₑ = @view u[global_dofs] # element dofs
-        for qp in QuadratureIterator(cv)
-            ∇u = function_gradient(cv, qp, uₑ)
-
-            F = one(∇u) + ∇u
-            C = tdot(F)
-            E = (C-one(C))/2.0
-
-            a = evaluate_coefficient(a_coeff, cell_cache, qp, time)
-            b = evaluate_coefficient(b_coeff, cell_cache, qp, time)
-
-            E[cellid(cell)] += a ⋅ E ⋅ b
-        end
-        E[cellid(cell)] /= getnquadpoints(cv)
-    end
-    WriteVTK.vtk_cell_data(io.current_file, E, name)
-end
 
 """
 """
@@ -224,9 +189,14 @@ function reorder_nodal!(dh::DofHandler)
     for sdh in dh.subdofhandlers
         firstcellidx = first(sdh.cellset)
         celltype = typeof(getcells(grid,firstcellidx))
-        @assert sdh.field_interpolations[1] == Ferrite.geometric_interpolation(celltype)
+        vdim = Ferrite.n_components(sdh.field_interpolations[1])
         for i ∈ 1:getncells(grid)
-            dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(dh, i)-1)] .= getcells(grid,i).nodes
+            dof_offsets = dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(dh, i)-1)
+            for (j,dof_offset_idx) in enumerate(1:vdim:length(dof_offsets))
+                for d in 1:vdim
+                    dh.cell_dofs[dof_offsets[dof_offset_idx]+d-1] = vdim*(getcells(grid,i).nodes[j]-1) + d
+                end
+            end
         end
     end
 end

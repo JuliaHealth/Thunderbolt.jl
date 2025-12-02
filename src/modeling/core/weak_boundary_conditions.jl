@@ -80,6 +80,12 @@ struct SimpleFacetCache{MP, FV} <: AbstractSurfaceElementCache
     mp::MP
     fv::FV
 end
+function duplicate_for_device(device, cache::SimpleFacetCache)
+    return SimpleFacetCache(
+        cache.mp,
+        duplicate_for_device(device, cache.fv),
+    )
+end
 @inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::SimpleFacetCache) = facet ∈ getfacetset(cell.grid, getboundaryname(facet_cache))
 @inline getboundaryname(facet_cache::SimpleFacetCache) = facet_cache.mp.boundary_name
 
@@ -503,6 +509,16 @@ struct ConsistencyCheckWeakBoundaryConditionCache{IC} <: AbstractSurfaceElementC
     residualₑfd::Vector{Float64}
     residualₑref::Vector{Float64}
     Δ::Float64
+end
+function duplicate_for_device(device, cache::ConsistencyCheckWeakBoundaryConditionCache)
+    return ConsistencyCheckWeakBoundaryConditionCache(
+        duplicate_for_device(cache.inner_cache),
+        duplicate_for_device(cache.Kₑfd),
+        duplicate_for_device(cache.uₑfd),
+        duplicate_for_device(cache.residualₑfd),
+        duplicate_for_device(cache.residualₑref),
+        cache.Δ,
+    )
 end
 @inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::ConsistencyCheckWeakBoundaryConditionCache) = is_facet_in_cache(facet, cell, facet_cache.inner_cache)
 @inline getboundaryname(facet_cache::ConsistencyCheckWeakBoundaryConditionCache) = getboundaryname(facet_cache.inner_cache)

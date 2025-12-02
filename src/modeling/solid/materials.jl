@@ -61,9 +61,15 @@ end
 default_initial_state!(uq, model::PrestressedMechanicalModel) = default_initial_state!(uq, model.inner_model)
 
 function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler)
-    PrestressedMechanicalModelCoefficientCache(
+    return PrestressedMechanicalModelCoefficientCache(
         setup_coefficient_cache(m.inner_model, qr, sdh),
         setup_coefficient_cache(m.prestress_field, qr, sdh),
+    )
+end
+function duplicate_for_device(device, cache::PrestressedMechanicalModelCoefficientCache)
+    return PrestressedMechanicalModelCoefficientCache(
+        duplicate_for_device(device, cache.inner_cache),
+        duplicate_for_device(device, cache.prestress_cache),
     )
 end
 
@@ -84,6 +90,17 @@ function prestressed_material_routine(material_model::PrestressedMechanicalModel
     return P, ∂P∂F
 end
 
+reduced_material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::EmptyInternalCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = reduced_prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
+reduced_material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::TrivialCondensationMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = reduced_prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
+reduced_material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::RateIndependentCondensationMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = reduced_prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
+function reduced_prestressed_material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
+    Fᵉ = F ⋅ F₀inv
+    ∂Ψᵉ∂Fᵉ = reduced_material_routine(material_model.inner_model, Fᵉ, coefficient_cache.inner_cache, state_cache, geometry_cache, qp, time)
+    Pᵉ = ∂Ψᵉ∂Fᵉ # Elastic PK1
+    P  = Pᵉ ⋅ transpose(F₀inv) # Obtained by Coleman-Noll procedure
+    return P
+end
 setup_internal_cache(material_model::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(material_model.inner_model, qr, sdh)
 
 @doc raw"""
@@ -152,6 +169,19 @@ function setup_coefficient_cache(m::GeneralizedHillModel, qr::QuadratureRule, sd
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
+function stress_function(model::GeneralizedHillModel, F::Tensor{2}, coefficients, state)
+    # TODO what is a good abstraction here?
+    Fᵃ = compute_Fᵃ(state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
+
+    ∂Ψ∂F = Tensors.gradient(
+        F_ad ->
+              Ψ(F_ad,     coefficients, model.passive_spring)
+            + Ψ(F_ad, Fᵃ, coefficients, model.active_spring),
+        F)
+
+    return ∂Ψ∂F
+end
+
 function stress_and_tangent(model::GeneralizedHillModel, F::Tensor{2}, coefficients, state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
@@ -199,7 +229,7 @@ function stress_function(model::ExtendedHillModel, F::Tensor{2}, coefficients, c
         F_ad ->
                 Ψ(F_ad,     coefficients, model.passive_spring)
             + N*Ψ(F_ad, Fᵃ, coefficients, model.active_spring),
-        F, :all)
+        F)
 
     return ∂Ψ∂F
 end
@@ -244,16 +274,14 @@ function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::
 end
 
 function stress_function(model::ActiveStressModel, F::Tensor{2}, coefficients, cell_state)
-    ∂²Ψ∂F², ∂Ψ∂F = Tensors.gradient(
+    ∂Ψ∂F = Tensors.gradient(
         F_ad -> Ψ(F_ad, coefficients, model.material_model),
         F
     )
 
-    P2 = 𝓝(cell_state, F_ad, coefficients, model.contraction_model) * active_stress(model.active_stress_model, F_ad, coefficients)
+    P2 = 𝓝(cell_state, F, coefficients, model.contraction_model) * active_stress(model.active_stress_model, F, coefficients)
     return ∂Ψ∂F + P2
 end
-
-
 function stress_and_tangent(model::ActiveStressModel, F::Tensor{2}, coefficients, cell_state)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
