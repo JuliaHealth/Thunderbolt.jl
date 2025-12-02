@@ -826,14 +826,14 @@ function compute_center_of_mass(mesh::SimpleMesh{sdim}; domain_name = first(mesh
     ∫x = zero(Vec{sdim,Float64})
     ∫1 = 0.0
 
-    order = Ferrite.getorder(Ferrite.geometric_interpolation(getcells(grid, 1)))
+    order = Ferrite.getorder(Ferrite.geometric_interpolation(getcells(mesh, 1)))
     ipc = LagrangeCollection{order}()
     dh = DofHandler(mesh)
     add_subdomain!(dh, domain_name, :u => ipc)
     close!(dh)
 
     #
-    qrc = QuadratureRuleCollection(max(2Ferrite.getorder(ip)-1,2))
+    qrc = QuadratureRuleCollection(max(2Ferrite.getorder(Ferrite.geometric_interpolation(getcells(mesh, 1)))-1,2))
     for sdh in dh.subdofhandlers
         gip = geometric_interpolation(get_first_cell(sdh))
         ip = getinterpolation(ipc, sdh)
