@@ -72,7 +72,7 @@ end
 
 
 # TODO use an operator for this
-function compute_chamber_volume(dh, u, setname, method::Thunderbolt.RSAFDQ2022SingleChamberTying)
+function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberTying)
     grid = dh.grid
 
     volume = 0.0
@@ -108,7 +108,7 @@ function compute_chamber_volume(dh, u, setname, method::Thunderbolt.RSAFDQ2022Si
 
                 x = spatial_coordinate(fv, qp, coords)
 
-                volume += Thunderbolt.volume_integral(x, d, F, N, method.volume_method) * dΓ
+                volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
             end
         end
     end
@@ -323,4 +323,4 @@ function eliminate_constraints_from_linearization!(solver_cache::AbstractNonline
     getJ(op, Block((2,1)))[:, ch.prescribed_dofs] .= 0.0
 end
 
-update_constraints_block!(::RSAFDQ2022TyingInfo, ::BlockArrays.Block, ::Thunderbolt.HomotopyPathSolverCache, ::Float64) = nothing
+update_constraints_block!(::RSAFDQ2022TyingInfo, ::BlockArrays.Block, ::HomotopyPathSolverCache, ::Float64) = nothing

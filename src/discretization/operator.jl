@@ -591,7 +591,7 @@ Base.size(op::DiagonalOperator, axis) = length(op.values)
 
 getJ(op::DiagonalOperator) = spdiagm(op.values)
 
-update_linearization!(::Thunderbolt.DiagonalOperator, ::AbstractVector, ::AbstractVector, t) = nothing
+update_linearization!(::DiagonalOperator, ::AbstractVector, ::AbstractVector, t) = nothing
 
 """
     NullOperator <: AbstractBilinearOperator
@@ -609,7 +609,7 @@ Base.size(op::NullOperator{T,S1,S2}, axis) where {T,S1,S2} = axis == 1 ? S1 : (a
 
 getJ(op::NullOperator{T, SIN, SOUT}) where {T, SIN, SOUT} = spzeros(T,SIN,SOUT)
 
-update_linearization!(::Thunderbolt.NullOperator, ::AbstractVector, ::AbstractVector, t) = nothing
+update_linearization!(::NullOperator, ::AbstractVector, ::AbstractVector, t) = nothing
 
 ###############################################################################
 """

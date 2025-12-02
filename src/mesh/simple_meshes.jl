@@ -97,7 +97,7 @@ end
 
 global_edges(mgrid::SimpleMesh, cell) = [mgrid.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell)))]
 # Get the edges of a specific face
-function Thunderbolt.global_edges(mesh, cell, lfi)
+function global_edges(mesh, cell, lfi)
     sface = first(sortface(faces(cell)[lfi]))
     return [mesh.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell))) if sedge[1] ∈ sface && sedge[2] ∈ sface]
 end

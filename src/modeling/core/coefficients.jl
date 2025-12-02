@@ -277,7 +277,7 @@ function setup_coefficient_cache(coefficient::SpatiallyHomogeneousDataField, qr:
     return coefficient
 end
 
-Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::FerriteUtils.AnyCellCache, ::QuadraturePoint, t) = _evaluate_coefficient(coeff, t)
+evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::FerriteUtils.AnyCellCache, ::QuadraturePoint, t) = _evaluate_coefficient(coeff, t)
   
 function _evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, t)
     @unpack timings, data = coeff
