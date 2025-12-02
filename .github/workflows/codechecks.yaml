@@ -39,16 +39,16 @@ jobs:
           # Check Thundebolt
           allow_unanalyzable = () # baremodules
           # check_no_implicit_imports(Thunderbolt; allow_unanalyzable)
-          # check_no_stale_explicit_imports(Thunderbolt; allow_unanalyzable)
-          check_all_qualified_accesses_via_owners(Thunderbolt)
+          check_no_stale_explicit_imports(Thunderbolt; allow_unanalyzable)
+          # check_all_qualified_accesses_via_owners(Thunderbolt)
           check_no_self_qualified_accesses(Thunderbolt)
           # Check extension modules
           # for ext in (:CuThunderboltExt,)
           #     extmod = Base.get_extension(Thunderbolt, ext)
           #     if extmod !== nothing
           #         # check_no_implicit_imports(extmod)
-          #         # check_no_stale_explicit_imports(extmod)
-          #         check_all_qualified_accesses_via_owners(extmod)
+          #         check_no_stale_explicit_imports(extmod)
+          #         # check_all_qualified_accesses_via_owners(extmod)
           #         check_no_self_qualified_accesses(extmod)
           #     else
           #         @warn "$(ext) extensions not available."

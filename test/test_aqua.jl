@@ -7,7 +7,7 @@ using Aqua
         # unbound_args=true,
         # undefined_exports=true,
         # project_extras=true,
-        stale_deps = (ignore = [:FerriteGmsh],), # We use this one in the examples for now 
+        stale_deps = (ignore = [:FerriteGmsh],), # We use this one in the examples for now
         deps_compat = false,
         piracies = false, # Comment out after https://github.com/Ferrite-FEM/Ferrite.jl/pull/864 is merged
         persistent_tasks = false,
