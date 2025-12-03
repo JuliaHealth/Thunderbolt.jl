@@ -74,7 +74,7 @@ partsize = 16
 prec = builder(A, partsize)
 # NOTES:
 # 1. for symmetric A, that's not of type `Symmetric`, or `SparseMatrixCSR` (i.e. in CSR format), then it's recommended to set `isSymA=true` for better performance `prec = builder(A, partsize; isSymA=true)`.
-# 2. for any userdefined `η` value, use `prec = builder(A, partsize; η=1.2)`.
+# 2. for any user-defined `η` value, use `prec = builder(A, partsize; η=1.2)`.
 ```
 """
 struct L1GSPreconditioner{Partitioning,VectorType}
