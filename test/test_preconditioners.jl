@@ -66,8 +66,8 @@ end
         N = 9
         A = poisson_test_matrix(N)
         x = 0:N-1 |> collect .|> Float64
-        y_exp = [0, 1 / 3, 2 / 3, 11 / 9, 4 / 3, 19 / 9, 2, 3.0, 8 / 3]
-        D_Dl1_exp = Float64.([2, 3, 3, 3, 3, 3, 3, 3, 3])
+        y_exp = [0, 1 / 2, 1.0, 2.0, 2.0 , 3.5 ,3.0, 5.0, 4.0]
+        D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: all rows satisfy a_ii >= η*dl1_ii (2 >= 1.5*1)
         SLbuffer_exp = Float64.([-1, -1, -1, -1])
         test_sym("CPU CSC", A, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
         B = SparseMatrixCSR(A)
@@ -79,9 +79,9 @@ end
         @testset "Non-Symmetric CSC" begin
             A2 = copy(A)
             A2[1, 8] = -1.0  # won't affect the result
-            A2[2, 8] = -1.0  # 1/3 → 1/4
-            y2_exp = [0, 1 / 4, 2 / 3, 11 / 9, 4 / 3, 19 / 9, 2, 3.0, 8 / 3]
-            D_Dl1_exp2 = Float64.([3, 4, 3, 3, 3, 3, 3, 3, 3])
+            A2[2, 8] = -1.0  # 1/2 → 1/3
+            y2_exp = [0, 1 / 3, 1.0, 2.0, 2.0 , 3.5 ,3.0, 5.0, 4.0]
+            D_Dl1_exp2 = Float64.([2, 3, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: only row 1 has a_ii < η*dl1_ii (2 < 1.5*2)
             SLbuffer_exp2 = Float64.([-1, -1, -1, -1])
 
             builder = L1GSPrecBuilder(PolyesterDevice(2))
@@ -95,7 +95,7 @@ end
         @testset "Partsize" begin
             partsize = 3
             ncores = 2
-            D_Dl1_exp = Float64.([2, 2, 3, 3, 2, 3, 3, 2, 2])
+            D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: all rows satisfy a_ii >= η*dl1_ii
             SLbuffer_exp = Float64.([-1, 0, -1, -1, 0, -1, -1, 0, -1])
             builder = L1GSPrecBuilder(PolyesterDevice(ncores))
             P = builder(A, partsize)
