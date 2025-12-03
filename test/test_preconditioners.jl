@@ -9,7 +9,7 @@ using TimerOutputs
 ##########################################
 
 # Enable debug timings for Thunderbolt
-TimerOutputs.enable_debug_timings(Thunderbolt)
+TimerOutputs.enable_debug_timings(Thunderbolt.Preconditioner)
 
 function poisson_test_matrix(N)
     # Poisson's equation in 1D with Dirichlet BCs
