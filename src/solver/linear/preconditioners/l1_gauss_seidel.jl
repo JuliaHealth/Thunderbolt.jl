@@ -356,6 +356,7 @@ function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartiti
     end
 end
 
+const η = 1.5 # eq. (6.3)
 
 @kernel function _precompute_blocks_kernel!(D_Dl1, SLbuffer, A, symA, partsize::Ti, nparts::Ti, nchunks::Ti, chunksize::Ti) where {Ti<:Integer}
     initial_partition_idx = @index(Global)
@@ -366,19 +367,13 @@ end
         (;k, partsize, start_idx, end_idx) = part # NOTE: `partsize` here is the actual size of the partition
         # From start_idx to end_idx, extract the diagonal and off-diagonal values
         for i in start_idx:end_idx
-            b, d = _diag_offpart(symA, format_A, A, i, start_idx, end_idx)
-            # Update the diagonal and off-diagonal values
-            # Handle near-zero diagonals: D_Dl1 = D + D^ℓ1 where D is diagonal, D^ℓ1 is sum of |off-diagonal|
-            val = b + d
-            if abs(val) < eps(eltype(D_Dl1))
-                # If b+d ≈ 0 (cancellation or both zero), use |b|+|d| to avoid cancellation
-                # This handles cases where diagonal and off-diagonal sum cancel out
-                abs_sum = abs(b) + abs(d)
-                D_Dl1[i] = abs_sum > eps(eltype(D_Dl1)) ? abs_sum : eps(eltype(D_Dl1))
-                # Note: This case is rare (ill-conditioned matrices) but important for numerical stability
-            else
-                D_Dl1[i] = val
-            end
+            a_ii, dl1_ii = _diag_offpart(symA, format_A, A, i, start_idx, end_idx)
+            TF = eltype(D_Dl1)
+            dl1star_ii = a_ii >= η * dl1_ii ? zero(TF) : dl1_ii / convert(TF, 2.0) # e.q. (6.3)
+            D_Dl1[i] = a_ii + dl1star_ii
+            # NOTE: 
+            # we define θ as following: a_ii >= θ * d_ii 
+            # therefore, if θ >= η, then this preconditioner reduces to M_HGS, otherwise it is a scaled version of L1GS.
             _pack_strict_lower!(symA, format_A, SLbuffer, A, start_idx, end_idx, partsize, k)
         end
     end
