@@ -12,6 +12,7 @@ import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
 import Thunderbolt: ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice,
     default_backend
+using TimerOutputs: @timeit_debug
 
 ## Generic Code #
 
