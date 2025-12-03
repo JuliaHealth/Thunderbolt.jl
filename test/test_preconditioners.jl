@@ -3,13 +3,14 @@ using KernelAbstractions
 using JLD2: load
 import Thunderbolt: ThreadedSparseMatrixCSR
 using TimerOutputs
+using LinearAlgebra: Symmetric
 
 ##########################################
 ## L1 Gauss Seidel Preconditioner - CPU ##
 ##########################################
 
 # Enable debug timings for Thunderbolt
-TimerOutputs.enable_debug_timings(Thunderbolt.Preconditioner)
+TimerOutputs.enable_debug_timings(Thunderbolt.Preconditioners)
 
 function poisson_test_matrix(N)
     # Poisson's equation in 1D with Dirichlet BCs
@@ -22,7 +23,7 @@ function test_sym(testname, A, x, y_exp, D_Dl1_exp, SLbuffer_exp, partsize)
         total_ncores = 8 # Assuming 8 cores for testing
         for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
             builder = L1GSPrecBuilder(PolyesterDevice(ncores))
-            P = builder(A, partsize)
+            P = A isa Symmetric ? builder(A, partsize) : builder(A, partsize; isSymA=true)
             @test P.D_Dl1 ≈ D_Dl1_exp
             @test P.SLbuffer ≈ SLbuffer_exp
             y = P \ x
@@ -74,7 +75,48 @@ end
         test_sym("CPU, CSR", B, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
         C = ThreadedSparseMatrixCSR(B)
         test_sym("CPU, Threaded CSR", C, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
+        
+        @testset "η parameter" begin
+            # Test with η = 2.0 (more strict than default 1.5)
+            # For Poisson matrix: a_ii = 2, dl1_ii = 1 for all rows
+            # Since a_ii = 2 >= η*dl1_ii = 2*1 = 2, all rows satisfy condition
+            # Therefore dl1star_ii = 0 for all rows, D_Dl1 = a_ii = 2
+            η = 2.0
+            D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])
+            SLbuffer_exp = Float64.([-1, -1, -1, -1])
+            builder = L1GSPrecBuilder(PolyesterDevice(2))
+            P = builder(A, 2; η=η)
+            @test P.D_Dl1 ≈ D_Dl1_exp
+            @test P.SLbuffer ≈ SLbuffer_exp
 
+            # Test with η = 3.0 (very strict)
+            # a_ii = 2 < η*dl1_ii = 3*1 = 3, condition NOT satisfied
+            # Therefore dl1star_ii = dl1_ii/2 = 1/2 = 0.5
+            # D_Dl1 = a_ii + dl1star_ii = 2 + 0.5 = 2.5
+            η = 3.0
+            D_Dl1_exp = Float64.([2.0, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5])
+            P = builder(A, 2; η=η)
+            @test P.D_Dl1 ≈ D_Dl1_exp
+            @test P.SLbuffer ≈ SLbuffer_exp
+
+            # Test with η = 1.0 (less strict than default)
+            # a_ii = 2 >= η*dl1_ii = 1*1 = 1, condition satisfied
+            # Therefore dl1star_ii = 0
+            # D_Dl1 = a_ii = 2
+            η = 1.0
+            D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])
+            P = builder(A, 2; η=η)
+            @test P.D_Dl1 ≈ D_Dl1_exp
+            @test P.SLbuffer ≈ SLbuffer_exp
+
+            # Verify preconditioner still works correctly with different η
+            y_exp = [0, 1 / 2, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
+            η = 2.0
+            P = builder(A, 2; η=η)
+            y = P \ x
+            @test y ≈ y_exp
+        end
+            
 
         @testset "Non-Symmetric CSC" begin
             A2 = copy(A)
@@ -114,7 +156,7 @@ end
 
         @testset "Symmetric A" begin
             md = mdopen("HB/bcsstk15")
-            A = md.A
+            A = md.A # type here is Symmetric{Float64, SparseMatrixCSC{Float64, Int64}}
             b = ones(size(A, 1))
             test_l1gs_prec(A, b)
         end

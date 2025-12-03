@@ -45,6 +45,10 @@ The preconditioner matrix $M_{ℓ_1}$  is defined as:
 M_{ℓ_1GS} = M_{HGS} + D^{ℓ_1} \\
 ```
 Where $D^{ℓ_1}$ is a diagonal matrix with entries: $d_{ii}^{ℓ_1} = \sum_{j ∈ Ωⁱₒ} |a_{ij}|$, and $M_{HGS}$ is obtained when the diagonal partitions are chosen to be the Gauss–Seidel sweeps on $ A_{kk} $
+However, we use another convergant variant, which takes adavantage of the local estimation of θ ( $a_{ii} >= θ * d_{ii}$):
+```math
+M_{ℓ_1GS*} = M_{HGS} + D^{ℓ_1*}, \quad \text{where} \quad d_{ii}^{ℓ_1*} = \begin{cases} 0, & \text{if } a_{ii} \geq \eta d_{ii}^{ℓ_1}; \\ d_{ii}^{ℓ_1}/2, & \text{otherwise.} \end{cases}
+```
 
 # Fields
 - `partitioning`: Encapsulates partitioning data (e.g. nparts, partsize, backend).
@@ -68,6 +72,9 @@ N = 128*16
 A = spdiagm(0 => 2 * ones(N), -1 => -ones(N-1), 1 => -ones(N-1))
 partsize = 16
 prec = builder(A, partsize)
+# NOTES:
+# 1. for symmetric A, that's not of type `Symmetric`, or `SparseMatrixCSR` (i.e. in CSR format), then it's recommended to set `isSymA=true` for better performance `prec = builder(A, partsize; isSymA=true)`.
+# 2. for any userdefined `η` value, use `prec = builder(A, partsize; η=1.2)`.
 ```
 """
 struct L1GSPreconditioner{Partitioning,VectorType}
@@ -94,11 +101,11 @@ struct L1GSPrecBuilder{DeviceType<:AbstractDevice}
     end
 end
 
-(builder::L1GSPrecBuilder)(A::AbstractMatrix, partsize::Ti, isSymA::Bool = false) where {Ti<:Integer} =
-    build_l1prec(builder, A, partsize, isSymA)
+(builder::L1GSPrecBuilder)(A::AbstractMatrix, partsize::Ti; isSymA::Bool = false, η = 1.5) where {Ti<:Integer} =
+    build_l1prec(builder, A, partsize, isSymA, η)
 
-(builder::L1GSPrecBuilder)(A::Symmetric, partsize::Ti) where {Ti<:Integer} =
-    build_l1prec(builder, A, partsize, true)
+(builder::L1GSPrecBuilder)(A::Symmetric, partsize::Ti;η = 1.5) where {Ti<:Integer} =
+    build_l1prec(builder, A, partsize, true, η)
 
 struct DiagonalPartsIterator{Ti}
     size_A::Ti
@@ -117,18 +124,18 @@ struct DiagonalPartCache{Ti}
 end
 
 ## Preconditioner builder ##
-function build_l1prec(builder::L1GSPrecBuilder, A::MatrixType, partsize::Ti, isSymA::Bool) where {Ti<:Integer,MatrixType}
+function build_l1prec(builder::L1GSPrecBuilder, A::MatrixType, partsize::Ti, isSymA::Bool, η) where {Ti<:Integer,MatrixType}
     partsize == 0 && error("partsize must be greater than 0")
-    _build_l1prec(builder, A, partsize, isSymA)
+    _build_l1prec(builder, A, partsize, isSymA, η)
 end
 
-function _build_l1prec(builder::L1GSPrecBuilder, _A::MatrixType, partsize::Ti, isSymA::Bool) where {Ti<:Integer,MatrixType}
+function _build_l1prec(builder::L1GSPrecBuilder, _A::MatrixType, partsize::Ti, isSymA::Bool, η) where {Ti<:Integer,MatrixType}
     # `nchunks` is either CPU cores or GPU blocks.
     # Each chunk will be assigned `nparts`, each of size `partsize`.
     # In GPU backend, `nchunks` is the number of blocks and `partsize` is the number of threads per block.
     A = get_data(_A) # for symmetric case
     partitioning = _blockpartitioning(builder, A, partsize)
-    D_Dl1, SLbuffer = _precompute_blocks(A, partitioning, isSymA)
+    D_Dl1, SLbuffer = _precompute_blocks(A, partitioning, isSymA, η)
     L1GSPreconditioner(partitioning, D_Dl1, SLbuffer)
 end
 
@@ -330,7 +337,7 @@ _pack_strict_lower!(::AbstractMatrixSymmetry, ::CSRFormat, SLbuffer, A, start_id
     _pack_strict_lower_csr!(SLbuffer, getrowptr(A), colvals(A), getnzval(A), start_idx, end_idx, partsize, k)
 
 
-function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartitioning, isSymA::Bool)
+function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartitioning, isSymA::Bool, η)
     @timeit_debug "_precompute_blocks" begin
         # No assumptions on A, i.e. A here might be in either backend compatible format or not.
         # So we have to convert it to backend compatible format, if it is not already.
@@ -340,25 +347,25 @@ function _precompute_blocks(_A::AbstractSparseMatrix, partitioning::BlockPartiti
         (;partsize, nparts, nchunks, chunksize, backend) = partitioning
         A = adapt(backend, _A)
         N = size(A, 1)
+        Tf = eltype(A)
 
-        D_Dl1 = adapt(backend, zeros(eltype(A), N)) # D + Dˡ
+        η = convert(Tf, η)
+        D_Dl1 = adapt(backend, zeros(Tf, N)) # D + Dˡ
         last_partsize = N - (nparts - 1) * partsize # size of the last partition
         SLbuffer_size = (partsize * (partsize - 1) * (nparts-1)) ÷ 2 +  last_partsize * (last_partsize - 1) ÷ 2
-        SLbuffer = adapt(backend, zeros(eltype(A), SLbuffer_size)) # strictly lower triangular part of all diagonal blocks stored in a 1D array
+        SLbuffer = adapt(backend, zeros(Tf, SLbuffer_size)) # strictly lower triangular part of all diagonal blocks stored in a 1D array
         symA = isSymA ? SymmetricMatrix() : NonSymmetricMatrix()
 
         ndrange = nchunks * chunksize
         @timeit_debug "kernel setup" kernel = _precompute_blocks_kernel!(backend, chunksize, ndrange)
-        @timeit_debug "kernel execution" kernel(D_Dl1, SLbuffer, A, symA, partsize, nparts, nchunks, chunksize; ndrange=ndrange)
+        @timeit_debug "kernel execution" kernel(D_Dl1, SLbuffer, A, symA, partsize, nparts, nchunks, chunksize, η; ndrange=ndrange)
         @timeit_debug "synchronize" synchronize(backend)
 
         return D_Dl1, SLbuffer
     end
 end
 
-const η = 1.5 # eq. (6.3)
-
-@kernel function _precompute_blocks_kernel!(D_Dl1, SLbuffer, A, symA, partsize::Ti, nparts::Ti, nchunks::Ti, chunksize::Ti) where {Ti<:Integer}
+@kernel function _precompute_blocks_kernel!(D_Dl1, SLbuffer, A, symA, partsize::Ti, nparts::Ti, nchunks::Ti, chunksize::Ti, η) where {Ti<:Integer}
     initial_partition_idx = @index(Global)
     size_A = convert(Ti, size(A, 1))
     format_A = sparsemat_format_type(A)
