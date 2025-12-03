@@ -6,6 +6,11 @@ If surface caches are passed they are handled properly. This requred dispatching
 struct CompositeVolumetricElementCache{CacheTupleType <: Tuple} <: AbstractVolumetricElementCache
     inner_caches::CacheTupleType
 end
+function duplicate_for_device(device, cache::CompositeVolumetricElementCache)
+    return CompositeVolumetricElementCache(
+        map(inner_cache -> duplicate_for_device(device, inner_cache), cache.inner_caches)
+    )
+end
 # Main entry point for bilinear operators
 assemble_element!(Kₑ::AbstractMatrix, cell::CellCache, element_cache::CompositeVolumetricElementCache, time) = assemble_composite_element!(Kₑ, cell, element_cache.inner_caches, time)
 @unroll function assemble_composite_element!(Kₑ::AbstractMatrix, cell::CellCache, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
@@ -66,6 +71,11 @@ This cache allows to combine multiple elements over the same surface.
 struct CompositeSurfaceElementCache{CacheTupleType <: Tuple} <: AbstractSurfaceElementCache
     inner_caches::CacheTupleType
 end
+function duplicate_for_device(device, cache::CompositeSurfaceElementCache)
+    return CompositeSurfaceElementCache(
+        map(inner_cache -> duplicate_for_device(device, inner_cache), cache.inner_caches)
+    )
+end
 # Main entry point for bilinear operators
 assemble_facet!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_composite_facet!(Kₑ, cell, surface_cache.inner_caches, local_facet_index, time)
 @unroll function assemble_composite_facet!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
@@ -109,6 +119,11 @@ This cache allows to combine multiple elements over the same interface.
 """
 struct CompositeInterfaceElementCache{CacheTupleType <: Tuple} <: AbstractInterfaceElementCache
     inner_caches::CacheTupleType
+end
+function duplicate_for_device(device, cache::CompositeInterfaceElementCache)
+    return CompositeInterfaceElementCache(
+        map(inner_cache -> duplicate_for_device(device, inner_cache), cache.inner_caches)
+    )
 end
 # Main entry point for bilinear operators
 assemble_interface!(Kₑ::AbstractMatrix, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_composite_interface!(Kₑ, interface, interface_cache.inner_caches, time)

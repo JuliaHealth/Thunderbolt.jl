@@ -56,16 +56,17 @@ import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
 
+include("mesh/meshes.jl")
+
 include("utils.jl")
 
 include("devices.jl")
 include("strategy.jl")
 
-include("mesh/meshes.jl")
-
 include("ferrite-addons/parallel_duplication_api.jl")
 include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
+
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
 # This is simply because there is no modeling interface, but just individual physics modules and couplers.
@@ -233,8 +234,6 @@ export
     AdaptiveForwardEulerSubstepper,
     # Integrator
     # Utils
-    calculate_volume_deformed_mesh,
-    elementtypes,
     QuadraturePoint,
     QuadratureIterator,
     load_carp_grid,
@@ -247,8 +246,7 @@ export
     store_timestep!,
     store_timestep_celldata!,
     store_timestep_field!,
-    store_coefficient!,
-    store_green_lagrange!,
+    # store_coefficient!,
     finalize_timestep!,
     finalize!,
     # Mechanical PDEs

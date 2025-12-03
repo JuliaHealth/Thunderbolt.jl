@@ -239,8 +239,8 @@ end
 
 function duplicate_for_device(device, cache::SpectralTensorCoefficientCache)
     SpectralTensorCoefficientCache(
-        duplicate_for_device(device, cache.eigenvectors),
-        duplicate_for_device(device, cache.eigenvalues),
+        duplicate_for_device(device, cache.eigenvector_cache),
+        duplicate_for_device(device, cache.eigenvalue_cache),
     )
 end
 

@@ -96,6 +96,11 @@ function Base.show(io::IO, ::MIME"text/plain", mesh::SimpleMesh)
 end
 
 global_edges(mgrid::SimpleMesh, cell) = [mgrid.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell)))]
+# Get the edges of a specific face
+function Thunderbolt.global_edges(mesh, cell, lfi)
+    sface = first(sortface(faces(cell)[lfi]))
+    return [mesh.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell))) if sedge[1] ∈ sface && sedge[2] ∈ sface]
+end
 global_faces(mgrid::SimpleMesh, cell) = [mgrid.mfaces[sface] for sface ∈ first.(sortface.(faces(cell)))]
 global_vertices(mgrid::SimpleMesh, cell) = [mgrid.mvertices[v] for v ∈ vertices(cell)]
 
@@ -253,6 +258,7 @@ end
 
 @inline Ferrite.CellIterator(mesh::SimpleMesh) = CellIterator(mesh.grid)
 @inline Ferrite.CellIterator(mesh::SimpleMesh, set::Union{Nothing, AbstractSet{<:Integer}, AbstractVector{<:Integer}}, flags::UpdateFlags) = CellIterator(mesh.grid, set, flags)
+@inline Ferrite.FacetIterator(mesh::SimpleMesh, facets) = Ferrite.FacetIterator(mesh.grid, facets)
 
 # https://github.com/Ferrite-FEM/Ferrite.jl/pull/987
 Ferrite.nfacets(cc::CellCache{<:Any, <:SimpleMesh}) = nfacets(cc.grid.grid.cells[cc.cellid[]])

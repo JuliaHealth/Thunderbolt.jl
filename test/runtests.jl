@@ -72,6 +72,8 @@ include("test_mesh.jl")
 include("test_coefficients.jl")
 include("test_microstructures.jl")
 
+include("test_io.jl")
+
 include("integration/test_solid_mechanics.jl")
 include("integration/test_electrophysiology.jl")
 include("integration/test_ecg.jl")
