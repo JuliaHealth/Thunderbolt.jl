@@ -12,12 +12,14 @@ function __paraview_collection(name::String; kwargs...)
     return WriteVTK.paraview_collection(basename)
 end
 
-ParaViewWriter(filename::String; kwargs...) = ParaViewWriter(filename, __paraview_collection("$filename.pvd"; kwargs...), nothing)
+ParaViewWriter(filename::String; kwargs...) =
+    ParaViewWriter(filename, __paraview_collection("$filename.pvd"; kwargs...), nothing)
 
 function store_timestep!(io::ParaViewWriter, t, grid::AbstractGrid; write_discontinuous = false)
     if io.current_file === nothing
         mkpath(io.filename)
-        vtk, cellnodes, node_mapping = Ferrite.create_vtk_grid(io.filename * "/$t.vtu", grid, write_discontinuous)
+        vtk, cellnodes, node_mapping =
+            Ferrite.create_vtk_grid(io.filename * "/$t.vtu", grid, write_discontinuous)
         io.current_file = VTKGridFile(vtk, cellnodes, node_mapping)
     end
 end
@@ -28,7 +30,14 @@ function store_timestep!(f::Function, io::ParaViewWriter, t, grid::AbstractGrid)
     finalize_timestep!(io, t)
 end
 
-function store_timestep_field!(io::ParaViewWriter, t, dh::AbstractDofHandler, u::AbstractVector, sym::Symbol, name::String=String(sym))
+function store_timestep_field!(
+    io::ParaViewWriter,
+    t,
+    dh::AbstractDofHandler,
+    u::AbstractVector,
+    sym::Symbol,
+    name::String = String(sym),
+)
     @assert io.current_file !== nothing
     fieldnames = Ferrite.getfieldnames(dh)
     idx = findfirst(f->f == sym, fieldnames)
@@ -36,11 +45,12 @@ function store_timestep_field!(io::ParaViewWriter, t, dh::AbstractDofHandler, u:
         @warn "Cannot write data for PVD '$(io.filename)'. Field $sym not found in $fieldnames of DofHandler. Skipping."
         return nothing
     end
-    data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
+    data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=#Val(true))
     if Ferrite.write_discontinuous(io.current_file)
-        data = Ferrite.evaluate_at_discontinuous_vtkgrid_nodes(dh, u, sym, io.current_file.cellnodes)
+        data =
+            Ferrite.evaluate_at_discontinuous_vtkgrid_nodes(dh, u, sym, io.current_file.cellnodes)
     else
-        data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
+        data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=#Val(true))
     end
     Ferrite._vtk_write_node_data(io.current_file.vtk, data, name)
 end
@@ -139,10 +149,11 @@ end
 mutable struct JLD2Writer{FD}
     const filename::String
     const fd::FD
-    grid::Union{Nothing,AbstractGrid}
+    grid::Union{Nothing, AbstractGrid}
 end
 
-JLD2Writer(filename::String; overwrite::Bool=true, compress::Bool=true) = JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "w" : "a+"; compress), nothing)
+JLD2Writer(filename::String; overwrite::Bool = true, compress::Bool = true) =
+    JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "w" : "a+"; compress), nothing)
 
 function store_timestep!(io::JLD2Writer, t, grid::AbstractGrid)
     _jld2_maybe_store(io, t, grid)
@@ -169,9 +180,17 @@ function store_nodal_data!(io::JLD2Writer, t, grid::AbstractGrid, name::String)
     io.fd["timesteps/$t/nodal/$name"] = u
 end
 
-function store_timestep_field!(io::JLD2Writer, t, dh::AbstractDofHandler, u::AbstractVector, sym::Symbol, name::String=String(sym))
+function store_timestep_field!(
+    io::JLD2Writer,
+    t,
+    dh::AbstractDofHandler,
+    u::AbstractVector,
+    sym::Symbol,
+    name::String = String(sym),
+)
     @assert get_grid(dh) === io.grid
-    length(dh.field_names) > 1 && @warn "JLD2Writer cannot handle dof handler with multiple fields yet. Dumping full vector."
+    length(dh.field_names) > 1 &&
+        @warn "JLD2Writer cannot handle dof handler with multiple fields yet. Dumping full vector."
     io.fd["timesteps/$t/field/$name"] = u
 end
 
@@ -188,39 +207,49 @@ function reorder_nodal!(dh::DofHandler)
     grid = Ferrite.get_grid(dh)
     for sdh in dh.subdofhandlers
         firstcellidx = first(sdh.cellset)
-        celltype = typeof(getcells(grid,firstcellidx))
+        celltype = typeof(getcells(grid, firstcellidx))
         vdim = Ferrite.n_components(sdh.field_interpolations[1])
         for i ∈ 1:getncells(grid)
-            dof_offsets = dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(dh, i)-1)
-            for (j,dof_offset_idx) in enumerate(1:vdim:length(dof_offsets))
-                for d in 1:vdim
-                    dh.cell_dofs[dof_offsets[dof_offset_idx]+d-1] = vdim*(getcells(grid,i).nodes[j]-1) + d
+            dof_offsets =
+                dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(dh, i)-1)
+            for (j, dof_offset_idx) in enumerate(1:vdim:length(dof_offsets))
+                for d = 1:vdim
+                    dh.cell_dofs[dof_offsets[dof_offset_idx]+d-1] =
+                        vdim*(getcells(grid, i).nodes[j]-1) + d
                 end
             end
         end
     end
 end
 
-function to_ferrite_elements(cells_vtk::Vector{WriteVTK.MeshCell{WriteVTK.VTKCellType, Vector{Int64}}})
+function to_ferrite_elements(
+    cells_vtk::Vector{WriteVTK.MeshCell{WriteVTK.VTKCellType, Vector{Int64}}},
+)
     celltype = if cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_TETRA
         Tetrahedron
     elseif cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_HEXAHEDRON
         Hexahedron
-    else 
+    else
         @error "Unknown cell type" cells_vtk[1].ctype
     end
     cells_ferrite = Vector{celltype}(undef, length(cells_vtk))
-    for (i,cell_vtk) in enumerate(cells_vtk)
+    for (i, cell_vtk) in enumerate(cells_vtk)
         cells_ferrite[i] = if cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_TETRA
-            Tetrahedron(ntuple(i->cell_vtk.connectivity[i],4))
+            Tetrahedron(ntuple(i->cell_vtk.connectivity[i], 4))
         elseif cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_HEXAHEDRON
-            Hexahedron(ntuple(i->cell_vtk.connectivity[i],8))
+            Hexahedron(ntuple(i->cell_vtk.connectivity[i], 8))
         end
     end
     return cells_ferrite
 end
 
-function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id::String, radial_id::String, transventricular_id::String)
+function read_vtk_cobivec(
+    filename::String,
+    transmural_id::String,
+    apicobasal_id::String,
+    radial_id::String,
+    transventricular_id::String,
+)
     vtk = ReadVTK.VTKFile(filename)
     points_vtk = ReadVTK.get_points(vtk)
     points_ferrite = [Vec{3}(point) for point in eachcol(points_vtk)]
@@ -229,7 +258,7 @@ function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id
 
     grid = Grid(cells_ferrite, Node.(points_ferrite))
 
-    gip =  Ferrite.geometric_interpolation(typeof(grid.cells[1]))
+    gip = Ferrite.geometric_interpolation(typeof(grid.cells[1]))
 
     dh = DofHandler(grid)
     add!(dh, :u, gip)
@@ -246,8 +275,8 @@ function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id
     endocardium = OrderedSet{FacetIndex}()
     endocardiumlv = OrderedSet{FacetIndex}()
     endocardiumrv = OrderedSet{FacetIndex}()
-    for (cellidx,cell) ∈ enumerate(grid.cells)
-        for (facetidx,facetnodes) in enumerate(Ferrite.facets(cell))
+    for (cellidx, cell) ∈ enumerate(grid.cells)
+        for (facetidx, facetnodes) in enumerate(facets(cell))
             indices = collect(facetnodes)
             if all(u_transmural[indices] .> 1.0-2e-2)
                 push!(endocardium, FacetIndex(cellidx, facetidx))
@@ -262,16 +291,16 @@ function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id
             end
         end
     end
-    Ferrite.addfacetset!(grid, "Epicardium", epicardium)
-    Ferrite.addfacetset!(grid, "Endocardium", endocardium)
-    Ferrite.addfacetset!(grid, "EndocardiumLV", endocardiumlv)
-    Ferrite.addfacetset!(grid, "EndocardiumRV", endocardiumrv)
+    addfacetset!(grid, "Epicardium", epicardium)
+    addfacetset!(grid, "Endocardium", endocardium)
+    addfacetset!(grid, "EndocardiumLV", endocardiumlv)
+    addfacetset!(grid, "EndocardiumRV", endocardiumrv)
 
     return BiVCoordinateSystem(
         dh,
         collect(u_transmural),
         collect(u_apicobasal),
         collect(u_radial),
-        collect(u_transventricular)
+        collect(u_transventricular),
     )
 end

@@ -3,7 +3,11 @@ Base.@kwdef struct GenericLocalNonlinearSolver <: AbstractNonlinearSolver
     tol::Float64 = 1e-4
 end
 
-Base.@kwdef mutable struct GenericLocalNonlinearSolverCache{JacobianType, ResidualType, CorrectorRhsType}
+Base.@kwdef mutable struct GenericLocalNonlinearSolverCache{
+    JacobianType,
+    ResidualType,
+    CorrectorRhsType,
+}
     const params::GenericLocalNonlinearSolver
     const J::JacobianType
     const residual::ResidualType
@@ -43,7 +47,8 @@ Multilevel Newton-Raphson solver [RabSanHsu:1979:mna](@ref) for nonlinear proble
 To use the Multilevel solver you have to dispatch on
 * [update_linearization!](@ref)
 """
-Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType} <: AbstractNonlinearSolver
+Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType} <:
+                   AbstractNonlinearSolver
     newton::gSolverType = NewtonRaphsonSolver()
     local_solver::lSolverType = GenericLocalNonlinearSolver()
 end
@@ -65,7 +70,12 @@ function Base.show(io::IO, cache::MultiLevelNewtonRaphsonSolverCache)
     end
 end
 
-function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::MultiLevelNewtonRaphsonSolverCache, t)
+function nlsolve!(
+    u::AbstractVector,
+    f::AbstractSemidiscreteFunction,
+    mlcache::MultiLevelNewtonRaphsonSolverCache,
+    t,
+)
     cache = mlcache.global_solver_cache
 
     @unpack op, residual, linear_solver_cache, Θks = cache
@@ -102,7 +112,9 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
 
         @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
         nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
-        solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+        solve_succeeded =
+            LinearSolve.SciMLBase.successful_retcode(sol) ||
+            sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
         eliminate_constraints_from_increment!(Δu, f, cache)

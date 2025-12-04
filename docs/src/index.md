@@ -6,14 +6,14 @@ DocTestSetup = :(using Thunderbolt)
 *A high performance cardiac multiphysics system written in Julia*
 
 Welcome to the documentation for Thunderbolt. The main goal of this project
-is to provide a single framework where we can develop new models and high 
+is to provide a single framework where we can develop new models and high
 performance parallel solvers.
 
 !!! warning
     This package is under heavy development. Expect regular breaking changes
     for now. If you are interested in joining development, then either comment
-    an issue or reach out via julialang.zulipchat.com, via mail or via 
-    julialang.slack.com. Alternatively open a discussion if you have something 
+    an issue or reach out via julialang.zulipchat.com, via mail or via
+    julialang.slack.com. Alternatively open a discussion if you have something
     specific in mind.
 
 !!! note
@@ -35,7 +35,7 @@ for. The document is organized as follows[^1]:
  - [**Tutorials**](tutorials/index.md) are thoroughly documented examples which guides you
    through the process of building and solving cardiac models in Thunderbolt.
  - [**Topic guides**](topics/index.md) contains more in-depth explanations and discussions
-   about multiphysics modeling concepts and their numerical treatment, and specifically how 
+   about multiphysics modeling concepts and their numerical treatment, and specifically how
    these are realized in Thunderbolt.
  - [**API Reference**](api-reference/index.md) contains the technical API reference of functions and
    methods (e.g. the documentation strings).
@@ -88,8 +88,8 @@ You are now all set to start using Thunderbolt!
 ## Contributing to Thunderbolt
 
 Thunderbolt is under very active development. If you find a bug, then please open an [issue on GitHub](https://github.com/JuliaHealth/Thunderbolt.jl/issues) with a reproducer.
-If you are interested in joining development, then either comment an issue or reach out via [Zulip](https://julialang.zulipchat.com), via mail or via 
-[Slack](https://julialang.slack.com). Alternatively open a [discussion](https://github.com/JuliaHealth/Thunderbolt.jl/discussions) if you have something 
+If you are interested in joining development, then either comment an issue or reach out via [Zulip](https://julialang.zulipchat.com), via mail or via
+[Slack](https://julialang.slack.com). Alternatively open a [discussion](https://github.com/JuliaHealth/Thunderbolt.jl/discussions) if you have something
 specific in mind - please just check for open discussion before opening a new one.
 
 A detailed contributor guide is coming soon...

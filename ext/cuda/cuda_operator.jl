@@ -1,5 +1,10 @@
 # Encapsulates the CUDA backend specific data (e.g. element caches, memory allocation, etc.)
-struct CudaElementAssemblyCache{Ti<:Integer,MemAlloc,ElementsCaches,DHType<:AbstractDofHandler}
+struct CudaElementAssemblyCache{
+    Ti <: Integer,
+    MemAlloc,
+    ElementsCaches,
+    DHType <: AbstractDofHandler,
+}
     threads::Ti
     blocks::Ti
     mem_alloc::MemAlloc
@@ -8,7 +13,12 @@ struct CudaElementAssemblyCache{Ti<:Integer,MemAlloc,ElementsCaches,DHType<:Abst
 end
 
 # Thunderbolt setup entry point
-function Thunderbolt.setup_operator(strategy::ElementAssemblyStrategy{<:CudaDevice}, integrator::LinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler)
+function Thunderbolt.setup_operator(
+    strategy::ElementAssemblyStrategy{<:CudaDevice},
+    integrator::LinearIntegrator,
+    solver::AbstractSolver,
+    dh::AbstractDofHandler,
+)
     if CUDA.functional()
         n_threads = strategy.device.threads
         n_blocks  = strategy.device.blocks
@@ -25,7 +35,11 @@ function Thunderbolt.setup_operator(strategy::ElementAssemblyStrategy{<:CudaDevi
     end
 end
 
-function _init_linop_ea_cuda(strategy::ElementAssemblyStrategy, integrator::LinearIntegrator, dh::AbstractDofHandler)
+function _init_linop_ea_cuda(
+    strategy::ElementAssemblyStrategy,
+    integrator::LinearIntegrator,
+    dh::AbstractDofHandler,
+)
     # Multiple domains not yet supported
     Thunderbolt.check_subdomains(dh)
 
@@ -40,7 +54,7 @@ function _init_linop_ea_cuda(strategy::ElementAssemblyStrategy, integrator::Line
 
     # Determine threads and blocks if not provided
     threads = isnothing(n_threads) ? convert(IT, min(n_cells, 256)) : convert(IT, n_threads)
-    blocks  = isnothing(n_blocks)  ? _calculate_nblocks(threads, n_cells) : convert(IT, n_blocks)
+    blocks  = isnothing(n_blocks) ? _calculate_nblocks(threads, n_cells) : convert(IT, n_blocks)
 
     n_basefuncs      = convert(IT, ndofs_per_cell(dh))
     eles_caches      = _setup_caches(strategy, integrator, dh)
@@ -51,7 +65,7 @@ function _init_linop_ea_cuda(strategy::ElementAssemblyStrategy, integrator::Line
 end
 
 
-function _calculate_nblocks(threads::Ti, n_cells::Ti) where {Ti<:Integer}
+function _calculate_nblocks(threads::Ti, n_cells::Ti) where {Ti <: Integer}
     dev             = CUDA.device()
     no_sms          = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
     required_blocks = cld(n_cells, threads)
@@ -60,11 +74,16 @@ function _calculate_nblocks(threads::Ti, n_cells::Ti) where {Ti<:Integer}
 end
 
 
-function _setup_caches(strategy::ElementAssemblyStrategy, integrator::LinearIntegrator, dh::AbstractDofHandler)
-    sdh_to_cache = sdh ->
-        begin
+function _setup_caches(
+    strategy::ElementAssemblyStrategy,
+    integrator::LinearIntegrator,
+    dh::AbstractDofHandler,
+)
+    sdh_to_cache =
+        sdh -> begin
             # Build evaluation caches
-            element_cache = Adapt.adapt_structure(strategy.device, setup_element_cache(integrator, sdh))
+            element_cache =
+                Adapt.adapt_structure(strategy.device, setup_element_cache(integrator, sdh))
             return element_cache
         end
     eles_caches = dh.subdofhandlers .|> sdh_to_cache
@@ -72,27 +91,37 @@ function _setup_caches(strategy::ElementAssemblyStrategy, integrator::LinearInte
 end
 
 
-function _launch_kernel!(ker,ker_args, threads, blocks, ::AbstractDeviceGlobalMem)
+function _launch_kernel!(ker, ker_args, threads, blocks, ::AbstractDeviceGlobalMem)
     CUDA.@sync CUDA.@cuda threads = threads blocks = blocks ker(ker_args...)
     return nothing
 end
 
-function _launch_kernel!(ker,ker_args, threads, blocks, mem_alloc::AbstractDeviceSharedMem)
+function _launch_kernel!(ker, ker_args, threads, blocks, mem_alloc::AbstractDeviceSharedMem)
     shmem_size = mem_size(mem_alloc)
     CUDA.@sync CUDA.@cuda threads = threads blocks = blocks shmem = shmem_size ker(ker_args...)
     return nothing
 end
 
 # Thunderbolt update entry point
-function Thunderbolt._update_linear_operator!(op::LinearOperator, strategy_cache::CudaElementAssemblyCache, time)
+function Thunderbolt._update_linear_operator!(
+    op::LinearOperator,
+    strategy_cache::CudaElementAssemblyCache,
+    time,
+)
     @unpack b, strategy_cache = op
     @unpack threads, blocks, mem_alloc, eles_caches, dh = strategy_cache
     fill!(b, zero(eltype(b)))
-    for sdh_idx in 1:length(dh.subdofhandlers)
+    for sdh_idx = 1:length(dh.subdofhandlers)
         sdh         = dh.subdofhandlers[sdh_idx]
         ele_cache   = eles_caches[sdh_idx]
         kernel_args = (b, sdh, ele_cache, mem_alloc, time)
-        _launch_kernel!(_update_linear_operator_cuda_kernel!,kernel_args, threads, blocks, mem_alloc)
+        _launch_kernel!(
+            _update_linear_operator_cuda_kernel!,
+            kernel_args,
+            threads,
+            blocks,
+            mem_alloc,
+        )
     end
 end
 

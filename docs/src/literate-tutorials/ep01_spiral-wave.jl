@@ -16,7 +16,7 @@
 # \end{aligned}
 # ```
 #
-# together with admissible initial conditions and a cellular ionic model to determine $I'$ and $\mathbf{g}$. 
+# together with admissible initial conditions and a cellular ionic model to determine $I'$ and $\mathbf{g}$.
 # ${\boldsymbol{\kappa}}$ denotes the conductivity tensor, $\varphi$ is the transmembrane potential field, $\chi$ is the volume to membrane surface ratio, $C_{\mathrm{m}}$ is the membrane capacitance, and $I'(\varphi, \boldsymbol{s}, t) := I_{\textrm{ion}}(\varphi, \boldsymbol{s}) + I_{\textrm{stim}}(t)$ denotes the sum of the ionic current due to the cell model and the applied stimulus current, respectively.
 #
 # In this tutorial we will apply a reaction-diffusion split to this model and solve it with an operator splitting solver.

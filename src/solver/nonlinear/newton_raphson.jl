@@ -15,7 +15,13 @@ Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType} <: AbstractNo
     enforce_monotonic_convergence::Bool = true
 end
 
-mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, NewtonType <: NewtonRaphsonSolver{T}, InnerSolverCacheType} <: AbstractNonlinearSolverCache
+mutable struct NewtonRaphsonSolverCache{
+    OpType,
+    ResidualType,
+    T,
+    NewtonType <: NewtonRaphsonSolver{T},
+    InnerSolverCacheType,
+} <: AbstractNonlinearSolverCache
     # The nonlinear operator
     op::OpType
     # Cache for the right hand side f(u)
@@ -34,34 +40,38 @@ function Base.show(io::IO, cache::NewtonRaphsonSolverCache)
     Base.show(io, cache.op)
 end
 
-function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphsonSolver{T}) where {T}
+function setup_solver_cache(
+    f::AbstractSemidiscreteFunction,
+    solver::NewtonRaphsonSolver{T},
+) where {T}
     @unpack inner_solver = solver
     op = setup_operator(f, solver)
     residual = Vector{T}(undef, solution_size(f))
     Δu = Vector{T}(undef, solution_size(f))
 
     # Connect both solver caches
-    inner_prob = LinearSolve.LinearProblem(
-        getJ(op), residual; u0=Δu
-    )
-    inner_cache = init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A=true, alias_b=true))
+    inner_prob = LinearSolve.LinearProblem(getJ(op), residual; u0 = Δu)
+    inner_cache =
+        init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], 0)
 end
 
-function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::NewtonRaphsonSolver{T}) where {T}
+function setup_solver_cache(
+    f::AbstractSemidiscreteBlockedFunction,
+    solver::NewtonRaphsonSolver{T},
+) where {T}
     @unpack inner_solver = solver
     op = setup_operator(f, solver)
     sizeu = solution_size(f)
     residual = Vector{T}(undef, sizeu)
     Δu = Vector{T}(undef, sizeu)
     # Connect both solver caches
-    inner_prob = LinearSolve.LinearProblem(
-        getJ(op), residual; u0=Δu
-    )
-    inner_cache = init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A=true, alias_b=true))
+    inner_prob = LinearSolve.LinearProblem(getJ(op), residual; u0 = Δu)
+    inner_cache =
+        init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
     @assert inner_cache.alg == inner_solver
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
@@ -69,7 +79,12 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], 0)
 end
 
-function nlsolve!(u::AbstractVector{T}, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t) where T
+function nlsolve!(
+    u::AbstractVector{T},
+    f::AbstractSemidiscreteFunction,
+    cache::NewtonRaphsonSolverCache,
+    t,
+) where {T}
     @unpack op, residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
     cache.iter = -1
@@ -89,18 +104,20 @@ function nlsolve!(u::AbstractVector{T}, f::AbstractSemidiscreteFunction, cache::
             push!(Θks, 0.0)
             break
         elseif cache.iter > cache.parameters.max_iter
-            push!(Θks,Inf)
+            push!(Θks, Inf)
             @debug "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm" _group=:nlsolve
             return false
         elseif any(isnan.(residualnorm))
-            push!(Θks,Inf)
+            push!(Θks, Inf)
             @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
             return false
         end
 
         @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
         nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
-        solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+        solve_succeeded =
+            LinearSolve.SciMLBase.successful_retcode(sol) ||
+            sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
         eliminate_constraints_from_increment!(Δu, f, cache)
@@ -116,7 +133,11 @@ function nlsolve!(u::AbstractVector{T}, f::AbstractSemidiscreteFunction, cache::
                 push!(Θks, Θk)
             end
             # Try to prevent oversolving when we really just wanted to force the solve to happen once.
-            if cache.iter == 1 && residualnormprev < eps(T) && residualnorm < eps(T) && incrementnorm < eps(T) && incrementnormprev < eps(T)
+            if cache.iter == 1 &&
+               residualnormprev < eps(T) &&
+               residualnorm < eps(T) &&
+               incrementnorm < eps(T) &&
+               incrementnormprev < eps(T)
                 break
             end
             if cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0

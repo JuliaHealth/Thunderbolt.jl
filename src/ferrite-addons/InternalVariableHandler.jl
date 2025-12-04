@@ -58,20 +58,22 @@ Ferrite.close!(lvh::InternalVariableHandler) = close!(lvh.dh)
 Ferrite.ndofs(lvh::InternalVariableHandler) = ndofs(lvh.dh)
 
 # Utils to visualize local variables
-struct QuadratureInterpolation{RefShape, QR <: QuadratureRule{RefShape}} <: Ferrite.ScalarInterpolation{RefShape, -1}
+struct QuadratureInterpolation{RefShape, QR <: QuadratureRule{RefShape}} <:
+       Ferrite.ScalarInterpolation{RefShape, -1}
     qr::QR
 end
 
 Ferrite.getnbasefunctions(ip::QuadratureInterpolation) = getnquadpoints(ip.qr)
-Ferrite.n_components(ip::QuadratureInterpolation)   = 1
+Ferrite.n_components(ip::QuadratureInterpolation) = 1
 Ferrite.n_dbc_components(::QuadratureInterpolation) = 0
 Ferrite.adjust_dofs_during_distribution(::QuadratureInterpolation) = false
-Ferrite.volumedof_interior_indices(ip::QuadratureInterpolation) = ntuple(i->i, getnbasefunctions(ip))
+Ferrite.volumedof_interior_indices(ip::QuadratureInterpolation) =
+    ntuple(i->i, getnbasefunctions(ip))
 # conformity is only used for VTK export and updating the constraint handler. This is not needed since the internal variables are not constrained.
 Ferrite.conformity(::QuadratureInterpolation) = Ferrite.L2Conformity()
 
 function Ferrite.reference_coordinates(ip::QuadratureInterpolation)
-    return [qp for i in 1:ip.num_components for qp in getpoints(ip.qr)]
+    return [qp for i = 1:ip.num_components for qp in getpoints(ip.qr)]
 end
 
 function Ferrite.reference_shape_value(ip::QuadratureInterpolation, ::Vec, i::Int)
@@ -91,11 +93,19 @@ function _add_ivh_subdomain_recursive!(sdh, ivis::Base.AbstractVecOrTuple, qr)
     end
 end
 
-function add_subdomain!(lvh::InternalVariableHandler, name::String, ivis #=::Vector{InternalVariableInfo}=#, qrc::QuadratureRuleCollection, compatible_dh::DofHandler)
+function add_subdomain!(
+    lvh::InternalVariableHandler,
+    name::String,
+    ivis#=::Vector{InternalVariableInfo}=#,
+    qrc::QuadratureRuleCollection,
+    compatible_dh::DofHandler,
+)
     (; dh) = lvh
     mesh   = get_grid(dh)
-    cells = mesh.grid.cells
-    haskey(mesh.volumetric_subdomains, name) || error("Volumetric Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.volumetric_subdomains))")
+    cells  = mesh.grid.cells
+    haskey(mesh.volumetric_subdomains, name) || error(
+        "Volumetric Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.volumetric_subdomains))",
+    )
     for (celltype, cellset) in mesh.volumetric_subdomains[name].data
         sdh = SubDofHandler(dh, _compatible_cellset(compatible_dh, first(cellset).idx))
         qr = getquadraturerule(qrc, sdh)
@@ -104,12 +114,18 @@ function add_subdomain!(lvh::InternalVariableHandler, name::String, ivis #=::Vec
 end
 
 # Function to compute a vector-like object to store information at quadrature points on generic (mixed) meshes.
-function construct_qvector(::Type{StorageType}, ::Type{IndexType}, mesh::SimpleMesh, qrc::QuadratureRuleCollection, subdomains::Vector{String} = [""]) where {StorageType, IndexType}
+function construct_qvector(
+    ::Type{StorageType},
+    ::Type{IndexType},
+    mesh::SimpleMesh,
+    qrc::QuadratureRuleCollection,
+    subdomains::Vector{String} = [""],
+) where {StorageType, IndexType}
     num_points = 0
     num_cells  = 0
     for subdomain in subdomains
         for (celltype, cellset) in pairs(mesh.volumetric_subdomains[subdomain].data)
-            qr = getquadraturerule(qrc, getcells(mesh, first(cellset).idx))
+            qr         = getquadraturerule(qrc, getcells(mesh, first(cellset).idx))
             num_points += getnquadpoints(qr)*length(cellset)
             num_cells  += length(cellset)
         end
@@ -142,4 +158,3 @@ function _compatible_cellset(dh::DofHandler, firstcell::Int)
     end
     error("Cell $firstcell not found.")
 end
-

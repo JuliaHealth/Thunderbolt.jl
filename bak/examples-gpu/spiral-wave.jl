@@ -91,7 +91,7 @@ spiral_wave_initializer!(u₀, odeform)
 u₀gpu = CuVector(u₀)
 problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
 
-# 
+#
 function BJPprec(A,p)
     P = BlockJacobiPreconditioner(A, 1000, CUDABackend())
     KrylovPreconditioners.update!(P, A)

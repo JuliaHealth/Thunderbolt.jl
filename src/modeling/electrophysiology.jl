@@ -26,7 +26,8 @@ struct GenericSigmoidParameters{T}
     G::T
 end
 
-@inline σ(s::T1, p::GenericSigmoidParameters{T2}) where {T1, T2} = (p.A + p.B*s)/(p.C + p.D*exp(p.E + p.F*s) / p.G)
+@inline σ(s::T1, p::GenericSigmoidParameters{T2}) where {T1, T2} =
+    (p.A + p.B*s)/(p.C + p.D*exp(p.E + p.F*s) / p.G)
 
 """
 The classical gate formulation is stated in the normalized affine form:
@@ -50,8 +51,8 @@ end
 @inline β(g::GenericHodgkinHuxleyGate{T}, φₘ::T) where {T} = σ(φₘ, g.βₚ)
 
 # Spatially varying parameters
-@inline α(g::GenericHodgkinHuxleyGate{T1}, φₘ::T2, x::T3) where {T1,T2,T3} = σ(φₘ, g.αₚ(x))
-@inline β(g::GenericHodgkinHuxleyGate{T1}, φₘ::T2, x::T3) where {T1,T2,T3} = σ(φₘ, g.βₚ(x))
+@inline α(g::GenericHodgkinHuxleyGate{T1}, φₘ::T2, x::T3) where {T1, T2, T3} = σ(φₘ, g.αₚ(x))
+@inline β(g::GenericHodgkinHuxleyGate{T1}, φₘ::T2, x::T3) where {T1, T2, T3} = σ(φₘ, g.βₚ(x))
 
 """
 Probabilistic ion channels with diagonal, semi-affine internal structure.
@@ -141,15 +142,23 @@ struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 """
 Describe the transmembrane stimulation by some analytical function on a given set of time intervals.
 """
-struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T, VectorType <: AbstractVector{SVector{2,T}}} <: TransmembraneStimulationProtocol
+struct AnalyticalTransmembraneStimulationProtocol{
+    F <: AnalyticalCoefficient,
+    T,
+    VectorType <: AbstractVector{SVector{2, T}},
+} <: TransmembraneStimulationProtocol
     f::F
     nonzero_intervals::VectorType # Helper for sparsity in time
 end
 
-function setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, sdh::SubDofHandler)
+function setup_element_cache(
+    protocol::AnalyticalTransmembraneStimulationProtocol,
+    qr,
+    sdh::SubDofHandler,
+)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
-    ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+    ip = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
     AnalyticalCoefficientElementCache(
         setup_coefficient_cache(protocol.f, qr, sdh),
@@ -166,14 +175,14 @@ The original model formulation (TODO citation) with the structure
     ∂ₜ𝐬  = g(φₘ,𝐬,x)
  φᵢ - φₑ = φₘ
 
-!!! warn 
+!!! warn
     Not implemented yet.
 """
 struct ParabolicParabolicBidomainModel <: AbstractEPModel
-    χ
-    Cₘ
-    κᵢ
-    κₑ
+    χ::Any
+    Cₘ::Any
+    κᵢ::Any
+    κₑ::Any
     stim::AbstractStimulationProtocol
     ion::AbstractIonicModel
 end
@@ -189,14 +198,14 @@ Transformed bidomain model with the structure
 This formulation is a transformation of the parabolic-parabolic
 form (c.f. TODO citation) and has been derived by (TODO citation) first.
 
-!!! warn 
+!!! warn
     Not implemented yet.
 """
 struct ParabolicEllipticBidomainModel <: AbstractEPModel
-    χ
-    Cₘ
-    κᵢ
-    κₑ
+    χ::Any
+    Cₘ::Any
+    κᵢ::Any
+    κₑ::Any
     stim::AbstractStimulationProtocol
     ion::AbstractIonicModel
 end
@@ -211,7 +220,13 @@ Simplification of the bidomain model with the structure
 assumption is violated we can construct optimal κ (TODO citation+example) for the
 reconstruction of φₘ.
 """
-struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:AbstractIonicModel} <: AbstractEPModel
+struct MonodomainModel{
+    F1,
+    F2,
+    F3,
+    STIM <: TransmembraneStimulationProtocol,
+    ION <: AbstractIonicModel,
+} <: AbstractEPModel
     χ::F1
     Cₘ::F2
     κ::F3
@@ -222,7 +237,7 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     internal_state_symbol::Symbol
 end
 
-get_field_variable_names(model::MonodomainModel) = (model.transmembrane_solution_symbol, )
+get_field_variable_names(model::MonodomainModel) = (model.transmembrane_solution_symbol,)
 
 """
     ReactionDiffusionSplit(model)

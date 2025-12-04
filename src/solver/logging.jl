@@ -15,9 +15,12 @@ end
 
 #
 
-function integration_step_monitor(integrator::SciMLBase.DEIntegrator, progress_monitor::DefaultProgressMonitor)
+function integration_step_monitor(
+    integrator::SciMLBase.DEIntegrator,
+    progress_monitor::DefaultProgressMonitor,
+)
     # (; id)       = progress_monitor
-    (; tprev, t, dt, iter)    = integrator
+    (; tprev, t, dt, iter) = integrator
     # push!(msgs, id => "$id: integrating on [$t, $(t+dt)] with Δt=$dt.")
     @logmsg LogLevel(-100) "Integrating on [$t, $(t+dt)]." iter=iter Δt=dt tprev=tprev _group=:timeintegration
 end
@@ -34,7 +37,9 @@ end
 function nonlinear_step_monitor(nlcache, time, f, u, progress_monitor::DefaultProgressMonitor)
     # (; id, msgs) = progress_monitor
     (; iter, linear_solver_cache) = nlcache
-    stats = hasproperty(linear_solver_cache.cacheval, :stats) ? linear_solver_cache.cacheval.stats : nothing
+    stats =
+        hasproperty(linear_solver_cache.cacheval, :stats) ? linear_solver_cache.cacheval.stats :
+        nothing
     # push!(msgs, id => "$id: $(nlcache.iter)\n\t||r||=$(norm(nlcache.residual)) ||Δu||=$(norm(linear_solver_cache.u))\n\t$stats")
     resnorm = norm(nlcache.residual)
     normΔu = norm(linear_solver_cache.u)
@@ -48,7 +53,9 @@ end
 function nonlinear_finalize_monitor(nlcache, time, f, progress_monitor::DefaultProgressMonitor)
     # (; id, msgs) = progress_monitor
     (; iter, linear_solver_cache) = nlcache
-    stats = hasproperty(linear_solver_cache.cacheval, :stats) ? linear_solver_cache.cacheval.stats : nothing
+    stats =
+        hasproperty(linear_solver_cache.cacheval, :stats) ? linear_solver_cache.cacheval.stats :
+        nothing
     # push!(msgs, id => "$id: $(nlcache.iter)\n\t||r||=$(norm(nlcache.residual)) ||Δu||=$(norm(linear_solver_cache.u))\n\t$stats")
     resnorm = norm(nlcache.residual)
     normΔu = norm(linear_solver_cache.u)
@@ -63,7 +70,9 @@ end
 
 function linear_finalize_monitor(lincache, progress_monitor::DefaultProgressMonitor, sol)
     stats = hasproperty(lincache.cacheval, :stats) ? lincache.cacheval.stats : nothing
-    success = DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default
+    success =
+        DiffEqBase.SciMLBase.successful_retcode(sol.retcode) ||
+        sol.retcode == DiffEqBase.ReturnCode.Default
     if stats === nothing
         @logmsg LogLevel(-100) "Solved system with matrix type $(typeof(lincache.A)) of size $(size(lincache.A))." success=success _group=:linsolve
     else
@@ -79,7 +88,7 @@ end
 VTKNewtonMonitor(outdir::String) = VTKNewtonMonitor(outdir, DefaultProgressMonitor())
 
 function nonlinear_step_monitor(cache, time, f, u, monitor::VTKNewtonMonitor)
-    nonlinear_step_monitor(cache,time,f,u,monitor.inner_monitor)
+    nonlinear_step_monitor(cache, time, f, u, monitor.inner_monitor)
 
     mkpath(monitor.outdir)
     VTKGridFile(joinpath(monitor.outdir, "newton-monitor-t=$time-i=$(cache.iter).vtu"), f.dh) do vtk
@@ -90,5 +99,5 @@ function nonlinear_step_monitor(cache, time, f, u, monitor::VTKNewtonMonitor)
 end
 
 function nonlinear_finalize_monitor(nlcache, time, f, monitor::VTKNewtonMonitor)
-    nonlinear_finalize_monitor(nlcache, time,f, monitor.inner_monitor)
+    nonlinear_finalize_monitor(nlcache, time, f, monitor.inner_monitor)
 end

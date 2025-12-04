@@ -28,7 +28,12 @@ See also [OgiBalPer:2023:aeg](@cite) for a further analysis.
 """
 struct GMKActiveDeformationGradientModel end
 
-function compute_Fᵃ(state, coeff::AbstractTransverselyIsotropicMicrostructure, contraction_model::AbstractSarcomereModel, ::GMKActiveDeformationGradientModel)
+function compute_Fᵃ(
+    state,
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+    contraction_model::AbstractSarcomereModel,
+    ::GMKActiveDeformationGradientModel,
+)
     f₀ = coeff.f
     λᵃ = compute_λᵃ(state, contraction_model)
     Fᵃ = Tensors.unsafe_symmetric(one(SymmetricTensor{2, 3}) + (λᵃ - 1.0) * f₀ ⊗ f₀)
@@ -45,7 +50,12 @@ See also [OgiBalPer:2023:aeg](@cite) for a further analysis.
 """
 struct GMKIncompressibleActiveDeformationGradientModel end
 
-function compute_Fᵃ(state, coeff::AbstractOrthotropicMicrostructure, contraction_model::AbstractSarcomereModel, ::GMKIncompressibleActiveDeformationGradientModel)
+function compute_Fᵃ(
+    state,
+    coeff::AbstractOrthotropicMicrostructure,
+    contraction_model::AbstractSarcomereModel,
+    ::GMKIncompressibleActiveDeformationGradientModel,
+)
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
     λᵃ = compute_λᵃ(state, contraction_model)
     Fᵃ = λᵃ*f₀ ⊗ f₀ + 1.0/sqrt(λᵃ) * s₀ ⊗ s₀ + 1.0/sqrt(λᵃ) * n₀ ⊗ n₀
@@ -65,11 +75,19 @@ struct RLRSQActiveDeformationGradientModel{TD}
     sheetlet_part::TD
 end
 
-function compute_Fᵃ(state, coeff::AbstractOrthotropicMicrostructure, contraction_model::AbstractSarcomereModel, Fᵃ_model::RLRSQActiveDeformationGradientModel)
+function compute_Fᵃ(
+    state,
+    coeff::AbstractOrthotropicMicrostructure,
+    contraction_model::AbstractSarcomereModel,
+    Fᵃ_model::RLRSQActiveDeformationGradientModel,
+)
     @unpack sheetlet_part = Fᵃ_model
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
     λᵃ = compute_λᵃ(state, contraction_model)
-    Fᵃ = λᵃ * f₀⊗f₀ + (1.0+sheetlet_part*(λᵃ-1.0))* s₀⊗s₀ + 1.0/((1.0+sheetlet_part*(λᵃ-1.0))*λᵃ) * n₀⊗n₀
+    Fᵃ =
+        λᵃ * f₀⊗f₀ +
+        (1.0+sheetlet_part*(λᵃ-1.0)) * s₀⊗s₀ +
+        1.0/((1.0+sheetlet_part*(λᵃ-1.0))*λᵃ) * n₀⊗n₀
     return Fᵃ
 end
 
@@ -83,7 +101,11 @@ Base.@kwdef struct SimpleActiveStress{TD}
     Tmax::TD = 1.0
 end
 
-active_stress(sas::SimpleActiveStress, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
+active_stress(
+    sas::SimpleActiveStress,
+    F::Tensor{2, dim},
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+) where {dim} = sas.Tmax * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
 
 
 @doc raw"""
@@ -98,7 +120,16 @@ Base.@kwdef struct PiersantiActiveStress{TD}
     pn::TD = 0.0
 end
 
-active_stress(sas::PiersantiActiveStress, F::Tensor{2, dim}, coeff::AbstractOrthotropicMicrostructure) where {dim} = sas.Tmax * (sas.pf*(F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f) + sas.ps*(F ⋅ coeff.s) ⊗ coeff.s / norm(F ⋅ coeff.s) + sas.pn * (F ⋅ coeff.n) ⊗ coeff.n / norm(F ⋅ coeff.n))
+active_stress(
+    sas::PiersantiActiveStress,
+    F::Tensor{2, dim},
+    coeff::AbstractOrthotropicMicrostructure,
+) where {dim} =
+    sas.Tmax * (
+        sas.pf*(F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f) +
+        sas.ps*(F ⋅ coeff.s) ⊗ coeff.s / norm(F ⋅ coeff.s) +
+        sas.pn * (F ⋅ coeff.n) ⊗ coeff.n / norm(F ⋅ coeff.n)
+    )
 
 
 @doc raw"""
@@ -109,22 +140,26 @@ $T^{\rm{a}} = T^{\rm{max}} \, [Ca_{\rm{i}}] (F \cdot f_0) \otimes f_0$
 """
 Base.@kwdef struct Guccione1993ActiveModel
     # Default values from Marina Kampers PhD thesis
-    Tmax::Float64   = 135.0 #kPa
+    Tmax::Float64     = 135.0 #kPa
     l₀::Float64     = 1.45  #µm
-    lR::Float64     = 1.8   #µm
+    lR::Float64       = 1.8   #µm
     Ca₀::Float64    = 4.35  #µM
     Ca₀max::Float64 = 4.35  #µM
-    B::Float64      = 3.8   #1/µm
+    B::Float64        = 3.8   #1/µm
 end
 
-function active_stress(sas::Guccione1993ActiveModel, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim}
+function active_stress(
+    sas::Guccione1993ActiveModel,
+    F::Tensor{2, dim},
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+) where {dim}
     @unpack l₀, Ca₀, lR, Ca₀max, Tmax, B = sas
     f = F ⋅ coeff.f
     λf = norm(f)
     l = lR*λf
     ECa₅₀² = Ca₀max^2/(exp(B*(l - l₀)) - 1.0)
     T₀ = Tmax * Ca₀^2 / (Ca₀^2 + ECa₅₀²)
-    return  T₀ * (f / λf) ⊗ coeff.f # We normalize here the fiber direction, as T₀ should contain all the active stress associated with the direction
+    return T₀ * (f / λf) ⊗ coeff.f # We normalize here the fiber direction, as T₀ should contain all the active stress associated with the direction
 end
 
 # This is merely a helper function to use the same code path for active and passive simulations.

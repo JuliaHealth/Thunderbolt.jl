@@ -2,8 +2,8 @@ abstract type AbstractDevice{ValueType, IndexType} end
 abstract type AbstractCPUDevice{ValueType, IndexType} <: AbstractDevice{ValueType, IndexType} end
 abstract type AbstractGPUDevice{ValueType, IndexType} <: AbstractDevice{ValueType, IndexType} end
 
-value_type(::AbstractDevice{ValueType}) where ValueType = ValueType
-index_type(::AbstractDevice{<:Any, IndexType}) where IndexType = IndexType
+value_type(::AbstractDevice{ValueType}) where {ValueType} = ValueType
+index_type(::AbstractDevice{<:Any, IndexType}) where {IndexType} = IndexType
 
 
 """
@@ -11,8 +11,7 @@ index_type(::AbstractDevice{<:Any, IndexType}) where IndexType = IndexType
 
 Sequential algorithms on CPU.
 """
-struct SequentialCPUDevice{ValueType, IndexType} <: AbstractCPUDevice{ValueType, IndexType}
-end
+struct SequentialCPUDevice{ValueType, IndexType} <: AbstractCPUDevice{ValueType, IndexType} end
 SequentialCPUDevice() = SequentialCPUDevice{Float64, Int64}()
 
 
@@ -26,7 +25,7 @@ struct PolyesterDevice{ValueType, IndexType} <: AbstractCPUDevice{ValueType, Ind
 end
 PolyesterDevice() = PolyesterDevice{Float64, Int64}(32)
 PolyesterDevice(i::Int) = PolyesterDevice{Float64, Int64}(i)
-allocate_vector(::PolyesterDevice{Tv}) where Tv = Vector{Tv}
+allocate_vector(::PolyesterDevice{Tv}) where {Tv} = Vector{Tv}
 
 struct ChunkLocalAssemblyData{CellCacheType, ElementCacheType}
     cc::CellCacheType
@@ -45,7 +44,8 @@ struct CudaDevice{ValueType, IndexType} <: AbstractGPUDevice{ValueType, IndexTyp
 end
 
 CudaDevice() = CudaDevice{Float32, Int32}(nothing, nothing)
-CudaDevice(threads::IndexType, blocks::IndexType) where IndexType = CudaDevice{Float32, IndexType}(threads, blocks)
+CudaDevice(threads::IndexType, blocks::IndexType) where {IndexType} =
+    CudaDevice{Float32, IndexType}(threads, blocks)
 
 # KA compat
 default_backend(::SequentialCPUDevice) = KA.CPU()

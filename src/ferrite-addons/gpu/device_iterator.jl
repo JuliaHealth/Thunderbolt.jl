@@ -8,7 +8,11 @@ abstract type AbstractDeviceCellIterator end
 ncells(iterator::AbstractDeviceCellIterator) = iterator.n_cells ## any subtype has to have `n_cells` field
 
 
-struct DeviceCellIterator{SDHType <: DeviceSubDofHandler, Ti <: Integer, CellMemType<: AbstractCellMem} <: AbstractDeviceCellIterator
+struct DeviceCellIterator{
+    SDHType <: DeviceSubDofHandler,
+    Ti <: Integer,
+    CellMemType <: AbstractCellMem,
+} <: AbstractDeviceCellIterator
     sdh::SDHType
     n_cells::Ti # depends whether we are iterating over all cells (i.e. all the dh) or a subset of cells (i.e. subdh)
     cell_mem::CellMemType
@@ -22,9 +26,17 @@ struct DeviceOutOfBoundCellIterator <: AbstractDeviceCellIterator end  # used to
 # Device Cell Cache #
 #####################
 
-abstract type AbstractDeviceCellCache  end
+abstract type AbstractDeviceCellCache end
 
-struct DeviceCellCache{Ti <: Integer, DofsType <: AbstractVector{Ti}, NN, NodesType <: SVector{NN, Ti}, X, CoordinatesType <: SVector{X}, CellMemType<: AbstractCellMem} <: AbstractDeviceCellCache
+struct DeviceCellCache{
+    Ti <: Integer,
+    DofsType <: AbstractVector{Ti},
+    NN,
+    NodesType <: SVector{NN, Ti},
+    X,
+    CoordinatesType <: SVector{X},
+    CellMemType <: AbstractCellMem,
+} <: AbstractDeviceCellCache
     coords::CoordinatesType
     dofs::DofsType
     cellid::Ti
@@ -49,4 +61,4 @@ Ferrite.cellid(cc::DeviceCellCache) = cc.cellid
 ######################
 # Unified Cell Cache #
 ######################
-AnyCellCache = Union{CellCache, DeviceCellCache,Nothing} # nothing here for cpu test case that pass nothing for the cache
+AnyCellCache = Union{CellCache, DeviceCellCache, Nothing} # nothing here for cpu test case that pass nothing for the cache

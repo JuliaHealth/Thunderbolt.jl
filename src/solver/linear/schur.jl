@@ -23,21 +23,27 @@ A solver for block systems of the form
 with small zero block of size $N_2 \times N_2$ and invertible $A_{11}$ with size $N_1 \times N_1$.
 The inner linear solver is responsible to solve for $N_2$ systems of the form $A_{11} z_i = c_i$.
 """
-struct SchurComplementLinearSolver{ASolverType <: SciMLBase.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
+struct SchurComplementLinearSolver{ASolverType <: SciMLBase.AbstractLinearAlgorithm} <:
+       AbstractLinear2x2BlockAlgorithm
     inner_alg::ASolverType
 end
 
-struct SchurComplementLinearSolverScratch{z1Type <: AbstractVector, z2Type <: AbstractMatrix, rhs2Type <: AbstractVector, sys2Type <: AbstractMatrix}
+struct SchurComplementLinearSolverScratch{
+    z1Type <: AbstractVector,
+    z2Type <: AbstractMatrix,
+    rhs2Type <: AbstractVector,
+    sys2Type <: AbstractMatrix,
+}
     z₁::z1Type
     z₂::z2Type
     A₂₁z₁₊b₂::rhs2Type
     A₂₁z₂₊A₂₂::sys2Type
 end
 
-function allocate_scratch(alg::SchurComplementLinearSolver, A, b ,u)
+function allocate_scratch(alg::SchurComplementLinearSolver, A, b, u)
     bs = blocksizes(A)
-    s1 = bs[1,1][1]
-    s2 = bs[2,2][1]
+    s1 = bs[1, 1][1]
+    s2 = bs[2, 2][1]
     return SchurComplementLinearSolverScratch(zeros(s1), zeros(s1, s2), zeros(s2), zeros(s2, s2))
 end
 
@@ -48,13 +54,20 @@ struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
     algscratch::scratchType
 end
 
-function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::AbstractBlockMatrix, b::AbstractVector, u::AbstractVector, args...; kwargs...)
+function LinearSolve.init_cacheval(
+    alg::AbstractLinear2x2BlockAlgorithm,
+    A::AbstractBlockMatrix,
+    b::AbstractVector,
+    u::AbstractVector,
+    args...;
+    kwargs...,
+)
     # Check if input is okay
     bs = blocksizes(A)
-    @assert size(bs) == (2,2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(size(bs))."
-    @assert bs[1,1][1] == bs[1,1][2] && bs[2,2][1] == bs[2,2][2] "Diagonal blocks are not quadratic matrices ($(bs)). Aborting."
-    s1 = bs[1,1][1]
-    s2 = bs[2,2][1]
+    @assert size(bs) == (2, 2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(size(bs))."
+    @assert bs[1, 1][1] == bs[1, 1][2] && bs[2, 2][1] == bs[2, 2][2] "Diagonal blocks are not quadratic matrices ($(bs)). Aborting."
+    s1 = bs[1, 1][1]
+    s2 = bs[2, 2][1]
     # Transform Vectors to block vectors
     ub = BlockedVector(u, [s1, s2])
     bb = BlockedVector(b, [s1, s2])
@@ -66,22 +79,21 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     cᵢ = zero(b₁)
 
     # Build inner helper
-    A₁₁ = @view A[Block(1,1)]
-    inner_prob = LinearSolve.LinearProblem(A₁₁, cᵢ; u0=zᵢ)
+    A₁₁ = @view A[Block(1, 1)]
+    inner_prob = LinearSolve.LinearProblem(A₁₁, cᵢ; u0 = zᵢ)
     @assert A₁₁ === inner_prob.A
-    innersolve = LinearSolve.init(
-        inner_prob,
-        alg.inner_alg,
-        args...;
-        kwargs...,
-    )
+    innersolve = LinearSolve.init(inner_prob, alg.inner_alg, args...; kwargs...)
 
     # Storage for intermediate values
     scratch = allocate_scratch(alg, A, b, u)
     return NestedLinearCache(A, b, innersolve, scratch)
 end
 
-function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplementLinearSolver; kwargs...) # 1 alloc from the call...?
+function LinearSolve.solve!(
+    cache::LinearSolve.LinearCache,
+    alg::SchurComplementLinearSolver;
+    kwargs...,
+) # 1 alloc from the call...?
     # Instead of solving directly for
     #  / A₁₁  A₁₂ \ u₁ | b₁
     #  \ A₂₁  A₂₂ / u₂ | b₂
@@ -95,14 +107,14 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplement
     #  A₁₁ z₁ = b₁
     #  A₁₁ z₂ = A₁₂
     # to avoid forming A₁₁⁻¹ explicitly.
-    @unpack A,b,u = cache
+    @unpack A, b, u = cache
     @unpack algscratch, innersolve = cache.cacheval
 
     # Unpack definitions into readable form without invoking copies
     @unpack z₁, z₂, A₂₁z₁₊b₂, A₂₁z₂₊A₂₂ = algscratch
     bs = blocksizes(A)
-    s1 = bs[1,1][1]
-    s2 = bs[2,2][1]
+    s1 = bs[1, 1][1]
+    s2 = bs[2, 2][1]
     A₁₂ = @view A[Block(1, 2)]
     A₂₁ = @view A[Block(2, 1)]
     A₂₂ = @view A[Block(2, 2)]
@@ -118,23 +130,41 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplement
     @. innersolve.b = -b₁
     @timeit_debug "Solve A₁₁ z₁ = b₁" solz₁ = solve!(innersolve)
     z₁ .= solz₁.u
-    if !(LinearSolve.SciMLBase.successful_retcode(solz₁) || solz₁.retcode == LinearSolve.ReturnCode.Default)
+    if !(
+        LinearSolve.SciMLBase.successful_retcode(solz₁) ||
+        solz₁.retcode == LinearSolve.ReturnCode.Default
+    )
         @warn "A₁₁ z₁ = b₁ solve failed: $(solz₁.retcode)."
-        return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode = solz₁.retcode)
+        return LinearSolve.SciMLBase.build_linear_solution(
+            alg,
+            u,
+            nothing,
+            cache;
+            retcode = solz₁.retcode,
+        )
     end
     # Next step is solving for the transfer matrix A₁₁ z₂ = A₁₂
     for i ∈ 1:s2
         # Setup
-        A₁₂i = @view A₁₂[:,i]
+        A₁₂i = @view A₁₂[:, i]
         innersolve.b .= A₁₂i
         # Solve
         solz₂ = solve!(innersolve)
         # Update
-        z₂i = @view z₂[:,i]
+        z₂i = @view z₂[:, i]
         z₂i .= solz₂.u
-        if !(LinearSolve.SciMLBase.successful_retcode(solz₂) || solz₂.retcode == LinearSolve.ReturnCode.Default)
+        if !(
+            LinearSolve.SciMLBase.successful_retcode(solz₂) ||
+            solz₂.retcode == LinearSolve.ReturnCode.Default
+        )
             @warn "A₁₁ z₂ = A₁₂ ($i) solve failed"
-            return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode = solz₂.retcode)
+            return LinearSolve.SciMLBase.build_linear_solution(
+                alg,
+                u,
+                nothing,
+                cache;
+                retcode = solz₂.retcode,
+            )
         end
     end
 
@@ -157,18 +187,24 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplement
 
     # Sync outer cache
     cache.isfresh = innersolve.isfresh
-    return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode=LinearSolve.ReturnCode.Success)
+    return LinearSolve.SciMLBase.build_linear_solution(
+        alg,
+        u,
+        nothing,
+        cache;
+        retcode = LinearSolve.ReturnCode.Success,
+    )
 end
 
 function inner_solve_schur(J::BlockMatrix, r::AbstractBlockArray)
     # TODO optimize
-    Jdd = @view J[Block(1,1)]
+    Jdd = @view J[Block(1, 1)]
     rd = @view r[Block(1)]
     rp = @view r[Block(2)]
     v = -(Jdd \ rd)
-    Jdp = @view J[Block(1,2)]
-    Jpd = @view J[Block(2,1)]
-    w = Jdd \ Vector(Jdp[:,1])
+    Jdp = @view J[Block(1, 2)]
+    Jpd = @view J[Block(2, 1)]
+    w = Jdd \ Vector(Jdp[:, 1])
 
     Jpdv = Jpd*v
     Jpdw = Jpd*w
@@ -177,6 +213,6 @@ function inner_solve_schur(J::BlockMatrix, r::AbstractBlockArray)
     wΔp = w*Δp
     Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
 
-    Δu = BlockVector([Δd; [Δp]], blocksizes(r,1))
+    Δu = BlockVector([Δd; [Δp]], blocksizes(r, 1))
     return Δu
 end

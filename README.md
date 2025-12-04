@@ -12,7 +12,7 @@ A modular shared-memory high-performance framework for multiscale cardiac multip
 > This package is under heavy development. Expect regular breaking changes
 > for now. If you are interested in joining development, then either comment
 > an issue you are interested or directly reach out to me via julialang.zulipchat.com, mail or
-> julialang.slack.com. Alternatively open a [GitHub discussion](https://github.com/JuliaHealth/Thunderbolt.jl/discussions) if you have something 
+> julialang.slack.com. Alternatively open a [GitHub discussion](https://github.com/JuliaHealth/Thunderbolt.jl/discussions) if you have something
 > specific in mind.
 
 ## Questions
@@ -46,7 +46,7 @@ You are now all set to start using Thunderbolt!
 ## Accessing the Documentation Offline
 
 To build the docs you first need to install Julia, see <https://julialang.org/> for details.
-Then you need to install the packages. To accomplish this you first start a julia shell in the 
+Then you need to install the packages. To accomplish this you first start a julia shell in the
 docs fonder and open the Pkg REPL; i.e. press `]` at the `julia>` promp to
 enter `pkg>` mode. Then you [activate and instantiate](https://pkgdocs.julialang.org/v1/environments/#Using-someone-else's-project) via
 ```

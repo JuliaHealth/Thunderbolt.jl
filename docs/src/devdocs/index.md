@@ -29,7 +29,7 @@ Solvers construct operators from given functions and solve some problem with the
 
 `setup_solver_caches(problem, solver, t₀)` takes the problem and a solver to setup the operators needed during solve.
 
-Questions: 
+Questions:
 1. How to control which exact operator?
 1. When and how to check if the operator is compatible with the solver?
 
