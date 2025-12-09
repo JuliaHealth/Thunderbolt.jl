@@ -51,8 +51,8 @@ TODO investigate whetehr we can remove the subdomains without a significant perf
 """
 struct SimpleMesh{sdim, C <: AbstractCell, T <: Real} <: AbstractGrid{sdim}
     grid::Grid{sdim, C, T}
-    mfaces::OrderedDict{NTuple{3,Int}, Int} # Maps "sortface"-representation to id
-    medges::OrderedDict{NTuple{2,Int}, Int} # Maps "sortedge"-representation to id
+    mfaces::OrderedDict{NTuple{3, Int}, Int} # Maps "sortface"-representation to id
+    medges::OrderedDict{NTuple{2, Int}, Int} # Maps "sortedge"-representation to id
     mvertices::OrderedDict{Int, Int} # Maps node to id
     number_of_cells_by_type::OrderedDict{DataType, Int}
     volumetric_subdomains::OrderedDict{String, VolumetricSubdomainDesriptor}
@@ -95,27 +95,32 @@ function Base.show(io::IO, ::MIME"text/plain", mesh::SimpleMesh)
     end
 end
 
-global_edges(mgrid::SimpleMesh, cell) = [mgrid.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell)))]
+global_edges(mgrid::SimpleMesh, cell) =
+    [mgrid.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell)))]
 # Get the edges of a specific face
-function Thunderbolt.global_edges(mesh, cell, lfi)
+function global_edges(mesh, cell, lfi)
     sface = first(sortface(faces(cell)[lfi]))
-    return [mesh.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell))) if sedge[1] ∈ sface && sedge[2] ∈ sface]
+    return [
+        mesh.medges[sedge] for
+        sedge ∈ first.(sortedge.(edges(cell))) if sedge[1] ∈ sface && sedge[2] ∈ sface
+    ]
 end
-global_faces(mgrid::SimpleMesh, cell) = [mgrid.mfaces[sface] for sface ∈ first.(sortface.(faces(cell)))]
+global_faces(mgrid::SimpleMesh, cell) =
+    [mgrid.mfaces[sface] for sface ∈ first.(sortface.(faces(cell)))]
 global_vertices(mgrid::SimpleMesh, cell) = [mgrid.mvertices[v] for v ∈ vertices(cell)]
 
 get_faceid_from_nodes(mgrid::SimpleMesh, nodes) = mgrid.mfaces[sortface.(nodes)]
-get_faceid(mgrid::SimpleMesh, nodes::NTuple{3,Int}) = mgrid.mfaces[nodes]
+get_faceid(mgrid::SimpleMesh, nodes::NTuple{3, Int}) = mgrid.mfaces[nodes]
 
 num_nodes(mgrid::SimpleMesh) = length(mgrid.grid.nodes)
 num_faces(mgrid::SimpleMesh) = length(mgrid.mfaces)
 num_edges(mgrid::SimpleMesh) = length(mgrid.medges)
 num_vertices(mgrid::SimpleMesh) = length(mgrid.mvertices)
 
-elementtypes(::SimpleMesh{sdim,Triangle}) where sdim = @SVector [Triangle]
-elementtypes(::SimpleMesh{sdim,Quadrilateral}) where sdim = @SVector [Quadrilateral]
-elementtypes(::SimpleMesh{3,Tetrahedron}) = @SVector [Tetrahedron]
-elementtypes(::SimpleMesh{3,Hexahedron}) = @SVector [Hexahedron]
+elementtypes(::SimpleMesh{sdim, Triangle}) where {sdim} = @SVector [Triangle]
+elementtypes(::SimpleMesh{sdim, Quadrilateral}) where {sdim} = @SVector [Quadrilateral]
+elementtypes(::SimpleMesh{3, Tetrahedron}) = @SVector [Tetrahedron]
+elementtypes(::SimpleMesh{3, Hexahedron}) = @SVector [Hexahedron]
 
 subdomain_names(mesh::SimpleMesh) = collect(keys(mesh.volumetric_subdomains))
 
@@ -168,8 +173,8 @@ function materialize_all_entities!(mesh::SimpleMesh)
 end
 
 function to_mesh(grid::Grid)
-    mfaces = OrderedDict{NTuple{3,Int}, Int}()
-    medges = OrderedDict{NTuple{2,Int}, Int}()
+    mfaces = OrderedDict{NTuple{3, Int}, Int}()
+    medges = OrderedDict{NTuple{2, Int}, Int}()
     mvertices = OrderedDict{Int, Int}()
 
     number_of_cells_by_type = OrderedDict{DataType, Int}()
@@ -184,7 +189,7 @@ function to_mesh(grid::Grid)
 
     # We split the subdomains by element type to support mixed grids
     volumetric_subdomains = OrderedDict{String, VolumetricSubdomainDesriptor}()
-    for (name,cellset) in grid.cellsets
+    for (name, cellset) in grid.cellsets
         next_split_set = OrderedDict{Type, OrderedSet{CellIndex}}()
         for cellidx in cellset
             celltype = typeof(grid.cells[cellidx])
@@ -199,7 +204,7 @@ function to_mesh(grid::Grid)
     # If we have no subdomains defined on the mesh, then we still split the mesh up so we can handle mixed grids properly
     if length(volumetric_subdomains) == 0
         next_split_set = OrderedDict{Type, OrderedSet{CellIndex}}()
-        for (cellidx,celltype) in enumerate(typeof.(grid.cells))
+        for (cellidx, celltype) in enumerate(typeof.(grid.cells))
             if !haskey(next_split_set, celltype)
                 next_split_set[celltype] = OrderedSet{CellIndex}()
             end
@@ -209,7 +214,7 @@ function to_mesh(grid::Grid)
     end
 
     surface_subdomains = OrderedDict{String, SurfaceSubdomainDesriptor}()
-    for (name,facetset) in grid.facetsets
+    for (name, facetset) in grid.facetsets
         next_split_set = OrderedDict{Type, OrderedSet{FacetIndex}}()
         for facetidx in facetset
             celltype = typeof(grid.cells[facetidx.idx[1]])
@@ -238,7 +243,8 @@ end
 # Ferrite compat layer for the mesh
 @inline Ferrite.getncells(mesh::SimpleMesh) = Ferrite.getncells(mesh.grid)
 @inline Ferrite.getcells(mesh::SimpleMesh) = Ferrite.getcells(mesh.grid)
-@inline Ferrite.getcells(mesh::SimpleMesh, v::Union{Int, Vector{Int}}) = Ferrite.getcells(mesh.grid, v)
+@inline Ferrite.getcells(mesh::SimpleMesh, v::Union{Int, Vector{Int}}) =
+    Ferrite.getcells(mesh.grid, v)
 @inline Ferrite.getcells(mesh::SimpleMesh, setname::String) = Ferrite.getcells(mesh.grid, setname)
 @inline Ferrite.getcelltype(mesh::SimpleMesh) = Ferrite.getcelltype(mesh.grid)
 @inline Ferrite.getcelltype(mesh::SimpleMesh, i::Int) = Ferrite.getcelltype(mesh.grid, i)
@@ -247,17 +253,24 @@ end
 @inline Ferrite.getnodeset(mesh::SimpleMesh, name::String) = Ferrite.getnodeset(mesh.grid, name)
 
 @inline Ferrite.getnnodes(mesh::SimpleMesh) = Ferrite.getnnodes(mesh.grid)
-@inline Ferrite.nnodes_per_cell(mesh::SimpleMesh, i::Int=1) = Ferrite.nnodes_per_cell(mesh.grid, i)
+@inline Ferrite.nnodes_per_cell(mesh::SimpleMesh, i::Int = 1) =
+    Ferrite.nnodes_per_cell(mesh.grid, i)
 @inline Ferrite.getnodes(mesh::SimpleMesh) = Ferrite.getnodes(mesh.grid)
-@inline Ferrite.getnodes(mesh::SimpleMesh, v::Union{Int, Vector{Int}}) = Ferrite.getnodes(mesh.grid, v)
+@inline Ferrite.getnodes(mesh::SimpleMesh, v::Union{Int, Vector{Int}}) =
+    Ferrite.getnodes(mesh.grid, v)
 @inline Ferrite.getnodes(mesh::SimpleMesh, setname::String) = Ferrite.getnodes(mesh.grid, setname)
 
-@inline Ferrite.VTKFile(filename::String, mesh::SimpleMesh; kwargs...) = VTKFile(filename, mesh.grid, kwargs...)
+@inline Ferrite.VTKFile(filename::String, mesh::SimpleMesh; kwargs...) =
+    VTKFile(filename, mesh.grid, kwargs...)
 
-@inline Ferrite.get_coordinate_type(::SimpleMesh{sdim, <:Any, T}) where {sdim,T} = Vec{sdim,T} 
+@inline Ferrite.get_coordinate_type(::SimpleMesh{sdim, <:Any, T}) where {sdim, T} = Vec{sdim, T}
 
 @inline Ferrite.CellIterator(mesh::SimpleMesh) = CellIterator(mesh.grid)
-@inline Ferrite.CellIterator(mesh::SimpleMesh, set::Union{Nothing, AbstractSet{<:Integer}, AbstractVector{<:Integer}}, flags::UpdateFlags) = CellIterator(mesh.grid, set, flags)
+@inline Ferrite.CellIterator(
+    mesh::SimpleMesh,
+    set::Union{Nothing, AbstractSet{<:Integer}, AbstractVector{<:Integer}},
+    flags::UpdateFlags,
+) = CellIterator(mesh.grid, set, flags)
 @inline Ferrite.FacetIterator(mesh::SimpleMesh, facets) = Ferrite.FacetIterator(mesh.grid, facets)
 
 # https://github.com/Ferrite-FEM/Ferrite.jl/pull/987

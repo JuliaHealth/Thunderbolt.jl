@@ -4,18 +4,18 @@
 
 A generic model for quasi-static mechanical problems.
 """
-struct QuasiStaticModel{MM #= <: AbstractMaterialModel =#, FM}
+struct QuasiStaticModel{MM#= <: AbstractMaterialModel =#, FM}
     displacement_symbol::Symbol
     material_model::MM
     facet_models::FM
 end
 
-get_field_variable_names(model::QuasiStaticModel) = (model.displacement_symbol, )
+get_field_variable_names(model::QuasiStaticModel) = (model.displacement_symbol,)
 
 """
     ElastodynamicsModel(displacement_sym, velocity_symbol, material_model::AbstractMaterialModel, facet_model, ρ::Coefficient)
 """
-struct ElastodynamicsModel{RHSModel #= <: AbstractMaterialModel =#, FM, CoefficientType}
+struct ElastodynamicsModel{RHSModel#= <: AbstractMaterialModel =#, FM, CoefficientType}
     displacement_symbol::Symbol
     velocity_symbol::Symbol
     material_model::RHSModel

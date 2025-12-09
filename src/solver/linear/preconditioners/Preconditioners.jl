@@ -2,23 +2,23 @@ module Preconditioners
 
 using SparseArrays, SparseMatricesCSR
 using LinearSolve
-import LinearSolve: \
+import Base: \
 using Adapt
 using UnPack
-import KernelAbstractions: Backend, @kernel, @index, @ndrange, @groupsize, @print, functional,
-    CPU,synchronize,GPU
-import SparseArrays: getcolptr,getnzval
+import KernelAbstractions:
+    Backend, @kernel, @index, @ndrange, @groupsize, @print, functional, CPU, synchronize
+import SparseArrays: getcolptr, getnzval
 import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
-import Thunderbolt: ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice,
-    default_backend
+import Thunderbolt:
+    ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice, default_backend
 
 ## Generic Code #
 
 # CSR and CSC are exact the same in symmetric matrices,so we need to hold symmetry info
 # in order to be exploited in cases in which one format has better access pattern than the other.
 abstract type AbstractMatrixSymmetry end
-struct SymmetricMatrix <: AbstractMatrixSymmetry end 
+struct SymmetricMatrix <: AbstractMatrixSymmetry end
 struct NonSymmetricMatrix <: AbstractMatrixSymmetry end
 
 abstract type AbstractMatrixFormat end
@@ -31,12 +31,12 @@ struct CSCFormat <: AbstractMatrixFormat end
 # e.g. CUSPARSE.CuSparseDeviceMatrixCSC <:SparseArrays.AbstractSparseMatrixCSC → false
 # So we need to define our own traits to identify the format of the sparse matrix
 sparsemat_format_type(::SparseMatrixCSC) = CSCFormat()
-sparsemat_format_type(::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = CSRFormat()
+sparsemat_format_type(::Union{SparseMatrixCSR, ThreadedSparseMatrixCSR}) = CSRFormat()
 
 # Why? because we want to circumvent piracy when extending these functions for device backend (e.g. CuSparseDeviceMatrixCSR)
 # TODO: find a more robust solution to dispatch the correct function
-colvals(A::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = SparseMatricesCSR.getcolval(A)
-getrowptr(A::Union{SparseMatrixCSR,ThreadedSparseMatrixCSR}) = SparseMatricesCSR.getrowptr(A)
+colvals(A::Union{SparseMatrixCSR, ThreadedSparseMatrixCSR}) = SparseMatricesCSR.getcolval(A)
+getrowptr(A::Union{SparseMatrixCSR, ThreadedSparseMatrixCSR}) = SparseMatricesCSR.getrowptr(A)
 
 include("l1_gauss_seidel.jl")
 

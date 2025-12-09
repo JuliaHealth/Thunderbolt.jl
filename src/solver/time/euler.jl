@@ -1,7 +1,12 @@
 #####################################################################
 #  This file contains optimized forward and backward Euler solvers  #
 #####################################################################
-Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType, MonitorType} <: AbstractSolver
+Base.@kwdef struct BackwardEulerSolver{
+    SolverType,
+    SolutionVectorType,
+    SystemMatrixType,
+    MonitorType,
+} <: AbstractSolver
     inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
     system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR{Float64, Int64}
@@ -11,7 +16,13 @@ end
 
 SciMLBase.isadaptive(::BackwardEulerSolver) = false
 
-mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, TmpType <: AbstractVector{T}, StageType, MonitorType} <: AbstractTimeSolverCache
+mutable struct BackwardEulerSolverCache{
+    T,
+    SolutionType <: AbstractVector{T},
+    TmpType <: AbstractVector{T},
+    StageType,
+    MonitorType,
+} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
@@ -33,7 +44,13 @@ end
 #                   Affine Problems                     #
 #########################################################
 # Mutable to change Δt_last
-mutable struct BackwardEulerAffineODEStage{T, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType}
+mutable struct BackwardEulerAffineODEStage{
+    T,
+    MassMatrixType,
+    DiffusionMatrixType,
+    SourceTermType,
+    SolverCacheType,
+}
     # Mass matrix
     M::MassMatrixType
     # Diffusion matrix
@@ -46,7 +63,13 @@ mutable struct BackwardEulerAffineODEStage{T, MassMatrixType, DiffusionMatrixTyp
     Δt_last::T
 end
 
-function perform_backward_euler_step!(f::AffineODEFunction, cache::BackwardEulerSolverCache, stage::BackwardEulerAffineODEStage, t, Δt)
+function perform_backward_euler_step!(
+    f::AffineODEFunction,
+    cache::BackwardEulerSolverCache,
+    stage::BackwardEulerAffineODEStage,
+    t,
+    Δt,
+)
     @unpack uₙ, uₙ₋₁ = cache
     @unpack linear_solver, M, Δt_last = stage
 
@@ -64,7 +87,10 @@ function perform_backward_euler_step!(f::AffineODEFunction, cache::BackwardEuler
 
     # Solve linear problem, where sol.u === uₙ
     @timeit_debug "inner solve" sol = LinearSolve.solve!(linear_solver)
-    solve_failed = !(DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default)
+    solve_failed = !(
+        DiffEqBase.SciMLBase.successful_retcode(sol.retcode) ||
+        sol.retcode == DiffEqBase.ReturnCode.Default
+    )
     linear_finalize_monitor(linear_solver, cache.monitor, sol)
     return !solve_failed
 end
@@ -88,13 +114,19 @@ function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODESt
     needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
 end
 
-function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t₀; u = nothing, uprev = nothing)
+function setup_solver_cache(
+    f::AffineODEFunction,
+    solver::BackwardEulerSolver,
+    t₀;
+    u = nothing,
+    uprev = nothing,
+)
     @unpack dh = f
     @unpack inner_solver = solver
     @assert length(dh.field_names) == 1 # TODO relax this assumption
     field_name = dh.field_names[1]
 
-    A     = create_system_matrix(solver.system_matrix_type  , f)
+    A     = create_system_matrix(solver.system_matrix_type, f)
     b     = create_system_vector(solver.solution_vector_type, f)
     u0    = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
     uprev = uprev === nothing ? create_system_vector(solver.solution_vector_type, f) : uprev
@@ -102,31 +134,22 @@ function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t
     T = eltype(u0)
 
     # Left hand side ∫dₜu δu dV
-    mass_operator = setup_operator(
-        get_strategy(f),
-        f.mass_term,
-        solver, dh,
-    )
+    mass_operator = setup_operator(get_strategy(f), f.mass_term, solver, dh)
 
     # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
-    bilinear_operator = setup_operator(
-        get_strategy(f),
-        f.bilinear_term,
-        solver, dh,
-    )
+    bilinear_operator = setup_operator(get_strategy(f), f.bilinear_term, solver, dh)
     # ... + ∫f δu dV
-    source_operator    = setup_operator(
+    source_operator = setup_operator(
         ElementAssemblyStrategy(get_strategy(f).device), #The EA strategy should always outperform other strats for the linear operator
         f.source_term,
-        solver, dh,
+        solver,
+        dh,
     )
 
-    inner_prob  = LinearSolve.LinearProblem(
-        A, b; u0
-    )
+    inner_prob  = LinearSolve.LinearProblem(A, b; u0)
     inner_cache = init(inner_prob, inner_solver)
 
-    cache       = BackwardEulerSolverCache(
+    cache = BackwardEulerSolverCache(
         u0, # u
         uprev,
         copy(u0),
@@ -159,7 +182,7 @@ struct BackwardEulerStageCache{SolverType}
 end
 
 # This is an annotation to setup the operator in the inner nonlinear problem correctly.
-struct BackwardEulerStageAnnotation{F,U}
+struct BackwardEulerStageAnnotation{F, U}
     f::F
     u::U
     uprev::U
@@ -169,7 +192,8 @@ abstract type AbstractTimeDiscretizationAnnotation{T} end
 
 # This is the wrapper used to communicate solver info into the operator.
 # In a nutshell this should contain all information to setup the evaluation of the nonlinear problem to make the backward Euler step.
-mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S, LVH} <: AbstractTimeDiscretizationAnnotation{F}
+mutable struct BackwardEulerStageFunctionWrapper{F, U, T, S, LVH} <:
+               AbstractTimeDiscretizationAnnotation{F}
     const f::F
     const u::U
     const uprev::U
@@ -182,7 +206,10 @@ end
 function setup_solver_cache(wrapper::BackwardEulerStageAnnotation, solver::AbstractNonlinearSolver)
     _setup_solver_cache(wrapper, wrapper.f, solver)
 end
-function _setup_local_solver_cache(local_solver::GenericLocalNonlinearSolver, material_model::AbstractMaterialModel)
+function _setup_local_solver_cache(
+    local_solver::GenericLocalNonlinearSolver,
+    material_model::AbstractMaterialModel,
+)
     singleQsize = local_function_size(material_model)
     @debug "Setting up local nonlinear solver with size(Q)=$(singleQsize) for material $(material_model)" _group=:nlsolve
     return GenericLocalNonlinearSolverCache(
@@ -194,35 +221,42 @@ function _setup_local_solver_cache(local_solver::GenericLocalNonlinearSolver, ma
         zeros(singleQsize),
         # Globally requested tolerance
         Inf,
-        # Local convergence 
+        # Local convergence
         SciMLBase.ReturnCode.Default,
     )
 end
-function _setup_local_solver_cache(local_solver::GenericLocalNonlinearSolver, material_models::MultiMaterialModel)
-    return map(material_model -> _setup_local_solver_cache(local_solver, material_model), material_models.materials)
+function _setup_local_solver_cache(
+    local_solver::GenericLocalNonlinearSolver,
+    material_models::MultiMaterialModel,
+)
+    return map(
+        material_model -> _setup_local_solver_cache(local_solver, material_model),
+        material_models.materials,
+    )
 end
-@inline function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::QuasiStaticFunction, solver::MultiLevelNewtonRaphsonSolver)
+@inline function _setup_solver_cache(
+    wrapper::BackwardEulerStageAnnotation,
+    f::QuasiStaticFunction,
+    solver::MultiLevelNewtonRaphsonSolver,
+)
     @unpack integrator, dh = f
     @unpack volume_model, facet_model = integrator
     @unpack local_solver, newton = solver
 
     # TODO add an abstraction layer to autoamte the steps below
-    local_solver_cache = _setup_local_solver_cache(solver.local_solver, f.integrator.volume_model.material_model)
+    local_solver_cache =
+        _setup_local_solver_cache(solver.local_solver, f.integrator.volume_model.material_model)
 
     # Extract condensable parts
     Q     = @view wrapper.u[(ndofs(dh)+1):end]
     Qprev = @view wrapper.uprev[(ndofs(dh)+1):end]
     # Connect nonlinear problem and timestepper
-    volume_wrapper = BackwardEulerStageFunctionWrapper(
-        volume_model,
-        Q, Qprev,
-        0.0,
-        local_solver_cache,
-        f.lvh,
-    )
+    volume_wrapper =
+        BackwardEulerStageFunctionWrapper(volume_model, Q, Qprev, 0.0, local_solver_cache, f.lvh)
     facet_wrapper = BackwardEulerStageFunctionWrapper(
         facet_model,
-        Q, Qprev,
+        Q,
+        Qprev,
         0.0,
         nothing, # inner model is volume only per construction
         f.lvh,
@@ -231,7 +265,13 @@ end
     # TODO call setup_operator here
     op = AssembledNonlinearOperator(
         allocate_matrix(dh),
-        NonlinearIntegrator(volume_wrapper, facet_wrapper, integrator.syms, integrator.qrc, integrator.fqrc),
+        NonlinearIntegrator(
+            volume_wrapper,
+            facet_wrapper,
+            integrator.syms,
+            integrator.qrc,
+            integrator.fqrc,
+        ),
         dh,
         SequentialAssemblyStrategyCache(nothing),
     )
@@ -241,10 +281,12 @@ end
     Δu = Vector{T}(undef, ndofs(dh))#solution_size(G))
 
     # Connect both solver caches
-    inner_prob = LinearSolve.LinearProblem(
-        getJ(op), residual; u0=Δu
+    inner_prob = LinearSolve.LinearProblem(getJ(op), residual; u0 = Δu)
+    inner_cache = init(
+        inner_prob,
+        newton.inner_solver;
+        alias = LinearAliasSpecifier(alias_A = true, alias_b = true),
     )
-    inner_cache = init(inner_prob, newton.inner_solver; alias = LinearAliasSpecifier(alias_A=true, alias_b=true))
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
@@ -260,34 +302,37 @@ end
 end
 
 # TODO Refactor the setup into generic parts and use multiple dispatch for the specifics.
-function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::BackwardEulerSolver, t₀;
-        uprev = nothing,
-        u = nothing,
-        alias_uprev = true,
-        alias_u     = false,
-    )
+function setup_solver_cache(
+    f::AbstractSemidiscreteFunction,
+    solver::BackwardEulerSolver,
+    t₀;
+    uprev       = nothing,
+    u           = nothing,
+    alias_uprev = true,
+    alias_u     = false,
+)
     vtype = Vector{Float64}
 
     if u === nothing
         _u = vtype(undef, solution_size(f))
         @warn "Cannot initialize u for $(typeof(solver))."
     else
-        _u = alias_u ? u : SciMLBase.recursivecopy(u)
+        _u = alias_u ? u : recursivecopy(u)
     end
 
     if uprev === nothing
         _uprev = vtype(undef, solution_size(f))
         _uprev .= u
     else
-        _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
+        _uprev = alias_uprev ? uprev : recursivecopy(uprev)
     end
 
-    cache       = BackwardEulerSolverCache(
+    cache = BackwardEulerSolverCache(
         _u,
         _uprev,
         copy(_u),
         BackwardEulerStageCache(
-            setup_solver_cache(BackwardEulerStageAnnotation(f, _u, _uprev), solver.inner_solver)
+            setup_solver_cache(BackwardEulerStageAnnotation(f, _u, _uprev), solver.inner_solver),
         ),
         solver.monitor,
     )
@@ -299,10 +344,30 @@ end
 #    0 = G(u,v)
 #    0 = L(u,v,dₜu,dₜv)     (or simpler dₜv = L(u,v))
 # so we pass the stage information into the interior.
-function setup_quasistatic_element_cache(wrapper::BackwardEulerStageFunctionWrapper, material_model::MultiMaterialModel, qr::QuadratureRule, sdh::SubDofHandler, cv::CellValues)
-    return setup_quasistatic_element_cache(wrapper, material_model.materials, material_model.domains, qr, sdh, cv)
+function setup_quasistatic_element_cache(
+    wrapper::BackwardEulerStageFunctionWrapper,
+    material_model::MultiMaterialModel,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+    cv::CellValues,
+)
+    return setup_quasistatic_element_cache(
+        wrapper,
+        material_model.materials,
+        material_model.domains,
+        qr,
+        sdh,
+        cv,
+    )
 end
-@unroll function setup_quasistatic_element_cache(wrapper::BackwardEulerStageFunctionWrapper, materials::Tuple, domains::Vector, qr::QuadratureRule, sdh::SubDofHandler, cv::CellValues)
+@unroll function setup_quasistatic_element_cache(
+    wrapper::BackwardEulerStageFunctionWrapper,
+    materials::Tuple,
+    domains::Vector,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+    cv::CellValues,
+)
     idx = 1
     @unroll for material ∈ materials
         if first(domains[idx]) ∈ sdh.cellset
@@ -310,22 +375,34 @@ end
                 material,
                 setup_coefficient_cache(material, qr, sdh),
                 setup_internal_cache(wrapper, qr, sdh),
-                cv
+                cv,
             )
         end
         idx += 1
     end
-    error("MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.")
+    error(
+        "MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.",
+    )
 end
-function setup_quasistatic_element_cache(wrapper::BackwardEulerStageFunctionWrapper, material_model::AbstractMaterialModel, qr::QuadratureRule, sdh::SubDofHandler, cv::CellValues)
+function setup_quasistatic_element_cache(
+    wrapper::BackwardEulerStageFunctionWrapper,
+    material_model::AbstractMaterialModel,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+    cv::CellValues,
+)
     return QuasiStaticElementCache(
         material_model,
         setup_coefficient_cache(material_model, qr, sdh),
         setup_internal_cache(wrapper, qr, sdh),
-        cv
+        cv,
     )
 end
-function setup_element_cache(wrapper::AbstractTimeDiscretizationAnnotation{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_element_cache(
+    wrapper::AbstractTimeDiscretizationAnnotation{<:QuasiStaticModel},
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
@@ -335,13 +412,20 @@ function setup_element_cache(wrapper::AbstractTimeDiscretizationAnnotation{<:Qua
 end
 
 # update_stage!(stage::BackwardEulerStageCache, kΔt) = update_stage!(stage, stage.nlsolver.local_solver_cache.op, kΔt)
-update_stage!(stage::BackwardEulerStageCache, kΔt) = update_stage!(stage, stage.nlsolver.global_solver_cache.op, kΔt)
+update_stage!(stage::BackwardEulerStageCache, kΔt) =
+    update_stage!(stage, stage.nlsolver.global_solver_cache.op, kΔt)
 function update_stage!(stage::BackwardEulerStageCache, op::AssembledNonlinearOperator, kΔt)
     op.integrator.volume_model.Δt = kΔt
-    op.integrator.facet_model.Δt   = kΔt
+    op.integrator.facet_model.Δt = kΔt
 end
 
-function perform_backward_euler_step!(f::QuasiStaticFunction, cache::BackwardEulerSolverCache, stage_info::BackwardEulerStageCache, t, Δt)
+function perform_backward_euler_step!(
+    f::QuasiStaticFunction,
+    cache::BackwardEulerSolverCache,
+    stage_info::BackwardEulerStageCache,
+    t,
+    Δt,
+)
     update_constraints!(f, cache, t + Δt)
     update_stage!(stage_info, Δt)
     if !nlsolve!(cache.uₙ, f, stage_info.nlsolver, t + Δt)
@@ -350,13 +434,45 @@ function perform_backward_euler_step!(f::QuasiStaticFunction, cache::BackwardEul
     return true
 end
 
-function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_model::AbstractMaterialModel, internal_cache::Union{EmptyInternalCache, TrivialCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_internal_cache_backward_euler_unwrap(
+    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
+    material_model::AbstractMaterialModel,
+    internal_cache::Union{EmptyInternalCache, TrivialCondensationMaterialStateCache},
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
     return internal_cache
 end
-function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_model::MultiMaterialModel, internal_cache::Union{RateIndependentCondensationMaterialStateCache, RateDependentCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
-    setup_internal_cache_backward_euler_unwrap_multi(wrapper, material_model.materials, material_model.domains, internal_cache, qr, sdh)
+function setup_internal_cache_backward_euler_unwrap(
+    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
+    material_model::MultiMaterialModel,
+    internal_cache::Union{
+        RateIndependentCondensationMaterialStateCache,
+        RateDependentCondensationMaterialStateCache,
+    },
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
+    setup_internal_cache_backward_euler_unwrap_multi(
+        wrapper,
+        material_model.materials,
+        material_model.domains,
+        internal_cache,
+        qr,
+        sdh,
+    )
 end
-@unroll function setup_internal_cache_backward_euler_unwrap_multi(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_models::Tuple, domains::Vector, internal_cache::Union{RateIndependentCondensationMaterialStateCache, RateDependentCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
+@unroll function setup_internal_cache_backward_euler_unwrap_multi(
+    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
+    material_models::Tuple,
+    domains::Vector,
+    internal_cache::Union{
+        RateIndependentCondensationMaterialStateCache,
+        RateDependentCondensationMaterialStateCache,
+    },
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
     idx = 1
     @unroll for material_model ∈ material_models
         if first(domains[idx]) ∈ sdh.cellset
@@ -382,9 +498,20 @@ end
         end
         idx += 1
     end
-    error("MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.")
+    error(
+        "MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.",
+    )
 end
-function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, material_model::AbstractMaterialModel, internal_cache::Union{RateIndependentCondensationMaterialStateCache, RateDependentCondensationMaterialStateCache}, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_internal_cache_backward_euler_unwrap(
+    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
+    material_model::AbstractMaterialModel,
+    internal_cache::Union{
+        RateIndependentCondensationMaterialStateCache,
+        RateDependentCondensationMaterialStateCache,
+    },
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
     n_ivs_per_qp = local_function_size(material_model)
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         # Pass the model
@@ -405,8 +532,18 @@ function setup_internal_cache_backward_euler_unwrap(wrapper::BackwardEulerStageF
         zeros(n_ivs_per_qp),
     )
 end
-function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
-    return setup_internal_cache_backward_euler_unwrap(wrapper, wrapper.f.material_model, setup_internal_cache(wrapper.f.material_model, qr, sdh), qr, sdh)
+function setup_internal_cache(
+    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
+    return setup_internal_cache_backward_euler_unwrap(
+        wrapper,
+        wrapper.f.material_model,
+        setup_internal_cache(wrapper.f.material_model, qr, sdh),
+        qr,
+        sdh,
+    )
 end
 
 function setup_boundary_cache(wrapper::BackwardEulerStageFunctionWrapper, fqr, sdh)

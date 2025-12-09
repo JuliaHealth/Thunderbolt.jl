@@ -21,4 +21,3 @@ RSAFDQ20223DFunction
 AbstractOperatorSplitFunction
 GenericSplitFunction
 ```
-

@@ -4,11 +4,9 @@ This described anything that is possibly condensed at element level.
 """
 abstract type AbstractInternalModel end
 
-struct EmptyInternalModel <: AbstractInternalModel
-end
+struct EmptyInternalModel <: AbstractInternalModel end
 
-struct EmptyInternalCache
-end
+struct EmptyInternalCache end
 
 setup_internal_cache(::EmptyInternalModel, ::QuadratureRule, ::SubDofHandler) = EmptyInternalCache()
 

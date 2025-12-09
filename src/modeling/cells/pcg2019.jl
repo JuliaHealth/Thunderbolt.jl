@@ -3,12 +3,12 @@ The canine ventricular cardiomyocyte electrophysiology model by [PatCorGra:2019:
 """
 Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     # ------ I_Na -------
-    g_Na::T = 12.0    # [mS/µF]
-    E_m::T  = -52.244 # [mV]
-    k_m::T  = 6.5472  # [mV]
+    g_Na::T  = 12.0    # [mS/µF]
+    E_m::T   = -52.244 # [mV]
+    k_m::T   = 6.5472  # [mV]
     τ_m::T  = 0.12    # [ms]
-    E_h::T  = -78.7   # [mV]
-    k_h::T  = 5.93    # [mV]
+    E_h::T   = -78.7   # [mV]
+    k_h::T   = 5.93    # [mV]
     δ_h::T  = 0.799163 # dimensionless
     τ_h0::T = 6.80738  # [ms]
     # ------ I_K1 -------
@@ -21,21 +21,21 @@ Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     k_r::T  = 11.462   # [mV]
     E_s::T  = -47.9286 # [mV]
     k_s::T  = 4.9314   # [mV]
-    τ_s::T  = 9.90669  # [ms]
+    τ_s::T = 9.90669  # [ms]
     # ------ I_CaL -------
     g_CaL::T = 0.11503 # [mS/µF]
     E_d::T   = 0.7     # [mV]
     k_d::T   = 4.3     # [mV]
     E_f::T   = -15.7   # [mV]
     k_f::T   = 4.6     # [mV]
-    τ_f::T   = 30.0    # [ms]
+    τ_f::T  = 30.0    # [ms]
     # ------ I_Kr -------
     g_Kr::T = 0.056 # [mS/µF]
     E_xr::T = -26.6 # [mV]
     k_xr::T = 6.5   # [mV]
     τ_xr::T = 334.0 # [ms]
-    E_y::T  = -49.6 # [mV]
-    k_y::T  = 23.5  # [mV]
+    E_y::T = -49.6 # [mV]
+    k_y::T = 23.5  # [mV]
     # ------- I_Ks --------
     g_Ks::T = 0.008 # [mS/µF]
     E_xs::T = 24.6  # [mV]
@@ -49,17 +49,17 @@ end
 
 const PCG2019 = ParametrizedPCG2019Model{Float64};
 
-function cell_rhs_fast!(du,φ,state,x,t,p::ParametrizedPCG2019Model{T}) where T
+function cell_rhs_fast!(du, φ, state, x, t, p::ParametrizedPCG2019Model{T}) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
-    
+
     C_m = T(1.0) # TODO pass!
-    
-    @unpack g_Na, g_K1, g_to, g_CaL, g_Kr, g_Ks = p
+
+    @unpack g_Na, g_K1, g_to, g_CaL, g_Kr, g_Ks           = p
     @unpack E_K, E_Na, E_Ca, E_r, E_d, E_z, E_y, E_h, E_m = p
-    @unpack                  k_r, k_d, k_z, k_y, k_h, k_m = p
+    @unpack k_r, k_d, k_z, k_y, k_h, k_m                  = p
 
     @unpack τ_h0, δ_h, τ_m = p
-    
+
     h  = state[1]
     m  = state[2]
     f  = state[3]
@@ -93,7 +93,7 @@ function cell_rhs_fast!(du,φ,state,x,t,p::ParametrizedPCG2019Model{T}) where T
     du[3] = (m∞-m)/τ_m
 end
 
-function cell_rhs_slow!(du,φ,state,x,t,p::ParametrizedPCG2019Model)
+function cell_rhs_slow!(du, φ, state, x, t, p::ParametrizedPCG2019Model)
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 
     @unpack E_f, E_s, E_xs, E_xr = p
@@ -118,11 +118,17 @@ function cell_rhs_slow!(du,φ,state,x,t,p::ParametrizedPCG2019Model)
     du[7] = (xr∞-xr)/τ_xr
 end
 
-function cell_rhs!(du::TD,u::TU,x::TX,t::TT,cell_parameters::TP) where {TD,TU,TX,TT,TP <: ParametrizedPCG2019Model}
+function cell_rhs!(
+    du::TD,
+    u::TU,
+    x::TX,
+    t::TT,
+    cell_parameters::TP,
+) where {TD, TU, TX, TT, TP <: ParametrizedPCG2019Model}
     φₘ = u[1]
-    s  = @view u[2:end]
-    cell_rhs_fast!(du,φₘ,s,x,t,cell_parameters)
-    cell_rhs_slow!(du,φₘ,s,x,t,cell_parameters)
+    s = @view u[2:end]
+    cell_rhs_fast!(du, φₘ, s, x, t, cell_parameters)
+    cell_rhs_slow!(du, φₘ, s, x, t, cell_parameters)
     return nothing
 end
 
@@ -132,7 +138,7 @@ function default_initial_state(p::ParametrizedPCG2019Model{T}) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 
     @unpack E_K, E_h, E_m, E_f, E_s, E_xs, E_xr = p
-    @unpack      k_h, k_m, k_f, k_s, k_xs, k_xr = p
+    @unpack k_h, k_m, k_f, k_s, k_xs, k_xr      = p
 
     u₀ = zeros(T, 7)
     u₀[1] = E_K

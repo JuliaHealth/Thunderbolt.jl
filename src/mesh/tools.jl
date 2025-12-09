@@ -17,7 +17,11 @@ function create_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeometry) w
     return Node(center)
 end
 
-function create_edge_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeometry, edge_idx::Int) where {dim}
+function create_edge_center_node(
+    grid::AbstractGrid{dim},
+    cell::LinearCellGeometry,
+    edge_idx::Int,
+) where {dim}
     center = zero(Vec{dim})
     es = edges(cell)
     for v ∈ es[edge_idx]
@@ -27,7 +31,11 @@ function create_edge_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeomet
     return Node(center)
 end
 
-function create_face_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeometry, face_idx::Int) where {dim}
+function create_face_center_node(
+    grid::AbstractGrid{dim},
+    cell::LinearCellGeometry,
+    face_idx::Int,
+) where {dim}
     center = zero(Vec{dim})
     fs = faces(cell)
     for v ∈ fs[face_idx]
@@ -37,7 +45,13 @@ function create_face_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeomet
     return Node(center)
 end
 
-function refine_element_uniform(mgrid::SimpleMesh, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices)
+function refine_element_uniform(
+    mgrid::SimpleMesh,
+    cell::Hexahedron,
+    cell_idx::Int,
+    global_edge_indices,
+    global_face_indices,
+)
     # Compute offsets
     new_edge_offset = num_nodes(mgrid)
     new_face_offset = num_edges(mgrid) + new_edge_offset
@@ -45,41 +59,17 @@ function refine_element_uniform(mgrid::SimpleMesh, cell::Hexahedron, cell_idx::I
     vnids = vertices(cell)
     enids = new_edge_offset .+ global_edge_indices
     fnids = new_face_offset .+ global_face_indices
-    cnid  = new_face_offset  + num_faces(mgrid) + cell_idx
+    cnid  = new_face_offset + num_faces(mgrid) + cell_idx
     # Construct 8 finer cells
     return [
-        Hexahedron((
-            vnids[1], enids[1], fnids[1], enids[4],
-            enids[9], fnids[2], cnid    , fnids[5] ,
-        )),
-        Hexahedron((
-            enids[1], vnids[2] , enids[2], fnids[1],
-            fnids[2], enids[10], fnids[3], cnid    ,
-        )),
-        Hexahedron((
-            enids[4], fnids[1], enids[3], vnids[4],
-            fnids[5], cnid    , fnids[4], enids[12],
-        )),
-        Hexahedron((
-            fnids[1], enids[2], vnids[3] , enids[3],
-            cnid    , fnids[3], enids[11], fnids[4],
-        )),
-        Hexahedron((
-            enids[9], fnids[2], cnid    , fnids[5],
-            vnids[5], enids[5], fnids[6], enids[8],
-        )),
-        Hexahedron((
-            fnids[2], enids[10], fnids[3], cnid   ,
-            enids[5], vnids[6] , enids[6], fnids[6],
-        )),
-        Hexahedron((
-            fnids[5], cnid    , fnids[4], enids[12],
-            enids[8], fnids[6], enids[7], vnids[8] ,
-        )),
-        Hexahedron((
-            cnid    , fnids[3], enids[11], fnids[4],
-            fnids[6], enids[6], vnids[7] , enids[7] 
-        )),
+        Hexahedron((vnids[1], enids[1], fnids[1], enids[4], enids[9], fnids[2], cnid, fnids[5])),
+        Hexahedron((enids[1], vnids[2], enids[2], fnids[1], fnids[2], enids[10], fnids[3], cnid)),
+        Hexahedron((enids[4], fnids[1], enids[3], vnids[4], fnids[5], cnid, fnids[4], enids[12])),
+        Hexahedron((fnids[1], enids[2], vnids[3], enids[3], cnid, fnids[3], enids[11], fnids[4])),
+        Hexahedron((enids[9], fnids[2], cnid, fnids[5], vnids[5], enids[5], fnids[6], enids[8])),
+        Hexahedron((fnids[2], enids[10], fnids[3], cnid, enids[5], vnids[6], enids[6], fnids[6])),
+        Hexahedron((fnids[5], cnid, fnids[4], enids[12], enids[8], fnids[6], enids[7], vnids[8])),
+        Hexahedron((cnid, fnids[3], enids[11], fnids[4], fnids[6], enids[6], vnids[7], enids[7])),
     ]
 end
 
@@ -88,45 +78,45 @@ function hexahedralize_local_face_transfer(cell::Hexahedron, offset::Int, faceid
     # TODO extract the topology table for this one, because we also need it for AMR
     if faceid == 1
         return OrderedSet([
-            FacetIndex(offset+1,1),
-            FacetIndex(offset+2,1),
-            FacetIndex(offset+3,1),
-            FacetIndex(offset+4,1),
+            FacetIndex(offset+1, 1),
+            FacetIndex(offset+2, 1),
+            FacetIndex(offset+3, 1),
+            FacetIndex(offset+4, 1),
         ])
     elseif faceid == 2
         return OrderedSet([
-            FacetIndex(offset+1,2),
-            FacetIndex(offset+2,2),
-            FacetIndex(offset+5,2),
-            FacetIndex(offset+6,2),
+            FacetIndex(offset+1, 2),
+            FacetIndex(offset+2, 2),
+            FacetIndex(offset+5, 2),
+            FacetIndex(offset+6, 2),
         ])
     elseif faceid == 3
         return OrderedSet([
-            FacetIndex(offset+2,3),
-            FacetIndex(offset+4,3),
-            FacetIndex(offset+6,3),
-            FacetIndex(offset+8,3),
+            FacetIndex(offset+2, 3),
+            FacetIndex(offset+4, 3),
+            FacetIndex(offset+6, 3),
+            FacetIndex(offset+8, 3),
         ])
     elseif faceid == 4
         return OrderedSet([
-            FacetIndex(offset+3,4),
-            FacetIndex(offset+4,4),
-            FacetIndex(offset+7,4),
-            FacetIndex(offset+8,4),
+            FacetIndex(offset+3, 4),
+            FacetIndex(offset+4, 4),
+            FacetIndex(offset+7, 4),
+            FacetIndex(offset+8, 4),
         ])
     elseif faceid == 5
         return OrderedSet([
-            FacetIndex(offset+1,5),
-            FacetIndex(offset+3,5),
-            FacetIndex(offset+5,5),
-            FacetIndex(offset+7,5),
+            FacetIndex(offset+1, 5),
+            FacetIndex(offset+3, 5),
+            FacetIndex(offset+5, 5),
+            FacetIndex(offset+7, 5),
         ])
     elseif faceid == 6
         return OrderedSet([
-            FacetIndex(offset+5,6),
-            FacetIndex(offset+6,6),
-            FacetIndex(offset+7,6),
-            FacetIndex(offset+8,6),
+            FacetIndex(offset+5, 6),
+            FacetIndex(offset+6, 6),
+            FacetIndex(offset+7, 6),
+            FacetIndex(offset+8, 6),
         ])
     else
         error("Invalid face $faceid for Hexahedron")
@@ -135,9 +125,21 @@ end
 
 
 # Hex into 8 hexahedra
-hexahedralize_cell(mgrid::SimpleMesh, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices) = refine_element_uniform(mgrid, cell, cell_idx, global_edge_indices, global_face_indices)
+hexahedralize_cell(
+    mgrid::SimpleMesh,
+    cell::Hexahedron,
+    cell_idx::Int,
+    global_edge_indices,
+    global_face_indices,
+) = refine_element_uniform(mgrid, cell, cell_idx, global_edge_indices, global_face_indices)
 
-function hexahedralize_cell(mgrid::SimpleMesh, cell::Wedge, cell_idx::Int, global_edge_indices, global_face_indices)
+function hexahedralize_cell(
+    mgrid::SimpleMesh,
+    cell::Wedge,
+    cell_idx::Int,
+    global_edge_indices,
+    global_face_indices,
+)
     # Compute offsets
     new_edge_offset = num_nodes(mgrid)
     new_face_offset = new_edge_offset+num_edges(mgrid)
@@ -145,34 +147,16 @@ function hexahedralize_cell(mgrid::SimpleMesh, cell::Wedge, cell_idx::Int, globa
     vnids = vertices(cell)
     enids = new_edge_offset .+ global_edge_indices
     fnids = new_face_offset .+ global_face_indices
-    cnid  = new_face_offset  + num_faces(mgrid) + cell_idx
+    cnid  = new_face_offset + num_faces(mgrid) + cell_idx
     return [
         # Bottom 3
-        Hexahedron((
-            vnids[1], enids[1], fnids[1], enids[2],
-            enids[3], fnids[2], cnid    , fnids[3],
-        )),
-        Hexahedron((
-            enids[1], vnids[2], enids[4], fnids[1],
-            fnids[2], enids[5], fnids[4], cnid    ,
-        )),
-        Hexahedron((
-            fnids[1], enids[4], vnids[3], enids[2],
-            cnid    , fnids[4], enids[6], fnids[3],
-        )),
+        Hexahedron((vnids[1], enids[1], fnids[1], enids[2], enids[3], fnids[2], cnid, fnids[3])),
+        Hexahedron((enids[1], vnids[2], enids[4], fnids[1], fnids[2], enids[5], fnids[4], cnid)),
+        Hexahedron((fnids[1], enids[4], vnids[3], enids[2], cnid, fnids[4], enids[6], fnids[3])),
         # Top 3
-        Hexahedron((
-            enids[3], fnids[2], cnid    , fnids[3],
-            vnids[4], enids[7], fnids[5], enids[8],
-        )),
-        Hexahedron((
-            fnids[2], enids[5], fnids[4], cnid    ,
-            enids[7], vnids[5], enids[9], fnids[5],
-        )),
-        Hexahedron((
-            cnid    , fnids[4], enids[6], fnids[3],
-            fnids[5], enids[9], vnids[6], enids[8],
-        ))
+        Hexahedron((enids[3], fnids[2], cnid, fnids[3], vnids[4], enids[7], fnids[5], enids[8])),
+        Hexahedron((fnids[2], enids[5], fnids[4], cnid, enids[7], vnids[5], enids[9], fnids[5])),
+        Hexahedron((cnid, fnids[4], enids[6], fnids[3], fnids[5], enids[9], vnids[6], enids[8])),
     ]
 end
 
@@ -180,36 +164,36 @@ function hexahedralize_local_face_transfer(cell::Wedge, offset::Int, faceid::Int
     # TODO extract the topology table for this one, because we also need it for AMR
     if faceid == 1
         return OrderedSet([
-            FacetIndex(offset+1,1),
-            FacetIndex(offset+2,1),
-            FacetIndex(offset+3,1),
+            FacetIndex(offset+1, 1),
+            FacetIndex(offset+2, 1),
+            FacetIndex(offset+3, 1),
         ])
     elseif faceid == 2
         return OrderedSet([
-            FacetIndex(offset+1,2),
-            FacetIndex(offset+2,2),
-            FacetIndex(offset+4,2),
-            FacetIndex(offset+5,2),
+            FacetIndex(offset+1, 2),
+            FacetIndex(offset+2, 2),
+            FacetIndex(offset+4, 2),
+            FacetIndex(offset+5, 2),
         ])
     elseif faceid == 3
         return OrderedSet([
-            FacetIndex(offset+1,5),
-            FacetIndex(offset+3,4),
-            FacetIndex(offset+4,5),
-            FacetIndex(offset+6,4),
+            FacetIndex(offset+1, 5),
+            FacetIndex(offset+3, 4),
+            FacetIndex(offset+4, 5),
+            FacetIndex(offset+6, 4),
         ])
     elseif faceid == 4
         return OrderedSet([
-            FacetIndex(offset+2,3),
-            FacetIndex(offset+3,3),
-            FacetIndex(offset+5,3),
-            FacetIndex(offset+6,3),
+            FacetIndex(offset+2, 3),
+            FacetIndex(offset+3, 3),
+            FacetIndex(offset+5, 3),
+            FacetIndex(offset+6, 3),
         ])
     elseif faceid == 5
         return OrderedSet([
-            FacetIndex(offset+4,6),
-            FacetIndex(offset+5,6),
-            FacetIndex(offset+6,6),
+            FacetIndex(offset+4, 6),
+            FacetIndex(offset+5, 6),
+            FacetIndex(offset+6, 6),
         ])
     else
         error("Invalid face $faceid for Wedge")
@@ -220,34 +204,40 @@ end
 function hexahedralize_local_face_transfer(cell::Tetrahedron, offset::Int, faceid::Int)
     if faceid == 1
         return OrderedSet([
-            FacetIndex(offset+1,1),
-            FacetIndex(offset+2,1),
-            FacetIndex(offset+3,1),
+            FacetIndex(offset+1, 1),
+            FacetIndex(offset+2, 1),
+            FacetIndex(offset+3, 1),
         ])
     elseif faceid == 2
         return OrderedSet([
-            FacetIndex(offset+1,2),
-            FacetIndex(offset+2,2),
-            FacetIndex(offset+4,6),
+            FacetIndex(offset+1, 2),
+            FacetIndex(offset+2, 2),
+            FacetIndex(offset+4, 6),
         ])
     elseif faceid == 3
         return OrderedSet([
-            FacetIndex(offset+2,3),
-            FacetIndex(offset+3,3),
-            FacetIndex(offset+4,3),
+            FacetIndex(offset+2, 3),
+            FacetIndex(offset+3, 3),
+            FacetIndex(offset+4, 3),
         ])
     elseif faceid == 4
         return OrderedSet([
-            FacetIndex(offset+1,5),
-            FacetIndex(offset+3,4),
-            FacetIndex(offset+4,4),
+            FacetIndex(offset+1, 5),
+            FacetIndex(offset+3, 4),
+            FacetIndex(offset+4, 4),
         ])
     else
         error("Invalid face $faceid for Tetrahedron")
     end
 end
 
-function hexahedralize_cell(mgrid::SimpleMesh, cell::Tetrahedron, cell_idx::Int, global_edge_indices, global_face_indices)
+function hexahedralize_cell(
+    mgrid::SimpleMesh,
+    cell::Tetrahedron,
+    cell_idx::Int,
+    global_edge_indices,
+    global_face_indices,
+)
     # Compute offsets
     new_edge_offset = num_nodes(mgrid)
     new_face_offset = new_edge_offset+num_edges(mgrid)
@@ -255,24 +245,12 @@ function hexahedralize_cell(mgrid::SimpleMesh, cell::Tetrahedron, cell_idx::Int,
     vnids = vertices(cell)
     enids = new_edge_offset .+ global_edge_indices
     fnids = new_face_offset .+ global_face_indices
-    cnid  = new_face_offset  + num_faces(mgrid) + cell_idx
+    cnid  = new_face_offset + num_faces(mgrid) + cell_idx
     return [
-        Hexahedron((
-            vnids[1], enids[1], fnids[1], enids[3],
-            enids[4], fnids[2], cnid    , fnids[4],
-        )),
-        Hexahedron((
-            enids[1], vnids[2], enids[2], fnids[1],
-            fnids[2], enids[5], fnids[3], cnid,
-        )),
-        Hexahedron((
-            fnids[1], enids[2], vnids[3], enids[3],
-            cnid    , fnids[3], enids[6], fnids[4],
-        )),
-        Hexahedron((
-            cnid    , fnids[3], enids[6], fnids[4],
-            fnids[2], enids[5], vnids[4], enids[4],
-        ))
+        Hexahedron((vnids[1], enids[1], fnids[1], enids[3], enids[4], fnids[2], cnid, fnids[4])),
+        Hexahedron((enids[1], vnids[2], enids[2], fnids[1], fnids[2], enids[5], fnids[3], cnid)),
+        Hexahedron((fnids[1], enids[2], vnids[3], enids[3], cnid, fnids[3], enids[6], fnids[4])),
+        Hexahedron((cnid, fnids[3], enids[6], fnids[4], fnids[2], enids[5], vnids[4], enids[4])),
     ]
 end
 
@@ -284,35 +262,38 @@ function uniform_refinement(mesh::SimpleMesh)
     return to_mesh(_uniform_refinement(mesh))
 end
 
-function _uniform_refinement(mgrid::SimpleMesh{3,C,T}) where {C,T}
+function _uniform_refinement(mgrid::SimpleMesh{3, C, T}) where {C, T}
     materialize_all_entities!(mgrid)
     grid = mgrid.grid
 
     cells = getcells(grid)
 
     nfacenods = length(mgrid.mfaces)
-    new_face_nodes = Array{Node{3,T}}(undef, nfacenods) # We have to add 1 center node per face
+    new_face_nodes = Array{Node{3, T}}(undef, nfacenods) # We have to add 1 center node per face
     nedgenodes = length(mgrid.medges)
-    new_edge_nodes = Array{Node{3,T}}(undef, nedgenodes) # We have to add 1 center node per edge
+    new_edge_nodes = Array{Node{3, T}}(undef, nedgenodes) # We have to add 1 center node per edge
     ncellnodes = length(cells)
-    new_cell_nodes = Array{Node{3,T}}(undef, ncellnodes) # We have to add 1 center node per volume
+    new_cell_nodes = Array{Node{3, T}}(undef, ncellnodes) # We have to add 1 center node per volume
 
     new_cells = AbstractCell[]
 
-    for (cellidx,cell) ∈ enumerate(cells)
+    for (cellidx, cell) ∈ enumerate(cells)
         # Cell center node
         new_cell_nodes[cellidx] = create_center_node(grid, cell)
         global_edge_indices = global_edges(mgrid, cell)
         # Edge center nodes
-        for (edgeidx,gei) ∈ enumerate(global_edge_indices)
+        for (edgeidx, gei) ∈ enumerate(global_edge_indices)
             new_edge_nodes[gei] = create_edge_center_node(grid, cell, edgeidx)
         end
         # Facet center nodes
         global_face_indices = global_faces(mgrid, cell)
-        for (faceidx,gfi) ∈ enumerate(global_face_indices)
+        for (faceidx, gfi) ∈ enumerate(global_face_indices)
             new_face_nodes[gfi] = create_face_center_node(grid, cell, faceidx)
         end
-        append!(new_cells, refine_element_uniform(mgrid, cell, cellidx, global_edge_indices, global_face_indices))
+        append!(
+            new_cells,
+            refine_element_uniform(mgrid, cell, cellidx, global_edge_indices, global_face_indices),
+        )
     end
     # TODO boundary sets
     return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes])
@@ -327,7 +308,7 @@ function hexahedralize(mesh::SimpleMesh{3})
     return to_mesh(grid)
 end
 
-function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
+function _hexahedralize(mgrid::SimpleMesh{3, <:Any, T}) where {T}
     materialize_edges!(mgrid)
     materialize_faces!(mgrid)
     (; grid) = mgrid
@@ -335,30 +316,33 @@ function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
     cells = getcells(grid)
 
     nfacenods = length(mgrid.mfaces)
-    new_face_nodes = Array{Node{3,T}}(undef, nfacenods) # We have to add 1 center node per face
+    new_face_nodes = Array{Node{3, T}}(undef, nfacenods) # We have to add 1 center node per face
     nedgenodes = length(mgrid.medges)
-    new_edge_nodes = Array{Node{3,T}}(undef, nedgenodes) # We have to add 1 center node per edge
+    new_edge_nodes = Array{Node{3, T}}(undef, nedgenodes) # We have to add 1 center node per edge
     ncellnodes = length(cells)
-    new_cell_nodes = Array{Node{3,T}}(undef, ncellnodes) # We have to add 1 center node per volume
+    new_cell_nodes = Array{Node{3, T}}(undef, ncellnodes) # We have to add 1 center node per volume
 
     new_cells = Hexahedron[]
 
     cell_offsets = Int[]
-    for (cellidx,cell) ∈ enumerate(cells)
+    for (cellidx, cell) ∈ enumerate(cells)
         # Cell center node
         new_cell_nodes[cellidx] = create_center_node(grid, cell)
         global_edge_indices = global_edges(mgrid, cell)
         # Edge center nodes
-        for (edgeidx,gei) ∈ enumerate(global_edge_indices)
+        for (edgeidx, gei) ∈ enumerate(global_edge_indices)
             new_edge_nodes[gei] = create_edge_center_node(grid, cell, edgeidx)
         end
         # Face center nodes
         global_face_indices = global_faces(mgrid, cell)
-        for (faceidx,gfi) ∈ enumerate(global_face_indices)
+        for (faceidx, gfi) ∈ enumerate(global_face_indices)
             new_face_nodes[gfi] = create_face_center_node(grid, cell, faceidx)
         end
         append!(cell_offsets, length(new_cells))
-        append!(new_cells, hexahedralize_cell(mgrid, cell, cellidx, global_edge_indices, global_face_indices))
+        append!(
+            new_cells,
+            hexahedralize_cell(mgrid, cell, cellidx, global_edge_indices, global_face_indices),
+        )
     end
 
     # TODO boundary sets
@@ -369,10 +353,15 @@ function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
     sizehint!(new_cellsets, length(grid.cellsets))
     for (setname, cellset) ∈ grid.cellsets
         new_cellsets[setname] = OrderedSet{Int}()
-        n_new_cells = sum((cellidx == length(cell_offsets) ? length(new_cells) : cell_offsets[cellidx+1]) - cell_offsets[cellidx] for cellidx ∈ cellset)
+        n_new_cells = sum(
+            (cellidx == length(cell_offsets) ? length(new_cells) : cell_offsets[cellidx+1]) -
+            cell_offsets[cellidx] for cellidx ∈ cellset
+        )
         sizehint!(new_cellsets[setname], n_new_cells)
         for cellidx ∈ cellset
-            new_cells_range = cell_offsets[cellidx] + 1 : (cellidx == length(cell_offsets) ? length(new_cells) : cell_offsets[cellidx+1])
+            new_cells_range =
+                (cell_offsets[cellidx]+1):(cellidx==length(cell_offsets) ? length(new_cells) :
+                                           cell_offsets[cellidx+1])
             for new_cell in new_cells_range
                 push!(new_cellsets[setname], new_cell)
             end
@@ -380,22 +369,29 @@ function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
     end
 
     new_facetsets = Dict{String, OrderedSet{FacetIndex}}()
-    for (setname,facetset) ∈ grid.facetsets
+    for (setname, facetset) ∈ grid.facetsets
         new_facetsets[setname] = OrderedSet{FacetIndex}()
-        for (cellidx,lfi) ∈ facetset
-            for f ∈ hexahedralize_local_face_transfer(grid.cells[cellidx], cell_offsets[cellidx], lfi)
+        for (cellidx, lfi) ∈ facetset
+            for f ∈
+                hexahedralize_local_face_transfer(grid.cells[cellidx], cell_offsets[cellidx], lfi)
                 push!(new_facetsets[setname], f)
             end
         end
     end
-    return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes]; cellsets = new_cellsets, facetsets=new_facetsets, nodesets=deepcopy(grid.nodesets))
+    return Grid(
+        new_cells,
+        [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes];
+        cellsets = new_cellsets,
+        facetsets = new_facetsets,
+        nodesets = deepcopy(grid.nodesets),
+    )
 end
 
 function compute_minΔx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
     Δx = DT[DT(Inf) for _ ∈ 1:getncells(grid)]
-    for (cell_idx,cell) ∈ enumerate(getcells(grid)) # todo cell iterator
-        for (node_idx,node1) ∈ enumerate(cell.nodes) # todo node accessor
-            for node2 ∈ cell.nodes[node_idx+1:end] # nodo node accessor
+    for (cell_idx, cell) ∈ enumerate(getcells(grid)) # todo cell iterator
+        for (node_idx, node1) ∈ enumerate(cell.nodes) # todo node accessor
+            for node2 ∈ cell.nodes[(node_idx+1):end] # nodo node accessor
                 Δx[cell_idx] = min(Δx[cell_idx], norm(grid.nodes[node1].x - grid.nodes[node2].x))
             end
         end
@@ -405,7 +401,7 @@ end
 
 function compute_maxΔx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
     Δx = DT[DT(0.0) for _ ∈ 1:getncells(grid)]
-    for (cell_idx,cell) ∈ enumerate(getcells(grid)) # todo cell iterator
+    for (cell_idx, cell) ∈ enumerate(getcells(grid)) # todo cell iterator
         for (node1, node2) ∈ edges(cell)
             Δx[cell_idx] = max(Δx[cell_idx], norm(grid.nodes[node1].x - grid.nodes[node2].x))
         end
@@ -415,11 +411,11 @@ end
 
 function compute_degeneracy(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
     ratio = DT[DT(0.0) for _ ∈ 1:getncells(grid)]
-    for (cell_idx,cell) ∈ enumerate(getcells(grid)) # todo cell iterator
+    for (cell_idx, cell) ∈ enumerate(getcells(grid)) # todo cell iterator
         Δxmin = DT(Inf)
         Δxmax = zero(DT)
-        for (node_idx,node1) ∈ enumerate(cell.nodes) # todo node accessor
-            for node2 ∈ cell.nodes[node_idx+1:end] # nodo node accessor
+        for (node_idx, node1) ∈ enumerate(cell.nodes) # todo node accessor
+            for node2 ∈ cell.nodes[(node_idx+1):end] # nodo node accessor
                 Δ = norm(grid.nodes[node1].x - grid.nodes[node2].x)
                 Δxmin = min(Δxmin, Δ)
                 Δxmax = max(Δxmax, Δ)
@@ -435,19 +431,19 @@ function load_voom2_elements(filename)
     open(filename, "r") do file
         # First line has format number of elements as Int and 2 more integers
         line = strip(readline(file))
-        ne = parse(Int64,split(line)[1])
+        ne = parse(Int64, split(line)[1])
         resize!(elements, ne)
 
         while !eof(file)
-            line = parse.(Int64,split(strip(readline(file))))
+            line = parse.(Int64, split(strip(readline(file))))
             ei = line[1]
             etype = line[2]
             if etype == 8
-                elements[ei] = Hexahedron(ntuple(i->line[i+2],8))
+                elements[ei] = Hexahedron(ntuple(i->line[i+2], 8))
             elseif etype == 2
-                elements[ei] = Line(ntuple(i->line[i+2],2))
+                elements[ei] = Line(ntuple(i->line[i+2], 2))
             else
-                @warn  "Unknown element type $etype. Skipping." maxlog=1
+                @warn "Unknown element type $etype. Skipping." maxlog=1
             end
         end
     end
@@ -455,17 +451,17 @@ function load_voom2_elements(filename)
 end
 
 function load_voom2_nodes(filename)
-    nodes = Vector{Ferrite.Node{3,Float64}}()
+    nodes = Vector{Ferrite.Node{3, Float64}}()
     open(filename, "r") do file
         # First line has format number of nodes as Int and 2 more integers
         line = strip(readline(file))
-        nn = parse(Int64,split(line)[1])
+        nn = parse(Int64, split(line)[1])
         resize!(nodes, nn)
 
         while !eof(file)
             line = split(strip(readline(file)))
             ni = parse(Int64, line[1])
-            nodes[ni] = Node(Vec(ntuple(i->parse(Float64,line[i+1]),3)))
+            nodes[ni] = Node(Vec(ntuple(i->parse(Float64, line[i+1]), 3)))
         end
     end
     return nodes
@@ -473,18 +469,18 @@ end
 
 function load_voom2_fsn(filename)
     # Big table
-    f = Vector{Ferrite.Vec{3,Float64}}()
-    s = Vector{Ferrite.Vec{3,Float64}}()
-    n = Vector{Ferrite.Vec{3,Float64}}()
+    f = Vector{Ferrite.Vec{3, Float64}}()
+    s = Vector{Ferrite.Vec{3, Float64}}()
+    n = Vector{Ferrite.Vec{3, Float64}}()
     open(filename, "r") do file
         while !eof(file)
-            line = parse.(Float64,split(strip(readline(file))))
+            line = parse.(Float64, split(strip(readline(file))))
             push!(f, Vec((line[1], line[2], line[3])))
             push!(s, Vec((line[4], line[5], line[6])))
             push!(n, Vec((line[7], line[8], line[9])))
         end
     end
-    return f,s,n
+    return f, s, n
 end
 
 """
@@ -526,29 +522,29 @@ function load_mfem_grid(filename)
         ne = parse(Int64, strip(readline(file)))
         @info "number of elements=$ne"
         elements = Vector{Ferrite.AbstractCell}(undef, ne)
-        domains = Dict{String,OrderedSet{Int}}()
-        for ei in 1:ne
-            line = parse.(Int64,split(strip(readline(file))))
+        domains = Dict{String, OrderedSet{Int}}()
+        for ei = 1:ne
+            line = parse.(Int64, split(strip(readline(file))))
             etype = line[2]
 
             line[3:end] .+= 1 # 0-based to 1-based index
 
             if etype == 1
-                elements[ei] = Line(ntuple(i->line[i+2],2))
+                elements[ei] = Line(ntuple(i->line[i+2], 2))
             elseif etype == 2
                 elements[ei] = Triangle((line[4], line[5], line[3]))
             elseif etype == 3
-                elements[ei] = Quadrilateral(ntuple(i->line[i+2],4))
+                elements[ei] = Quadrilateral(ntuple(i->line[i+2], 4))
             elseif etype == 4
-                elements[ei] = Tetrahedron(ntuple(i->line[i+2],4))
+                elements[ei] = Tetrahedron(ntuple(i->line[i+2], 4))
             elseif etype == 5
-                elements[ei] = Hexahedron(ntuple(i->line[i+2],8))
+                elements[ei] = Hexahedron(ntuple(i->line[i+2], 8))
             elseif etype == 6
-                elements[ei] = Wedge(ntuple(i->line[i+2],6))
+                elements[ei] = Wedge(ntuple(i->line[i+2], 6))
             elseif etype == 7
                 elements[ei] = Pyramid((line[3], line[4], line[6], line[5], line[7]))
             else
-                @warn  "Unknown element type $etype. Skipping." maxlog=1
+                @warn "Unknown element type $etype. Skipping." maxlog=1
             end
 
             attr = line[1]
@@ -569,65 +565,65 @@ function load_mfem_grid(filename)
         nv = parse(Int64, strip(readline(file)))
         @info "number of vertices=$nv"
         @assert sdim == parse(Int64, strip(readline(file))) # redundant space dim
-        nodes = Vector{Ferrite.Node{sdim,Float64}}(undef, nv)
+        nodes = Vector{Ferrite.Node{sdim, Float64}}(undef, nv)
 
-        for vi in 1:nv
-            line = parse.(Float64,split(strip(readline(file))))
+        for vi = 1:nv
+            line = parse.(Float64, split(strip(readline(file))))
             nodes[vi] = Node(Vec(ntuple(i->line[i], sdim)))
         end
 
-        return Grid(elements, nodes; cellsets=domains)
+        return Grid(elements, nodes; cellsets = domains)
     end
 end
 
 function load_carp_elements(filename)
     elements = Vector{Ferrite.AbstractCell}()
-    domains = Dict{String,OrderedSet{Int}}()
+    domains = Dict{String, OrderedSet{Int}}()
 
     open(filename, "r") do file
         # First line has format number of elements as Int and 2 more integers
         line = strip(readline(file))
-        ne = parse(Int64,split(line)[1])
+        ne = parse(Int64, split(line)[1])
         resize!(elements, ne)
 
-        for ei in 1:ne
+        for ei = 1:ne
             eof(file) && error("Premature end of input file")
             line = split(strip(readline(file)))
 
             etype = line[1]
-            attr::Union{Nothing,Int64} = nothing
+            attr::Union{Nothing, Int64} = nothing
             if etype == "Ln"
-                elements[ei] = Line(ntuple(i->parse(Int64,line[i+1])+1,2))
+                elements[ei] = Line(ntuple(i->parse(Int64, line[i+1])+1, 2))
                 if length(line) == 4
-                    attr = parse(Int64,line[end])
+                    attr = parse(Int64, line[end])
                 end
             elseif etype == "Tr"
-                elements[ei] = Triangle(ntuple(i->parse(Int64,line[i+1])+1,3))
+                elements[ei] = Triangle(ntuple(i->parse(Int64, line[i+1])+1, 3))
                 if length(line) == 5
-                    attr = parse(Int64,line[end])
+                    attr = parse(Int64, line[end])
                 end
             elseif etype == "Qd"
-                elements[ei] = Quadrilateral(ntuple(i->parse(Int64,line[i+1])+1,4))
+                elements[ei] = Quadrilateral(ntuple(i->parse(Int64, line[i+1])+1, 4))
                 if length(line) == 6
-                    attr = parse(Int64,line[end])
+                    attr = parse(Int64, line[end])
                 end
             elseif etype == "Tt"
-                elements[ei] = Tetrahedron(ntuple(i->parse(Int64,line[i+1])+1,4))
-                if length(line) == 6 
-                    attr = parse(Int64,line[end])
+                elements[ei] = Tetrahedron(ntuple(i->parse(Int64, line[i+1])+1, 4))
+                if length(line) == 6
+                    attr = parse(Int64, line[end])
                 end
             elseif etype == "Pr"
-                elements[ei] = Wedge(ntuple(i->parse(Int64,line[i+1])+1,6))
+                elements[ei] = Wedge(ntuple(i->parse(Int64, line[i+1])+1, 6))
                 if length(line) == 8
-                    attr = parse(Int64,line[end])
+                    attr = parse(Int64, line[end])
                 end
             elseif etype == "Hx"
-                elements[ei] = Hexahedron(ntuple(i->parse(Int64,line[i+1])+1,8))
+                elements[ei] = Hexahedron(ntuple(i->parse(Int64, line[i+1])+1, 8))
                 if length(line) == 10
-                    attr = parse(Int64,line[end])
+                    attr = parse(Int64, line[end])
                 end
             else
-                @warn  "Unknown element type $etype. Skipping." maxlog=1
+                @warn "Unknown element type $etype. Skipping." maxlog=1
             end
 
             attr === nothing && continue # no attribute available
@@ -641,16 +637,16 @@ function load_carp_elements(filename)
 end
 
 function load_carp_nodes(filename)
-    nodes = Vector{Ferrite.Node{3,Float64}}()
+    nodes = Vector{Ferrite.Node{3, Float64}}()
     open(filename, "r") do file
         line = strip(readline(file))
-        nv = parse(Int64,split(line)[1])
+        nv = parse(Int64, split(line)[1])
         resize!(nodes, nv)
 
-        for ni in 1:nv
+        for ni = 1:nv
             eof(file) && error("Premature end of input file")
             line = split(strip(readline(file)))
-            nodes[ni] = Node(Vec(ntuple(i->parse(Float64,line[i]),3)))
+            nodes[ni] = Node(Vec(ntuple(i->parse(Float64, line[i]), 3)))
         end
     end
     return nodes
@@ -664,8 +660,8 @@ Mesh format taken from https://carp.medunigraz.at/file_formats.html .
 function load_carp_grid(filename)
     elements, domains = load_carp_elements(filename * ".elem")
     nodes = load_carp_nodes(filename * ".pts")
-    
-    return Grid(elements, nodes; cellsets=domains)
+
+    return Grid(elements, nodes; cellsets = domains)
 end
 
 function generate_element_for_face(::SimpleMesh, cell::Hexahedron, local_face)
@@ -685,13 +681,13 @@ function generate_element_for_face(::SimpleMesh, cell::Wedge, local_face)
     end
 end
 
-function generate_reverse_index_map(d::Dict{Int,Int})
+function generate_reverse_index_map(d::Dict{Int, Int})
     inverse_indices = zeros(Int, length(d))
     generate_reverse_index_map!(inverse_indices, d)
     return inverse_indices
 end
 
-function generate_reverse_index_map!(inverse_indices, d::Dict{Int,Int})
+function generate_reverse_index_map!(inverse_indices, d::Dict{Int, Int})
     for i in keys(d)
         inverse_indices[d[i]] = i
     end
@@ -701,7 +697,7 @@ end
 remove_unattached_nodes!(mesh::SimpleMesh) = remove_unattached_nodes!(mesh.grid)
 function remove_unattached_nodes!(grid::Grid)
     next_nodeid = 1
-    nodemap = Dict{Int,Int}()
+    nodemap = Dict{Int, Int}()
     # Generate nodemap
     for cell in grid.cells
         for node in cell.nodes
@@ -714,8 +710,8 @@ function remove_unattached_nodes!(grid::Grid)
     inverse_indices = generate_reverse_index_map(nodemap)
     grid.nodes = [grid.nodes[i] for i in inverse_indices]
     # Regenerate cells
-    for cellid in 1:getncells(grid)
-        cell     = grid.cells[cellid]
+    for cellid = 1:getncells(grid)
+        cell = grid.cells[cellid]
         celltype = typeof(cell)
         grid.cells[cellid] = celltype(ntuple(i->nodemap[cell.nodes[i]], length(cell.nodes)))
     end
@@ -727,12 +723,12 @@ function extract_boundary_faces(mesh::SimpleMesh{3}; subdomains = nothing)
     materialize_faces!(mesh)
     # Cache for the cellid, local faceid pairs.
     # These are 0 if not assigned and -1 if assigned more than once.
-    face_elements  = zeros(Int, num_faces(mesh))
-    face_localfid  = zeros(Int, num_faces(mesh))
+    face_elements = zeros(Int, num_faces(mesh))
+    face_localfid = zeros(Int, num_faces(mesh))
     for (_, subdomain) ∈ actual_subdomains
         for cellid ∈ subdomain
             cell = getcells(mesh, cellid)
-            for (j,global_faceid) ∈ enumerate(global_faces(mesh, cell))
+            for (j, global_faceid) ∈ enumerate(global_faces(mesh, cell))
                 if face_elements[global_faceid] == 0
                     face_elements[global_faceid] = cellid
                     face_localfid[global_faceid] = j
@@ -755,8 +751,8 @@ function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
 
     # Sparse index map from face_elements to the index of the cells in the new surface grid
     next_cellid = 1
-    face_element_index_map = Dict{Tuple{Int,Int},Int}()
-    for (i,lfi) in enumerate(zip(face_elements,face_localfid))
+    face_element_index_map = Dict{Tuple{Int, Int}, Int}()
+    for (i, lfi) in enumerate(zip(face_elements, face_localfid))
         if lfi[1] > 0
             face_element_index_map[lfi] = next_cellid
             next_cellid += 1
@@ -765,7 +761,7 @@ function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
 
     # facetsets -> cellsets
     cellsets = Dict{String, OrderedSet{Int}}()
-    for (name,facetset) in mesh.grid.facetsets
+    for (name, facetset) in mesh.grid.facetsets
         cellset = OrderedSet{Int}()
         for lfi in zip(face_elements, face_localfid)
             if lfi in facetset
@@ -779,9 +775,12 @@ function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
 
     surface_grid = Grid(
         #if face_elements[i] > 0
-        [generate_element_for_face(mesh, getcells(mesh, face_elements[i]), face_localfid[i]) for i in 1:num_faces(mesh) if face_elements[i] > 0],
+        [
+            generate_element_for_face(mesh, getcells(mesh, face_elements[i]), face_localfid[i])
+            for i = 1:num_faces(mesh) if face_elements[i] > 0
+        ],
         mesh.grid.nodes;
-        cellsets 
+        cellsets,
     )
 
     remove_unattached_nodes!(surface_grid)
@@ -792,7 +791,7 @@ end
 # TODO do this via the operator post-processing interface
 function calculate_element_volume(cc, cellvalues)
     reinit!(cellvalues, cc)
-    evol =0.0
+    evol = 0.0
     @inbounds for qp in QuadratureIterator(cellvalues)
         evol += 1 * getdetJdV(cellvalues, qp)
     end
@@ -822,8 +821,11 @@ end
 #     end
 #     return evol
 # end
-function compute_center_of_mass(mesh::SimpleMesh{sdim}; domain_name = first(mesh.volumetric_subdomains.keys)) where sdim
-    ∫x = zero(Vec{sdim,Float64})
+function compute_center_of_mass(
+    mesh::SimpleMesh{sdim};
+    domain_name = first(mesh.volumetric_subdomains.keys),
+) where {sdim}
+    ∫x = zero(Vec{sdim, Float64})
     ∫1 = 0.0
 
     order = Ferrite.getorder(Ferrite.geometric_interpolation(getcells(mesh, 1)))
@@ -833,7 +835,9 @@ function compute_center_of_mass(mesh::SimpleMesh{sdim}; domain_name = first(mesh
     close!(dh)
 
     #
-    qrc = QuadratureRuleCollection(max(2Ferrite.getorder(Ferrite.geometric_interpolation(getcells(mesh, 1)))-1,2))
+    qrc = QuadratureRuleCollection(
+        max(2Ferrite.getorder(Ferrite.geometric_interpolation(getcells(mesh, 1)))-1, 2),
+    )
     for sdh in dh.subdofhandlers
         gip = geometric_interpolation(get_first_cell(sdh))
         ip = getinterpolation(ipc, sdh)
@@ -853,12 +857,12 @@ function compute_center_of_mass(mesh::SimpleMesh{sdim}; domain_name = first(mesh
 
     return ∫x / ∫1
 end
-function compute_center_of_surface(grid::AbstractGrid{sdim}, name::String) where sdim
+function compute_center_of_surface(grid::AbstractGrid{sdim}, name::String) where {sdim}
     facets = getfacetset(grid, name)
-    volumes      = zeros(getncells(grid))
+    volumes = zeros(getncells(grid))
     centerpoints = zeros(Vec{sdim}, getncells(grid))
     ip = Ferrite.geometric_interpolation(getcells(grid, 1))
-    qr = FacetQuadratureRule{Ferrite.getrefshape(ip)}(max(2Ferrite.getorder(ip)-1,2))
+    qr = FacetQuadratureRule{Ferrite.getrefshape(ip)}(max(2Ferrite.getorder(ip)-1, 2))
     cellvalues_vol = FacetValues(qr, ip)
     @inbounds for cc in FacetIterator(grid, facets)
         i = cellid(cc)

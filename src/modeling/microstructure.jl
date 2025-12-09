@@ -1,13 +1,15 @@
 abstract type AbstractIsotropicMicrostructure end
 
 # These are for nice error messages
-struct NoMicrostructure <: AbstractIsotropicMicrostructure
-end
+struct NoMicrostructure <: AbstractIsotropicMicrostructure end
 
-struct NoMicrostructureModel
-end
+struct NoMicrostructureModel end
 
-setup_coefficient_cache(coefficient::NoMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler) = coefficient
+setup_coefficient_cache(
+    coefficient::NoMicrostructureModel,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+) = coefficient
 
 function evaluate_coefficient(fsn::NoMicrostructureModel, cell_cache, qp::QuadraturePoint, t)
     return NoMicrostructure()
@@ -24,14 +26,15 @@ Struct must define f::Vec, s::Vec and in 3D n::Vec
 abstract type AbstractOrthotropicMicrostructure <: AbstractTransverselyIsotropicMicrostructure end
 
 struct AnisotropicPlanarMicrostructure{T} <: AbstractOrthotropicMicrostructure
-    f::Vec{2,T}
-    s::Vec{2,T}
+    f::Vec{2, T}
+    s::Vec{2, T}
 end
-Base.zero(::Type{AnisotropicPlanarMicrostructure{T}}) where T = AnisotropicPlanarMicrostructure(zero(Vec{3,T}), zero(Vec{3,T}))
+Base.zero(::Type{AnisotropicPlanarMicrostructure{T}}) where {T} =
+    AnisotropicPlanarMicrostructure(zero(Vec{3, T}), zero(Vec{3, T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::AnisotropicPlanarMicrostructure, λ::SVector{2})
-    return λ[1] * M.f ⊗ M.f +  λ[2] * M.s ⊗ M.s
+    return λ[1] * M.f ⊗ M.f + λ[2] * M.s ⊗ M.s
 end
 
 struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}
@@ -52,30 +55,40 @@ function duplicate_for_device(device, cache::AnisotropicPlanarMicrostructureCach
     )
 end
 
-function setup_coefficient_cache(coefficient::AnisotropicPlanarMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_coefficient_cache(
+    coefficient::AnisotropicPlanarMicrostructureModel,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
     return AnisotropicPlanarMicrostructureCache(
         setup_coefficient_cache(coefficient.fiber_coefficient, qr, sdh),
         setup_coefficient_cache(coefficient.sheetlet_coefficient, qr, sdh),
     )
 end
 
-function evaluate_coefficient(fsn::AnisotropicPlanarMicrostructureCache, cell_cache, qp::QuadraturePoint{2}, t)
+function evaluate_coefficient(
+    fsn::AnisotropicPlanarMicrostructureCache,
+    cell_cache,
+    qp::QuadraturePoint{2},
+    t,
+)
     f = evaluate_coefficient(fsn.fiber_cache, cell_cache, qp, t)
     s = evaluate_coefficient(fsn.sheetlet_cache, cell_cache, qp, t)
 
-    return AnisotropicPlanarMicrostructure(orthogonalize_system(f,s)...)
+    return AnisotropicPlanarMicrostructure(orthogonalize_system(f, s)...)
 end
 
 
 struct TransverselyIsotropicMicrostructure{dim, T} <: AbstractTransverselyIsotropicMicrostructure
-    f::Vec{dim,T}
+    f::Vec{dim, T}
 end
-Base.zero(::Type{TransverselyIsotropicMicrostructure{T}}) where T = TransverselyIsotropicMicrostructure(zero(Vec{dim,T}))
+Base.zero(::Type{TransverselyIsotropicMicrostructure{T}}) where {T} =
+    TransverselyIsotropicMicrostructure(zero(Vec{dim, T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::TransverselyIsotropicMicrostructure, λ::SVector{2})
     Mf = M.f ⊗ M.f
-    return λ[1] * Mf +  λ[2] * (one(Mf) - Mf)
+    return λ[1] * Mf + λ[2] * (one(Mf) - Mf)
 end
 
 struct TransverselyIsotropicMicrostructureModel{FiberCoefficientType}
@@ -87,36 +100,48 @@ struct TransverselyIsotropicMicrostructureCache{FC}
 end
 
 function duplicate_for_device(device, cache::TransverselyIsotropicMicrostructureCache)
-    return TransverselyIsotropicMicrostructureCache(
-        duplicate_for_device(device, cache.fiber_cache),
-    )
+    return TransverselyIsotropicMicrostructureCache(duplicate_for_device(device, cache.fiber_cache))
 end
 
-function setup_coefficient_cache(coefficient::TransverselyIsotropicMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_coefficient_cache(
+    coefficient::TransverselyIsotropicMicrostructureModel,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
     return AnisotropicPlanarMicrostructureCache(
         setup_coefficient_cache(coefficient.fiber_coefficient, qr, sdh),
     )
 end
 
-function evaluate_coefficient(fsn::TransverselyIsotropicMicrostructureCache, cell_cache, qp::QuadraturePoint{3}, t)
+function evaluate_coefficient(
+    fsn::TransverselyIsotropicMicrostructureCache,
+    cell_cache,
+    qp::QuadraturePoint{3},
+    t,
+)
     f = evaluate_coefficient(fsn.fiber_cache, cell_cache, qp, t)
     return TransverselyIsotropicMicrostructure(f)
 end
 
 
 struct OrthotropicMicrostructure{T} <: AbstractOrthotropicMicrostructure
-    f::Vec{3,T}
-    s::Vec{3,T}
-    n::Vec{3,T}
+    f::Vec{3, T}
+    s::Vec{3, T}
+    n::Vec{3, T}
 end
-Base.zero(::Type{OrthotropicMicrostructure{T}}) where T = OrthotropicMicrostructure(zero(Vec{dim,T}), zero(Vec{dim,T}), zero(Vec{dim,T}))
+Base.zero(::Type{OrthotropicMicrostructure{T}}) where {T} =
+    OrthotropicMicrostructure(zero(Vec{dim, T}), zero(Vec{dim, T}), zero(Vec{dim, T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::OrthotropicMicrostructure, λ::SVector{3})
-    return λ[1] * M.f ⊗ M.f +  λ[2] * M.s ⊗ M.s +  λ[3] * M.n ⊗ M.n
+    return λ[1] * M.f ⊗ M.f + λ[2] * M.s ⊗ M.s + λ[3] * M.n ⊗ M.n
 end
 
-struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
+struct OrthotropicMicrostructureModel{
+    FiberCoefficientType,
+    SheetletCoefficientType,
+    NormalCoefficientType,
+}
     fiber_coefficient::FiberCoefficientType
     sheetlet_coefficient::SheetletCoefficientType
     normal_coefficient::NormalCoefficientType
@@ -136,7 +161,11 @@ function duplicate_for_device(device, cache::OrthotropicMicrostructureCache)
     )
 end
 
-function setup_coefficient_cache(coefficient::OrthotropicMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_coefficient_cache(
+    coefficient::OrthotropicMicrostructureModel,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
     return OrthotropicMicrostructureCache(
         setup_coefficient_cache(coefficient.fiber_coefficient, qr, sdh),
         setup_coefficient_cache(coefficient.sheetlet_coefficient, qr, sdh),
@@ -144,7 +173,12 @@ function setup_coefficient_cache(coefficient::OrthotropicMicrostructureModel, qr
     )
 end
 
-function evaluate_coefficient(fsn::OrthotropicMicrostructureCache, cell_cache, qp::QuadraturePoint{3}, t)
+function evaluate_coefficient(
+    fsn::OrthotropicMicrostructureCache,
+    cell_cache,
+    qp::QuadraturePoint{3},
+    t,
+)
     f = evaluate_coefficient(fsn.fiber_cache, cell_cache, qp, t)
     s = evaluate_coefficient(fsn.sheetlet_cache, cell_cache, qp, t)
     n = evaluate_coefficient(fsn.normal_cache, cell_cache, qp, t)
@@ -171,7 +205,11 @@ Compute fiber, sheetlet and normal direction from the transmural, circumferentia
 in addition to given helix, transversal and sheetlet angles. The theory is based on the classical work by
 [StreSpoPatRosSon:1969:foc](@citet).
 """
-function compute_local_microstructure(p::ODB25LTMicrostructureParameters, x::Union{LVCoordinate, BiVCoordinate}, axes::Union{LVCoordinate, BiVCoordinate})
+function compute_local_microstructure(
+    p::ODB25LTMicrostructureParameters,
+    x::Union{LVCoordinate, BiVCoordinate},
+    axes::Union{LVCoordinate, BiVCoordinate},
+)
     (; αendo, αepi, βendo, βepi, γendo, γepi) = p
 
     # linear interpolation of rotation angle
@@ -210,8 +248,28 @@ end
 
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
 """
-function create_simple_microstructure_model(coordinate_system, ip_collection::VectorizedInterpolationCollection{3}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, endo_rot_angle = 0.0, epi_rot_angle = 0.0)
-    return create_microstructure_model(coordinate_system, ip_collection, ODB25LTMicrostructureParameters(endo_helix_angle, epi_helix_angle, endo_transversal_angle, epi_transversal_angle, endo_rot_angle, epi_rot_angle))
+function create_simple_microstructure_model(
+    coordinate_system,
+    ip_collection::VectorizedInterpolationCollection{3};
+    endo_helix_angle = deg2rad(80.0),
+    epi_helix_angle = deg2rad(-65.0),
+    endo_transversal_angle = 0.0,
+    epi_transversal_angle = 0.0,
+    endo_rot_angle = 0.0,
+    epi_rot_angle = 0.0,
+)
+    return create_microstructure_model(
+        coordinate_system,
+        ip_collection,
+        ODB25LTMicrostructureParameters(
+            endo_helix_angle,
+            epi_helix_angle,
+            endo_transversal_angle,
+            epi_transversal_angle,
+            endo_rot_angle,
+            epi_rot_angle,
+        ),
+    )
 end
 
 """
@@ -219,7 +277,11 @@ end
 
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
 """
-function create_microstructure_model(coordinate_system::CoordinateSystemCoefficient, ip_collection::VectorizedInterpolationCollection{3}, parameters)
+function create_microstructure_model(
+    coordinate_system::CoordinateSystemCoefficient,
+    ip_collection::VectorizedInterpolationCollection{3},
+    parameters,
+)
     @unpack dh = coordinate_system
 
     # TODO this storage is redundant, can we reduce the memory footprint?
@@ -244,11 +306,15 @@ function create_microstructure_model(coordinate_system::CoordinateSystemCoeffici
 
             for qp in QuadratureIterator(cv)
                 # TODO grab these via some interface!
-                apicobasal_direction = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
+                apicobasal_direction =
+                    function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
                 apicobasal_direction /= norm(apicobasal_direction)
-                transmural_direction = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
+                transmural_direction =
+                    function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
                 transmural_direction /= norm(transmural_direction)
-                apicobasal_direction = apicobasal_direction - (apicobasal_direction ⋅ transmural_direction) * transmural_direction # We do this fix to ensure local orthogonality
+                apicobasal_direction =
+                    apicobasal_direction -
+                    (apicobasal_direction ⋅ transmural_direction) * transmural_direction # We do this fix to ensure local orthogonality
                 circumferential_direction = transmural_direction × apicobasal_direction
                 circumferential_direction /= norm(circumferential_direction)
                 axes = LVCoordinate(;
@@ -258,9 +324,21 @@ function create_microstructure_model(coordinate_system::CoordinateSystemCoeffici
                 )
                 # TODO grab these via some interface!
                 x = LVCoordinate(;
-                    transmural = function_value(cv, qp, coordinate_system.u_transmural[dof_indices]),
-                    rotational = function_value(cv, qp, coordinate_system.u_rotational[dof_indices]),
-                    apicobasal = function_value(cv, qp, coordinate_system.u_apicobasal[dof_indices]),
+                    transmural = function_value(
+                        cv,
+                        qp,
+                        coordinate_system.u_transmural[dof_indices],
+                    ),
+                    rotational = function_value(
+                        cv,
+                        qp,
+                        coordinate_system.u_rotational[dof_indices],
+                    ),
+                    apicobasal = function_value(
+                        cv,
+                        qp,
+                        coordinate_system.u_apicobasal[dof_indices],
+                    ),
                 )
 
                 coeff = compute_local_microstructure(parameters, x, axes)
@@ -275,6 +353,6 @@ function create_microstructure_model(coordinate_system::CoordinateSystemCoeffici
     OrthotropicMicrostructureModel(
         FieldCoefficient(f_buf, ip_collection),
         FieldCoefficient(s_buf, ip_collection),
-        FieldCoefficient(n_buf, ip_collection)
+        FieldCoefficient(n_buf, ip_collection),
     )
 end

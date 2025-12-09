@@ -2,7 +2,7 @@
 
 https://github.com/SciML/DifferentialEquations.jl/issues/997
 
-My personal roadmap is to publish [Thunderbolt.jl](https://github.com/JuliaHealth/Thunderbolt.jl/) soon, which is a multiphysics framework which tries to be close to the design of the libraries in the DifferentialEquations.jl ecosystem, and to upstream relevant parts (after cleaning up and settling the design). 
+My personal roadmap is to publish [Thunderbolt.jl](https://github.com/JuliaHealth/Thunderbolt.jl/) soon, which is a multiphysics framework which tries to be close to the design of the libraries in the DifferentialEquations.jl ecosystem, and to upstream relevant parts (after cleaning up and settling the design).
 
 In Thunderbolt.jl I approach the outlined problems as follows (in the spoiler because likely not relevant for most readers). I put it here to see what problems come if we follow one approach deeper into the PDE rabbit hole (multiphysics/coupled problems). I hope that we can learn something about the interface design from this description.
 
@@ -14,6 +14,6 @@ In Thunderbolt.jl I approach the outlined problems as follows (in the spoiler be
 
 **8** Kinda of a blocker for releasing my package public. I am currently basically poking around in the solver caches with dispatches. Since I want to interface against the SciML ecosystem in the long term anyway I have not bothered investing time. But I have something analogue to the TimeChoiceIterator in mind. I should note here that it is usually impossible to store the the full space-time solution in RAM (in contrast to e.g. pure small ODE problems). It should be just made clear that evaluating $u(x,t)$ is possible, but quite costly and comes with inaccurracies if the mesh is nonlinear (because we basically have to find where to evaluate, which usually involves solving a nonlinear problem). It should also be considered that many problems involve more than one field (e.g. "heat and mechanics" fields), hence we also need some way to distinguish between fields in the iterator.
 
-I have not given much details on the caching infrastructure since I am currently reworking it (and I honestly do not think that in depth detail here really will help with the problems). But the idea is similar to what is done in any package in the DifferentialEquations.jl ecosystem. Solvers construct caches and use them to control dispatches. 
+I have not given much details on the caching infrastructure since I am currently reworking it (and I honestly do not think that in depth detail here really will help with the problems). But the idea is similar to what is done in any package in the DifferentialEquations.jl ecosystem. Solvers construct caches and use them to control dispatches.
 
 The obvious problem with my approach is that we do not clearly separate between modeling and solver. Yes, it allows that the model structure can be easier utilized, but I think we should be able to get an interface with a clearer separation and better reusability of individual components.

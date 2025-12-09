@@ -13,10 +13,10 @@ ms = OrthotropicMicrostructureModel(
 )
 
 κ = SpectralTensorCoefficient(
-    ms, 
+    ms,
     ConstantCoefficient(SVector(0.3, 0.12, 0.12) + SVector(0.3, 0.03, 0.03)))
 κᵢ = SpectralTensorCoefficient(
-    ms, 
+    ms,
     ConstantCoefficient(SVector(0.3, 0.12, 0.12)))
 
 
