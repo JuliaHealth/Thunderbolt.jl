@@ -65,21 +65,21 @@
     end
 
     @testset "Linear Hex Ring" begin
-        ring_mesh = generate_ring_mesh(8,3,3)
+        ring_mesh = generate_ring_mesh(8, 3, 3)
         test_detJ(ring_mesh)
-        open_ring_mesh = generate_open_ring_mesh(8,3,3,π/4)
+        open_ring_mesh = generate_open_ring_mesh(8, 3, 3, π/4)
         test_detJ(open_ring_mesh)
     end
 
     @testset "Quadratic Hex Ring" begin
-        ring_mesh = generate_quadratic_ring_mesh(5,3,3)
+        ring_mesh = generate_quadratic_ring_mesh(5, 3, 3)
         test_detJ(ring_mesh)
-        open_ring_mesh = generate_quadratic_open_ring_mesh(8,3,3,π/4)
+        open_ring_mesh = generate_quadratic_open_ring_mesh(8, 3, 3, π/4)
         test_detJ(open_ring_mesh)
     end
 
     @testset "Linear Hex LV" begin
-        lv_mesh = Thunderbolt.generate_ideal_lv_mesh(8,4,4)
+        lv_mesh = Thunderbolt.generate_ideal_lv_mesh(8, 4, 4)
         test_detJ(lv_mesh)
         lv_mesh_hex = Thunderbolt.hexahedralize(lv_mesh)
         test_detJ(lv_mesh_hex)
@@ -130,7 +130,7 @@
     end
 
     @testset "Surface extraction" begin
-        LV_mesh = generate_ideal_lv_mesh(4,2,2)
+        LV_mesh = generate_ideal_lv_mesh(4, 2, 2)
         surface_mesh = Thunderbolt.extract_outer_surface_mesh(LV_mesh)
 
         @test length(surface_mesh.cellsets) == 3
@@ -142,8 +142,8 @@
     end
 
     @testset "Geometry Tools" begin
-        ring_mesh = generate_ring_mesh(5,4,4)
-        @test Thunderbolt.compute_center_of_mass(ring_mesh) ≈ Vec((0.0,0.0,0.0)) atol=1e-16
-        @test Thunderbolt.compute_center_of_surface(ring_mesh, "Endocardium") ≈ Vec((0.0,0.0,0.0)) atol=1e-16
+        ring_mesh = generate_ring_mesh(5, 4, 4)
+        @test Thunderbolt.compute_center_of_mass(ring_mesh) ≈ Vec((0.0, 0.0, 0.0)) atol=1e-16
+        @test Thunderbolt.compute_center_of_surface(ring_mesh, "Endocardium") ≈ Vec((0.0, 0.0, 0.0)) atol=1e-16
     end
 end

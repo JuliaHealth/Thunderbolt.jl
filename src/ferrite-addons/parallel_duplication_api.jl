@@ -1,12 +1,27 @@
 # Adaption of the API presented in Ferrite.jl#1070 for general devices with some tweaks. Essentially a Adapt.jl wrapper.
 function duplicate_for_device(device, asm::Ferrite.CSCAssembler)
-    return Ferrite.CSCAssembler(asm.K, asm.f, duplicate_for_device(device, asm.permutation), duplicate_for_device(device, asm.sorteddofs))
+    return Ferrite.CSCAssembler(
+        asm.K,
+        asm.f,
+        duplicate_for_device(device, asm.permutation),
+        duplicate_for_device(device, asm.sorteddofs),
+    )
 end
 function duplicate_for_device(device, asm::Ferrite.SymmetricCSCAssembler)
-    return Ferrite.SymmetricCSCAssembler(asm.K, asm.f, duplicate_for_device(device, asm.permutation), duplicate_for_device(device, asm.sorteddofs))
+    return Ferrite.SymmetricCSCAssembler(
+        asm.K,
+        asm.f,
+        duplicate_for_device(device, asm.permutation),
+        duplicate_for_device(device, asm.sorteddofs),
+    )
 end
 function duplicate_for_device(device, asm::Ferrite.CSRAssembler)
-    Ferrite.CSRAssembler(asm.K, asm.f, duplicate_for_device(device, asm.permutation), duplicate_for_device(device, asm.sorteddofs))
+    Ferrite.CSRAssembler(
+        asm.K,
+        asm.f,
+        duplicate_for_device(device, asm.permutation),
+        duplicate_for_device(device, asm.sorteddofs),
+    )
 end
 
 function duplicate_for_device(device, fv::FacetValues)
@@ -44,16 +59,14 @@ function duplicate_for_device(device, v::Ferrite.FunctionValues)
 end
 
 function duplicate_for_device(device, v::Ferrite.GeometryMapping)
-    return Ferrite.GeometryMapping(
-        duplicate_for_device(device, v.ip),
-        v.M,
-        v.dMdξ,
-        v.d2Mdξ2
-    )
+    return Ferrite.GeometryMapping(duplicate_for_device(device, v.ip), v.M, v.dMdξ, v.d2Mdξ2)
 end
 
 function duplicate_for_device(device, qr::QR) where {refshape, QR <: QuadratureRule{refshape}}
-    return QuadratureRule{refshape}(duplicate_for_device(device, qr.weights), duplicate_for_device(device, qr.points))::QR
+    return QuadratureRule{refshape}(
+        duplicate_for_device(device, qr.weights),
+        duplicate_for_device(device, qr.points),
+    )::QR
 end
 
 function duplicate_for_device(device, qr::QR) where {refshape, QR <: FacetQuadratureRule{refshape}}
@@ -84,6 +97,6 @@ function duplicate_for_device(device, x::T)::T where {S, T <: DenseArray{S}}
         return copy(x)::T
     else
         # ... otherwise we recurse and call duplicate_for_device on the elements
-        return map(y->duplicate_for_device(device,y), x)::T
+        return map(y->duplicate_for_device(device, y), x)::T
     end
 end

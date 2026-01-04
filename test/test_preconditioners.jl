@@ -19,9 +19,10 @@ function poisson_test_matrix(N)
 end
 
 function test_sym(testname, A, x, y_exp, D_Dl1_exp, SLbuffer_exp, partsize)
+function test_sym(testname, A, x, y_exp, D_Dl1_exp, SLbuffer_exp, partsize)
     @testset "$testname Symmetric" begin
         total_ncores = 8 # Assuming 8 cores for testing
-        for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
+        for ncores = 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
             builder = L1GSPrecBuilder(PolyesterDevice(ncores))
             P = A isa Symmetric ? builder(A, partsize;sweep=ForwardSweep(),storage=PackedBuffer()) : builder(A, partsize; isSymA=true,sweep=ForwardSweep(),storage=PackedBuffer())
             @test P.D_Dl1 ≈ D_Dl1_exp
@@ -58,7 +59,7 @@ function test_l1gs_prec(A, b, partsize=nothing)
 
     println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
     println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
-    @test isapprox(A * sol_prec.u, b, rtol=1e-1, atol=1e-1)
+    @test isapprox(A * sol_prec.u, b, rtol = 1e-1, atol = 1e-1)
     @test sol_prec.iters < sol_unprec.iters
 end
 
@@ -73,9 +74,10 @@ end
         test_sym("CPU CSC", A, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
         B = SparseMatrixCSR(A)
         test_sym("CPU, CSR", B, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
+        test_sym("CPU, CSR", B, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
         C = ThreadedSparseMatrixCSR(B)
         test_sym("CPU, Threaded CSR", C, x, y_exp, D_Dl1_exp, SLbuffer_exp, 2)
-        
+
         @testset "η parameter" begin
             # Test with η = 2.0 (more strict than default 1.5)
             # For Poisson matrix: a_ii = 2, dl1_ii = 1 for all rows
@@ -116,7 +118,7 @@ end
             y = P \ x
             @test y ≈ y_exp
         end
-            
+
 
         @testset "Non-Symmetric CSC" begin
             A2 = copy(A)

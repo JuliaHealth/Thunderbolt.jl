@@ -60,7 +60,7 @@ pt0sat = 100.0
 qt0sat = 0.0
 ## Systemic Arteriole #### Checked
 Rsar = 0.5
-## Systemic Capillary #### Checked 
+## Systemic Capillary #### Checked
 Rscp = 0.52
 ## Systemic Vein #### Checked
 Csvn = 20.5
@@ -97,7 +97,7 @@ Kf_sav = 0.0004
 Ke_sav = 9000.0
 M_sav = 0.0004
 A_sav = 0.00047
-# right heart # 
+# right heart #
 Kst_ra = 2.5
 Kst_rv = 20.0
 Kf_pav = 0.0004
@@ -109,7 +109,7 @@ A_pav = 0.00047
 Kp_av = 5500.0 # *  57.29578 # Shi Paper has values in radians!
 Kf_av = 50.0
 Kf_mv = 50.0
-Kp_mv = 5500.0 # *  57.29578 
+Kp_mv = 5500.0 # *  57.29578
 Kf_tv = 50.0
 Kp_tv = 5500.0 # *  57.29578
 Kf_pv = 50.0
@@ -131,7 +131,7 @@ Kv_pv = 3.5
 θmin_pv = 5.0 * pi / 180
 θmin_tv = 5.0 * pi / 180
 
-## pressure force and frictional force is the same for all 4 valves 
+## pressure force and frictional force is the same for all 4 valves
 
 # Initial conditions #### Checked against cellML model
 

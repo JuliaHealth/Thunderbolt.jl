@@ -7,18 +7,25 @@ SciMLBase.pop_tstop!(integrator::ThunderboltTimeIntegrator) = pop!(integrator.op
 
 function SciMLBase.add_tstop!(integrator::ThunderboltTimeIntegrator, t)
     integrator.tdir * (t - integrator.t) < zero(integrator.t) &&
-    error("Tried to add a tstop that is behind the current time. This is strictly forbidden")
+        error("Tried to add a tstop that is behind the current time. This is strictly forbidden")
     push!(integrator.opts.tstops, integrator.tdir * t)
 end
 
 @inline function SciMLBase.get_tmp_cache(integrator::ThunderboltTimeIntegrator)
     return (integrator.cache.tmp,)
 end
-@inline function SciMLBase.get_tmp_cache(integrator::ThunderboltTimeIntegrator, alg::AbstractSolver, cache::AbstractTimeSolverCache)
+@inline function SciMLBase.get_tmp_cache(
+    integrator::ThunderboltTimeIntegrator,
+    alg::AbstractSolver,
+    cache::AbstractTimeSolverCache,
+)
     return (cache.tmp,)
 end
 
-function SciMLBase.terminate!(integrator::ThunderboltTimeIntegrator, retcode = ReturnCode.Terminated)
+function SciMLBase.terminate!(
+    integrator::ThunderboltTimeIntegrator,
+    retcode = ReturnCode.Terminated,
+)
     integrator.sol = SciMLBase.solution_new_retcode(integrator.sol, retcode)
     integrator.opts.tstops.valtree = typeof(integrator.opts.tstops.valtree)()
 end
@@ -45,7 +52,9 @@ end
 function SciMLBase.isadaptive(integrator::ThunderboltTimeIntegrator)
     integrator.controller === nothing && return false
     if !SciMLBase.isadaptive(integrator.alg)
-        error("Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.")
+        error(
+            "Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.",
+        )
     end
     return true
 end
@@ -56,7 +65,11 @@ end
 
 SciMLBase.postamble!(integrator::ThunderboltTimeIntegrator) = _postamble!(integrator)
 
-function SciMLBase.savevalues!(integrator::ThunderboltTimeIntegrator, force_save = false, reduce_size = true)
+function SciMLBase.savevalues!(
+    integrator::ThunderboltTimeIntegrator,
+    force_save = false,
+    reduce_size = true,
+)
     OrdinaryDiffEqCore._savevalues!(integrator, force_save, reduce_size)
 end
 
@@ -66,7 +79,7 @@ DiffEqBase.get_tstops_array(integ::ThunderboltTimeIntegrator) = get_tstops(integ
 DiffEqBase.get_tstops_max(integ::ThunderboltTimeIntegrator) = maximum(get_tstops_array(integ))
 
 
-DiffEqBase.has_reinit(integrator::ThunderboltTimeIntegrator) = true
+SciMLBase.has_reinit(integrator::ThunderboltTimeIntegrator) = true
 function DiffEqBase.reinit!(
     integrator::ThunderboltTimeIntegrator,
     u0 = integrator.sol.prob.u0;
@@ -75,14 +88,14 @@ function DiffEqBase.reinit!(
     dt0 = tf-t0,
     erase_sol = false,
     tstops = integrator.opts.tstops_cache,
-    saveat =  integrator.opts.saveat_cache,
+    saveat = integrator.opts.saveat_cache,
     d_discontinuities = integrator.opts.d_discontinuities_cache,
     reinit_callbacks = true,
     reinit_retcode = true,
     reinit_cache = true,
 )
-    SciMLBase.recursivecopy!(integrator.u, u0)
-    SciMLBase.recursivecopy!(integrator.uprev, integrator.u)
+    recursivecopy!(integrator.u, u0)
+    recursivecopy!(integrator.uprev, integrator.u)
     integrator.t = t0
     integrator.tprev = t0
 
@@ -103,16 +116,17 @@ function DiffEqBase.reinit!(
         DiffEqBase.initialize!(saving_callback, u0, t0, integrator)
     end
     if reinit_retcode
-        integrator.sol = DiffEqBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Default)
+        integrator.sol =
+            SciMLBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Default)
     end
 
     tType = typeof(integrator.t)
     tspan = (tType(t0), tType(tf))
-    integrator.opts.tstops = OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, tspan)
+    integrator.opts.tstops =
+        OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, tspan)
     integrator.opts.saveat = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, tspan)
-    integrator.opts.d_discontinuities = OrdinaryDiffEqCore.initialize_d_discontinuities(tType,
-        d_discontinuities,
-        tspan)
+    integrator.opts.d_discontinuities =
+        OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, tspan)
 
     if reinit_cache
         DiffEqBase.initialize!(integrator, integrator.cache)
@@ -121,9 +135,12 @@ end
 
 
 # ----------------------------------- OrdinaryDiffEqCore compat ----------------------------------
-OrdinaryDiffEqCore.has_discontinuity(integrator::ThunderboltTimeIntegrator) = !isempty(integrator.opts.d_discontinuities)
-OrdinaryDiffEqCore.first_discontinuity(integrator::ThunderboltTimeIntegrator) = first(integrator.opts.d_discontinuities)
-OrdinaryDiffEqCore.pop_discontinuity!(integrator::ThunderboltTimeIntegrator) = pop!(integrator.opts.d_discontinuities)
+OrdinaryDiffEqCore.has_discontinuity(integrator::ThunderboltTimeIntegrator) =
+    !isempty(integrator.opts.d_discontinuities)
+OrdinaryDiffEqCore.first_discontinuity(integrator::ThunderboltTimeIntegrator) =
+    first(integrator.opts.d_discontinuities)
+OrdinaryDiffEqCore.pop_discontinuity!(integrator::ThunderboltTimeIntegrator) =
+    pop!(integrator.opts.d_discontinuities)
 
 function _postamble!(integrator)
     DiffEqBase.finalize!(integrator.opts.callback, integrator.u, integrator.t, integrator)
@@ -136,7 +153,10 @@ OrdinaryDiffEqCore.alg_extrapolates(alg::AbstractSolver) = false
 
 OrdinaryDiffEqCore.choose_algorithm!(integrator, cache::AbstractTimeSolverCache) = nothing
 
-function OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
+function OrdinaryDiffEqCore.perform_step!(
+    integ::ThunderboltTimeIntegrator,
+    cache::AbstractTimeSolverCache,
+)
     if !perform_step!(integ.f, cache, integ.t, integ.dt)
         integ.force_stepfail = true
     end
@@ -194,16 +214,16 @@ function update_uprev!(integrator::ThunderboltTimeIntegrator)
     # # OrdinaryDiffEqCore.update_uprev!(integrator) # FIXME recover
     # if alg_extrapolates(integrator.alg)
     #     if isinplace(integrator.sol.prob)
-    #         SciMLBase.recursivecopy!(integrator.uprev2, integrator.uprev)
+    #         recursivecopy!(integrator.uprev2, integrator.uprev)
     #     else
     #         integrator.uprev2 = integrator.uprev
     #     end
     # end
     # if isinplace(integrator.sol.prob) # This should be dispatched in the integrator directly
-        SciMLBase.recursivecopy!(integrator.uprev, integrator.u)
-        if integrator.alg isa OrdinaryDiffEqCore.DAEAlgorithm
-            SciMLBase.recursivecopy!(integrator.duprev, integrator.du)
-        end
+    recursivecopy!(integrator.uprev, integrator.u)
+    if integrator.alg isa OrdinaryDiffEqCore.DAEAlgorithm
+        recursivecopy!(integrator.duprev, integrator.du)
+    end
     # else
     #     integrator.uprev = integrator.u
     #     if integrator.alg isa DAEAlgorithm
@@ -215,7 +235,7 @@ end
 
 function controller_message_on_dtmin_error(integrator::SciMLBase.DEIntegrator)
     if isdefined(integrator, :EEst)
-       return ", and step error estimate = $(integrator.EEst)"
+        return ", and step error estimate = $(integrator.EEst)"
     else
         return ""
     end
@@ -231,13 +251,19 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
     # SDEIntegrator.
     if isnan(integrator.dt)
         if verbose
-            @warn("NaN dt detected. Likely a NaN value in the state, parameters, or derivative value caused this outcome.")
+            @warn(
+                "NaN dt detected. Likely a NaN value in the state, parameters, or derivative value caused this outcome."
+            )
         end
         return SciMLBase.ReturnCode.DtNaN
     end
-    if hasproperty(integrator, :iter) && hasproperty(opts, :maxiters) && integrator.iter > opts.maxiters
+    if hasproperty(integrator, :iter) &&
+       hasproperty(opts, :maxiters) &&
+       integrator.iter > opts.maxiters
         if verbose
-            @warn("Interrupted. Larger maxiters is needed. If you are using an integrator for non-stiff ODEs or an automatic switching algorithm (the default), you may want to consider using a method for stiff equations. See the solver pages for more details (e.g. https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/#Stiff-Problems).")
+            @warn(
+                "Interrupted. Larger maxiters is needed. If you are using an integrator for non-stiff ODEs or an automatic switching algorithm (the default), you may want to consider using a method for stiff equations. See the solver pages for more details (e.g. https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/#Stiff-Problems)."
+            )
         end
         return SciMLBase.ReturnCode.MaxIters
     end
@@ -257,20 +283,27 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
         if dt_below_min && (step_rejected || before_next_tstop)
             if verbose
                 controller_string = controller_message_on_dtmin_error(integrator)
-                @warn("dt($(integrator.dt)) <= dtmin($(opts.dtmin)) at t=$(integrator.t)$(controller_string). Aborting. There is either an error in your model specification or the true solution is unstable.")
+                @warn(
+                    "dt($(integrator.dt)) <= dtmin($(opts.dtmin)) at t=$(integrator.t)$(controller_string). Aborting. There is either an error in your model specification or the true solution is unstable."
+                )
             end
             return SciMLBase.ReturnCode.DtLessThanMin
-        elseif step_rejected && integrator.t isa AbstractFloat &&
+        elseif step_rejected &&
+               integrator.t isa AbstractFloat &&
                abs(integrator.dt) <= abs(eps(integrator.t)) # = DiffEqBase.timedepentdtmin(integrator)
             if verbose
                 controller_string = controller_message_on_dtmin_error(integrator)
-                @warn("At t=$(integrator.t), dt was forced below floating point epsilon $(integrator.dt)$(controller_string). Aborting. There is either an error in your model specification or the true solution is unstable (or the true solution can not be represented in the precision of $(eltype(integrator.u))).")
+                @warn(
+                    "At t=$(integrator.t), dt was forced below floating point epsilon $(integrator.dt)$(controller_string). Aborting. There is either an error in your model specification or the true solution is unstable (or the true solution can not be represented in the precision of $(eltype(integrator.u)))."
+                )
             end
             return SciMLBase.ReturnCode.Unstable
         end
     end
-    if step_accepted && (hasproperty(opts, :unstable_check) && 
-       opts.unstable_check(integrator.dt, integrator.u, integrator.p, integrator.t))
+    if step_accepted && (
+        hasproperty(opts, :unstable_check) &&
+        opts.unstable_check(integrator.dt, integrator.u, integrator.p, integrator.t)
+    )
         if verbose
             @warn("Instability detected. Aborting")
         end
@@ -316,8 +349,8 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
     elseif integrator.force_stepfail
         if SciMLBase.isadaptive(integrator)
             OrdinaryDiffEqCore.post_newton_controller!(integrator, integrator.alg)
-        # elseif integrator.dtchangeable # Non-adaptive but can change dt
-        #     integrator.dt *= integrator.opts.failfactor
+            # elseif integrator.dtchangeable # Non-adaptive but can change dt
+            #     integrator.dt *= integrator.opts.failfactor
         elseif integrator.last_step_failed
             return
         end
@@ -360,8 +393,12 @@ function compute_rate_prototype(prob)
         !(prob.f.mass_matrix isa Tuple) &&
         ArrayInterface.issingular(prob.f.mass_matrix)
     )
-    if !isdae && isinplace(prob) && u isa AbstractArray && eltype(u) <: Number &&
-        uBottomEltypeNoUnits == uBottomEltype && tType == tTypeNoUnits # Could this be more efficient for other arrays?
+    if !isdae &&
+       isinplace(prob) &&
+       u isa AbstractArray &&
+       eltype(u) <: Number &&
+       uBottomEltypeNoUnits == uBottomEltype &&
+       tType == tTypeNoUnits # Could this be more efficient for other arrays?
         return SciMLBase.recursivecopy(u)
     else
         _compute_rate_prototype_mass_matrix_form(prob)
@@ -373,8 +410,8 @@ end
 function _compute_rate_prototype_mass_matrix_form(prob)
     u = prob.u0
 
-    tType = eltype(prob.tspan)
-    tTypeNoUnits = typeof(one(tType))
+    tType                = eltype(prob.tspan)
+    tTypeNoUnits         = typeof(one(tType))
     uBottomEltype        = OrdinaryDiffEqCore.recursive_bottom_eltype(u)
     uBottomEltypeNoUnits = OrdinaryDiffEqCore.recursive_unitless_bottom_eltype(u)
     if (uBottomEltypeNoUnits == uBottomEltype && tType == tTypeNoUnits) || eltype(u) <: Enum
@@ -397,8 +434,7 @@ function OrdinaryDiffEqCore.modify_dt_for_tstops!(integrator::ThunderboltTimeInt
         tdir_t = integrator.tdir * integrator.t
         tdir_tstop = SciMLBase.first_tstop(integrator)
         if integrator.opts.adaptive
-            integrator.dt = integrator.tdir *
-                            min(abs(integrator.dt), abs(tdir_tstop - tdir_t)) # step! to the end
+            integrator.dt = integrator.tdir * min(abs(integrator.dt), abs(tdir_tstop - tdir_t)) # step! to the end
         elseif integrator.dtchangeable
             dtpropose = SciMLBase.get_proposed_dt(integrator)
             if iszero(dtpropose)
@@ -406,8 +442,7 @@ function OrdinaryDiffEqCore.modify_dt_for_tstops!(integrator::ThunderboltTimeInt
             elseif !integrator.force_stepfail
                 # always try to step! with dtcache, but lower if a tstop
                 # however, if force_stepfail then don't set to dtcache, and no tstop worry
-                integrator.dt = integrator.tdir *
-                                min(abs(dtpropose), abs(tdir_tstop - tdir_t)) # step! to the end
+                integrator.dt = integrator.tdir * min(abs(dtpropose), abs(tdir_tstop - tdir_t)) # step! to the end
             end
         end
     end
@@ -420,17 +455,22 @@ function OrdinaryDiffEqCore.handle_tstop!(integrator::ThunderboltTimeIntegrator)
         if tdir_t == tdir_tstop
             while tdir_t == tdir_tstop #remove all redundant copies
                 res = SciMLBase.pop_tstop!(integrator)
-                SciMLBase.has_tstop(integrator) ? (tdir_tstop = SciMLBase.first_tstop(integrator)) : break
+                SciMLBase.has_tstop(integrator) ? (tdir_tstop = SciMLBase.first_tstop(integrator)) :
+                break
             end
             notify_integrator_hit_tstop!(integrator)
         elseif tdir_t > tdir_tstop
             if !integrator.dtchangeable
-                SciMLBase.change_t_via_interpolation!(integrator,
-                    integrator.tdir *
-                    SciMLBase.pop_tstop!(integrator), Val{true})
-                    notify_integrator_hit_tstop!(integrator)
+                SciMLBase.change_t_via_interpolation!(
+                    integrator,
+                    integrator.tdir * SciMLBase.pop_tstop!(integrator),
+                    Val{true},
+                )
+                notify_integrator_hit_tstop!(integrator)
             else
-                error("Something went wrong. Integrator stepped past tstops but the algorithm was dtchangeable. Please report this error.")
+                error(
+                    "Something went wrong. Integrator stepped past tstops but the algorithm was dtchangeable. Please report this error.",
+                )
             end
         end
     end

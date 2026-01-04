@@ -4,8 +4,8 @@ Descriptor for which volume to couple with which variable for the constraint.
 struct ChamberVolumeCoupling{CVM}
     chamber_surface_setname::String
     chamber_volume_method::CVM
-    lumped_volume_symbol::Union{Symbol,ModelingToolkit.Num}
-    lumped_pressure_symbol::Union{Symbol,ModelingToolkit.Num}
+    lumped_volume_symbol::Union{Symbol, ModelingToolkit.Num}
+    lumped_pressure_symbol::Union{Symbol, ModelingToolkit.Num}
 end
 
 """
@@ -19,7 +19,7 @@ This approach has been proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
 struct LumpedFluidSolidCoupler{CVM} <: AbstractCoupler
     chamber_couplings::Vector{ChamberVolumeCoupling{CVM}}
-    displacement_symbol::Union{Symbol,ModelingToolkit.Num}
+    displacement_symbol::Union{Symbol, ModelingToolkit.Num}
 end
 
 is_bidrectional(::LumpedFluidSolidCoupler) = true
@@ -107,7 +107,16 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
         uₑ .= u[ddofs]
         fill!(Jₑ, 0.0)
         fill!(rₑ, 0.0)
-        assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, facet, dh, fv, method.volume_method)
+        assemble_LFSI_coupling_contribution_row_inner!(
+            Jₑ,
+            rₑ,
+            uₑ,
+            p,
+            facet,
+            dh,
+            fv,
+            method.volume_method,
+        )
         C[ddofs] .+= Jₑ
         R[1] += rₑ[1]
     end
@@ -117,7 +126,16 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
     R[1] -= V⁰ᴰ
 end
 
-function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, facet, dh, fv::FacetValues, symbol::Symbol)
+function assemble_LFSI_coupling_contribution_col_inner!(
+    C,
+    R,
+    u,
+    p,
+    facet,
+    dh,
+    fv::FacetValues,
+    symbol::Symbol,
+)
     reinit!(fv, facet)
     drange = dof_range(dh, symbol)
 
@@ -143,7 +161,15 @@ function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, facet, dh, f
 end
 
 
-function assemble_LFSI_coupling_contribution_col_inner!(C, u, p, facet, dh, fv::FacetValues, symbol::Symbol)
+function assemble_LFSI_coupling_contribution_col_inner!(
+    C,
+    u,
+    p,
+    facet,
+    dh,
+    fv::FacetValues,
+    symbol::Symbol,
+)
     reinit!(fv, facet)
     drange = dof_range(dh, symbol)
 
@@ -185,12 +211,12 @@ function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, u�
         cofF = transpose(invF)
         J = det(F)
         neumann_term = p * J * cofF
-        for i in 1:J
+        for i = 1:J
             δuᵢ = shape_value(fv, qp, i)
             residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
 
             # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
-            for j in 1:ndofs_facet
+            for j = 1:ndofs_facet
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ

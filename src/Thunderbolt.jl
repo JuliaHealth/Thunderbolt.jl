@@ -2,18 +2,20 @@ module Thunderbolt
 
 import KernelAbstractions as KA
 
-using TimerOutputs
+using TimerOutputs: @timeit_debug
 
 import Unrolled: @unroll
 import FastBroadcast: @..
 
-using Reexport, UnPack
+using UnPack: @unpack # TODO remove this package
+using Reexport: @reexport
 import LinearAlgebra: mul!
-using SparseMatricesCSR, Polyester, LinearAlgebra
-using OrderedCollections
+import Polyester: @batch
+using SparseMatricesCSR, LinearAlgebra
+using OrderedCollections: OrderedDict, OrderedSet
 using BlockArrays, SparseArrays, StaticArrays
 
-using JLD2
+using JLD2: jldopen
 import WriteVTK
 import ReadVTK
 
@@ -29,32 +31,39 @@ function solution_size(gsf::GenericSplitFunction)
 end
 
 @reexport using Ferrite
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
-import Ferrite: vertices, edges, facets, faces, sortedge, sortfacet_fast, sortface
+import Ferrite:
+    AbstractDofHandler,
+    AbstractGrid,
+    AbstractRefShape,
+    AbstractCell,
+    get_grid,
+    get_coordinate_eltype,
+    addfacetset!
+import Ferrite: vertices, edges, facets, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
-import Ferrite: reference_shape_value
 
 import Preferences
 
 import Logging: Logging, LogLevel, @info, @logmsg
 
+import SymbolicIndexingInterface
 import SciMLBase
 @reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
+using SciMLBase: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
 using LinearSolve: LinearAliasSpecifier
 
-import Base: *, +, -, @kwdef
+using Base: @kwdef
+import Base: *, +, -
 
 import ForwardDiff
 
 import ModelingToolkit
 
 # Accelerator support libraries
-import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
-import Adapt:
-    Adapt, adapt_structure, adapt
+using Adapt: @adapt_structure, Adapt
 
 include("mesh/meshes.jl")
 
@@ -95,7 +104,7 @@ include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
 include("solver/linear/preconditioners/Preconditioners.jl")
-@reexport using .Preconditioners 
+@reexport using .Preconditioners
 
 
 include("modeling/electrophysiology/ecg.jl")

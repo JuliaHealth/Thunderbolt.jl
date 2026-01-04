@@ -1,8 +1,8 @@
 using BenchmarkTools, Thunderbolt, StaticArrays,Ferrite , CUDA
 
 # The Following is needed to enforce grid to use Float32.
-left = Vec((-1.f0, -1.f0,-1.f0)) 
-right = Vec((1.f0, 1.f0, 1.f0)) 
+left = Vec((-1.f0, -1.f0,-1.f0))
+right = Vec((1.f0, 1.f0, 1.f0))
 
 grid = generate_grid(Hexahedron , (500,100,100),left,right)
 

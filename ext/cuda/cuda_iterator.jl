@@ -2,57 +2,71 @@
 # This file contains the cuda implementation for `device_iterator.jl` in the `ferrite-addons` module.
 
 # iterator with no memory allocation (for testing purposes)
-function _build_cell_iterator(sdh::DeviceSubDofHandler,n_cells::Integer)
+function _build_cell_iterator(sdh::DeviceSubDofHandler, n_cells::Integer)
     bd = blockDim().x
     local_thread_id = threadIdx().x
     global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id
     global_thread_id <= n_cells || return DeviceOutOfBoundCellIterator()
     cell_mem = NoCellMem()
-    return  DeviceCellIterator(sdh, n_cells, cell_mem)
+    return DeviceCellIterator(sdh, n_cells, cell_mem)
 end
 
 # iterator with global memory allocation
-function _build_cell_iterator(sdh::DeviceSubDofHandler,n_cells::Integer, global_mem::AbstractDeviceGlobalMem)
+function _build_cell_iterator(
+    sdh::DeviceSubDofHandler,
+    n_cells::Integer,
+    global_mem::AbstractDeviceGlobalMem,
+)
     bd = blockDim().x
     local_thread_id = threadIdx().x
-    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id 
+    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id
     global_thread_id <= n_cells || return DeviceOutOfBoundCellIterator()
     cell_mem = cellmem(global_mem, global_thread_id)
     return DeviceCellIterator(sdh, n_cells, cell_mem)
 end
 
 # iterator with shared memory allocation
-function _build_cell_iterator(sdh::DeviceSubDofHandler,n_cells::Integer, buffer_alloc::AbstractDeviceSharedMem)
+function _build_cell_iterator(
+    sdh::DeviceSubDofHandler,
+    n_cells::Integer,
+    buffer_alloc::AbstractDeviceSharedMem,
+)
     local_thread_id = threadIdx().x
     cell_mem = cellmem(buffer_alloc, local_thread_id)
     return DeviceCellIterator(sdh, n_cells, cell_mem)
 end
 
 # Global memory allocation
-function Ferrite.CellIterator(sdh::DeviceSubDofHandler{<:Ti}, buffer_alloc::AbstractDeviceGlobalMem) where {Ti <: Integer}
+function Ferrite.CellIterator(
+    sdh::DeviceSubDofHandler{<:Ti},
+    buffer_alloc::AbstractDeviceGlobalMem,
+) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
-    n_cells = sdh.cellset |> length |> (x -> convert(Ti, x)) 
-    return _build_cell_iterator(sdh,n_cells,buffer_alloc)
+    n_cells = sdh.cellset |> length |> (x -> convert(Ti, x))
+    return _build_cell_iterator(sdh, n_cells, buffer_alloc)
 end
 # No memory allocation (for testing purposes)
 function Ferrite.CellIterator(sdh::DeviceSubDofHandler{<:Ti}) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
-    n_cells =sdh.cellset |> length |> (x -> convert(Ti, x)) 
-    return _build_cell_iterator(sdh,n_cells)
+    n_cells = sdh.cellset |> length |> (x -> convert(Ti, x))
+    return _build_cell_iterator(sdh, n_cells)
 end
 
 # Shared memory allocation
-function Ferrite.CellIterator(sdh::DeviceSubDofHandler{Ti}, buffer_alloc::AbstractDeviceSharedMem) where {Ti <: Integer}
+function Ferrite.CellIterator(
+    sdh::DeviceSubDofHandler{Ti},
+    buffer_alloc::AbstractDeviceSharedMem,
+) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
-    n_cells = sdh.cellset |> length |> (x -> convert(Ti, x)) 
+    n_cells = sdh.cellset |> length |> (x -> convert(Ti, x))
     return _build_cell_iterator(sdh, n_cells, buffer_alloc)
 end
-   
+
 function Base.iterate(iterator::DeviceCellIterator)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
-    i <= ncells(iterator)  || return nothing
+    i <= ncells(iterator) || return nothing
     return (_makecache(iterator, i), i)
 end
 
@@ -86,14 +100,14 @@ function _makecache(iterator::AbstractDeviceCellIterator, e::Ti) where {Ti <: In
     dofs = celldofsview(sdh, cellid)
 
     N = nnodes(cell)
-    coords = SVector((get_node_coordinate(grid, nodes[i]) for i in 1:N)...)
-    
+    coords = SVector((get_node_coordinate(grid, nodes[i]) for i = 1:N)...)
+
     # Return the DeviceCellCache containing the cell's data.
-    return  DeviceCellCache(coords, dofs, cellid, nodes, iterator.cell_mem)
+    return DeviceCellCache(coords, dofs, cellid, nodes, iterator.cell_mem)
 end
 
 @inline function _cellke(cell_mem::AbstractCellMem)
-    ke =  cell_mem.ke
+    ke = cell_mem.ke
     FT = eltype(ke)
     return CUDA.fill!(ke, zero(FT))
 end
@@ -103,7 +117,7 @@ _cellke(cell_mem::FeCellMem) = error("$(typeof(cell_mem)) does not have ke field
 Thunderbolt.FerriteUtils.cellke(cc::DeviceCellCache) = _cellke(cc.cell_mem)
 
 @inline function _cellfe(cell_mem::AbstractCellMem)
-    fe =  cell_mem.fe
+    fe = cell_mem.fe
     FT = eltype(fe)
     return CUDA.fill!(fe, zero(FT))
 end
