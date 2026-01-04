@@ -21,8 +21,8 @@ function test_sym(testname, A, x, y_exp, D_Dl1_exp, SLbuffer_exp, partsize)
     @testset "$testname Symmetric" begin
         total_nblocks = 10
         total_nthreads = 10
-        for nblocks in 1:total_nblocks # testing for multiple `nblocks` and `nthreads` to check that the answer is independent of the config.
-            for nthreads in 1:total_nthreads
+        for nblocks = 1:total_nblocks # testing for multiple `nblocks` and `nthreads` to check that the answer is independent of the config.
+            for nthreads = 1:total_nthreads
                 builder = L1GSPrecBuilder(CudaDevice(nblocks, nthreads))
                 P = builder(A, partsize)
                 @test Vector(P.D_Dl1) ≈ D_Dl1_exp
@@ -59,7 +59,7 @@ end
     @testset "Algorithm" begin
         N = 9
         A = poisson_test_matrix(N)
-        x = 0:(N - 1) |> collect .|> Float64
+        x = 0:(N-1) |> collect .|> Float64
         y_exp = [0, 1 / 2, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
         D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: all rows satisfy a_ii >= η*dl1_ii (2 >= 1.5*1)
         SLbuffer_exp = Float64.([-1, -1, -1, -1])

@@ -21,12 +21,18 @@ end
 function test_sym(testname, A, x, y_exp, D_Dl1_exp, SLbuffer_exp, partsize)
     @testset "$testname Symmetric" begin
         total_ncores = 8 # Assuming 8 cores for testing
-        for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
+        for ncores = 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
             builder = L1GSPrecBuilder(PolyesterDevice(ncores))
-            P = A isa Symmetric ?
+            P =
+                A isa Symmetric ?
                 builder(A, partsize; sweep = ForwardSweep(), storage = PackedBuffer()) :
                 builder(
-                A, partsize; isSymA = true, sweep = ForwardSweep(), storage = PackedBuffer())
+                    A,
+                    partsize;
+                    isSymA = true,
+                    sweep = ForwardSweep(),
+                    storage = PackedBuffer(),
+                )
             @test P.D_Dl1 ≈ D_Dl1_exp
             @test P.sweepstorage.SLbuffer ≈ SLbuffer_exp
             y = P \ x
@@ -69,7 +75,7 @@ end
     @testset "Algorithm" begin
         N = 9
         A = poisson_test_matrix(N)
-        x = 0:(N - 1) |> collect .|> Float64
+        x = 0:(N-1) |> collect .|> Float64
         y_exp = [0, 1 / 2, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
         D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: all rows satisfy a_ii >= η*dl1_ii (2 >= 1.5*1)
         SLbuffer_exp = Float64.([-1, -1, -1, -1])
