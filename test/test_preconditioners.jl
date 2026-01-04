@@ -19,7 +19,6 @@ function poisson_test_matrix(N)
 end
 
 function test_sym(testname, A, x, y_exp, D_Dl1_exp, SLbuffer_exp, partsize)
-function test_sym(testname, A, x, y_exp, D_Dl1_exp, SLbuffer_exp, partsize)
     @testset "$testname Symmetric" begin
         total_ncores = 8 # Assuming 8 cores for testing
         for ncores = 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
