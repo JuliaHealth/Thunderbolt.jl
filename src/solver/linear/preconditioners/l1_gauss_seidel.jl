@@ -2,61 +2,19 @@
 ## L1 Gauss Seidel Preconditioner ##
 ####################################
 
-## User defined types for sweep direction and storage strategy ##
+## User layer ##
 abstract type Sweep end
 struct ForwardSweep <: Sweep end # forward sweep -> lower triangular
 struct BackwardSweep <: Sweep end # backward sweep -> upper triangular
 struct SymmetricSweep <: Sweep end # symmetric sweep -> both lower and upper triangular
 
-abstract type StorageStrategy end
-struct OriginalMatrix <: StorageStrategy end # store original matrix
-struct PackedBuffer <: StorageStrategy end # store lower/upper triangular parts in a vector buffer -> efficient for small partitions
-struct SparseTriangular <: StorageStrategy end # store sparse lower/upper triangular matrices
+# FIXME: Is there better naming alternatives for this?
+abstract type CacheStrategy end
+struct PackedBufferCache <: CacheStrategy end # store lower/upper triangular parts in a vector buffer -> efficient for small partitions (e.g. GPU)
+struct MatrixViewCache <: CacheStrategy end # store a sparse triangular matrix view -> efficient for large partitions (e.g. CPU)
 
 
-## Internal types to encapsulate sweep and storage ##
-abstract type SweepStorage end
 
-# Forward sweep variants
-abstract type ForwardSweepStorage <: SweepStorage end
-struct ForwardSweepOriginalMatrix{MatrixType} <: ForwardSweepStorage
-    A::MatrixType  # Original matrix
-end
-struct ForwardSweepPackedBuffer{VectorType} <: ForwardSweepStorage
-    SLbuffer::VectorType  # Packed strictly lower triangular elements
-end
-struct ForwardSweepSparseTriangular{MatrixType} <: ForwardSweepStorage
-    L::MatrixType  # Sparse  strictly lower triangular matrix
-end
-
-# Backward sweep variants
-abstract type BackwardSweepStorage <: SweepStorage end
-struct BackwardSweepOriginalMatrix{MatrixType} <: BackwardSweepStorage
-    A::MatrixType  # Original matrix
-end
-struct BackwardSweepPackedBuffer{VectorType} <: BackwardSweepStorage
-    SUbuffer::VectorType  # Packed strictly upper triangular elements
-end
-struct BackwardSweepSparseTriangular{MatrixType} <: BackwardSweepStorage
-    U::MatrixType  # Sparse strictly upper triangular matrix
-end
-
-# Symmetric sweep variants
-abstract type SymmetricSweepStorage <: SweepStorage end
-struct SymmetricSweepOriginalMatrix{MatrixType} <: SymmetricSweepStorage
-    A::MatrixType  # Original symmetric matrix
-end
-
-
-# TODO: are these two buffers necessary? won't be implemented for now
-struct SymmetricSweepPackedBuffer{VectorType} <: SymmetricSweepStorage
-    SLbuffer::VectorType  # Packed strictly lower triangular elements
-    SUbuffer::VectorType  # Packed strictly upper triangular elements
-end
-struct SymmetricSweepSparseTriangular{MatrixType} <: SymmetricSweepStorage
-    L::MatrixType  # Sparse strictly lower triangular matrix
-    U::MatrixType  # Sparse strictly upper triangular matrix
-end
 
 """
     BlockPartitioning{Ti<:Integer, Backend}
@@ -132,10 +90,11 @@ prec = builder(A, partsize)
 # 2. for any user-defined `η` value, use `prec = builder(A, partsize; η=1.2)`.
 ```
 """
-struct L1GSPreconditioner{Partitioning, VectorType, SweepStorageType <: SweepStorage}
+struct L1GSPreconditioner{Partitioning, VectorType, SweepPlanType <: L1GSSweepPlan}
     partitioning::Partitioning
-    D_Dl1::VectorType # D + Dˡ
-    sweepstorage::SweepStorageType # Encapsulates sweep direction and storage strategy
+    sweep::SweepPlanType
+    # D_Dl1::VectorType # D + Dˡ
+    # sweepstorage::SweepStorageType # Encapsulates sweep direction and storage strategy
 end
 
 """
@@ -162,9 +121,9 @@ function (builder::L1GSPrecBuilder)(
     isSymA::Bool = false,
     η = 1.5,
     sweep::Sweep = ForwardSweep(),
-    storage::StorageStrategy = _choose_default_device_storage(builder.device),
+    cache_strategy::CacheStrategy = _choose_default_device_storage(builder.device),
 ) where {Ti <: Integer}
-    build_l1prec(builder, A, partsize, isSymA, η, sweep, storage)
+    build_l1prec(builder, A, partsize, isSymA, η, sweep, cache_strategy)
 end
 
 function (builder::L1GSPrecBuilder)(
@@ -172,26 +131,11 @@ function (builder::L1GSPrecBuilder)(
     partsize::Ti;
     η = 1.5,
     sweep::Sweep = SymmetricSweep(),
-    storage::StorageStrategy = OriginalMatrix(),
+    cache_strategy::CacheStrategy = OriginalMatrix(),
 ) where {Ti <: Integer}
-    build_l1prec(builder, A, partsize, true, η, sweep, storage)
+    build_l1prec(builder, A, partsize, true, η, sweep, cache_strategy)
 end
 
-struct DiagonalPartsIterator{Ti}
-    size_A::Ti
-    partsize::Ti
-    nparts::Ti
-    nchunks::Ti # number of CPU cores or GPU blocks
-    chunksize::Ti # number of threads per block
-    initial_partition_idx::Ti # initial partition index
-end
-
-struct DiagonalPartCache{Ti}
-    k::Ti # partition index
-    partsize::Ti # partition size
-    start_idx::Ti # start index of the partition
-    end_idx::Ti # end index of the partition
-end
 
 ## Preconditioner builder ##
 function build_l1prec(
@@ -201,7 +145,7 @@ function build_l1prec(
     isSymA::Bool,
     η,
     sweep::Sweep,
-    storage::StorageStrategy,
+    cache_strategy::CacheStrategy,
 ) where {Ti <: Integer, MatrixType}
     partsize == 0 && error("partsize must be greater than 0")
 
@@ -212,12 +156,7 @@ function build_l1prec(
         )
     end
 
-    # TODO: warn user if SymmetricSweep is used with non-optimal storage (presumably OriginalMatrix is best, but no clue..)
-    if sweep isa SymmetricSweep && !(storage isa OriginalMatrix)
-        @warn "SymmetricSweep is most efficient with OriginalMatrix storage. Consider using storage=OriginalMatrix()."
-    end
-
-    _build_l1prec(builder, A, partsize, isSymA, η, sweep, storage)
+    _build_l1prec(builder, A, partsize, isSymA, η, sweep, cache_strategy)
 end
 
 function _build_l1prec(
@@ -227,7 +166,7 @@ function _build_l1prec(
     isSymA::Bool,
     η,
     sweep::Sweep,
-    storage::StorageStrategy,
+    cache_strategy::CacheStrategy,
 ) where {Ti <: Integer, MatrixType}
     # `nchunks` is either CPU cores or GPU blocks.
     # Each chunk will be assigned `nparts`, each of size `partsize`.
@@ -235,14 +174,10 @@ function _build_l1prec(
     A = get_data(_A) # for symmetric case
     partitioning = _blockpartitioning(builder, A, partsize)
 
-    # Create D_Dl1 and SweepStorage in one step - each combination has its own specialized construction
-    D_Dl1, sweepstorage =
-        _create_sweep_storage_with_precompute(sweep, storage, A, partitioning, isSymA, η)
+    sweep = _make_sweep_plan(sweep, cache_strategy, A, partitioning, isSymA, η)
 
-    L1GSPreconditioner(partitioning, D_Dl1, sweepstorage)
+    L1GSPreconditioner(partitioning, sweep)
 end
-
-
 
 function _blockpartitioning(
     builder::L1GSPrecBuilder{<:AbstractCPUDevice},
@@ -314,232 +249,103 @@ function (\)(
     return y
 end
 
+
+## Dispatch layer ##
+# types that encapsulate the metadata/structure of A
+
+struct BlockDiagonalIndicies{VectorType}
+    diag::VectorType
+end
+
+abstract type AbstractCache end
+abstract type AbstractLowerCache <: AbstractCache end
+abstract type AbstractUpperCache <: AbstractCache end
+
+struct BlockStrictLowerView{MatrixType, DI<:BlockDiagonalIndicies} <: AbstractLowerCache
+    A::MatrixType
+    D::DI
+end
+
+struct BlockStrictUpperView{MatrixType, DI<:BlockDiagonalIndicies} <: AbstractUpperCache
+    A::MatrixType
+    D::DI
+end
+
+struct PackedStrictLower{VectorType, DI<:BlockDiagonalIndicies} <: AbstractLowerCache
+    SLbuffer::VectorType
+    D::DI
+end
+
+struct PackedStrictUpper{VectorType, DI<:BlockDiagonalIndicies} <: AbstractUpperCache
+    SUbuffer::VectorType
+    D::DI
+end
+
+
+abstract type AbstractBlockSolveOperator end
+
+struct BlockLowerSolveOperator{LowerCache <: AbstractLowerCache} <: AbstractBlockSolveOperator
+    L::LowerCache 
+    D_DL1::VectorType
+end
+
+struct BlockUpperSolveOperator{UpperCache <: AbstractUpperCache} <: AbstractBlockSolveOperator
+    U::UpperCache 
+    D_DL1::VectorType
+end
+
+abstract type L1GSSweepPlan end
+struct ForwardL1GSSweep{LowerOp<:BlockLowerSolveOperator} <: L1GSSweepPlan
+    op::LowerOp
+end
+
+struct BackwardL1GSSweep{UpperOp<:BlockUpperSolveOperator} <: L1GSSweepPlan
+    op::UpperOp
+end
+
+struct SymmetricL1GSSweep{LowerOp<:BlockLowerSolveOperator, UpperOp<:BlockUpperSolveOperator} <: L1GSSweepPlan
+    lop::LowerOp
+    uop::UpperOp
+end
+
+
 ## L1 GS internal functionalty ##
 get_data(A::AbstractSparseMatrix) = A
 get_data(A::Symmetric{Ti, TA}) where {Ti, TA} = TA(A.data) # restore the full matrix, why ? https://discourse.julialang.org/t/is-there-a-symmetric-sparse-matrix-implementation-in-julia/91333/2
 
 
-_choose_default_device_storage(::AbstractDevice) = SparseTriangular()
-_choose_default_device_storage(::AbstractGPUDevice) = PackedBuffer()
+_choose_default_device_storage(::AbstractDevice) = MatrixViewCache()
+_choose_default_device_storage(::AbstractGPUDevice) = PackedBufferCache()
 
 
 ## Specialized construction functions for each (Sweep, Storage) combination ##
 # These functions merge allocation, precomputation, and SweepStorage creation into one step
 
-# ForwardSweep + OriginalMatrix: No buffer needed, just reference A
-function _create_sweep_storage_with_precompute(
-    ::ForwardSweep,
-    ::OriginalMatrix,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    D_Dl1 = _compute_D_Dl1(A, partitioning, isSymA, η)
-    sweepstorage = ForwardSweepOriginalMatrix(A)
-    return D_Dl1, sweepstorage
+
+function _make_sweep_plan(::ForwardSweep, ::MatrixViewCache, A, partitioning, isSymA, η)
+    
 end
 
-# ForwardSweep + PackedBuffer: Allocate and pack lower triangular
-function _create_sweep_storage_with_precompute(
-    ::ForwardSweep,
-    ::PackedBuffer,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    (; partsize, nparts, nchunks, chunksize, backend) = partitioning
-    Tf = eltype(A)
-    N = size(A, 1)
-
-    # Allocate buffer for strictly lower triangular
-    last_partsize = N - (nparts - 1) * partsize
-    buffer_size =
-        (partsize * (partsize - 1) * (nparts-1)) ÷ 2 + last_partsize * (last_partsize - 1) ÷ 2
-    SLbuffer = adapt(backend, zeros(Tf, buffer_size))
-
-    # Compute D_Dl1 and pack lower triangular in one kernel
-    D_Dl1 = adapt(backend, zeros(Tf, N))
-    symA = isSymA ? SymmetricMatrix() : NonSymmetricMatrix()
-    η_converted = convert(Tf, η)
-
-    ndrange = nchunks * chunksize
-    kernel = _precompute_and_pack_lower_kernel!(backend, chunksize, ndrange)
-    kernel(
-        D_Dl1,
-        SLbuffer,
-        A,
-        symA,
-        partsize,
-        nparts,
-        nchunks,
-        chunksize,
-        η_converted;
-        ndrange = ndrange,
-    )
-    synchronize(backend)
-
-    sweepstorage = ForwardSweepPackedBuffer(SLbuffer)
-    return D_Dl1, sweepstorage
+function _make_sweep_plan(::BackwardSweep, ::MatrixViewCache, A, partitioning, isSymA, η)
+    
 end
 
-# BackwardSweep + OriginalMatrix: No buffer needed, just reference A
-function _create_sweep_storage_with_precompute(
-    ::BackwardSweep,
-    ::OriginalMatrix,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    D_Dl1 = _compute_D_Dl1(A, partitioning, isSymA, η)
-    sweepstorage = BackwardSweepOriginalMatrix(A)
-    return D_Dl1, sweepstorage
+function _make_sweep_plan(::SymmetricSweep, ::MatrixViewCache, A, partitioning, isSymA, η)
+    
 end
 
-# BackwardSweep + PackedBuffer: Allocate and pack upper triangular
-function _create_sweep_storage_with_precompute(
-    ::BackwardSweep,
-    ::PackedBuffer,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    (; partsize, nparts, nchunks, chunksize, backend) = partitioning
-    Tf = eltype(A)
-    N = size(A, 1)
-
-    # Allocate buffer for strictly upper triangular
-    last_partsize = N - (nparts - 1) * partsize
-    buffer_size =
-        (partsize * (partsize - 1) * (nparts-1)) ÷ 2 + last_partsize * (last_partsize - 1) ÷ 2
-    SUbuffer = adapt(backend, zeros(Tf, buffer_size))
-
-    # Compute D_Dl1 and pack upper triangular in one kernel
-    D_Dl1 = adapt(backend, zeros(Tf, N))
-    symA = isSymA ? SymmetricMatrix() : NonSymmetricMatrix()
-    η_converted = convert(Tf, η)
-
-    ndrange = nchunks * chunksize
-    kernel = _precompute_and_pack_upper_kernel!(backend, chunksize, ndrange)
-    kernel(
-        D_Dl1,
-        SUbuffer,
-        A,
-        symA,
-        partsize,
-        nparts,
-        nchunks,
-        chunksize,
-        η_converted;
-        ndrange = ndrange,
-    )
-    synchronize(backend)
-
-    sweepstorage = BackwardSweepPackedBuffer(SUbuffer)
-    return D_Dl1, sweepstorage
+function _make_sweep_plan(::ForwardSweep, ::PackedBufferCache, A, partitioning, isSymA, η)
+    
 end
 
-# SymmetricSweep + OriginalMatrix: No buffer needed, just reference A
-function _create_sweep_storage_with_precompute(
-    ::SymmetricSweep,
-    ::OriginalMatrix,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    D_Dl1 = _compute_D_Dl1(A, partitioning, isSymA, η)
-    sweepstorage = SymmetricSweepOriginalMatrix(A)
-    return D_Dl1, sweepstorage
+function _make_sweep_plan(::BackwardSweep, ::PackedBufferCache, A, partitioning, isSymA, η)
+    
 end
 
-# ForwardSweep + SparseTriangular: Extract sparse strictly lower triangular
-function _create_sweep_storage_with_precompute(
-    ::ForwardSweep,
-    ::SparseTriangular,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    (; partsize, nparts, backend) = partitioning
-    Tf = eltype(A)
-    N = size(A, 1)
-
-    # Compute D_Dl1
-    D_Dl1 = _compute_D_Dl1(A, partitioning, isSymA, η)
-
-    # Extract strictly lower triangular part from A (within diagonal blocks only)
-    L = _extract_strict_lower_sparse(A, N, partsize, nparts)
-    L_adapted = adapt(backend, L)
-
-    sweepstorage = ForwardSweepSparseTriangular(L_adapted)
-    return D_Dl1, sweepstorage
+function _make_sweep_plan(::SymmetricSweep, ::PackedBufferCache, A, partitioning, isSymA, η)
+    
 end
 
-# BackwardSweep + SparseTriangular: Extract sparse strictly upper triangular
-function _create_sweep_storage_with_precompute(
-    ::BackwardSweep,
-    ::SparseTriangular,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    (; partsize, nparts, backend) = partitioning
-    Tf = eltype(A)
-    N = size(A, 1)
-
-    # Compute D_Dl1
-    D_Dl1 = _compute_D_Dl1(A, partitioning, isSymA, η)
-
-    # Extract strictly upper triangular part from A (within diagonal blocks only)
-    U = _extract_strict_upper_sparse(A, N, partsize, nparts)
-    U_adapted = adapt(backend, U)
-
-    sweepstorage = BackwardSweepSparseTriangular(U_adapted)
-    return D_Dl1, sweepstorage
-end
-
-# SymmetricSweep + SparseTriangular: Extract both sparse L and U
-function _create_sweep_storage_with_precompute(
-    ::SymmetricSweep,
-    ::SparseTriangular,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    (; partsize, nparts, backend) = partitioning
-    Tf = eltype(A)
-    N = size(A, 1)
-
-    # Compute D_Dl1
-    D_Dl1 = _compute_D_Dl1(A, partitioning, isSymA, η)
-
-    # Extract both strictly lower and upper triangular parts (within diagonal blocks only)
-    L = _extract_strict_lower_sparse(A, N, partsize, nparts)
-    U = _extract_strict_upper_sparse(A, N, partsize, nparts)
-    L_adapted = adapt(backend, L)
-    U_adapted = adapt(backend, U)
-
-    sweepstorage = SymmetricSweepSparseTriangular(L_adapted, U_adapted)
-    return D_Dl1, sweepstorage
-end
-
-function _create_sweep_storage_with_precompute(
-    ::SymmetricSweep,
-    ::PackedBuffer,
-    A,
-    partitioning,
-    isSymA,
-    η,
-)
-    error("SymmetricSweep with PackedBuffer not yet implemented")
-end
 
 # Helper function to compute D_Dl1 only (used by OriginalMatrix storage)
 function _compute_D_Dl1(A, partitioning, isSymA, η)
@@ -570,137 +376,22 @@ function _compute_D_Dl1(A, partitioning, isSymA, η)
     return D_Dl1
 end
 
-# extract strictly lower triangular matrices within diagonal blocks
-function _extract_strict_lower_sparse(A::AbstractSparseMatrix, N, partsize, nparts)
-    format_A = sparsemat_format_type(A)
-    return _extract_strict_lower_sparse(A, format_A, N, partsize, nparts)
+
+## Solver layer ##
+struct DiagonalPartsIterator{Ti}
+    size_A::Ti
+    partsize::Ti
+    nparts::Ti
+    nchunks::Ti # number of CPU cores or GPU blocks
+    chunksize::Ti # number of threads per block
+    initial_partition_idx::Ti # initial partition index
 end
 
-# CSC format: iterate columns (efficient for CSC)
-function _extract_strict_lower_sparse(A, ::CSCFormat, N, partsize, nparts)
-    I_vals = Int[]
-    J_vals = Int[]
-    V_vals = eltype(A)[]
-
-    rows = rowvals(A)
-    vals = nonzeros(A)
-
-    for j = 1:N  # columns
-        for idx in nzrange(A, j)
-            i = rows[idx]
-
-            # Determine which partition row i and column j belong to
-            part_i = div(i - 1, partsize) + 1
-            part_j = div(j - 1, partsize) + 1
-
-            # Only include if: (1) same partition, (2) strictly lower (i > j)
-            if part_i == part_j && i > j
-                push!(I_vals, i)
-                push!(J_vals, j)
-                push!(V_vals, vals[idx])
-            end
-        end
-    end
-
-    # csr format in gs sweeps is more efficient
-    return sparsecsr(I_vals, J_vals, V_vals, N, N)
-end
-
-# CSR format: iterate rows (efficient for CSR)
-function _extract_strict_lower_sparse(A, ::CSRFormat, N, partsize, nparts)
-    I_vals = Int[]
-    J_vals = Int[]
-    V_vals = eltype(A)[]
-
-    rowPtr = getrowptr(A)
-    colVal = colvals(A)
-    nzVal = getnzval(A)
-
-    for i = 1:N  # rows
-        for idx = rowPtr[i]:(rowPtr[i+1]-1)
-            j = colVal[idx]
-
-            # Determine which partition row i and column j belong to
-            part_i = div(i - 1, partsize) + 1
-            part_j = div(j - 1, partsize) + 1
-
-            # Only include if: (1) same partition, (2) strictly lower (i > j)
-            if part_i == part_j && i > j
-                push!(I_vals, i)
-                push!(J_vals, j)
-                push!(V_vals, nzVal[idx])
-            end
-        end
-    end
-
-    return sparsecsr(I_vals, J_vals, V_vals, N, N)
-end
-
-# extract strictly upper triangular matrices within diagonal blocks
-function _extract_strict_upper_sparse(A::AbstractSparseMatrix, N, partsize, nparts)
-    format_A = sparsemat_format_type(A)
-    return _extract_strict_upper_sparse(A, format_A, N, partsize, nparts)
-end
-
-# CSC format: iterate columns (efficient for CSC)
-function _extract_strict_upper_sparse(A, ::CSCFormat, N, partsize, nparts)
-    I_vals = Int[]
-    J_vals = Int[]
-    V_vals = eltype(A)[]
-
-    rows = rowvals(A)
-    vals = nonzeros(A)
-
-    for j = 1:N  # columns
-        for idx in nzrange(A, j)
-            i = rows[idx]
-
-            # Determine which partition row i and column j belong to
-            part_i = div(i - 1, partsize) + 1
-            part_j = div(j - 1, partsize) + 1
-
-            # Only include if: (1) same partition, (2) strictly upper (i < j)
-            if part_i == part_j && i < j
-                push!(I_vals, i)
-                push!(J_vals, j)
-                push!(V_vals, vals[idx])
-            end
-        end
-    end
-
-    # Return in CSR format for efficient row-wise access during sweep
-    return sparsecsr(I_vals, J_vals, V_vals, N, N)
-end
-
-# CSR format: iterate rows (efficient for CSR)
-function _extract_strict_upper_sparse(A, ::CSRFormat, N, partsize, nparts)
-    I_vals = Int[]
-    J_vals = Int[]
-    V_vals = eltype(A)[]
-
-    rowPtr = getrowptr(A)
-    colVal = colvals(A)
-    nzVal = getnzval(A)
-
-    for i = 1:N  # rows
-        for idx = rowPtr[i]:(rowPtr[i+1]-1)
-            j = colVal[idx]
-
-            # Determine which partition row i and column j belong to
-            part_i = div(i - 1, partsize) + 1
-            part_j = div(j - 1, partsize) + 1
-
-            # Only include if: (1) same partition, (2) strictly upper (i < j)
-            if part_i == part_j && i < j
-                push!(I_vals, i)
-                push!(J_vals, j)
-                push!(V_vals, nzVal[idx])
-            end
-        end
-    end
-
-    # Return in CSR format for efficient row-wise access during sweep
-    return sparsecsr(I_vals, J_vals, V_vals, N, N)
+struct DiagonalPartCache{Ti}
+    k::Ti # partition index
+    partsize::Ti # partition size
+    start_idx::Ti # start index of the partition
+    end_idx::Ti # end index of the partition
 end
 
 
