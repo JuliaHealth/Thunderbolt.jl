@@ -42,7 +42,7 @@ struct BlockPartitioning{Ti <: Integer, Backend}
     backend::Backend
 end
 
-
+abstract type AbstractL1GSSweepPlan end
 
 @doc raw"""
     L1GSPreconditioner{Partitioning, VectorType}
@@ -358,7 +358,7 @@ end
 _cache(op::BlockLowerSolveOperator) = op.L
 _cache(op::BlockUpperSolveOperator) = op.U
 
-abstract type AbstractL1GSSweepPlan end
+
 
 struct ForwardL1GSSweep{LowerOp <: BlockLowerSolveOperator} <: AbstractL1GSSweepPlan
     op::LowerOp
