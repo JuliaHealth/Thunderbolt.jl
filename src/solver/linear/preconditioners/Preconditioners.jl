@@ -42,6 +42,6 @@ getrowptr(A::Union{SparseMatrixCSR, ThreadedSparseMatrixCSR}) = SparseMatricesCS
 include("l1_gauss_seidel.jl")
 
 export L1GSPrecBuilder,
-    ForwardSweep, BackwardSweep, SymmetricSweep, OriginalMatrix, PackedBufferCache, MatrixViewCache
+    ForwardSweep, BackwardSweep, SymmetricSweep, PackedBufferCache, MatrixViewCache
 
 end

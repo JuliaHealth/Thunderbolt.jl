@@ -417,7 +417,7 @@ function _make_sweep_plan(::ForwardSweep, ::MatrixViewCache, A, partitioning, is
     # Create diagonal indices (only needed for non-symmetric CSC)
     diag = _create_diag_indices(A, frmt, symA)
 
-    (;backend) = partitioning
+    (; backend) = partitioning
     A_adapted = adapt(backend, A)
     diag_adapted = adapt(backend, diag)
     D_Dl1 = _compute_D_Dl1(A_adapted, partitioning, symA, frmt, diag_adapted, η)
@@ -435,7 +435,7 @@ function _make_sweep_plan(::BackwardSweep, ::MatrixViewCache, A, partitioning, i
     # Create diagonal indices (only needed for non-symmetric CSC)
     diag = _create_diag_indices(A, frmt, symA)
 
-    (;backend) = partitioning
+    (; backend) = partitioning
     A_adapted = adapt(backend, A)
     diag_adapted = adapt(backend, diag)
     D_Dl1 = _compute_D_Dl1(A_adapted, partitioning, symA, frmt, diag_adapted, η)
@@ -453,7 +453,7 @@ function _make_sweep_plan(::SymmetricSweep, ::MatrixViewCache, A, partitioning, 
     # Create diagonal indices (only needed for non-symmetric CSC)
     diag = _create_diag_indices(A, frmt, symA)
 
-    (;backend) = partitioning
+    (; backend) = partitioning
     A_adapted = adapt(backend, A)
     diag_adapted = adapt(backend, diag)
     D_Dl1 = _compute_D_Dl1(A_adapted, partitioning, symA, frmt, diag_adapted, η)
@@ -477,14 +477,15 @@ function _make_sweep_plan(::ForwardSweep, ::PackedBufferCache, A, partitioning, 
     # Create diagonal indices (only needed for non-symmetric CSC)
     diag = _create_diag_indices(A, frmt, symA)
 
-    (;backend) = partitioning
+    (; backend) = partitioning
     A_adapted = adapt(backend, A)
     diag_adapted = adapt(backend, diag)
     D_Dl1 = adapt(backend, zeros(Tf, N))
 
     # Buffer size: account for last partition potentially being smaller
     last_partsize = N - (nparts - 1) * partsize
-    buffer_size = (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
+    buffer_size =
+        (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
     SLbuffer = adapt(backend, zeros(Tf, buffer_size))
     cache = PackedStrictLower(SLbuffer)
 
@@ -523,14 +524,15 @@ function _make_sweep_plan(::BackwardSweep, ::PackedBufferCache, A, partitioning,
     # Create diagonal indices (only needed for non-symmetric CSC)
     diag = _create_diag_indices(A, frmt, symA)
 
-    (;backend) = partitioning
+    (; backend) = partitioning
     A_adapted = adapt(backend, A)
     diag_adapted = adapt(backend, diag)
     D_Dl1 = adapt(backend, zeros(Tf, N))
 
     # Buffer size: account for last partition potentially being smaller
     last_partsize = N - (nparts - 1) * partsize
-    buffer_size = (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
+    buffer_size =
+        (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
     SUbuffer = adapt(backend, zeros(Tf, buffer_size))
     cache = PackedStrictUpper(SUbuffer)
 
@@ -569,14 +571,15 @@ function _make_sweep_plan(::SymmetricSweep, ::PackedBufferCache, A, partitioning
     # Create diagonal indices (only needed for non-symmetric CSC)
     diag = _create_diag_indices(A, frmt, symA)
 
-    (;backend) = partitioning
+    (; backend) = partitioning
     A_adapted = adapt(backend, A)
     diag_adapted = adapt(backend, diag)
     D_Dl1 = adapt(backend, zeros(Tf, N))
 
     # Buffer size: account for last partition potentially being smaller
     last_partsize = N - (nparts - 1) * partsize
-    buffer_size = (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
+    buffer_size =
+        (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
     SLbuffer = adapt(backend, zeros(Tf, buffer_size))
     SUbuffer = adapt(backend, zeros(Tf, buffer_size))
     L_cache = PackedStrictLower(SLbuffer)
