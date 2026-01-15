@@ -259,7 +259,7 @@ end
 
 abstract type AbstractDiagonalIndices end
 
-## DiagonalIndices - for efficient CSC matrix access 
+## DiagonalIndices - for efficient CSC matrix access
 ## this code is adapted from iterativesolvers.jl
 struct DiagonalIndices{Ti <: Integer} <: AbstractDiagonalIndices
     diag::Vector{Ti}
@@ -286,7 +286,7 @@ DiagonalIndices(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = DiagonalIndices{Ti}
 @inline Base.getindex(d::DiagonalIndices, i::Int) = d.diag[i]
 @inline Base.length(d::DiagonalIndices) = length(d.diag)
 
-# for CSR and symmetric CSC, we don't need to store diagonal indices 
+# for CSR and symmetric CSC, we don't need to store diagonal indices
 struct NoDiagonalIndices <: AbstractDiagonalIndices end
 
 
