@@ -94,7 +94,7 @@ prec = builder(A, partsize)
 # 2. for any user-defined `η` value, use `prec = builder(A, partsize; η=1.2)`.
 ```
 """
-struct L1GSPreconditioner{Partitioning, SweepPlanType <: L1GSSweepPlan}
+struct L1GSPreconditioner{Partitioning, SweepPlanType <: AbstractL1GSSweepPlan}
     partitioning::Partitioning
     sweep::SweepPlanType
     # D_Dl1::VectorType # D + Dˡ
