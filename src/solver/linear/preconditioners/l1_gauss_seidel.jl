@@ -264,12 +264,12 @@ abstract type AbstractDiagonalIndices end
 struct DiagonalIndices{Ti <: Integer} <: AbstractDiagonalIndices
     diag::Vector{Ti}
 
-    function DiagonalIndices{Ti}(A::SparseMatrixCSC{Tv,Ti}) where {Tv,Ti}
+    function DiagonalIndices{Ti}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
         diag = Vector{Ti}(undef, A.n)
 
-        for col = 1 : A.n
+        for col = 1:A.n
             r1 = Int(A.colptr[col])
-            r2 = Int(A.colptr[col + 1] - 1)
+            r2 = Int(A.colptr[col+1] - 1)
             r1 = searchsortedfirst(A.rowval, col, r1, r2, Base.Order.Forward)
             if r1 > r2 || A.rowval[r1] != col || iszero(A.nzval[r1])
                 throw(LinearAlgebra.SingularException(col))
@@ -281,7 +281,7 @@ struct DiagonalIndices{Ti <: Integer} <: AbstractDiagonalIndices
     end
 end
 
-DiagonalIndices(A::SparseMatrixCSC{Tv,Ti}) where {Tv,Ti} = DiagonalIndices{Ti}(A)
+DiagonalIndices(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = DiagonalIndices{Ti}(A)
 
 @inline Base.getindex(d::DiagonalIndices, i::Int) = d.diag[i]
 @inline Base.length(d::DiagonalIndices) = length(d.diag)
@@ -295,14 +295,24 @@ abstract type AbstractLowerCache <: AbstractCache end
 abstract type AbstractUpperCache <: AbstractCache end
 
 
-struct BlockStrictLowerView{MatrixType, SymmetryType<:AbstractMatrixSymmetry, FormatType<:AbstractMatrixFormat, DIType<:AbstractDiagonalIndices} <: AbstractLowerCache
+struct BlockStrictLowerView{
+    MatrixType,
+    SymmetryType <: AbstractMatrixSymmetry,
+    FormatType <: AbstractMatrixFormat,
+    DIType <: AbstractDiagonalIndices,
+} <: AbstractLowerCache
     A::MatrixType
     symA::SymmetryType
     frmt::FormatType
     diag::DIType # imp for csc format (DiagonalIndices for CSC, NoDiagonalIndices for CSR)
 end
 
-struct BlockStrictUpperView{MatrixType, SymmetryType<:AbstractMatrixSymmetry, FormatType<:AbstractMatrixFormat, DIType<:AbstractDiagonalIndices} <: AbstractUpperCache
+struct BlockStrictUpperView{
+    MatrixType,
+    SymmetryType <: AbstractMatrixSymmetry,
+    FormatType <: AbstractMatrixFormat,
+    DIType <: AbstractDiagonalIndices,
+} <: AbstractUpperCache
     A::MatrixType
     symA::SymmetryType
     frmt::FormatType
@@ -333,12 +343,14 @@ end
 
 abstract type AbstractBlockSolveOperator end
 
-struct BlockLowerSolveOperator{LowerCache <: AbstractLowerCache, VectorType} <: AbstractBlockSolveOperator
+struct BlockLowerSolveOperator{LowerCache <: AbstractLowerCache, VectorType} <:
+       AbstractBlockSolveOperator
     L::LowerCache
     D_DL1::VectorType
 end
 
-struct BlockUpperSolveOperator{UpperCache <: AbstractUpperCache, VectorType} <: AbstractBlockSolveOperator
+struct BlockUpperSolveOperator{UpperCache <: AbstractUpperCache, VectorType} <:
+       AbstractBlockSolveOperator
     U::UpperCache
     D_DL1::VectorType
 end
@@ -348,15 +360,16 @@ _cache(op::BlockUpperSolveOperator) = op.U
 
 abstract type AbstractL1GSSweepPlan end
 
-struct ForwardL1GSSweep{LowerOp<:BlockLowerSolveOperator} <: AbstractL1GSSweepPlan
+struct ForwardL1GSSweep{LowerOp <: BlockLowerSolveOperator} <: AbstractL1GSSweepPlan
     op::LowerOp
 end
 
-struct BackwardL1GSSweep{UpperOp<:BlockUpperSolveOperator} <: AbstractL1GSSweepPlan
+struct BackwardL1GSSweep{UpperOp <: BlockUpperSolveOperator} <: AbstractL1GSSweepPlan
     op::UpperOp
 end
 
-struct SymmetricL1GSSweep{LowerOp<:BlockLowerSolveOperator, UpperOp<:BlockUpperSolveOperator} <: AbstractL1GSSweepPlan
+struct SymmetricL1GSSweep{LowerOp <: BlockLowerSolveOperator, UpperOp <: BlockUpperSolveOperator} <:
+       AbstractL1GSSweepPlan
     lop::LowerOp
     uop::UpperOp
 end
@@ -626,7 +639,7 @@ function _apply_sweep!(y, partitioning, sweep_plan::AbstractL1GSSweepPlan)
         @timeit_debug "kernel construction" kernel =
             _apply_sweep_kernel!(backend, chunksize, ndrange)
         size_A = convert(typeof(nparts), length(y))
-        step = convert(typeof(nparts), 1 )
+        step = convert(typeof(nparts), 1)
         @timeit_debug "kernel call" kernel(
             y,
             cache,
@@ -653,8 +666,8 @@ function _apply_sweep!(y, partitioning, sweep::SymmetricL1GSSweep)
         U = sweep.uop.U
         ndrange = nchunks * chunksize
         size_A = convert(typeof(nparts), length(y))
-        step_fwd = convert(typeof(nparts), 1 )
-        step_bwd = convert(typeof(nparts), -1 )
+        step_fwd = convert(typeof(nparts), 1)
+        step_bwd = convert(typeof(nparts), -1)
 
         kernel = _apply_sweep_kernel!(backend, chunksize, ndrange)
 
@@ -755,7 +768,7 @@ function _compute_D_Dl1(A, partitioning, symA, frmt, diag, η)
     Tf = eltype(A)
     N = size(A, 1)
 
-    
+
     D_Dl1 = adapt(backend, zeros(Tf, N))
     η_converted = convert(Tf, η)
 
@@ -855,7 +868,17 @@ end
     end
 end
 
-@kernel function _apply_sweep_kernel!(y, cache::AbstractCache, D_Dl1, size_A::Ti, partsize::Ti, nparts::Ti, nchunks::Ti, chunksize::Ti, step)  where {Ti <: Integer}
+@kernel function _apply_sweep_kernel!(
+    y,
+    cache::AbstractCache,
+    D_Dl1,
+    size_A::Ti,
+    partsize::Ti,
+    nparts::Ti,
+    nchunks::Ti,
+    chunksize::Ti,
+    step,
+) where {Ti <: Integer}
     initial_partition_idx = @index(Global)
 
     for part in DiagonalPartsIterator(
@@ -1065,10 +1088,10 @@ function _pack_strict_triangular!(
     partsize::Ti,
     k::Ti,
 ) where {Ti <: Integer}
-    (;SLbuffer) = cache
+    (; SLbuffer) = cache
     colPtr = getcolptr(A)
     rowVal = rowvals(A)
-    nzVal = getnzval(A) 
+    nzVal = getnzval(A)
     block_stride = (partsize * (partsize - 1)) ÷ 2
     block_offset = (k - 1) * block_stride
 
@@ -1188,12 +1211,12 @@ function _pack_strict_triangular!(
     partsize::Ti,
     k::Ti,
 ) where {Ti <: Integer}
-    (;SUbuffer) = cache
+    (; SUbuffer) = cache
     colPtr = getcolptr(A)
     rowVal = rowvals(A)
     nzVal = getnzval(A)
 
-   block_stride = (partsize * (partsize - 1)) ÷ 2
+    block_stride = (partsize * (partsize - 1)) ÷ 2
     block_offset = (k - 1) * block_stride
 
     # Process each column j (columns with j > start_idx have upper elements)
@@ -1285,27 +1308,29 @@ function _pack_strict_triangular!(
 end
 
 
-_accumulate_from_cache(cache::BlockStrictLowerView, y, i, k, partsize, start_idx, end_idx) = _accumulate_lower_from_matrix(
-    cache.A,
-    cache.frmt,
-    y,
-    i,
-    start_idx,
-    end_idx,
-    cache.diag,
-    cache.symA,
-)
+_accumulate_from_cache(cache::BlockStrictLowerView, y, i, k, partsize, start_idx, end_idx) =
+    _accumulate_lower_from_matrix(
+        cache.A,
+        cache.frmt,
+        y,
+        i,
+        start_idx,
+        end_idx,
+        cache.diag,
+        cache.symA,
+    )
 
-_accumulate_from_cache(cache::BlockStrictUpperView, y, i, k, partsize, start_idx, end_idx) = _accumulate_upper_from_matrix(
-    cache.A,
-    cache.frmt,
-    y,
-    i,
-    start_idx,
-    end_idx,
-    cache.diag,
-    cache.symA,
-)
+_accumulate_from_cache(cache::BlockStrictUpperView, y, i, k, partsize, start_idx, end_idx) =
+    _accumulate_upper_from_matrix(
+        cache.A,
+        cache.frmt,
+        y,
+        i,
+        start_idx,
+        end_idx,
+        cache.diag,
+        cache.symA,
+    )
 
 # PackedBuffer caches - use k and partsize to compute buffer offsets
 function _accumulate_from_cache(cache::PackedStrictLower, y, i, k, partsize, start_idx, end_idx)
@@ -1317,7 +1342,7 @@ function _accumulate_from_cache(cache::PackedStrictLower, y, i, k, partsize, sta
     row_offset = ((local_i - 1) * (local_i - 2)) ÷ 2
 
     acc = zero(eltype(y))
-    @inbounds for local_j = 1:(local_i - 1)
+    @inbounds for local_j = 1:(local_i-1)
         gj = start_idx + (local_j - 1)
         off_idx = block_offset + row_offset + local_j
         acc += SLbuffer[off_idx] * y[gj]
@@ -1362,7 +1387,16 @@ function _accumulate_lower_rowwise(indPtr, indices, nzVal, y, i, start_idx)
 end
 
 # CSR format: row-wise access (no diagonal indices needed)
-function _accumulate_lower_from_matrix(A, ::CSRFormat, y, i, start_idx, end_idx, ::AbstractDiagonalIndices, ::AbstractMatrixSymmetry)
+function _accumulate_lower_from_matrix(
+    A,
+    ::CSRFormat,
+    y,
+    i,
+    start_idx,
+    end_idx,
+    ::AbstractDiagonalIndices,
+    ::AbstractMatrixSymmetry,
+)
     _accumulate_lower_rowwise(getrowptr(A), colvals(A), getnzval(A), y, i, start_idx)
 end
 
@@ -1406,7 +1440,16 @@ function _accumulate_triangular_csc_binsearch(
 end
 
 # CSC format (non-symmetric): dispatch to unified binary search
-function _accumulate_lower_from_matrix(A, ::CSCFormat, y, i, start_idx, end_idx, diag::DiagonalIndices, ::NonSymmetricMatrix)
+function _accumulate_lower_from_matrix(
+    A,
+    ::CSCFormat,
+    y,
+    i,
+    start_idx,
+    end_idx,
+    diag::DiagonalIndices,
+    ::NonSymmetricMatrix,
+)
     col_range = start_idx:min(i-1, end_idx)
     search_range_fn = (colPtr, col, diag_idx) -> (diag_idx + 1, colPtr[col+1] - 1)
     _accumulate_triangular_csc_binsearch(A, y, i, col_range, diag, search_range_fn)
@@ -1414,12 +1457,30 @@ end
 
 
 # CSC format (symmetric): row i = column i, so use row-wise access
-function _accumulate_lower_from_matrix(A, ::CSCFormat, y, i, start_idx, end_idx, ::NoDiagonalIndices, ::SymmetricMatrix)
+function _accumulate_lower_from_matrix(
+    A,
+    ::CSCFormat,
+    y,
+    i,
+    start_idx,
+    end_idx,
+    ::NoDiagonalIndices,
+    ::SymmetricMatrix,
+)
     _accumulate_lower_rowwise(getcolptr(A), rowvals(A), getnzval(A), y, i, start_idx)
 end
 
 ## Upper triangular accumulation ##
-function _accumulate_upper_from_matrix(A, ::CSCFormat, y, i, start_idx, end_idx, diag::DiagonalIndices, ::NonSymmetricMatrix)
+function _accumulate_upper_from_matrix(
+    A,
+    ::CSCFormat,
+    y,
+    i,
+    start_idx,
+    end_idx,
+    diag::DiagonalIndices,
+    ::NonSymmetricMatrix,
+)
     col_range = (i+1):end_idx
     search_range_fn = (colPtr, col, diag_idx) -> (colPtr[col], diag_idx - 1)
     _accumulate_triangular_csc_binsearch(A, y, i, col_range, diag, search_range_fn)
@@ -1438,11 +1499,29 @@ function _accumulate_upper_rowwise(indPtr, indices, nzVal, y, i, end_idx)
 end
 
 # CSR format: row-wise access (no diagonal indices needed)
-function _accumulate_upper_from_matrix(A, ::CSRFormat, y, i, start_idx, end_idx, ::NoDiagonalIndices, ::AbstractMatrixSymmetry)
+function _accumulate_upper_from_matrix(
+    A,
+    ::CSRFormat,
+    y,
+    i,
+    start_idx,
+    end_idx,
+    ::NoDiagonalIndices,
+    ::AbstractMatrixSymmetry,
+)
     _accumulate_upper_rowwise(getrowptr(A), colvals(A), getnzval(A), y, i, end_idx)
 end
 
 # CSC format (symmetric): row i = column i, so use row-wise access
-function _accumulate_upper_from_matrix(A, ::CSCFormat, y, i, start_idx, end_idx, ::NoDiagonalIndices, ::SymmetricMatrix)
+function _accumulate_upper_from_matrix(
+    A,
+    ::CSCFormat,
+    y,
+    i,
+    start_idx,
+    end_idx,
+    ::NoDiagonalIndices,
+    ::SymmetricMatrix,
+)
     _accumulate_upper_rowwise(getcolptr(A), rowvals(A), getnzval(A), y, i, end_idx)
 end
