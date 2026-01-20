@@ -173,6 +173,46 @@ function semidiscretize(
     return semidiscrete_ode
 end
 
+struct EikonalCoupledODEFunction{ODEFunctionT, EikonalFunctionT}
+    ode_function::ODEFunctionT
+    eikonal_function::EikonalFunctionT
+end
+
+function semidiscretize(
+    split::ReactionEikonalSplit{<:MonodomainModel},
+    discretizations::Tuple{
+        <:FiniteElementDiscretization,
+        <:SimplicialEikonalDiscretization
+    },
+    mesh::AbstractGrid,
+)
+    epmodel = split.model
+
+    eikonal_model = EikonalModel(
+        ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
+    )
+
+    eikonal_function = semidiscretize(eikonal_model, discretizations[2], mesh)
+
+    ndofsφ = ndofs(eikonal_function)
+
+    odefun = PointwiseODEFunction(
+        # TODO epmodel.Cₘ(x)
+        ndofsφ,
+        StimulatedCellModel(epmodel.ion,
+            SparseVector(ndofsφ, eikonal_function.vertices.nzind, fill(Inf, nnz(eikonal_function.vertices))),
+            stim_length,
+            stim_strength),
+        collect(1:length(ndofsφ)),
+    )
+
+    semidiscrete_ode = EikonalCoupledODEFunction(
+        odefun, eikonal_function
+    )
+
+    return semidiscrete_ode
+end
+
 # Solid mechanics semidiscretize interface
 function semidiscretize_register_subdomains!(
     dh,
