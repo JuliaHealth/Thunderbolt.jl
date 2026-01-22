@@ -194,20 +194,27 @@ function semidiscretize(
 
     eikonal_function = semidiscretize(eikonal_model, discretizations[2], mesh)
 
-    ndofsφ = ndofs(eikonal_function)
-
-    odefun = PointwiseODEFunction(
-        # TODO epmodel.Cₘ(x)
-        ndofsφ,
-        StimulatedCellModel(epmodel.ion,
-            SparseVector(ndofsφ, eikonal_function.vertices.nzind, fill(Inf, nnz(eikonal_function.vertices))),
-            stim_length,
-            stim_strength),
-        collect(1:length(ndofsφ)),
+    ndofsφ = solution_size(eikonal_function)
+    single_prob = OrdinaryDiffEqCore.ODEProblem(
+        (du,u,m,t) -> Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
+        Thunderbolt.default_initial_state(epmodel.ion),
+        (0.0, 50.0),
+        Thunderbolt.StimulatedCellModel(;cell_model = epmodel.ion),
     )
 
+    prob_func = let activation_timings = fill(Inf, length(eikonal_function.vertices)), cellmodel = epmodel.ion
+        (prob, i, repeat) -> begin
+            model_i = Thunderbolt.StimulatedCellModel(;
+                cell_model = cellmodel,
+                stim_offset = activation_timings[i],
+            )
+            OrdinaryDiffEqCore.remake(prob, p=model_i, tstops=[activation_timings[i]])
+        end
+    end
+    ensemble_prob = SciMLBase.EnsembleProblem(single_prob, prob_func=prob_func)
+
     semidiscrete_ode = EikonalCoupledODEFunction(
-        odefun, eikonal_function
+        ensemble_prob, eikonal_function
     )
 
     return semidiscrete_ode

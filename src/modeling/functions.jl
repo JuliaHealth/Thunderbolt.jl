@@ -152,7 +152,7 @@ We want to solve the problem √(∇tₐᵀ𝕍∇tₐ) = 1.
 struct EikonalFunction{
     T <: Number,
     VerticesVectorT<:AbstractVector{Vec{3, T}},
-    CellsVectorT<:Vector{NTuple{4, Int}},
+    CellsVectorT<:AbstractVector{NTuple{4, Int}},
     V2CT <: AbstractArray,
     ActivationCoordinateT <: ActivationCoordinate,
 } <: AbstractSemidiscreteFunction

@@ -268,9 +268,9 @@ end
 ReactionEikonalSplit(model) = ReactionEikonalSplit(model, nothing)
 
 
-@kwdef struct StimulatedCellModel{TC,T}<:AbstractIonicModel
+@kwdef struct StimulatedCellModel{TC,OffestT,T}<:AbstractIonicModel
     cell_model::TC
-    stim_offset::T = 0.0
+    stim_offset::OffestT = 0.0
     stim_length::T = 1.0
     stim_strength::T = 0.91
     # x::TV
@@ -278,13 +278,22 @@ end
 num_states(m::StimulatedCellModel) = num_states(m.cell_model)
 default_initial_state(m::StimulatedCellModel) = default_initial_state(m.cell_model)
 function cell_rhs!(du, u, i, t, m::StimulatedCellModel)
-    @assert i isa Integer
+    # @assert i isa Integer
     cell_rhs!(du,u,nothing,t,m.cell_model)
-    if m.stim_offset[i] ≤ t ≤ m.stim_offset[i] + m.stim_length
-        τᶠ = 0.25
-        idx = transmembranepotential_index(m.cell_model)
-        du[idx] += m.stim_strength/τᶠ * exp((t-m.stim_offset[i])/τᶠ)
+    if i isa AbstractVector
+        if m.stim_offset[i] ≤ t ≤ m.stim_offset[i] + m.stim_length
+            τᶠ = 0.25
+            idx = transmembranepotential_index(m.cell_model)
+            du[idx] += m.stim_strength/τᶠ * exp((t-m.stim_offset[i])/τᶠ)
+        end
+    else
+        if m.stim_offset ≤ t ≤ m.stim_offset + m.stim_length
+            τᶠ = 0.25
+            idx = transmembranepotential_index(m.cell_model)
+            du[idx] += m.stim_strength/τᶠ * exp((t-m.stim_offset)/τᶠ)
+        end
     end
+
     return nothing
 end
 
