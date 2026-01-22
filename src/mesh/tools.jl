@@ -901,7 +901,7 @@ function tetrahedralize(mesh::SimpleMesh{3, Hexahedron})
 end
 
 # signed 6x volume helper (using new_nodes so cell-centers are available)
-function signed_vol6(nt::NTuple{4, Int})
+function signed_vol6(nt::NTuple{4, Int}, new_nodes)
     a, b, c, d = nt
     x1 = new_nodes[a].x; x2 = new_nodes[b].x
     x3 = new_nodes[c].x; x4 = new_nodes[d].x
@@ -909,14 +909,14 @@ function signed_vol6(nt::NTuple{4, Int})
 end
 
 # brute-force search for a permutation with positive signed volume
-function orient_to_positive(nt::NTuple{4, Int})
-    signed_vol6(nt) > 0.0 && return nt
+function orient_to_positive(nt::NTuple{4, Int}, new_nodes)
+    signed_vol6(nt, new_nodes) > 0.0 && return nt
     inds = collect(nt)
     for i in 1:4, j in 1:4, k in 1:4, l in 1:4
         a, b, c, d = inds[i], inds[j], inds[k], inds[l]
         if length(Set((a, b, c, d))) == 4
             cand = (a, b, c, d)
-            if signed_vol6(cand) > 0.0
+            if signed_vol6(cand, new_nodes) > 0.0
                 return cand
             end
         end
@@ -953,13 +953,13 @@ function _tetrahedralize(mgrid::SimpleMesh{3, <:Any, T}) where {T}
                 @assert length(f) == 4 "Expected quadrilateral face for Hexahedron"
                 v1, v2, v3, v4 = f[1], f[2], f[3], f[4]
                 # Triangulate face using (v1,v3,v2) and (v1,v4,v3)
-                t1 = orient_to_positive((v1, v3, v2, cnid))
-                t2 = orient_to_positive((v1, v4, v3, cnid))
+                t1 = orient_to_positive((v1, v3, v2, cnid), new_nodes)
+                t2 = orient_to_positive((v1, v4, v3, cnid), new_nodes)
                 push!(new_cells, Tetrahedron(t1))
                 push!(new_cells, Tetrahedron(t2))
             end
         elseif isa(cell, Tetrahedron)
-            nt = orient_to_positive((cell.nodes[1], cell.nodes[2], cell.nodes[3], cell.nodes[4]))
+            nt = orient_to_positive((cell.nodes[1], cell.nodes[2], cell.nodes[3], cell.nodes[4]), new_nodes)
             push!(new_cells, Tetrahedron(nt))
         else
             throw(error("Tetrahedralizing cell type $(typeof(cell)) not implemented yet"))
