@@ -294,6 +294,10 @@ abstract type AbstractCache end
 abstract type AbstractLowerCache <: AbstractCache end
 abstract type AbstractUpperCache <: AbstractCache end
 
+# Sweep iteration range based on cache type (forward for lower, backward for upper)
+@inline sweep_range(::AbstractLowerCache, start_idx, end_idx) = start_idx:end_idx
+@inline sweep_range(::AbstractUpperCache, start_idx, end_idx) = end_idx:-1:start_idx
+
 
 struct BlockStrictLowerView{
     MatrixType,
@@ -648,7 +652,6 @@ function _apply_sweep!(y, partitioning, sweep_plan::AbstractL1GSSweepPlan)
         @timeit_debug "kernel construction" kernel =
             _apply_sweep_kernel!(backend, chunksize, ndrange)
         size_A = convert(typeof(nparts), length(y))
-        step = convert(typeof(nparts), 1)
         @timeit_debug "kernel call" kernel(
             y,
             cache,
@@ -657,8 +660,7 @@ function _apply_sweep!(y, partitioning, sweep_plan::AbstractL1GSSweepPlan)
             partsize,
             nparts,
             nchunks,
-            chunksize,
-            step;
+            chunksize;
             ndrange = ndrange,
         )
         @timeit_debug "synchronize" synchronize(backend)
@@ -675,8 +677,6 @@ function _apply_sweep!(y, partitioning, sweep::SymmetricL1GSSweep)
         U = sweep.uop.U
         ndrange = nchunks * chunksize
         size_A = convert(typeof(nparts), length(y))
-        step_fwd = convert(typeof(nparts), 1)
-        step_bwd = convert(typeof(nparts), -1)
 
         kernel = _apply_sweep_kernel!(backend, chunksize, ndrange)
 
@@ -690,8 +690,7 @@ function _apply_sweep!(y, partitioning, sweep::SymmetricL1GSSweep)
                 partsize,
                 nparts,
                 nchunks,
-                chunksize,
-                step_fwd;
+                chunksize;
                 ndrange = ndrange,
             )
             synchronize(backend)
@@ -703,13 +702,11 @@ function _apply_sweep!(y, partitioning, sweep::SymmetricL1GSSweep)
                 y,
                 U,
                 D_Dl1,
-                U.symA,
                 size_A,
                 partsize,
                 nparts,
                 nchunks,
-                chunksize,
-                step_bwd;
+                chunksize;
                 ndrange = ndrange,
             )
             synchronize(backend)
@@ -886,7 +883,6 @@ end
     nparts::Ti,
     nchunks::Ti,
     chunksize::Ti,
-    step,
 ) where {Ti <: Integer}
     initial_partition_idx = @index(Global)
 
@@ -899,7 +895,7 @@ end
         convert(Ti, initial_partition_idx),
     )
         @unpack k, partsize, start_idx, end_idx = part
-        @inbounds for i = start_idx:step:end_idx
+        @inbounds for i in sweep_range(cache, start_idx, end_idx)
             acc = _accumulate_from_cache(cache, y, i, k, partsize, start_idx, end_idx)
             y[i] = (y[i] - acc) / D_Dl1[i]
         end
