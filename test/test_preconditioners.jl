@@ -87,8 +87,8 @@ end
         D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: all rows satisfy a_ii >= η*dl1_ii (2 >= 1.5*1)
         SLbuffer_exp = Float64.([-1, -1, -1, -1])
         SUbuffer_exp = Float64.([-1, -1, -1, -1])
-        
-        # Packed buffer tests # 
+
+        # Packed buffer tests #
         test_fwd_buffer_fn = (P) -> @test P.sweep.op.L.SLbuffer ≈ SLbuffer_exp
         test_bwd_buffer_fn = (P) -> @test P.sweep.op.U.SUbuffer ≈ SUbuffer_exp
         test_sym_buffer_fn = (P) -> begin
