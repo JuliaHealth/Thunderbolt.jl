@@ -50,34 +50,46 @@ function test_sym_result(
     end
 end
 
-function test_l1gs_prec(A, b, partsize = nothing)
-    ncores = 8 # Assuming 8 cores for testing
-    partsize = partsize === nothing ? size(A, 1) / ncores |> ceil |> Int : partsize
 
-    prob = LinearProblem(A, b)
-    sol_unprec = solve(prob, KrylovJL_GMRES())
-    @test isapprox(A * sol_unprec.u, b, rtol = 1e-1, atol = 1e-1)
-    TimerOutputs.reset_timer!()
-    P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize; sweep = ForwardSweep())
+function test_l1gs_prec(
+    testname,
+    A,
+    b,
+    sweep = ForwardSweep(),
+    cache_strategy = PackedBufferCache(),
+    partsize = nothing,
+)
+    @testset "$testname" begin
+        ncores = 8 # Assuming 8 cores for testing
+        partsize = partsize === nothing ? size(A, 1) / ncores |> ceil |> Int : partsize
 
-    println("\n" * "="^60)
-    println("Preconditioner Construction Timings:")
-    TimerOutputs.print_timer()
-    println("="^60)
+        prob = LinearProblem(A, b)
+        sol_unprec = solve(prob, KrylovJL_GMRES())
+        #sol_unprec = solve(prob, KrylovJL_CG())
+        @test isapprox(A * sol_unprec.u, b, rtol = 1e-1, atol = 1e-1)
+        TimerOutputs.reset_timer!()
+        P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize; sweep = sweep, cache_strategy = cache_strategy)
 
-    # Reset timer before testing ldiv!
-    TimerOutputs.reset_timer!()
-    sol_prec = solve(prob, KrylovJL_GMRES(P); Pl = P)
+        println("\n" * "="^60)
+        println("Preconditioner Construction Timings:")
+        TimerOutputs.print_timer()
+        println("="^60)
 
-    println("\n" * "="^60)
-    println("ldiv! Timings during solve:")
-    TimerOutputs.print_timer()
-    println("="^60)
+        # Reset timer before testing ldiv!
+        TimerOutputs.reset_timer!()
+        sol_prec = solve(prob, KrylovJL_GMRES(P); Pl = P)
+        #sol_prec = solve(prob, KrylovJL_CG(P); Pl = P)
 
-    println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
-    println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
-    @test isapprox(A * sol_prec.u, b, rtol = 1e-1, atol = 1e-1)
-    @test sol_prec.iters < sol_unprec.iters
+        println("\n" * "="^60)
+        println("ldiv! Timings during solve:")
+        TimerOutputs.print_timer()
+        println("="^60)
+
+        println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
+        println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
+        @test isapprox(A * sol_prec.u, b, rtol = 1e-1, atol = 1e-1)
+        @test sol_prec.iters < sol_unprec.iters
+    end
 end
 
 @testset "L1GS Preconditioner" begin
@@ -123,7 +135,7 @@ end
             PackedBufferCache(),
             test_fwd_buffer_fn,
         )
-        test_sym_result("Packed, Forward, CPU CSR", B, x, y_exp_fwd, D_Dl1_exp, 2)
+        test_sym_result("Packed, Forward, CPU CSR", B, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep())
         C = ThreadedSparseMatrixCSR(B)
         test_sym_result(
             "Packed, Forward, CPU Threaded CSR",
@@ -404,18 +416,29 @@ end
     end
     @testset "Solution with LinearSolve" begin
 
-        @testset "Non-Symmetric A" begin
+        @testset "Non-Symmetric A (HB/sherman5)" begin
             md = mdopen("HB/sherman5")
             A = md.A
             b = md.b[:, 1]
-            test_l1gs_prec(A, b)
+            # Forward and Backward sweeps with both cache strategies
+            test_l1gs_prec("PackedBuffer, ForwardSweep HB/sherman5", A, b, ForwardSweep(), PackedBufferCache())
+            test_l1gs_prec("MatrixView, ForwardSweep HB/sherman5", A, b, ForwardSweep(), MatrixViewCache())
+            test_l1gs_prec("PackedBuffer, BackwardSweep HB/sherman5", A, b, BackwardSweep(), PackedBufferCache())
+            test_l1gs_prec("MatrixView, BackwardSweep HB/sherman5", A, b, BackwardSweep(), MatrixViewCache())
         end
 
-        @testset "Symmetric A" begin
+        @testset "Symmetric A (HB/bcsstk15)" begin
             md = mdopen("HB/bcsstk15")
             A = md.A # type here is Symmetric{Float64, SparseMatrixCSC{Float64, Int64}}
             b = ones(size(A, 1))
-            test_l1gs_prec(A, b)
+            # Forward, Backward, and Symmetric sweeps with both cache strategies
+            test_l1gs_prec("PackedBuffer, ForwardSweep HB/bcsstk15", A, b, ForwardSweep(), PackedBufferCache())
+            test_l1gs_prec("MatrixView, ForwardSweep HB/bcsstk15", A, b, ForwardSweep(), MatrixViewCache())
+            test_l1gs_prec("PackedBuffer, BackwardSweep HB/bcsstk15", A, b, BackwardSweep(), PackedBufferCache())#FIXME: not working
+            test_l1gs_prec("MatrixView, BackwardSweep HB/bcsstk15", A, b, BackwardSweep(), MatrixViewCache())
+            test_l1gs_prec("PackedBuffer, SymmetricSweep HB/bcsstk15", A, b, SymmetricSweep(), PackedBufferCache()) #FIXME: not working
+            test_l1gs_prec("MatrixView, SymmetricSweep HB/bcsstk15", A, b, SymmetricSweep(), MatrixViewCache()) #FIXME: not working
         end
+        
     end
 end
