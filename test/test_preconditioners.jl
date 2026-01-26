@@ -18,7 +18,17 @@ function poisson_test_matrix(N)
     return spdiagm(0 => 2 * ones(N), -1 => -ones(N - 1), 1 => -ones(N - 1))
 end
 
-function test_sym_result(testname, A, x, y_exp, D_Dl1_exp, partsize, sweep= ForwardSweep(),cache_strategy=PackedBufferCache(), test_buffer_fn = (P)-> nothing)
+function test_sym_result(
+    testname,
+    A,
+    x,
+    y_exp,
+    D_Dl1_exp,
+    partsize,
+    sweep = ForwardSweep(),
+    cache_strategy = PackedBufferCache(),
+    test_buffer_fn = (P) -> nothing,
+)
     @testset "$testname Symmetric" begin
         total_ncores = 8 # Assuming 8 cores for testing
         for ncores = 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
@@ -26,13 +36,7 @@ function test_sym_result(testname, A, x, y_exp, D_Dl1_exp, partsize, sweep= Forw
             P =
                 A isa Symmetric ?
                 builder(A, partsize; sweep = sweep, cache_strategy = cache_strategy) :
-                builder(
-                    A,
-                    partsize;
-                    isSymA = true,
-                    sweep = sweep,
-                    cache_strategy = cache_strategy,
-                )
+                builder(A, partsize; isSymA = true, sweep = sweep, cache_strategy = cache_strategy)
             if sweep isa SymmetricSweep
                 @test P.sweep.lop.D_DL1 ≈ D_Dl1_exp
                 @test P.sweep.uop.D_DL1 ≈ D_Dl1_exp
@@ -83,7 +87,7 @@ end
         x = 0:(N-1) |> collect .|> Float64
         y_exp_fwd = [0, 1 / 2, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
         y_exp_bwd = [0.25, 0.5, 1.75, 1.5, 3.25, 2.5, 4.75, 3.5, 4.0]
-        y_exp_sym = [0.125, 0.25, 1.0, 1.0, 1.875, 1.75, 2.75, 2.5,2.0]
+        y_exp_sym = [0.125, 0.25, 1.0, 1.0, 1.875, 1.75, 2.75, 2.5, 2.0]
         D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: all rows satisfy a_ii >= η*dl1_ii (2 >= 1.5*1)
         SLbuffer_exp = Float64.([-1, -1, -1, -1])
         SUbuffer_exp = Float64.([-1, -1, -1, -1])
@@ -96,40 +100,219 @@ end
             @test P.sweep.uop.U.SUbuffer ≈ SUbuffer_exp
         end
         # Forward sweep packed buffer tests
-        test_sym_result("Packed, Forward, CPU CSC", A, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep(), PackedBufferCache(), test_fwd_buffer_fn)
+        test_sym_result(
+            "Packed, Forward, CPU CSC",
+            A,
+            x,
+            y_exp_fwd,
+            D_Dl1_exp,
+            2,
+            ForwardSweep(),
+            PackedBufferCache(),
+            test_fwd_buffer_fn,
+        )
         B = SparseMatrixCSR(A)
-        test_sym_result("Packed, Forward, CPU CSR", B, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep(), PackedBufferCache(), test_fwd_buffer_fn)
+        test_sym_result(
+            "Packed, Forward, CPU CSR",
+            B,
+            x,
+            y_exp_fwd,
+            D_Dl1_exp,
+            2,
+            ForwardSweep(),
+            PackedBufferCache(),
+            test_fwd_buffer_fn,
+        )
         test_sym_result("Packed, Forward, CPU CSR", B, x, y_exp_fwd, D_Dl1_exp, 2)
         C = ThreadedSparseMatrixCSR(B)
-        test_sym_result("Packed, Forward, CPU Threaded CSR", C, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep(), PackedBufferCache(), test_fwd_buffer_fn)
+        test_sym_result(
+            "Packed, Forward, CPU Threaded CSR",
+            C,
+            x,
+            y_exp_fwd,
+            D_Dl1_exp,
+            2,
+            ForwardSweep(),
+            PackedBufferCache(),
+            test_fwd_buffer_fn,
+        )
 
         # Backward sweep packed buffer tests
-        test_sym_result("Packed, Backward, CPU CSC", A, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep(), PackedBufferCache(), test_bwd_buffer_fn)
-        test_sym_result("Packed, Backward, CPU CSR", B, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep(), PackedBufferCache(), test_bwd_buffer_fn)
+        test_sym_result(
+            "Packed, Backward, CPU CSC",
+            A,
+            x,
+            y_exp_bwd,
+            D_Dl1_exp,
+            2,
+            BackwardSweep(),
+            PackedBufferCache(),
+            test_bwd_buffer_fn,
+        )
+        test_sym_result(
+            "Packed, Backward, CPU CSR",
+            B,
+            x,
+            y_exp_bwd,
+            D_Dl1_exp,
+            2,
+            BackwardSweep(),
+            PackedBufferCache(),
+            test_bwd_buffer_fn,
+        )
         test_sym_result("Packed, Backward, CPU CSR", B, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep())
-        test_sym_result("Packed, Backward, CPU Threaded CSR", C, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep(), PackedBufferCache(), test_bwd_buffer_fn)
+        test_sym_result(
+            "Packed, Backward, CPU Threaded CSR",
+            C,
+            x,
+            y_exp_bwd,
+            D_Dl1_exp,
+            2,
+            BackwardSweep(),
+            PackedBufferCache(),
+            test_bwd_buffer_fn,
+        )
 
         # Symmetric sweep packed buffer tests
-        test_sym_result("Packed, Symmetric, CPU CSC", A, x, y_exp_sym, D_Dl1_exp, 2, SymmetricSweep(), PackedBufferCache(), test_sym_buffer_fn)
-        test_sym_result("Packed, Symmetric, CPU CSR", B, x, y_exp_sym, D_Dl1_exp, 2, SymmetricSweep(), PackedBufferCache(), test_sym_buffer_fn)
-        test_sym_result("Packed, Symmetric, CPU CSR", B, x, y_exp_sym, D_Dl1_exp, 2, SymmetricSweep())
-        test_sym_result("Packed, Symmetric, CPU Threaded CSR", C, x, y_exp_sym, D_Dl1_exp, 2, SymmetricSweep(), PackedBufferCache(), test_sym_buffer_fn)
+        test_sym_result(
+            "Packed, Symmetric, CPU CSC",
+            A,
+            x,
+            y_exp_sym,
+            D_Dl1_exp,
+            2,
+            SymmetricSweep(),
+            PackedBufferCache(),
+            test_sym_buffer_fn,
+        )
+        test_sym_result(
+            "Packed, Symmetric, CPU CSR",
+            B,
+            x,
+            y_exp_sym,
+            D_Dl1_exp,
+            2,
+            SymmetricSweep(),
+            PackedBufferCache(),
+            test_sym_buffer_fn,
+        )
+        test_sym_result(
+            "Packed, Symmetric, CPU CSR",
+            B,
+            x,
+            y_exp_sym,
+            D_Dl1_exp,
+            2,
+            SymmetricSweep(),
+        )
+        test_sym_result(
+            "Packed, Symmetric, CPU Threaded CSR",
+            C,
+            x,
+            y_exp_sym,
+            D_Dl1_exp,
+            2,
+            SymmetricSweep(),
+            PackedBufferCache(),
+            test_sym_buffer_fn,
+        )
 
         # MatrixViewCache tests
         # Forward sweep MatrixViewCache tests
-        test_sym_result("MatrixView, Forward, CPU CSC", A, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep(), MatrixViewCache())
-        test_sym_result("MatrixView, Forward, CPU CSR", B, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep(), MatrixViewCache())
-        test_sym_result("MatrixView, Forward, CPU Threaded CSR", C, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep(), MatrixViewCache())
+        test_sym_result(
+            "MatrixView, Forward, CPU CSC",
+            A,
+            x,
+            y_exp_fwd,
+            D_Dl1_exp,
+            2,
+            ForwardSweep(),
+            MatrixViewCache(),
+        )
+        test_sym_result(
+            "MatrixView, Forward, CPU CSR",
+            B,
+            x,
+            y_exp_fwd,
+            D_Dl1_exp,
+            2,
+            ForwardSweep(),
+            MatrixViewCache(),
+        )
+        test_sym_result(
+            "MatrixView, Forward, CPU Threaded CSR",
+            C,
+            x,
+            y_exp_fwd,
+            D_Dl1_exp,
+            2,
+            ForwardSweep(),
+            MatrixViewCache(),
+        )
 
         # Backward sweep MatrixViewCache tests
-        test_sym_result("MatrixView, Backward, CPU CSC", A, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep(), MatrixViewCache())
-        test_sym_result("MatrixView, Backward, CPU CSR", B, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep(), MatrixViewCache())
-        test_sym_result("MatrixView, Backward, CPU Threaded CSR", C, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep(), MatrixViewCache())
+        test_sym_result(
+            "MatrixView, Backward, CPU CSC",
+            A,
+            x,
+            y_exp_bwd,
+            D_Dl1_exp,
+            2,
+            BackwardSweep(),
+            MatrixViewCache(),
+        )
+        test_sym_result(
+            "MatrixView, Backward, CPU CSR",
+            B,
+            x,
+            y_exp_bwd,
+            D_Dl1_exp,
+            2,
+            BackwardSweep(),
+            MatrixViewCache(),
+        )
+        test_sym_result(
+            "MatrixView, Backward, CPU Threaded CSR",
+            C,
+            x,
+            y_exp_bwd,
+            D_Dl1_exp,
+            2,
+            BackwardSweep(),
+            MatrixViewCache(),
+        )
 
         # Symmetric sweep MatrixViewCache tests
-        test_sym_result("MatrixView, Symmetric, CPU CSC", A, x, y_exp_sym, D_Dl1_exp, 2, SymmetricSweep(), MatrixViewCache())
-        test_sym_result("MatrixView, Symmetric, CPU CSR", B, x, y_exp_sym, D_Dl1_exp, 2, SymmetricSweep(), MatrixViewCache())
-        test_sym_result("MatrixView, Symmetric, CPU Threaded CSR", C, x, y_exp_sym, D_Dl1_exp, 2, SymmetricSweep(), MatrixViewCache())
+        test_sym_result(
+            "MatrixView, Symmetric, CPU CSC",
+            A,
+            x,
+            y_exp_sym,
+            D_Dl1_exp,
+            2,
+            SymmetricSweep(),
+            MatrixViewCache(),
+        )
+        test_sym_result(
+            "MatrixView, Symmetric, CPU CSR",
+            B,
+            x,
+            y_exp_sym,
+            D_Dl1_exp,
+            2,
+            SymmetricSweep(),
+            MatrixViewCache(),
+        )
+        test_sym_result(
+            "MatrixView, Symmetric, CPU Threaded CSR",
+            C,
+            x,
+            y_exp_sym,
+            D_Dl1_exp,
+            2,
+            SymmetricSweep(),
+            MatrixViewCache(),
+        )
 
         @testset "η parameter" begin
             # Test with η = 2.0 (more strict than default 1.5)
