@@ -360,16 +360,35 @@ end
             A2 = copy(A)
             A2[1, 8] = -1.0  # won't affect the result
             A2[2, 8] = -1.0  # 1/2 → 1/3
-            y2_exp = [0, 1 / 3, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
+            y2_fwd_exp = [0, 1.0 / 3.0, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
+            y2_bwd_exp = [1.0/6.0 , 1.0 / 3.0, 1.75, 1.5, 3.25, 2.5, 4.75, 3.5, 4.0] # since backward sweep, then change in the second element propagtes to the first element as well
             D_Dl1_exp2 = Float64.([2, 3, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: only row 1 has a_ii < η*dl1_ii (2 < 1.5*2)
             SLbuffer_exp2 = Float64.([-1, -1, -1, -1])
+            SUbuffer_exp2 = Float64.([-1, -1, -1, -1])
 
             builder = L1GSPrecBuilder(PolyesterDevice(2))
-            P = builder(A2, 2; cache_strategy = PackedBufferCache())
+
+            # Forward sweep with PackedBufferCache
+            P = builder(A2, 2; sweep = ForwardSweep(), cache_strategy = PackedBufferCache())
             @test P.sweep.op.D_DL1 ≈ D_Dl1_exp2
             @test P.sweep.op.L.SLbuffer ≈ SLbuffer_exp2
-            y_cpu = P \ x
-            @test y_cpu ≈ y2_exp
+            @test P \ x ≈ y2_fwd_exp
+
+            # Forward sweep with MatrixViewCache
+            P = builder(A2, 2; sweep = ForwardSweep(), cache_strategy = MatrixViewCache())
+            @test P.sweep.op.D_DL1 ≈ D_Dl1_exp2
+            @test P \ x ≈ y2_fwd_exp
+
+            # Backward sweep with PackedBufferCache
+            P = builder(A2, 2; sweep = BackwardSweep(), cache_strategy = PackedBufferCache())
+            @test P.sweep.op.D_DL1 ≈ D_Dl1_exp2
+            @test P.sweep.op.U.SUbuffer ≈ SUbuffer_exp2
+            @test P \ x ≈ y2_bwd_exp
+
+            # Backward sweep with MatrixViewCache
+            P = builder(A2, 2; sweep = BackwardSweep(), cache_strategy = MatrixViewCache())
+            @test P.sweep.op.D_DL1 ≈ D_Dl1_exp2
+            @test P \ x ≈ y2_bwd_exp
         end
 
         @testset "Partsize" begin
