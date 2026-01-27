@@ -19,21 +19,22 @@ function poisson_test_matrix(N)
 end
 
 function test_sym_result(
-        testname,
-        A,
-        x,
-        y_exp,
-        D_Dl1_exp,
-        partsize,
-        sweep = ForwardSweep(),
-        cache_strategy = PackedBufferCache(),
-        test_buffer_fn = (P) -> nothing
+    testname,
+    A,
+    x,
+    y_exp,
+    D_Dl1_exp,
+    partsize,
+    sweep = ForwardSweep(),
+    cache_strategy = PackedBufferCache(),
+    test_buffer_fn = (P) -> nothing,
 )
     @testset "$testname Symmetric" begin
         total_ncores = 8 # Assuming 8 cores for testing
-        for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
+        for ncores = 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
             builder = L1GSPrecBuilder(PolyesterDevice(ncores))
-            P = A isa Symmetric ?
+            P =
+                A isa Symmetric ?
                 builder(A, partsize; sweep = sweep, cache_strategy = cache_strategy) :
                 builder(A, partsize; isSymA = true, sweep = sweep, cache_strategy = cache_strategy)
             if sweep isa SymmetricSweep
@@ -50,12 +51,12 @@ function test_sym_result(
 end
 
 function test_l1gs_prec(
-        testname,
-        A,
-        b,
-        sweep = ForwardSweep(),
-        cache_strategy = PackedBufferCache();
-        partsize = nothing
+    testname,
+    A,
+    b,
+    sweep = ForwardSweep(),
+    cache_strategy = PackedBufferCache();
+    partsize = nothing,
 )
     @testset "$testname" begin
         ncores = 8
@@ -65,7 +66,12 @@ function test_l1gs_prec(
         sol_unprec = solve(prob, KrylovJL_GMRES())
         @test isapprox(A * sol_unprec.u, b, rtol = 1e-1, atol = 1e-1)
         TimerOutputs.reset_timer!()
-        P = L1GSPrecBuilder(PolyesterDevice(ncores))(A, partsize; sweep=sweep, cache_strategy=cache_strategy)
+        P = L1GSPrecBuilder(PolyesterDevice(ncores))(
+            A,
+            partsize;
+            sweep = sweep,
+            cache_strategy = cache_strategy,
+        )
 
         println("\n" * "="^60)
         println("Preconditioner Construction Timings:")
@@ -92,7 +98,7 @@ end
     @testset "Algorithm" begin
         N = 9
         A = poisson_test_matrix(N)
-        x = 0:(N - 1) |> collect .|> Float64
+        x = 0:(N-1) |> collect .|> Float64
         y_exp_fwd = [0, 1 / 2, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
         y_exp_bwd = [0.25, 0.5, 1.75, 1.5, 3.25, 2.5, 4.75, 3.5, 4.0]
         y_exp_sym = [0.125, 0.25, 1.0, 1.0, 1.875, 1.75, 2.75, 2.5, 2.0]
@@ -117,7 +123,7 @@ end
             2,
             ForwardSweep(),
             PackedBufferCache(),
-            test_fwd_buffer_fn
+            test_fwd_buffer_fn,
         )
         B = SparseMatrixCSR(A)
         test_sym_result(
@@ -129,7 +135,7 @@ end
             2,
             ForwardSweep(),
             PackedBufferCache(),
-            test_fwd_buffer_fn
+            test_fwd_buffer_fn,
         )
         test_sym_result("Packed, Forward, CPU CSR", B, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep())
         C = ThreadedSparseMatrixCSR(B)
@@ -142,7 +148,7 @@ end
             2,
             ForwardSweep(),
             PackedBufferCache(),
-            test_fwd_buffer_fn
+            test_fwd_buffer_fn,
         )
 
         # Backward sweep packed buffer tests
@@ -155,7 +161,7 @@ end
             2,
             BackwardSweep(),
             PackedBufferCache(),
-            test_bwd_buffer_fn
+            test_bwd_buffer_fn,
         )
         test_sym_result(
             "Packed, Backward, CPU CSR",
@@ -166,7 +172,7 @@ end
             2,
             BackwardSweep(),
             PackedBufferCache(),
-            test_bwd_buffer_fn
+            test_bwd_buffer_fn,
         )
         test_sym_result("Packed, Backward, CPU CSR", B, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep())
         test_sym_result(
@@ -178,7 +184,7 @@ end
             2,
             BackwardSweep(),
             PackedBufferCache(),
-            test_bwd_buffer_fn
+            test_bwd_buffer_fn,
         )
 
         # Symmetric sweep packed buffer tests
@@ -191,7 +197,7 @@ end
             2,
             SymmetricSweep(),
             PackedBufferCache(),
-            test_sym_buffer_fn
+            test_sym_buffer_fn,
         )
         test_sym_result(
             "Packed, Symmetric, CPU CSR",
@@ -202,7 +208,7 @@ end
             2,
             SymmetricSweep(),
             PackedBufferCache(),
-            test_sym_buffer_fn
+            test_sym_buffer_fn,
         )
         test_sym_result(
             "Packed, Symmetric, CPU CSR",
@@ -211,7 +217,7 @@ end
             y_exp_sym,
             D_Dl1_exp,
             2,
-            SymmetricSweep()
+            SymmetricSweep(),
         )
         test_sym_result(
             "Packed, Symmetric, CPU Threaded CSR",
@@ -222,7 +228,7 @@ end
             2,
             SymmetricSweep(),
             PackedBufferCache(),
-            test_sym_buffer_fn
+            test_sym_buffer_fn,
         )
 
         # MatrixViewCache tests
@@ -235,7 +241,7 @@ end
             D_Dl1_exp,
             2,
             ForwardSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
         test_sym_result(
             "MatrixView, Forward, CPU CSR",
@@ -245,7 +251,7 @@ end
             D_Dl1_exp,
             2,
             ForwardSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
         test_sym_result(
             "MatrixView, Forward, CPU Threaded CSR",
@@ -255,7 +261,7 @@ end
             D_Dl1_exp,
             2,
             ForwardSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
 
         # Backward sweep MatrixViewCache tests
@@ -267,7 +273,7 @@ end
             D_Dl1_exp,
             2,
             BackwardSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
         test_sym_result(
             "MatrixView, Backward, CPU CSR",
@@ -277,7 +283,7 @@ end
             D_Dl1_exp,
             2,
             BackwardSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
         test_sym_result(
             "MatrixView, Backward, CPU Threaded CSR",
@@ -287,7 +293,7 @@ end
             D_Dl1_exp,
             2,
             BackwardSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
 
         # Symmetric sweep MatrixViewCache tests
@@ -299,7 +305,7 @@ end
             D_Dl1_exp,
             2,
             SymmetricSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
         test_sym_result(
             "MatrixView, Symmetric, CPU CSR",
@@ -309,7 +315,7 @@ end
             D_Dl1_exp,
             2,
             SymmetricSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
         test_sym_result(
             "MatrixView, Symmetric, CPU Threaded CSR",
@@ -319,7 +325,7 @@ end
             D_Dl1_exp,
             2,
             SymmetricSweep(),
-            MatrixViewCache()
+            MatrixViewCache(),
         )
 
         @testset "η parameter" begin
@@ -418,13 +424,33 @@ end
             b = md.b[:, 1]
             # Forward and Backward sweeps with both cache strategies
             test_l1gs_prec(
-                "PackedBuffer, ForwardSweep HB/sherman5", A, b, ForwardSweep(), PackedBufferCache())
+                "PackedBuffer, ForwardSweep HB/sherman5",
+                A,
+                b,
+                ForwardSweep(),
+                PackedBufferCache(),
+            )
             test_l1gs_prec(
-                "MatrixView, ForwardSweep HB/sherman5", A, b, ForwardSweep(), MatrixViewCache())
-            test_l1gs_prec("PackedBuffer, BackwardSweep HB/sherman5",
-                A, b, BackwardSweep(), PackedBufferCache())
+                "MatrixView, ForwardSweep HB/sherman5",
+                A,
+                b,
+                ForwardSweep(),
+                MatrixViewCache(),
+            )
             test_l1gs_prec(
-                "MatrixView, BackwardSweep HB/sherman5", A, b, BackwardSweep(), MatrixViewCache())
+                "PackedBuffer, BackwardSweep HB/sherman5",
+                A,
+                b,
+                BackwardSweep(),
+                PackedBufferCache(),
+            )
+            test_l1gs_prec(
+                "MatrixView, BackwardSweep HB/sherman5",
+                A,
+                b,
+                BackwardSweep(),
+                MatrixViewCache(),
+            )
         end
 
         @testset "Symmetric A (HB/bcsstk15)" begin
@@ -432,21 +458,53 @@ end
             A = md.A
             b = ones(size(A, 1))
 
-            test_l1gs_prec("PackedBuffer, ForwardSweep HB/bcsstk15", A, b,
-                ForwardSweep(), PackedBufferCache())
-            test_l1gs_prec("MatrixView,  ForwardSweep HB/bcsstk15", A, b,
-                ForwardSweep(), MatrixViewCache())
+            test_l1gs_prec(
+                "PackedBuffer, ForwardSweep HB/bcsstk15",
+                A,
+                b,
+                ForwardSweep(),
+                PackedBufferCache(),
+            )
+            test_l1gs_prec(
+                "MatrixView,  ForwardSweep HB/bcsstk15",
+                A,
+                b,
+                ForwardSweep(),
+                MatrixViewCache(),
+            )
 
-            test_l1gs_prec("PackedBuffer, BackwardSweep HB/bcsstk15", A, b,
-                BackwardSweep(), PackedBufferCache())
-            test_l1gs_prec("MatrixView,  BackwardSweep HB/bcsstk15", A, b,
-                BackwardSweep(), MatrixViewCache())
+            test_l1gs_prec(
+                "PackedBuffer, BackwardSweep HB/bcsstk15",
+                A,
+                b,
+                BackwardSweep(),
+                PackedBufferCache(),
+            )
+            test_l1gs_prec(
+                "MatrixView,  BackwardSweep HB/bcsstk15",
+                A,
+                b,
+                BackwardSweep(),
+                MatrixViewCache(),
+            )
 
 
-            test_l1gs_prec("PackedBuffer, SymmetricSweep HB/bcsstk15", A, b,
-                SymmetricSweep(), PackedBufferCache(); partsize = 10)
-            test_l1gs_prec("MatrixView,  SymmetricSweep HB/bcsstk15", A, b,
-                SymmetricSweep(), MatrixViewCache(); partsize = 10)
+            test_l1gs_prec(
+                "PackedBuffer, SymmetricSweep HB/bcsstk15",
+                A,
+                b,
+                SymmetricSweep(),
+                PackedBufferCache();
+                partsize = 10,
+            )
+            test_l1gs_prec(
+                "MatrixView,  SymmetricSweep HB/bcsstk15",
+                A,
+                b,
+                SymmetricSweep(),
+                MatrixViewCache();
+                partsize = 10,
+            )
         end
 
     end
