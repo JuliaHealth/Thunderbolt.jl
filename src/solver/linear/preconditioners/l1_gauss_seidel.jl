@@ -176,6 +176,7 @@ function _build_l1prec(
     # Each chunk will be assigned `nparts`, each of size `partsize`.
     # In GPU backend, `nchunks` is the number of blocks and `partsize` is the number of threads per block.
     A = get_data(_A) # for symmetric case
+
     partitioning = _blockpartitioning(builder, A, partsize)
 
     sweep = _make_sweep_plan(sweep, cache_strategy, A, partitioning, isSymA, η)
@@ -379,7 +380,14 @@ struct SymmetricL1GSSweep{LowerOp <: BlockLowerSolveOperator, UpperOp <: BlockUp
 end
 
 get_data(A::AbstractSparseMatrix) = A
-get_data(A::Symmetric{Ti, TA}) where {Ti, TA} = TA(A.data) # restore the full matrix, why ? https://discourse.julialang.org/t/is-there-a-symmetric-sparse-matrix-implementation-in-julia/91333/2
+# Materialize a full sparse matrix from Symmetric storage (which keeps one triangle).
+function get_data(A::Symmetric{T, TA}) where {T, TA <: AbstractSparseMatrix}
+    data = A.data
+    tri = A.uplo == 'U' ? LinearAlgebra.triu(data) : LinearAlgebra.tril(data)
+    diagv = LinearAlgebra.diag(tri)
+    full = tri + transpose(tri) - spdiagm(0 => diagv)
+    return TA(full)
+end
 
 
 _choose_default_device_storage(::AbstractDevice) = MatrixViewCache()
@@ -1172,14 +1180,21 @@ function _pack_strict_upper_rowwise!(
     block_stride = (partsize * (partsize - 1)) ÷ 2
     block_offset = (k - 1) * block_stride
 
-    idx = 1
     for i = start_idx:end_idx
+        local_i = i - start_idx + 1
+        # Row i starts after: sum of upper elements in rows 1..(local_i-1)
+        # = sum_{r=1}^{local_i-1} (partsize - r) = (local_i-1)*partsize - (local_i-1)*local_i/2
+        row_start = (local_i - 1) * partsize - ((local_i - 1) * local_i) ÷ 2
+
         # Scan row i (or column i for symmetric CSC)
         for p = indPtr[i]:(indPtr[i+1]-1)
             j = indices[p]
             if j > i && j <= end_idx  # strictly upper within partition
-                SUbuffer[block_offset+idx] = nzVal[p]
-                idx += 1
+                local_j = j - start_idx + 1
+                # Within row i, element at column j is at offset (local_j - local_i)
+                col_offset = local_j - local_i
+                off_idx = block_offset + row_start + col_offset
+                SUbuffer[off_idx] = nzVal[p]
             end
         end
     end

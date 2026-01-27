@@ -10,6 +10,7 @@ import KernelAbstractions:
 import SparseArrays: getcolptr, getnzval
 import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
+using LinearAlgebra
 import Thunderbolt:
     ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice, default_backend
 using TimerOutputs: @timeit_debug
