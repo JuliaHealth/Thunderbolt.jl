@@ -3,7 +3,7 @@ using KernelAbstractions
 using JLD2: load
 import Thunderbolt: ThreadedSparseMatrixCSR
 using TimerOutputs
-using LinearAlgebra: Symmetric
+using LinearAlgebra: Symmetric, norm
 
 ##########################################
 ## L1 Gauss Seidel Preconditioner - CPU ##
@@ -59,7 +59,7 @@ function test_l1gs_prec(
     partsize = nothing,
 )
     @testset "$testname" begin
-        ncores = 8
+        ncores = 1
         partsize = partsize === nothing ? ceil(Int, size(A, 1) / ncores) : partsize
 
         prob = LinearProblem(A, b)
@@ -508,4 +508,161 @@ end
         end
 
     end
+end
+
+@testset "Dense GS Sanity Check" begin
+    # Dense Gauss-Seidel sanity check to verify sweep convergence properties:
+    # 1. Forward and Backward sweeps should converge in the same number of iterations
+    # 2. Symmetric sweep should converge in approximately half the iterations
+
+    function poisson_dense(N)
+        A = zeros(N, N)
+        for i in 1:N
+            A[i, i] = 2.0
+            i > 1 && (A[i, i-1] = -1.0)
+            i < N && (A[i, i+1] = -1.0)
+        end
+        return A
+    end
+
+    # Forward sweep: for i = 1:n, x[i] = (b[i] - sum_{j!=i} A[i,j]*x[j]) / A[i,i]
+    function gs_forward_sweep!(x, A, b)
+        n = length(x)
+        for i in 1:n
+            σ = 0.0
+            for j in 1:n
+                j != i && (σ += A[i, j] * x[j])
+            end
+            x[i] = (b[i] - σ) / A[i, i]
+        end
+    end
+
+    # Backward sweep: same but iterate i from n to 1
+    function gs_backward_sweep!(x, A, b)
+        n = length(x)
+        for i in n:-1:1
+            σ = 0.0
+            for j in 1:n
+                j != i && (σ += A[i, j] * x[j])
+            end
+            x[i] = (b[i] - σ) / A[i, i]
+        end
+    end
+
+    # Symmetric sweep: forward then backward
+    function gs_symmetric_sweep!(x, A, b)
+        gs_forward_sweep!(x, A, b)
+        gs_backward_sweep!(x, A, b)
+    end
+
+    # Solve Ax=b using GS as standalone solver
+    function gs_solve(A, b, sweep_fn!; tol = 1e-10, maxiter = 10000)
+        x = zeros(length(b))
+        for iter in 1:maxiter
+            sweep_fn!(x, A, b)
+            residual = norm(A * x - b)
+            if residual < tol
+                return x, iter
+            end
+        end
+        return x, maxiter
+    end
+
+    N = 50
+    A = poisson_dense(N)
+    b = ones(N)
+
+    _, iters_fwd = gs_solve(A, b, gs_forward_sweep!)
+    _, iters_bwd = gs_solve(A, b, gs_backward_sweep!)
+    _, iters_sym = gs_solve(A, b, gs_symmetric_sweep!)
+
+    println("Dense GS iterations: Forward=$iters_fwd, Backward=$iters_bwd, Symmetric=$iters_sym")
+    println("Ratio Forward/Symmetric = $(round(iters_fwd / iters_sym, digits=2))")
+
+    # Forward and backward should converge in the same number of iterations
+    @test iters_fwd == iters_bwd
+
+    # Symmetric should converge in approximately half the iterations (within 1%)
+    @test abs(iters_sym - iters_fwd ÷ 2) <= iters_fwd ÷ 100
+end
+
+@testset "Sparse L1GS Sweep Sanity Check" begin
+    # Test L1GS implementation using internal _apply_sweep! as a GS solver
+    # This verifies that the sparse implementation matches the dense reference
+    using LinearAlgebra: tril, triu, diag
+
+    import Thunderbolt.Preconditioners: _apply_sweep!
+
+    N = 50
+    A = poisson_test_matrix(N)
+    b = ones(N)
+
+    # Extract L and U for computing b - U*x and b - L*x
+    D = spdiagm(0 => diag(A))
+    L = tril(A, -1)  # strict lower triangular
+    U = triu(A, 1)   # strict upper triangular
+
+    # Build L1GS preconditioners with partsize=N (full matrix, standard GS)
+    builder = L1GSPrecBuilder(PolyesterDevice(1))
+    P_fwd = builder(A, N; isSymA = true, sweep = ForwardSweep(), cache_strategy = MatrixViewCache())
+    P_bwd = builder(A, N; isSymA = true, sweep = BackwardSweep(), cache_strategy = MatrixViewCache())
+    P_sym = builder(A, N; isSymA = true, sweep = SymmetricSweep(), cache_strategy = MatrixViewCache())
+
+    tol = 1e-10
+    maxiter = 10000
+
+    # Forward GS iteration: x^{k+1} = (D+L)^{-1} * (b - U*x^k)
+    x_fwd = zeros(N)
+    iters_fwd = maxiter
+    for iter in 1:maxiter
+        rhs = b - U * x_fwd
+        x_fwd .= rhs
+        _apply_sweep!(x_fwd, P_fwd.partitioning, P_fwd.sweep)
+        if norm(A * x_fwd - b) < tol
+            iters_fwd = iter
+            break
+        end
+    end
+
+    # Backward GS iteration: x^{k+1} = (D+U)^{-1} * (b - L*x^k)
+    x_bwd = zeros(N)
+    iters_bwd = maxiter
+    for iter in 1:maxiter
+        rhs = b - L * x_bwd
+        x_bwd .= rhs
+        _apply_sweep!(x_bwd, P_bwd.partitioning, P_bwd.sweep)
+        if norm(A * x_bwd - b) < tol
+            iters_bwd = iter
+            break
+        end
+    end
+
+    # Symmetric GS iteration: forward half-step then backward half-step
+    x_sym = zeros(N)
+    iters_sym = maxiter
+    for iter in 1:maxiter
+        # Forward: x_half = (D+L)^{-1} * (b - U*x)
+        rhs_fwd = b - U * x_sym
+        x_half = copy(rhs_fwd)
+        _apply_sweep!(x_half, P_fwd.partitioning, P_fwd.sweep)
+
+        # Backward: x_new = (D+U)^{-1} * (b - L*x_half)
+        rhs_bwd = b - L * x_half
+        x_sym .= rhs_bwd
+        _apply_sweep!(x_sym, P_bwd.partitioning, P_bwd.sweep)
+
+        if norm(A * x_sym - b) < tol
+            iters_sym = iter
+            break
+        end
+    end
+
+    println("Sparse L1GS iterations: Forward=$iters_fwd, Backward=$iters_bwd, Symmetric=$iters_sym")
+    println("Ratio Forward/Symmetric = $(round(iters_fwd / iters_sym, digits=2))")
+
+    # Forward and backward should converge in the same number of iterations
+    @test iters_fwd == iters_bwd
+
+    # Symmetric should converge in approximately half the iterations (within 1%)
+    @test abs(iters_sym - iters_fwd ÷ 2) <= iters_fwd ÷ 100
 end

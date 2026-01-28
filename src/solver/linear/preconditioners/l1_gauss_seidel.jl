@@ -144,34 +144,15 @@ end
 ## Preconditioner builder ##
 function build_l1prec(
     builder::L1GSPrecBuilder,
-    A::MatrixType,
-    partsize::Ti,
-    isSymA::Bool,
-    η,
-    sweep::AbstractSweep,
-    cache_strategy::AbstractCacheStrategy,
-) where {Ti <: Integer, MatrixType}
-    partsize == 0 && error("partsize must be greater than 0")
-
-    # TODO: do we need this validation (presumably symmetric sweep only works for symmetric matrices)?
-    if sweep isa SymmetricSweep && !isSymA && !(A isa Symmetric)
-        error(
-            "SymmetricSweep requires a symmetric matrix. If `A` is symmetric, then either pass isSymA=true or use Symmetric(A). If not symmetric, consider using `ForwardSweep` or `BackwardSweep` instead.",
-        )
-    end
-
-    _build_l1prec(builder, A, partsize, isSymA, η, sweep, cache_strategy)
-end
-
-function _build_l1prec(
-    builder::L1GSPrecBuilder,
     _A::MatrixType,
     partsize::Ti,
     isSymA::Bool,
     η,
     sweep::AbstractSweep,
     cache_strategy::AbstractCacheStrategy,
-) where {Ti <: Integer, MatrixType}
+    ) where {Ti <: Integer, MatrixType}
+    
+    partsize == 0 && error("partsize must be greater than 0")
     # `nchunks` is either CPU cores or GPU blocks.
     # Each chunk will be assigned `nparts`, each of size `partsize`.
     # In GPU backend, `nchunks` is the number of blocks and `partsize` is the number of threads per block.
@@ -650,8 +631,7 @@ function _apply_sweep!(y, P::L1GSPreconditioner)
     return nothing
 end
 
-# this will dispatch backward or forward based on sweep plan type
-function _apply_sweep!(y, partitioning, sweep_plan::AbstractL1GSSweepPlan)
+function _apply_sweep!(y, partitioning, sweep_plan::TS) where {TS <: AbstractL1GSSweepPlan}
     @timeit_debug "_apply_sweep!" begin
         (; partsize, nparts, nchunks, chunksize, backend) = partitioning
         D_Dl1 = sweep_plan.op.D_DL1
@@ -790,10 +770,10 @@ end
 # Kernel that computes D_Dl1 only
 @kernel function _compute_D_Dl1_kernel!(
     D_Dl1,
-    A,
+    @Const(A),
     symA,
     format_A,
-    diag,
+    @Const(diag),
     partsize::Ti,
     nparts::Ti,
     nchunks::Ti,
@@ -826,10 +806,10 @@ end
 @kernel function _precompute_and_pack_kernel!(
     D_Dl1,
     cache,  # PackedStrictLower or PackedStrictUpper
-    A,
+    @Const(A),
     symA,
     format_A,
-    diag,
+    @Const(diag),
     partsize::Ti,
     nparts::Ti,
     nchunks::Ti,
@@ -864,8 +844,8 @@ end
 
 @kernel function _apply_sweep_kernel!(
     y,
-    cache::AbstractCache,
-    D_Dl1,
+    @Const(cache),
+    @Const(D_Dl1),
     size_A::Ti,
     partsize::Ti,
     nparts::Ti,
