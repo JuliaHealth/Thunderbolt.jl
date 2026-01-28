@@ -150,8 +150,8 @@ function build_l1prec(
     η,
     sweep::AbstractSweep,
     cache_strategy::AbstractCacheStrategy,
-    ) where {Ti <: Integer, MatrixType}
-    
+) where {Ti <: Integer, MatrixType}
+
     partsize == 0 && error("partsize must be greater than 0")
     # `nchunks` is either CPU cores or GPU blocks.
     # Each chunk will be assigned `nparts`, each of size `partsize`.
