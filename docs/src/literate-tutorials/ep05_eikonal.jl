@@ -63,12 +63,12 @@ end
 
 # We start by generating a tetrahedral mesh, as the fast iterative method solver 
 # accepts tetrahedral meshes only.
-heart_mesh = generate_ideal_lv_mesh(11, 2, 5;
+heart_mesh = generate_ideal_lv_mesh(12, 2, 5;
                  inner_radius = 0.7,
                  outer_radius = 1.0,
-                 longitudinal_upper = 0.2,
-                 apex_inner = 1.3,
-                 apex_outer = 1.5
+                 longitudinal_upper = 0.0,
+                 apex_inner = 0.7,
+                 apex_outer = 1.0
              ) |> Thunderbolt.hexahedralize |> Thunderbolt.tetrahedralize;
 
 # !!! tip
@@ -95,7 +95,8 @@ microstructure = OrthotropicMicrostructureModel(
 κᵣ = 0.019 * 0.24 / (0.019 + 0.24)
 diffusion_tensor_field = SpectralTensorCoefficient(
     microstructure,
-    ConstantCoefficient(SVector(κ₁, κᵣ, κᵣ))
+    # ConstantCoefficient(SVector(κ₁, κᵣ, κᵣ))
+    ConstantCoefficient(SVector(κ₁, κ₁, κ₁))
 )
 # Now we choose our *inner* cell model, used to compute the ionic currents, since 
 # the eikonal-based foot current acts as a wrapper around ionic cell models.
@@ -106,7 +107,7 @@ heart_model = MonodomainModel(
     ConstantCoefficient(1.0),
     ConstantCoefficient(1.0),
     diffusion_tensor_field,
-    protocol,
+    NoStimulationProtocol(),
     cellmodel,
     :φₘ, :s
 )
@@ -140,9 +141,9 @@ Eikonal.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
 #     in its internals. It was observed that forcing bounds checks results in an
 #     enormous amount of dynamic allocations that can easily result in running out of memory.
 
-
+nodal_timings = heart_odeform.ode_function.prob_func.activation_timings
 VTKGridFile(("nein-activation-map-debug.vtu"), heart_mesh.grid) do vtk              # hide
-    vtk.vtk["timings"] = heart_odeform.ode_function.prob_func.activation_timings    # hide
+    vtk.vtk["timings"] = nodal_timings    # hide
 end                                                                                 # hide
 
 dt₀ = 0.01
@@ -158,7 +159,7 @@ Thunderbolt.reorder_nodal!(dh)
 
 io = ParaViewWriter("ep05_eikonal")
 
-φₘfield = copy(heart_odeform.ode_function.prob_func.activation_timings)         # hide
+φₘfield = copy(nodal_timings)           # hide
 for t ∈ 0.0:dtvis:Tₘₐₓ                                                          # hide
     for i in 1:length(φₘfield)                                                  # hide
         φₘfield[i] = sim.u[i](t)[1]                                             # hide
@@ -169,9 +170,11 @@ for t ∈ 0.0:dtvis:Tₘₐₓ                                                  
 end                                                                             # hide
 
 
-## test the result                       #src
-using Test                               #src
-@test norm(u_max[end]) ≈ 0.254452645     #src
+## test the result                                                      #src
+using Test                                                              #src
+@test maximum(nodal_timings) ≈ 0.3/κ₁                                   #src
+@test count(≈(0.3/κ₁), nodal_timings) == (5+1)*12+1                     #src
+@test count(≈(0.3/κ₁*cosd(90/12)), nodal_timings) == (5+1)*12           #src
 
 
 #md # ## References
