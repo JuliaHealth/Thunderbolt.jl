@@ -1,9 +1,8 @@
 using MatrixDepot, LinearSolve, SparseArrays, SparseMatricesCSR
 using KernelAbstractions
-using JLD2: load
 import Thunderbolt: ThreadedSparseMatrixCSR
 using TimerOutputs
-using LinearAlgebra: Symmetric, norm, tril, triu, diag
+using LinearAlgebra: Symmetric, norm, tril, triu, diag, I
 import Thunderbolt.Preconditioners: _apply_sweep!
 
 ##########################################
@@ -57,10 +56,12 @@ function test_l1gs_prec(
     b,
     sweep = ForwardSweep(),
     cache_strategy = PackedBufferCache();
+    ncores = 20,
     partsize = nothing,
+    isSymA = false,
 )
     @testset "$testname" begin
-        ncores = 8
+        ncores = ncores
         partsize = partsize === nothing ? ceil(Int, size(A, 1) / ncores) : partsize
 
         prob = LinearProblem(A, b)
@@ -72,6 +73,7 @@ function test_l1gs_prec(
             partsize;
             sweep = sweep,
             cache_strategy = cache_strategy,
+            isSymA = isSymA,
         )
 
         println("\n" * "="^60)
@@ -91,6 +93,7 @@ function test_l1gs_prec(
         println("Unprec. no. iters: $(sol_unprec.iters), time: $(sol_unprec.stats.timer)")
         println("Prec. no. iters: $(sol_prec.iters), time: $(sol_prec.stats.timer)")
         @test isapprox(A * sol_prec.u, b, rtol = 1e-1, atol = 1e-1)
+        @test sol_prec.iters <= sol_unprec.iters
     end
 end
 
@@ -455,55 +458,65 @@ end
         end
 
         @testset "Symmetric A (HB/bcsstk15)" begin
-            md = mdopen("HB/bcsstk15")
-            A = md.A
+            # md = mdopen("HB/bcsstk15")
+            # A = md.A
+            A = matrixdepot("wathen", 120)
             b = ones(size(A, 1))
 
             test_l1gs_prec(
-                "PackedBuffer, ForwardSweep HB/bcsstk15",
+                "PackedBuffer, ForwardSweep wathen",
                 A,
                 b,
                 ForwardSweep(),
-                PackedBufferCache(),
+                PackedBufferCache();
+                isSymA = true,
+                partsize = 10,
             )
             test_l1gs_prec(
-                "MatrixView,  ForwardSweep HB/bcsstk15",
+                "MatrixView,  ForwardSweep wathen",
                 A,
                 b,
                 ForwardSweep(),
-                MatrixViewCache(),
+                MatrixViewCache();
+                isSymA = true,
+                partsize = 10,
             )
 
             test_l1gs_prec(
-                "PackedBuffer, BackwardSweep HB/bcsstk15",
+                "PackedBuffer, BackwardSweep wathen",
                 A,
                 b,
                 BackwardSweep(),
-                PackedBufferCache(),
+                PackedBufferCache();
+                isSymA = true,
+                partsize = 10,
             )
             test_l1gs_prec(
-                "MatrixView,  BackwardSweep HB/bcsstk15",
+                "MatrixView,  BackwardSweep wathen",
                 A,
                 b,
                 BackwardSweep(),
-                MatrixViewCache(),
+                MatrixViewCache();
+                isSymA = true,
+                partsize = 10,
             )
 
-
             test_l1gs_prec(
-                "PackedBuffer, SymmetricSweep HB/bcsstk15",
+                "PackedBuffer, SymmetricSweep wathen",
                 A,
                 b,
                 SymmetricSweep(),
                 PackedBufferCache();
+                isSymA = true,
                 partsize = 10,
             )
             test_l1gs_prec(
-                "MatrixView,  SymmetricSweep HB/bcsstk15",
+                "MatrixView,  SymmetricSweep wathen",
                 A,
                 b,
                 SymmetricSweep(),
                 MatrixViewCache();
+                isSymA = true,
                 partsize = 10,
             )
         end
