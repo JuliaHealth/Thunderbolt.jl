@@ -59,13 +59,22 @@ function test_l1gs_prec(
     ncores = 20,
     partsize = nothing,
     isSymA = false,
+    solver = :gmres,
 )
     @testset "$testname" begin
         ncores = ncores
         partsize = partsize === nothing ? ceil(Int, size(A, 1) / ncores) : partsize
 
         prob = LinearProblem(A, b)
-        sol_unprec = solve(prob, KrylovJL_GMRES())
+
+        # Choose solver and preconditioning style
+        if solver == :cg
+            unprec_solver = KrylovJL_CG()
+        else
+            unprec_solver = KrylovJL_GMRES()
+        end
+
+        sol_unprec = solve(prob, unprec_solver)
         @test isapprox(A * sol_unprec.u, b, rtol = 1e-1, atol = 1e-1)
         TimerOutputs.reset_timer!()
         P = L1GSPrecBuilder(PolyesterDevice(ncores))(
@@ -73,7 +82,7 @@ function test_l1gs_prec(
             partsize;
             sweep = sweep,
             cache_strategy = cache_strategy,
-            isSymA = isSymA,
+            #isSymA = isSymA
         )
 
         println("\n" * "="^60)
@@ -83,7 +92,12 @@ function test_l1gs_prec(
 
         # Reset timer before testing ldiv!
         TimerOutputs.reset_timer!()
-        sol_prec = solve(prob, KrylovJL_GMRES(P); Pr = P)
+
+        if solver == :cg
+            sol_prec = solve(prob, KrylovJL_CG(); Pl = P)
+        else
+            sol_prec = solve(prob, KrylovJL_GMRES(); Pl = P)
+        end
 
         println("\n" * "="^60)
         println("ldiv! Timings during solve:")
@@ -457,70 +471,76 @@ end
             )
         end
 
-        @testset "Symmetric A (HB/bcsstk15)" begin
-            # md = mdopen("HB/bcsstk15")
-            # A = md.A
-            A = matrixdepot("wathen", 120)
-            b = ones(size(A, 1))
+        @testset "Symmetric A" begin
+            @testset "Wathen Matrix" begin
+                # md = mdopen("HB/bcsstk15")
+                # A = md.A
+                A = matrixdepot("wathen", 120)
+                b = ones(size(A, 1))
 
-            test_l1gs_prec(
-                "PackedBuffer, ForwardSweep wathen",
-                A,
-                b,
-                ForwardSweep(),
-                PackedBufferCache();
-                isSymA = true,
-                partsize = 10,
-            )
-            test_l1gs_prec(
-                "MatrixView,  ForwardSweep wathen",
-                A,
-                b,
-                ForwardSweep(),
-                MatrixViewCache();
-                isSymA = true,
-                partsize = 10,
-            )
+                test_l1gs_prec(
+                    "PackedBuffer, ForwardSweep wathen",
+                    A,
+                    b,
+                    ForwardSweep(),
+                    PackedBufferCache();
+                    isSymA = true,
+                    partsize = 10,
+                )
+                test_l1gs_prec(
+                    "MatrixView,  ForwardSweep wathen",
+                    A,
+                    b,
+                    ForwardSweep(),
+                    MatrixViewCache();
+                    isSymA = true,
+                    partsize = 10,
+                    solver = :cg,
+                )
 
-            test_l1gs_prec(
-                "PackedBuffer, BackwardSweep wathen",
-                A,
-                b,
-                BackwardSweep(),
-                PackedBufferCache();
-                isSymA = true,
-                partsize = 10,
-            )
-            test_l1gs_prec(
-                "MatrixView,  BackwardSweep wathen",
-                A,
-                b,
-                BackwardSweep(),
-                MatrixViewCache();
-                isSymA = true,
-                partsize = 10,
-            )
+                test_l1gs_prec(
+                    "PackedBuffer, BackwardSweep wathen",
+                    A,
+                    b,
+                    BackwardSweep(),
+                    PackedBufferCache();
+                    isSymA = true,
+                    partsize = 10,
+                    solver = :cg,
+                )
+                test_l1gs_prec(
+                    "MatrixView,  BackwardSweep wathen",
+                    A,
+                    b,
+                    BackwardSweep(),
+                    MatrixViewCache();
+                    isSymA = true,
+                    partsize = 10,
+                    solver = :cg,
+                )
 
-            test_l1gs_prec(
-                "PackedBuffer, SymmetricSweep wathen",
-                A,
-                b,
-                SymmetricSweep(),
-                PackedBufferCache();
-                isSymA = true,
-                partsize = 10,
-            )
-            test_l1gs_prec(
-                "MatrixView,  SymmetricSweep wathen",
-                A,
-                b,
-                SymmetricSweep(),
-                MatrixViewCache();
-                isSymA = true,
-                partsize = 10,
-            )
+                test_l1gs_prec(
+                    "PackedBuffer, SymmetricSweep wathen",
+                    A,
+                    b,
+                    SymmetricSweep(),
+                    PackedBufferCache();
+                    isSymA = true,
+                    partsize = 10,
+                    solver = :cg,
+                )
+                test_l1gs_prec(
+                    "MatrixView,  SymmetricSweep wathen",
+                    A,
+                    b,
+                    SymmetricSweep(),
+                    MatrixViewCache();
+                    isSymA = true,
+                    partsize = 10,
+                    solver = :cg,
+                )
+            end
         end
-
     end
     @testset "Sanity Checks" begin
         # Additional sanity checks can be added here

@@ -668,13 +668,15 @@ function _apply_sweep!(y, partitioning, sweep::SymmetricL1GSSweep)
 
         kernel = _apply_sweep_kernel!(backend, chunksize, ndrange)
 
-        # Forward sweep
+        # Forward sweep: y = (D_Dl1 + L)⁻¹ y
         @timeit_debug "forward kernel" begin
             kernel(y, L, D_Dl1, size_A, partsize, nparts, nchunks, chunksize; ndrange = ndrange)
             synchronize(backend)
         end
 
-        # Backward sweep
+        @timeit_debug "diagonal scaling" y .= D_Dl1 .* y
+
+        # Backward sweep: y = (D_Dl1 + U)⁻¹ y
         @timeit_debug "backward kernel" begin
             kernel(y, U, D_Dl1, size_A, partsize, nparts, nchunks, chunksize; ndrange = ndrange)
             synchronize(backend)
