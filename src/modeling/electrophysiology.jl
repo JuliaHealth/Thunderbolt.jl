@@ -267,7 +267,9 @@ end
 
 ReactionEikonalSplit(model) = ReactionEikonalSplit(model, nothing)
 
-
+"""
+Wrapper around ionic cell models that adds foot current according to [NeicCamposPrassl:2017:ECE](@citet)
+"""
 @kwdef struct StimulatedCellModel{TC,OffestT,T}<:AbstractIonicModel
     cell_model::TC
     stim_offset::OffestT = 0.0

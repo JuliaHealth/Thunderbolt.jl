@@ -1,7 +1,7 @@
 @doc raw"""
-    TransientDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
+    EikonalModel(DiffusivityCoefficientType)
 
-Model formulated as ``\partial_t u = \nabla \cdot \kappa(x) \nabla u + f``
+Model formulated as ``\sqrt{{\nabla t_a}^T \kappa(x) \nabla t_a} = 1``
 """
 struct EikonalModel{DiffusivityCoefficientType}
     κ::DiffusivityCoefficientType

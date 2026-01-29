@@ -172,7 +172,10 @@ function semidiscretize(
 
     return semidiscrete_ode
 end
-
+"""
+A wrapper function containing the cell model dynamics function, as a pointwise ODE,
+and the eiknal function that needs to be solved once before solving the cell dynamics part.
+"""
 struct EikonalCoupledODEFunction{ODEFunctionT, EikonalFunctionT}
     ode_function::ODEFunctionT
     eikonal_function::EikonalFunctionT
@@ -192,7 +195,9 @@ function semidiscretize(
         ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
     )
 
-    eikonal_function = semidiscretize(eikonal_model, discretizations[2], mesh)
+    activation_points = get_nodes(discretizations[2].activation_protocol, mesh, split.cs)
+
+    eikonal_function = semidiscretize(eikonal_model, discretizations[2], activation_points, mesh)
 
     ndofsφ = solution_size(eikonal_function)
     single_prob = OrdinaryDiffEqCore.ODEProblem(
