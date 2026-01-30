@@ -59,7 +59,7 @@ function test_l1gs_prec(
     ncores = 20,
     partsize = nothing,
     isSymA = false,
-    solver = :gmres,
+    solver = KrylovJL_GMRES(),
 )
     @testset "$testname" begin
         ncores = ncores
@@ -67,14 +67,7 @@ function test_l1gs_prec(
 
         prob = LinearProblem(A, b)
 
-        # Choose solver and preconditioning style
-        if solver == :cg
-            unprec_solver = KrylovJL_CG()
-        else
-            unprec_solver = KrylovJL_GMRES()
-        end
-
-        sol_unprec = solve(prob, unprec_solver)
+        sol_unprec = solve(prob, solver)
         @test isapprox(A * sol_unprec.u, b, rtol = 1e-1, atol = 1e-1)
         TimerOutputs.reset_timer!()
         P = L1GSPrecBuilder(PolyesterDevice(ncores))(
@@ -82,7 +75,7 @@ function test_l1gs_prec(
             partsize;
             sweep = sweep,
             cache_strategy = cache_strategy,
-            #isSymA = isSymA
+            isSymA = isSymA,
         )
 
         println("\n" * "="^60)
@@ -93,11 +86,7 @@ function test_l1gs_prec(
         # Reset timer before testing ldiv!
         TimerOutputs.reset_timer!()
 
-        if solver == :cg
-            sol_prec = solve(prob, KrylovJL_CG(); Pl = P)
-        else
-            sol_prec = solve(prob, KrylovJL_GMRES(); Pl = P)
-        end
+        sol_prec = solve(prob, solver; Pl = P)
 
         println("\n" * "="^60)
         println("ldiv! Timings during solve:")
@@ -495,7 +484,7 @@ end
                     MatrixViewCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = :cg,
+                    solver = KrylovJL_CG(),
                 )
 
                 test_l1gs_prec(
@@ -506,7 +495,7 @@ end
                     PackedBufferCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = :cg,
+                    solver = KrylovJL_CG(),
                 )
                 test_l1gs_prec(
                     "MatrixView,  BackwardSweep wathen",
@@ -516,7 +505,7 @@ end
                     MatrixViewCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = :cg,
+                    solver = KrylovJL_CG(),
                 )
 
                 test_l1gs_prec(
@@ -527,7 +516,7 @@ end
                     PackedBufferCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = :cg,
+                    solver = KrylovJL_CG(),
                 )
                 test_l1gs_prec(
                     "MatrixView,  SymmetricSweep wathen",
@@ -537,7 +526,7 @@ end
                     MatrixViewCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = :cg,
+                    solver = KrylovJL_CG(),
                 )
             end
         end
