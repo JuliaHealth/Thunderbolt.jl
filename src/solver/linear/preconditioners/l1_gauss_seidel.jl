@@ -9,14 +9,89 @@
 ################
 
 abstract type AbstractSweep end
-struct ForwardSweep <: AbstractSweep end # forward sweep -> lower triangular
-struct BackwardSweep <: AbstractSweep end # backward sweep -> upper triangular
-struct SymmetricSweep <: AbstractSweep end # symmetric sweep -> both lower and upper triangular
 
-# FIXME: Is there better naming alternatives for this?
+@doc raw"""
+    ForwardSweep <: AbstractSweep
+
+Forward sweep using lower triangular part: $M = D + L$
+"""
+struct ForwardSweep <: AbstractSweep end
+
+@doc raw"""
+    BackwardSweep <: AbstractSweep
+
+Backward sweep using upper triangular part: $M = D + U$
+"""
+struct BackwardSweep <: AbstractSweep end
+
+@doc raw"""
+    SymmetricSweep <: AbstractSweep
+
+Symmetric sweep combining forward and backward: $M = (D + L) D^{-1} (D + U)$ [saad2003iterative](@ref).
+
+!!! note
+    It is essential to clarify the distinction between using Symmetric Gauss-Seidel (SGS) as a smoother versus a preconditioner.
+    While SGS always involves a combination of forward and backward sweeps,
+    the implementation differs subtly depending on the application.
+
+    For a symmetric matrix, we define $A := L + D + L^{T}$. For the linear system $Ax = b$, the iteration matrix $G$ satisfies:
+    ```math
+        x^{(k+1)} = G x^{(k)} + (I - G) A^{-1} b
+    ```
+
+    Consequently, we have the following formulations:
+
+    #### As a Smoother:
+
+    **The Forward Sweep**:
+    ```math
+        (D + L)x^{(k+1/2)} = b - L^T x^{(k)}
+    ```
+
+    **The Backward Sweep**:
+    ```math
+        (D + L^T)x^{(k+1)} = b - L x^{(k+1/2)}
+    ```
+
+    **The Combined Iteration Matrix**:
+    ```math
+        G_{SGS} = (D + L^T)^{-1} L (D + L)^{-1} L^T \rightarrow G_{SGS} = G_b G_f\\
+        x^{(k+1)} = G_{SGS} x^{(k)} + (I - G_{SGS}) A^{-1} b
+    ```
+
+    #### As a Preconditioner:
+    Here, we are not directly solving the system $Ax = b$, but rather solve for a preconditioned residual $z$.
+    ```math
+        r_k = b - Ax_k \\
+        M z_k = r_k \\
+    ```
+    Furthermore, the relation between the preconditioner $M$ and the iteration matrix $G$ is given by:
+    ```math
+        G = I - M^{-1} A
+    ```
+    By substituting in the previous equation with $G_{SGS} = G_b G_f$ (defined in the smoother section) and solving for $M$, we obtain:
+    ```math
+        M_{SGS} = (D + L) D^{-1} (D + L^T)
+    ```
+"""
+struct SymmetricSweep <: AbstractSweep end
+
+
 abstract type AbstractCacheStrategy end
-struct PackedBufferCache <: AbstractCacheStrategy end # store lower/upper triangular parts in a vector buffer -> efficient for small partitions (e.g. GPU)
-struct MatrixViewCache <: AbstractCacheStrategy end # store a sparse triangular matrix view -> efficient for large partitions (e.g. CPU)
+
+"""
+    PackedBufferCache <: AbstractCacheStrategy
+
+Store the to-be-applied sweeps in a packed dense buffer. Efficient for small partitions (e.g., GPU).
+"""
+struct PackedBufferCache <: AbstractCacheStrategy end
+
+"""
+    MatrixViewCache <: AbstractCacheStrategy
+
+Store the to-be-applied sweeps in a matrix view. Efficient for large partitions (CPU).
+"""
+struct MatrixViewCache <: AbstractCacheStrategy end
 
 """
     BlockPartitioning{Ti<:Integer, Backend}
@@ -45,7 +120,7 @@ end
 abstract type AbstractL1GSSweepPlan end
 
 @doc raw"""
-    L1GSPreconditioner{Partitioning, VectorType}
+    L1GSPreconditioner{Partitioning, SweepPlanType}
 
 The ℓ₁ Gauss–Seidel preconditioner is a robust and parallel-friendly preconditioner for sparse matrices.
 
@@ -55,13 +130,13 @@ The L1-GS preconditioner is constructed by dividing the matrix into diagonal blo
 - Let Ωₖ denote the block with index `k`.
 - For each Ωₖ, we define the following sets:
     - $ Ωⁱ := \{j ∈ Ωₖ : i ∈ Ωₖ\} $ → the set of columns in the diagonal block for row i
-    - $ Ωⁱₒ := \{j ∉ Ωₖ : i ∈ Ωₖ\} $ →  the remaining “off-diagonal” columns in row i
+    - $ Ωⁱₒ := \{j ∉ Ωₖ : i ∈ Ωₖ\} $ →  the remaining "off-diagonal" columns in row i
 
 The preconditioner matrix $M_{ℓ_1}$  is defined as:
 ```math
 M_{ℓ_1GS} = M_{HGS} + D^{ℓ_1} \\
 ```
-Where $D^{ℓ_1}$ is a diagonal matrix with entries: $d_{ii}^{ℓ_1} = \sum_{j ∈ Ωⁱₒ} |a_{ij}|$, and $M_{HGS}$ is obtained when the diagonal partitions are chosen to be the Gauss–Seidel sweeps on $ A_{kk} $
+Where $D^{ℓ_1}$ is a diagonal matrix with entries: $d_{ii}^{ℓ_1} = \sum_{j ∈ Ωⁱₒ} |a_{ij}|$, and $M_{HGS}$ is obtained when the diagonal partitions are chosen to be the Gauss–Seidel sweeps on $A_{kk}$
 However, we use another convergant variant, which takes adavantage of the local estimation of θ ( $a_{ii} >= θ * d_{ii}$):
 ```math
 M_{ℓ_1GS*} = M_{HGS} + D^{ℓ_1*}, \quad \text{where} \quad d_{ii}^{ℓ_1*} = \begin{cases} 0, & \text{if } a_{ii} \geq \eta d_{ii}^{ℓ_1}; \\ d_{ii}^{ℓ_1}/2, & \text{otherwise.} \end{cases}
@@ -69,36 +144,35 @@ M_{ℓ_1GS*} = M_{HGS} + D^{ℓ_1*}, \quad \text{where} \quad d_{ii}^{ℓ_1*} = 
 
 # Fields
 - `partitioning`: Encapsulates partitioning data (e.g. nparts, partsize, backend).
-- `D_Dl1`: $D+D^{ℓ_1}$.
-- `SLbuffer`: Strictly lower triangular part of all diagonal blocks stacked in a vector.
-
+- `sweep`: The sweep plan containing the cache and diagonal data ($D + D^{ℓ_1}$).
 
 # Reference
 [Baker, A. H., Falgout, R. D., Kolev, T. V., & Yang, U. M. (2011).
 *Multigrid Smoothers for Ultraparallel Computing*,
 SIAM J. Sci. Comput., 33(5), 2864–2887.](@cite BakFalKolYan:2011:MSU)
 
-!!! note
-    For now $M_{HGS}$ applies only a **forward** sweep of the Gauss–Seidel method, which is a lower triangular matrix.
-    The interface will be extended in future versions to allow for backward and symmetric sweeps.
-
 # Example
 ```julia
 builder = L1GSPrecBuilder(PolyesterDevice(4))
-N = 128*16
+N = 128 * 16
 A = spdiagm(0 => 2 * ones(N), -1 => -ones(N-1), 1 => -ones(N-1))
 partsize = 16
+
+# Basic usage
 prec = builder(A, partsize)
-# NOTES:
-# 1. for symmetric A, that's not of type `Symmetric`, or `SparseMatrixCSR` (i.e. in CSR format), then it's recommended to set `isSymA=true` for better performance `prec = builder(A, partsize; isSymA=true)`.
-# 2. for any user-defined `η` value, use `prec = builder(A, partsize; η=1.2)`.
+
+# With options
+prec = builder(A, partsize;
+    isSymA = true,              # set true for symmetric matrices (better performance)
+    η = 1.5,                    # threshold parameter
+    sweep = SymmetricSweep(),   # ForwardSweep(), BackwardSweep(), or SymmetricSweep()
+    cache_strategy = MatrixViewCache()  # or PackedBufferCache() for GPU
+)
 ```
 """
 struct L1GSPreconditioner{Partitioning, SweepPlanType <: AbstractL1GSSweepPlan}
     partitioning::Partitioning
     sweep::SweepPlanType
-    # D_Dl1::VectorType # D + Dˡ
-    # sweepstorage::SweepStorageType # Encapsulates sweep direction and storage strategy
 end
 
 """
