@@ -4,6 +4,7 @@ module MTKModels
 import ModelingToolkit as MTK
 # import ModelingToolkit: t_no_units as t
 using ModelingToolkit
+using SciCompDSL: @mtkmodel
 
 @independent_variables t
 

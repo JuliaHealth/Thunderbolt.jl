@@ -229,20 +229,20 @@ end
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.ArrayLayouts.LayoutVector) = mul(A, v)
 *(
     A::ThreadedSparseMatrixCSR,
-    v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 1, D, Q, V},
+    v::DynamicQuantities.QuantityArray{T, 1, D, Q, V},
 ) where {
     T,
-    D <: ModelingToolkit.DynamicQuantities.AbstractDimensions,
-    Q <: ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D},
+    D <: DynamicQuantities.AbstractDimensions,
+    Q <: DynamicQuantities.UnionAbstractQuantity{T, D},
     V <: AbstractVector{T},
 } = mul(A, v)
 *(
     A::ThreadedSparseMatrixCSR,
-    v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 2, D, Q, V},
+    v::DynamicQuantities.QuantityArray{T, 2, D, Q, V},
 ) where {
     T,
-    D <: ModelingToolkit.DynamicQuantities.AbstractDimensions,
-    Q <: ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D},
+    D <: DynamicQuantities.AbstractDimensions,
+    Q <: DynamicQuantities.UnionAbstractQuantity{T, D},
     V <: AbstractMatrix{T},
 } = mul(A, v)
 

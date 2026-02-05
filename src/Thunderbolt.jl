@@ -15,6 +15,10 @@ using SparseMatricesCSR, LinearAlgebra
 using OrderedCollections: OrderedDict, OrderedSet
 using BlockArrays, SparseArrays, StaticArrays
 
+import DynamicQuantities
+import JumpProcesses
+import Symbolics
+
 using JLD2: jldopen
 import WriteVTK
 import ReadVTK
