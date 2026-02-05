@@ -4,6 +4,7 @@ using Thunderbolt
 using LinearSolve
 using KernelAbstractions
 using SparseMatricesCSR
+using UnPack
 
 import SparseArrays: SparseMatrixCSC, AbstractSparseMatrix
 
@@ -27,7 +28,6 @@ import CUDA:
     cudaconvert
 
 import Thunderbolt:
-    UnPack.@unpack,
     SimpleMesh,
     SparseMatrixCSR,
     SparseMatrixCSC,
