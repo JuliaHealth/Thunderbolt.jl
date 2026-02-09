@@ -70,13 +70,22 @@ function test_l1gs_prec(
         sol_unprec = solve(prob, solver)
         @test isapprox(A * sol_unprec.u, b, rtol = 1e-1, atol = 1e-1)
         TimerOutputs.reset_timer!()
-        P = L1GSPrecBuilder(PolyesterDevice(ncores))(
-            A,
-            partsize;
-            sweep = sweep,
-            cache_strategy = cache_strategy,
-            isSymA = isSymA,
-        )
+        P = if A isa Symmetric
+            L1GSPrecBuilder(PolyesterDevice(ncores))(
+                A,
+                partsize;
+                sweep = sweep,
+                cache_strategy = cache_strategy,
+            )
+        else
+            L1GSPrecBuilder(PolyesterDevice(ncores))(
+                A,
+                partsize;
+                sweep = sweep,
+                cache_strategy = cache_strategy,
+                isSymA = isSymA,
+            )
+        end
 
         println("\n" * "="^60)
         println("Preconditioner Construction Timings:")
@@ -344,7 +353,7 @@ end
             D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])
             SLbuffer_exp = Float64.([-1, -1, -1, -1])
             builder = L1GSPrecBuilder(PolyesterDevice(2))
-            P = builder(A, 2; η = η, cache_strategy = PackedBufferCache())
+            P = builder(A, 2; η = η, sweep = ForwardSweep(), cache_strategy = PackedBufferCache())
             @test P.sweep.op.D_DL1 ≈ D_Dl1_exp
             @test P.sweep.op.L.SLbuffer ≈ SLbuffer_exp
 
@@ -354,7 +363,7 @@ end
             # D_Dl1 = a_ii + dl1star_ii = 2 + 0.5 = 2.5
             η = 3.0
             D_Dl1_exp = Float64.([2.0, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5])
-            P = builder(A, 2; η = η, cache_strategy = PackedBufferCache())
+            P = builder(A, 2; η = η, sweep = ForwardSweep(), cache_strategy = PackedBufferCache())
             @test P.sweep.op.D_DL1 ≈ D_Dl1_exp
             @test P.sweep.op.L.SLbuffer ≈ SLbuffer_exp
 
@@ -364,14 +373,14 @@ end
             # D_Dl1 = a_ii = 2
             η = 1.0
             D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])
-            P = builder(A, 2; η = η, cache_strategy = PackedBufferCache())
+            P = builder(A, 2; η = η, sweep = ForwardSweep(), cache_strategy = PackedBufferCache())
             @test P.sweep.op.D_DL1 ≈ D_Dl1_exp
             @test P.sweep.op.L.SLbuffer ≈ SLbuffer_exp
 
             # Verify preconditioner still works correctly with different η
             y_exp = [0, 1 / 2, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
             η = 2.0
-            P = builder(A, 2; η = η, cache_strategy = PackedBufferCache())
+            P = builder(A, 2; η = η, sweep = ForwardSweep(), cache_strategy = PackedBufferCache())
             y = P \ x
             @test y ≈ y_exp
         end
@@ -418,7 +427,7 @@ end
             D_Dl1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: all rows satisfy a_ii >= η*dl1_ii
             SLbuffer_exp = Float64.([-1, 0, -1, -1, 0, -1, -1, 0, -1])
             builder = L1GSPrecBuilder(PolyesterDevice(ncores))
-            P = builder(A, partsize; cache_strategy = PackedBufferCache())
+            P = builder(A, partsize; sweep = ForwardSweep(), cache_strategy = PackedBufferCache())
             @test P.sweep.op.D_DL1 ≈ D_Dl1_exp
             @test P.sweep.op.L.SLbuffer ≈ SLbuffer_exp
         end
@@ -475,6 +484,7 @@ end
                     PackedBufferCache();
                     isSymA = true,
                     partsize = 10,
+                    solver = KrylovJL_CG()
                 )
                 test_l1gs_prec(
                     "MatrixView,  ForwardSweep wathen",
@@ -527,6 +537,60 @@ end
                     isSymA = true,
                     partsize = 10,
                     solver = KrylovJL_CG(),
+                )
+            end
+
+            @testset "HB/bcsstk18 (Symmetric type)" begin
+                md = mdopen("HB/bcsstk10")
+                A = md.A
+                b = ones(size(A, 1))
+
+                test_l1gs_prec(
+                    "MatrixViewCache, ForwardSweep bcsstk10",
+                    A,
+                    b,
+                    ForwardSweep(),
+                    MatrixViewCache();
+                )
+                test_l1gs_prec(
+                    "PackedBufferCache, ForwardSweep bcsstk10",
+                    A,
+                    b,
+                    ForwardSweep(),
+                    PackedBufferCache();
+                    partsize = 10,
+                )
+
+                test_l1gs_prec(
+                    "MatrixViewCache, BackwardSweep bcsstk10",
+                    A,
+                    b,
+                    BackwardSweep(),
+                    MatrixViewCache();
+                )
+                test_l1gs_prec(
+                    "PackedBufferCache, BackwardSweep bcsstk10",
+                    A,
+                    b,
+                    BackwardSweep(),
+                    PackedBufferCache();
+                    partsize = 10,
+                )
+
+                test_l1gs_prec(
+                    "MatrixViewCache, SymmetricSweep bcsstk10",
+                    A,
+                    b,
+                    SymmetricSweep(),
+                    MatrixViewCache();
+                )
+                test_l1gs_prec(
+                    "PackedBufferCache, SymmetricSweep bcsstk10",
+                    A,
+                    b,
+                    SymmetricSweep(),
+                    PackedBufferCache();
+                    partsize = 10,
                 )
             end
         end

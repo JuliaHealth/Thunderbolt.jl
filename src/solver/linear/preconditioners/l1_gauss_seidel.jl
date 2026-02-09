@@ -205,7 +205,7 @@ function (builder::L1GSPrecBuilder)(
     partsize::Ti;
     isSymA::Bool = false,
     η = 1.5,
-    sweep::AbstractSweep = ForwardSweep(),
+    sweep::AbstractSweep = SymmetricSweep(),
     cache_strategy::AbstractCacheStrategy = _choose_default_device_storage(builder.device),
 ) where {Ti <: Integer}
     build_l1prec(builder, A, partsize, isSymA, η, sweep, cache_strategy)
@@ -461,25 +461,6 @@ _choose_default_device_storage(::AbstractGPUDevice) = PackedBufferCache()
 _create_diag_indices(A, ::CSCFormat, ::NonSymmetricMatrix) = DiagonalIndices(A)
 _create_diag_indices(A, ::CSCFormat, ::SymmetricMatrix) = NoDiagonalIndices()
 _create_diag_indices(A, ::CSRFormat, ::AbstractMatrixSymmetry) = NoDiagonalIndices()
-
-function BlockStrictLowerView(A::SparseMatrixCSC, symA, frmt::CSCFormat)
-    diag = DiagonalIndices(A) # precompute diagonal indices for efficient access
-    BlockStrictLowerView(A, symA, frmt, diag)
-end
-
-function BlockStrictLowerView(A, symA, frmt::CSRFormat)
-    # here no need for diagonal indices (already optimal access pattern)
-    BlockStrictLowerView(A, symA, frmt, NoDiagonalIndices())
-end
-
-function BlockStrictUpperView(A::SparseMatrixCSC, symA, frmt::CSCFormat)
-    diag = DiagonalIndices(A)
-    BlockStrictUpperView(A, symA, frmt, diag)
-end
-
-function BlockStrictUpperView(A, symA, frmt::CSRFormat)
-    BlockStrictUpperView(A, symA, frmt, NoDiagonalIndices())
-end
 
 # first step of dispatching in precompution step is `_make_sweep_plan`,
 # which basically can take any permutation of `AbstractCacheStrategy` & `AbstractSweep`
