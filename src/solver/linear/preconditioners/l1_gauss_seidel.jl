@@ -60,11 +60,18 @@ Symmetric sweep combining forward and backward: $M = (D + L) D^{-1} (D + U)$ [sa
     ```
 
     #### As a Preconditioner:
-    Here, we are not directly solving the system $Ax = b$, but rather solve for a preconditioned residual $z$.
+    Here, we employ SGS in the context of **left preconditioning**.
+    That is, we consider the left-preconditioned system:
+    ```math
+        M^{-1} A x = M^{-1} b
+    ```
+    and solve for the preconditioned residual $z$.
     ```math
         r_k = b - Ax_k \\
-        M z_k = r_k \\
+        M z_k = r_k  ⟺  \text{\texttt{LinearSolve.ldiv!(z, P, r)}}
+
     ```
+    
     Furthermore, the relation between the preconditioner $M$ and the iteration matrix $G$ is given by:
     ```math
         G = I - M^{-1} A
