@@ -71,7 +71,7 @@ Symmetric sweep combining forward and backward: $M = (D + L) D^{-1} (D + U)$ [sa
         M z_k = r_k  ⟺  \text{\texttt{LinearSolve.ldiv!(z, P, r)}}
 
     ```
-    
+
     Furthermore, the relation between the preconditioner $M$ and the iteration matrix $G$ is given by:
     ```math
         G = I - M^{-1} A
