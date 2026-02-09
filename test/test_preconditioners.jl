@@ -484,7 +484,7 @@ end
                     PackedBufferCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = KrylovJL_CG()
+                    solver = KrylovJL_CG(),
                 )
                 test_l1gs_prec(
                     "MatrixView,  ForwardSweep wathen",
