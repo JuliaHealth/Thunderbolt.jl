@@ -36,7 +36,7 @@ Symmetric sweep combining forward and backward: $M = (D + L) D^{-1} (D + U)$ [sa
 
     For a symmetric matrix, we define $A := L + D + L^{T}$. For the linear system $Ax = b$, the iteration matrix $G$ satisfies:
     ```math
-        x^{(k+1)} = G x^{(k)} + (I - G) A^{-1} b
+        x^{(k+1)} = G x^{(k)} + f
     ```
 
     Consequently, we have the following formulations:
@@ -45,18 +45,17 @@ Symmetric sweep combining forward and backward: $M = (D + L) D^{-1} (D + U)$ [sa
 
     **The Forward Sweep**:
     ```math
-        (D + L)x^{(k+1/2)} = b - L^T x^{(k)}
+        (D + L)x^{(k+1/2)} = b - L^T x^{(k)} → x^{(k+1/2)} = \underbrace{- (D + L)^{-1} L^T}_{G_{fs}} x^{(k)}  + \underbrace{(D + L)^{-1} b}_{f_{fs}}\\
     ```
 
     **The Backward Sweep**:
     ```math
-        (D + L^T)x^{(k+1)} = b - L x^{(k+1/2)}
+        (D + L^T)x^{(k+1)} = b - L x^{(k+1/2)} → x^{(k+1)} = \underbrace{- (D + L^T)^{-1} L}_{G_{bs}} x^{(k+1/2)} + \underbrace{(D + L^T)^{-1} b}_{f_{bs}}
     ```
 
     **The Combined Iteration Matrix**:
     ```math
-        G_{SGS} = (D + L^T)^{-1} L (D + L)^{-1} L^T \rightarrow G_{SGS} = G_b G_f\\
-        x^{(k+1)} = G_{SGS} x^{(k)} + (I - G_{SGS}) A^{-1} b
+        G_{SGS} = G_b G_f =  (D + L^T)^{-1} L (D + L)^{-1} L^T
     ```
 
     #### As a Preconditioner:
