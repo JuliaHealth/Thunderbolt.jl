@@ -141,3 +141,26 @@ __get_material_model(model::MultiMaterialModel, sdh) =
 __get_material_model(model::AbstractMaterialModel, sdh) = model
 get_material_model(f::QuasiStaticFunction, sdh) =
     __get_material_model(f.integrator.volume_model.material_model, sdh)
+
+#TODO: find a better name, this is a static nonlinear function that does not necessarily need FEM stuff like dh?
+"""
+    EikonalFunction{...}
+
+A discrete nonlinear Eikonal problem.
+We want to solve the problem √(∇tₐᵀ𝕍∇tₐ) = 1.
+Where tₐ are the nodal wave time of arrival, and 𝕍 is the conduction velocity.
+"""
+struct EikonalFunction{
+    T <: Number,
+    VerticesVectorT<:AbstractVector{Vec{3, T}},
+    CellsVectorT<:AbstractVector{NTuple{4, Int}},
+    V2CT <: AbstractArray,
+} <: AbstractSemidiscreteFunction
+    vertices::VerticesVectorT
+    cells::CellsVectorT# strictly for Tetrahedra
+    vertex_to_cell::V2CT
+    activation_points::Vector{Int}
+end
+get_strategy(f::EikonalFunction) = nothing # no assembly required
+
+solution_size(f::EikonalFunction) = length(f.vertices)

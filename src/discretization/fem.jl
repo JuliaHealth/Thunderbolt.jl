@@ -172,6 +172,58 @@ function semidiscretize(
 
     return semidiscrete_ode
 end
+"""
+A wrapper function containing the cell model dynamics function, as a pointwise ODE,
+and the eiknal function that needs to be solved once before solving the cell dynamics part.
+"""
+struct EikonalCoupledODEFunction{ODEFunctionT, EikonalFunctionT}
+    ode_function::ODEFunctionT
+    eikonal_function::EikonalFunctionT
+end
+
+function semidiscretize(
+    split::ReactionEikonalSplit{<:MonodomainModel},
+    discretizations::Tuple{
+        <:FiniteElementDiscretization,
+        <:SimplicialEikonalDiscretization
+    },
+    mesh::AbstractGrid,
+)
+    epmodel = split.model
+
+    eikonal_model = EikonalModel(
+        ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
+    )
+
+    activation_points = get_nodes(discretizations[2].activation_protocol, mesh, split.cs)
+
+    eikonal_function = semidiscretize(eikonal_model, discretizations[2], activation_points, mesh)
+
+    ndofsφ = solution_size(eikonal_function)
+    single_prob = OrdinaryDiffEqCore.ODEProblem(
+        (du,u,m,t) -> Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
+        Thunderbolt.default_initial_state(epmodel.ion),
+        (0.0, 50.0),
+        Thunderbolt.StimulatedCellModel(;cell_model = epmodel.ion),
+    )
+
+    prob_func = let activation_timings = fill(Inf, length(eikonal_function.vertices)), cellmodel = epmodel.ion
+        (prob, i, repeat) -> begin
+            model_i = Thunderbolt.StimulatedCellModel(;
+                cell_model = cellmodel,
+                stim_offset = activation_timings[i],
+            )
+            OrdinaryDiffEqCore.remake(prob, p=model_i, tstops=[activation_timings[i]])
+        end
+    end
+    ensemble_prob = SciMLBase.EnsembleProblem(single_prob, prob_func=prob_func)
+
+    semidiscrete_ode = EikonalCoupledODEFunction(
+        ensemble_prob, eikonal_function
+    )
+
+    return semidiscrete_ode
+end
 
 # Solid mechanics semidiscretize interface
 function semidiscretize_register_subdomains!(
