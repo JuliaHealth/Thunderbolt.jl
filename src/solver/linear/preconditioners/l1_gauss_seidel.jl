@@ -323,27 +323,26 @@ abstract type AbstractDiagonalIndices end
 
 ## DiagonalIndices - for efficient CSC matrix access
 ## this code is adapted from iterativesolvers.jl
-struct DiagonalIndices{Ti <: Integer} <: AbstractDiagonalIndices
-    diag::Vector{Ti}
-
-    function DiagonalIndices{Ti}(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
-        diag = Vector{Ti}(undef, A.n)
-
-        for col = 1:A.n
-            r1 = Int(A.colptr[col])
-            r2 = Int(A.colptr[col+1] - 1)
-            r1 = searchsortedfirst(A.rowval, col, r1, r2, Base.Order.Forward)
-            if r1 > r2 || A.rowval[r1] != col || iszero(A.nzval[r1])
-                throw(LinearAlgebra.SingularException(col))
-            end
-            diag[col] = r1
-        end
-
-        new(diag)
-    end
+struct DiagonalIndices{Ti <: Integer, VT <: AbstractVector{Ti}} <: AbstractDiagonalIndices
+    diag::VT
 end
+Adapt.@adapt_structure DiagonalIndices
 
-DiagonalIndices(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti} = DiagonalIndices{Ti}(A)
+function DiagonalIndices(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
+    diag = Vector{Ti}(undef, A.n)
+
+    for col = 1:A.n
+        r1 = Int(A.colptr[col])
+        r2 = Int(A.colptr[col+1] - 1)
+        r1 = searchsortedfirst(A.rowval, col, r1, r2, Base.Order.Forward)
+        if r1 > r2 || A.rowval[r1] != col || iszero(A.nzval[r1])
+            throw(LinearAlgebra.SingularException(col))
+        end
+        diag[col] = r1
+    end
+
+    DiagonalIndices(diag)
+end
 
 @inline Base.getindex(d::DiagonalIndices, i::Int) = d.diag[i]
 @inline Base.length(d::DiagonalIndices) = length(d.diag)
@@ -372,6 +371,7 @@ struct BlockStrictLowerView{
     frmt::FormatType
     diag::DIType # imp for csc format (DiagonalIndices for CSC, NoDiagonalIndices for CSR)
 end
+Adapt.@adapt_structure BlockStrictLowerView
 
 struct BlockStrictUpperView{
     MatrixType,
@@ -384,6 +384,7 @@ struct BlockStrictUpperView{
     frmt::FormatType
     diag::DIType  # DiagonalIndices for CSC, NoDiagonalIndices for CSR
 end
+Adapt.@adapt_structure BlockStrictUpperView
 
 """
     PackedStrictLower{VectorType}
@@ -395,6 +396,7 @@ Layout: Elements packed row-by-row, with block_offset = (k-1) * partsize*(partsi
 struct PackedStrictLower{VectorType} <: AbstractLowerCache
     SLbuffer::VectorType
 end
+Adapt.@adapt_structure PackedStrictLower
 
 """
     PackedStrictUpper{VectorType}
@@ -406,6 +408,7 @@ Layout: Elements packed row-by-row, with block_offset = (k-1) * partsize*(partsi
 struct PackedStrictUpper{VectorType} <: AbstractUpperCache
     SUbuffer::VectorType
 end
+Adapt.@adapt_structure PackedStrictUpper
 
 abstract type AbstractBlockSolveOperator end
 
@@ -414,12 +417,14 @@ struct BlockLowerSolveOperator{LowerCache <: AbstractLowerCache, VectorType} <:
     L::LowerCache
     D_DL1::VectorType
 end
+Adapt.@adapt_structure BlockLowerSolveOperator
 
 struct BlockUpperSolveOperator{UpperCache <: AbstractUpperCache, VectorType} <:
        AbstractBlockSolveOperator
     U::UpperCache
     D_DL1::VectorType
 end
+Adapt.@adapt_structure BlockUpperSolveOperator
 
 _cache(op::BlockLowerSolveOperator) = op.L
 _cache(op::BlockUpperSolveOperator) = op.U
@@ -541,7 +546,7 @@ function _make_sweep_plan(::ForwardSweep, ::PackedBufferCache, A, partitioning, 
     buffer_size =
         (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
     SLbuffer = adapt(backend, zeros(Tf, buffer_size))
-    cache = PackedStrictLower(SLbuffer)
+    cache = adapt(backend, PackedStrictLower(SLbuffer))
 
     η_converted = convert(Tf, η)
 
@@ -588,7 +593,7 @@ function _make_sweep_plan(::BackwardSweep, ::PackedBufferCache, A, partitioning,
     buffer_size =
         (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
     SUbuffer = adapt(backend, zeros(Tf, buffer_size))
-    cache = PackedStrictUpper(SUbuffer)
+    cache = adapt(backend, PackedStrictUpper(SUbuffer))
 
     η_converted = convert(Tf, η)
 
@@ -636,8 +641,8 @@ function _make_sweep_plan(::SymmetricSweep, ::PackedBufferCache, A, partitioning
         (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
     SLbuffer = adapt(backend, zeros(Tf, buffer_size))
     SUbuffer = adapt(backend, zeros(Tf, buffer_size))
-    L_cache = PackedStrictLower(SLbuffer)
-    U_cache = PackedStrictUpper(SUbuffer)
+    L_cache = adapt(backend, PackedStrictLower(SLbuffer))
+    U_cache = adapt(backend, PackedStrictUpper(SUbuffer))
 
     η_converted = convert(Tf, η)
     ndrange = nchunks * chunksize
@@ -769,14 +774,14 @@ end
 
 
 function Base.iterate(iterator::DiagonalPartsIterator)
-    @unpack initial_partition_idx, nparts = iterator
+    (; initial_partition_idx, nparts) = iterator
     initial_partition_idx <= nparts || return nothing
     k = initial_partition_idx
     return (_makecache(iterator, k), k)
 end
 
 function Base.iterate(iterator::DiagonalPartsIterator, state)
-    @unpack nparts, nchunks, chunksize = iterator
+    (; nparts, nchunks, chunksize) = iterator
     stride = nchunks * chunksize  # stride = n_threads * n_blocks
     k = state
     k += stride # partition index
@@ -789,7 +794,7 @@ function _makecache(iterator::DiagonalPartsIterator, k::Ti) where {Ti <: Integer
     #Ωⁱₒ := {j ∉ Ωₖ : i ∈ Ωₖ} off-partition column values
     # bₖᵢ := Aᵢᵢ
     # dₖᵢ := ∑_{j ∈ Ωⁱₒ} |Aᵢⱼ|
-    @unpack size_A, partsize = iterator
+    (; size_A, partsize) = iterator
     part_start_idx = (k - convert(Ti, 1)) * partsize + convert(Ti, 1)
     part_end_idx = min(part_start_idx + partsize - convert(Ti, 1), size_A)
 
@@ -925,7 +930,7 @@ end
         chunksize,
         convert(Ti, initial_partition_idx),
     )
-        @unpack k, partsize, start_idx, end_idx = part
+        (; k, partsize, start_idx, end_idx) = part
         @inbounds for i in sweep_range(cache, start_idx, end_idx)
             acc = _accumulate_from_cache(cache, y, i, k, partsize, start_idx, end_idx)
             y[i] = (y[i] - acc) / D_Dl1[i]

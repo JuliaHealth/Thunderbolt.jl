@@ -27,7 +27,6 @@ import CUDA:
     cudaconvert
 
 import Thunderbolt:
-    UnPack.@unpack,
     SimpleMesh,
     SparseMatrixCSR,
     SparseMatrixCSC,

@@ -38,10 +38,10 @@ function test_sym_result(
                 builder(A, partsize; sweep = sweep, cache_strategy = cache_strategy) :
                 builder(A, partsize; isSymA = true, sweep = sweep, cache_strategy = cache_strategy)
             if sweep isa SymmetricSweep
-                @test P.sweep.lop.D_DL1 ≈ D_Dl1_exp
-                @test P.sweep.uop.D_DL1 ≈ D_Dl1_exp
+                @test Vector(P.sweep.lop.D_DL1) ≈ D_Dl1_exp
+                @test Vector(P.sweep.uop.D_DL1) ≈ D_Dl1_exp
             else
-                @test P.sweep.op.D_DL1 ≈ D_Dl1_exp
+                @test Vector(P.sweep.op.D_DL1) ≈ D_Dl1_exp
             end
             test_buffer_fn(P)
             y = P \ x
