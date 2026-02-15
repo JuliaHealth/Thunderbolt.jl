@@ -13,9 +13,13 @@ SchurComplementLinearSolver
 ## Preconditioners
 
 ```@docs
-Thunderbolt.Preconditioners.BlockPartitioning
 Thunderbolt.Preconditioners.L1GSPrecBuilder
 Thunderbolt.Preconditioners.L1GSPreconditioner
+Thunderbolt.Preconditioners.ForwardSweep
+Thunderbolt.Preconditioners.BackwardSweep
+Thunderbolt.Preconditioners.SymmetricSweep
+Thunderbolt.Preconditioners.PackedBufferCache
+Thunderbolt.Preconditioners.MatrixViewCache
 ```
 
 ## Nonlinear
