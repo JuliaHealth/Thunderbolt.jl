@@ -38,7 +38,13 @@ function test_sym_result(
                 P =
                     A isa Symmetric ?
                     builder(A, partsize; sweep = sweep, cache_strategy = cache_strategy) :
-                    builder(A, partsize; isSymA = true, sweep = sweep, cache_strategy = cache_strategy)
+                    builder(
+                        A,
+                        partsize;
+                        isSymA = true,
+                        sweep = sweep,
+                        cache_strategy = cache_strategy,
+                    )
                 if sweep isa SymmetricSweep
                     @test Vector(P.sweep.lop.D_DL1) ≈ D_DL1_exp
                     @test Vector(P.sweep.uop.D_DL1) ≈ D_DL1_exp
@@ -341,7 +347,13 @@ end
             D_DL1_exp = Float64.([2, 2, 2, 2, 2, 2, 2, 2, 2])  # η=1.5: all rows satisfy a_ii >= η*dl1_ii
             SLbuffer_exp = Float64.([-1, 0, -1, -1, 0, -1, -1, 0, -1])
             builder = L1GSPrecBuilder(CudaDevice(2, 2))
-            P = builder(A, partsize; isSymA = true, sweep = ForwardSweep(), cache_strategy = PackedBufferCache())
+            P = builder(
+                A,
+                partsize;
+                isSymA = true,
+                sweep = ForwardSweep(),
+                cache_strategy = PackedBufferCache(),
+            )
             @test Vector(P.sweep.op.D_DL1) ≈ D_DL1_exp
             @test Vector(P.sweep.op.L.SLbuffer) ≈ SLbuffer_exp
         end
@@ -496,7 +508,7 @@ end
                     b,
                     SymmetricSweep(),
                     MatrixViewCache();
-                    partsize = 10
+                    partsize = 10,
                 )
                 test_l1gs_prec(
                     "PackedBufferCache, SymmetricSweep bcsstk10",
