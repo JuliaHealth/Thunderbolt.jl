@@ -37,18 +37,21 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 
 [extensions]
-CuThunderboltExt = "CUDA"
+ThunderboltGPUArraysExt = "GPUArrays"
+CuThunderboltExt = ["CUDA", "GPUArrays"]
 
 [compat]
 Aqua = "0.8"
 BlockArrays = "1"
-CUDA = ">=5.7.3"
+CUDA = ">=5.9.6"
 DiffEqBase = "6"
 FastBroadcast = "0.3.5"
 Ferrite = "=1.2"
 ForwardDiff = "0.10.38"
+GPUArrays = "11.4.0"
 JET = "0.9, 0.10"
 KernelAbstractions = "0.9.34"
 LinearSolve = "3"

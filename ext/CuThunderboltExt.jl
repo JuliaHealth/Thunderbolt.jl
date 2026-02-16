@@ -160,6 +160,5 @@ include("cuda/cuda_operator.jl")
 include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
 include("cuda/cuda_iterator.jl")
-include("cuda/cuda_preconditioner.jl") #NOTE: min version for CUDA is v"5.7.3"
 
 end

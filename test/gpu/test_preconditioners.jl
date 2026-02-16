@@ -4,7 +4,7 @@ using LinearSolve
 using SparseMatricesCSR
 using KernelAbstractions
 using MatrixDepot
-using Thunderbolt
+using Thunderbolt, CUDA
 using LinearAlgebra: Symmetric
 import Thunderbolt: CudaDevice
 
