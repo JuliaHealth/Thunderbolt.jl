@@ -64,6 +64,7 @@ function semidiscretize(
 )
 
     vertices = getproperty.(mesh.grid.nodes, :x)
+    # TODO: true subdomains
     cells = getproperty.(mesh.grid.cells, :nodes)
     nnodes = getnnodes(mesh.grid)
 
