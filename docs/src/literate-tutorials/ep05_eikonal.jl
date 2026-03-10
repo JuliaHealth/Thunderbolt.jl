@@ -21,18 +21,18 @@
 #   I_{\textrm{foot}}(t_{\textrm{arrival}}, t) &= -\frac{A}{\tau}\cdot e^{\frac{t - t_{\textrm{arrival}}}{\tau}} & \textrm{pointwise in}  \: \Omega \;\,
 # \end{aligned}
 # ```
-# Where $C_{\textrm{m}}$ is the membrane capacitance, $\varphi$ is the transmembrane 
+# Where $C_{\textrm{m}}$ is the membrane capacitance, $\varphi$ is the transmembrane
 # potential, $I_{\textrm{foot}}$ is the stimulating current, $I_{\textrm{ion}}$ is
 # the ionic cureent resulting from the cell model. $\boldsymbol{s}$ is the state vector
 # for the cell model, and $\mathbf{g}$ is the function evolving the cell model states in time.
 #
 # Wave arrival times are obtained by solving the Eikonal equation:
 # ```math
-# \sqrt{\nabla t_{\textrm{arrival}}^T \boldsymbol{V} \nabla t_{\textrm{arrival}}} = 1 \qquad \textrm{in}  \: \Omega 
+# \sqrt{\nabla t_{\textrm{arrival}}^T \boldsymbol{V} \nabla t_{\textrm{arrival}}} = 1 \qquad \textrm{in}  \: \Omega
 # ```
 #
 # Where $\boldsymbol{V}$ the conduction velocity, which was shown to be proportional to
-# the square root of the diffusivities of the cardiac tissue [Weingart:1977:AOIC](@citet) (That's the earliest mention I 
+# the square root of the diffusivities of the cardiac tissue [Weingart:1977:AOIC](@citet) (That's the earliest mention I
 # could find but I remember there was an older one in the 50s).
 #
 #
@@ -52,24 +52,27 @@ function steady_state_initializer!(u₀, f::Thunderbolt.EikonalCoupledODEFunctio
     s₀flat = @view u₀[(solution_size(f.eikonal_function) + 1):end]
     ## Should not be reshape but some array of arrays fun
     s₀ = reshape(
-        s₀flat, (solution_size(f.eikonal_function), Thunderbolt.num_states(ionic_model) - 1))
+        s₀flat, (solution_size(f.eikonal_function), Thunderbolt.num_states(ionic_model) - 1)
+    )
     default_values = Thunderbolt.default_initial_state(ionic_model)
 
     φ₀ .= default_values[1]
     for i in 1:(Thunderbolt.num_states(ionic_model) - 1)
         s₀[:, i] .= default_values[i + 1]
     end
+    return
 end
 
-# We start by generating a tetrahedral mesh, as the fast iterative method solver 
+# We start by generating a tetrahedral mesh, as the fast iterative method solver
 # accepts tetrahedral meshes only.
-heart_mesh = generate_ideal_lv_mesh(12, 2, 5;
-                 inner_radius = 0.7,
-                 outer_radius = 1.0,
-                 longitudinal_upper = 0.0,
-                 apex_inner = 0.7,
-                 apex_outer = 1.0
-             ) |> Thunderbolt.hexahedralize |> Thunderbolt.tetrahedralize;
+heart_mesh = generate_ideal_lv_mesh(
+    12, 2, 5;
+    inner_radius = 0.7,
+    outer_radius = 1.0,
+    longitudinal_upper = 0.0,
+    apex_inner = 0.7,
+    apex_outer = 1.0
+) |> Thunderbolt.hexahedralize |> Thunderbolt.tetrahedralize;
 
 # !!! tip
 #     We can also load realistic geometries with external formats. For this simply use either FerriteGmsh.jl
@@ -98,7 +101,7 @@ diffusion_tensor_field = SpectralTensorCoefficient(
     # ConstantCoefficient(SVector(κ₁, κᵣ, κᵣ))
     ConstantCoefficient(SVector(κ₁, κ₁, κ₁))
 )
-# Now we choose our *inner* cell model, used to compute the ionic currents, since 
+# Now we choose our *inner* cell model, used to compute the ionic currents, since
 # the eikonal-based foot current acts as a wrapper around ionic cell models.
 cellmodel = Thunderbolt.PCG2019()
 
@@ -121,7 +124,7 @@ heart_odeform = semidiscretize(
         FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
         Thunderbolt.SimplicialEikonalDiscretization(;
             activation_protocol
-            )
+        ),
     ),
     heart_mesh
 )
@@ -153,14 +156,14 @@ Tₘₐₓ = dtvis # hide
 tspan = (0.0, Tₘₐₓ)
 
 
-sim = solve(heart_odeform.ode_function, Rodas5P(), saveat=collect(0.0:dtvis:Tₘₐₓ), trajectories=length(heart_odeform.ode_function.prob_func.activation_timings))
-dh = cs.dh|>deepcopy
+sim = solve(heart_odeform.ode_function, Rodas5P(), saveat = collect(0.0:dtvis:Tₘₐₓ), trajectories = length(heart_odeform.ode_function.prob_func.activation_timings))
+dh = cs.dh |> deepcopy
 Thunderbolt.reorder_nodal!(dh)
 
 io = ParaViewWriter("ep05_eikonal")
 
 φₘfield = copy(nodal_timings)           # hide
-for t ∈ 0.0:dtvis:Tₘₐₓ                                                          # hide
+for t in 0.0:dtvis:Tₘₐₓ                                                          # hide
     for i in 1:length(φₘfield)                                                  # hide
         φₘfield[i] = sim.u[i](t)[1]                                             # hide
     end                                                                         # hide
@@ -172,9 +175,9 @@ end                                                                             
 
 ## test the result                                                      #src
 using Test                                                              #src
-@test maximum(nodal_timings) ≈ 0.3/κ₁                                   #src
-@test count(≈(0.3/κ₁), nodal_timings) == (5+1)*12+1                     #src
-@test count(≈(0.3/κ₁*cosd(90/12)), nodal_timings) == (5+1)*12           #src
+@test maximum(nodal_timings) ≈ 0.3 / κ₁                                   #src
+@test count(≈(0.3 / κ₁), nodal_timings) == (5 + 1) * 12 + 1                     #src
+@test count(≈(0.3 / κ₁ * cosd(90 / 12)), nodal_timings) == (5 + 1) * 12           #src
 
 
 #md # ## References

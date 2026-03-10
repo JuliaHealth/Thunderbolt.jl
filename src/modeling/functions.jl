@@ -48,7 +48,7 @@ struct PointwiseODEFunction{IndexType <: Integer, ODEType, xType} <: AbstractPoi
 end
 Adapt.@adapt_structure PointwiseODEFunction
 
-solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
+solution_size(f::PointwiseODEFunction) = f.npoints * num_states(f.ode)
 
 struct AffineODEFunction{MI, BI, ST, DH, AS} <: AbstractSemidiscreteFunction
     mass_term::MI
@@ -81,12 +81,12 @@ A discrete nonlinear (possibly multi-level) problem with time dependent terms.
 Abstractly written we want to solve the problem G(u, q, t) = 0, L(u, q, dₜq, t) = 0 on some time interval [t₁, t₂].
 """
 struct QuasiStaticFunction{
-    I <: AbstractNonlinearIntegrator,
-    DH <: Ferrite.AbstractDofHandler,
-    CH <: ConstraintHandler,
-    LVH <: InternalVariableHandler,
-    AS <: AbstractAssemblyStrategy,
-} <: AbstractQuasiStaticFunction
+        I <: AbstractNonlinearIntegrator,
+        DH <: Ferrite.AbstractDofHandler,
+        CH <: ConstraintHandler,
+        LVH <: InternalVariableHandler,
+        AS <: AbstractAssemblyStrategy,
+    } <: AbstractQuasiStaticFunction
     dh::DH
     ch::CH
     lvh::LVH
@@ -95,7 +95,7 @@ struct QuasiStaticFunction{
 end
 get_strategy(f::QuasiStaticFunction) = f.assembly_strategy
 
-solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
+solution_size(f::QuasiStaticFunction) = ndofs(f.dh) + ndofs(f.lvh)
 function local_function_size(f::QuasiStaticFunction)
     error("Local function size of QuasiStaticFunction can vary!")
 end
@@ -103,7 +103,7 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     fill!(u, 0.0)
     ndofs(f.lvh) == 0 && return # no internal variable
     offset = 1
-    uq = @view u[(ndofs(f.dh)+1):end]
+    uq = @view u[(ndofs(f.dh) + 1):end]
     for sdh in f.lvh.dh.subdofhandlers
         qr = getquadraturerule(f.integrator.qrc, sdh)
         # ivsize_per_qp = sum(sdh.field_n_components; init=0) # FIXME broken...
@@ -112,12 +112,13 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
         material_model = get_material_model(f, sdh)
         for cell in CellIterator(sdh)
             for qp in QuadratureIterator(qr)
-                q = @view uq[offset:(offset+ivsize_per_qp-1)]
+                q = @view uq[offset:(offset + ivsize_per_qp - 1)]
                 default_initial_state!(q, material_model)
                 offset += ivsize_per_qp
             end
         end
     end
+    return
 end
 
 gather_internal_variable_infos(model::QuasiStaticModel) =
@@ -126,7 +127,7 @@ gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableI
 
 @unroll function __get_material_model_multi(materials, domains, sdh)
     idx = 1
-    @unroll for material ∈ materials
+    @unroll for material in materials
         if first(domains[idx]) ∈ sdh.cellset
             return material
         end
@@ -151,13 +152,13 @@ We want to solve the problem √(∇tₐᵀ𝕍∇tₐ) = 1.
 Where tₐ are the nodal wave time of arrival, and 𝕍 is the conduction velocity.
 """
 struct EikonalFunction{
-    T <: Number,
-    VerticesVectorT<:AbstractVector{Vec{3, T}},
-    CellsVectorT<:AbstractVector{NTuple{4, Int}},
-    V2CT <: AbstractArray,
-} <: AbstractSemidiscreteFunction
+        T <: Number,
+        VerticesVectorT <: AbstractVector{Vec{3, T}},
+        CellsVectorT <: AbstractVector{NTuple{4, Int}},
+        V2CT <: AbstractArray,
+    } <: AbstractSemidiscreteFunction
     vertices::VerticesVectorT
-    cells::CellsVectorT# strictly for Tetrahedra
+    cells::CellsVectorT # strictly for Tetrahedra
     vertex_to_cell::V2CT
     activation_points::Vector{Int}
 end

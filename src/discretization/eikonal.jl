@@ -1,7 +1,7 @@
 """
 Coordinates used for defining activation points when solving the eikonal equation.
 """
-struct ActivationCoordinate{CoordT<:Union{LVCoordinate, BiVCoordinate}, T}
+struct ActivationCoordinate{CoordT <: Union{LVCoordinate, BiVCoordinate}, T}
     coord::CoordT
     time_offset::T
 end
@@ -11,14 +11,14 @@ abstract type AbstractEikonalActivationProtocol end
 """
 Activation protocol for activating specific points with time offsets to mimic the behavior of a Purkinje network.
 """
-struct NodalEikonalActivationProtocol{VectorT<:AbstractVector{<:ActivationCoordinate}} <:AbstractEikonalActivationProtocol
+struct NodalEikonalActivationProtocol{VectorT <: AbstractVector{<:ActivationCoordinate}} <: AbstractEikonalActivationProtocol
     nodes::VectorT
 end
 
 """
 Activation protocol for uniformally activating the endocardium with zero wave arrival time.
 """
-struct UniformEndocardialEikonalActivationProtocol <:AbstractEikonalActivationProtocol
+struct UniformEndocardialEikonalActivationProtocol <: AbstractEikonalActivationProtocol
 end
 
 """
@@ -47,7 +47,7 @@ Returns the indicies of the nodes belonging to the endocardium, defaulting to 5%
 transmural coordinate range as endocardium.
 """
 function get_nodes(::UniformEndocardialEikonalActivationProtocol, mesh, cs)
-    perm = get_nodes_to_vertex_permutaion(cs.dh)|>sortperm
+    perm = get_nodes_to_vertex_permutaion(cs.dh) |> sortperm
     nodes = Int[]
     for node in eachindex(mesh.grid.nodes)
         cs.u_transmural[perm[node]] <= 0.05 || continue
@@ -57,11 +57,11 @@ function get_nodes(::UniformEndocardialEikonalActivationProtocol, mesh, cs)
 end
 
 function semidiscretize(
-    ::EikonalModel,
-    ::SimplicialEikonalDiscretization,
-    activation_points,
-    mesh::SimpleMesh,
-)
+        ::EikonalModel,
+        ::SimplicialEikonalDiscretization,
+        activation_points,
+        mesh::SimpleMesh,
+    )
 
     vertices = getproperty.(mesh.grid.nodes, :x)
     # TODO: true subdomains

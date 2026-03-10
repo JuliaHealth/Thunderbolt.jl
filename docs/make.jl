@@ -19,7 +19,7 @@ include("generate.jl")
 
 bibtex_plugin = CitationBibliography(
     joinpath(@__DIR__, "src", "assets", "references.bib"),
-    style=:numeric
+    style = :numeric
 )
 
 # Build documentation.
@@ -92,7 +92,7 @@ bibtex_plugin = CitationBibliography(
         ],
         "vroom.md",
         "references.md",
-        ],
+    ],
     plugins = [
         bibtex_plugin,
     ]
@@ -107,10 +107,10 @@ end
 if !liveserver
     @timeit dto "deploydocs" deploydocs(
         repo = "github.com/JuliaHealth/Thunderbolt.jl.git",
-        push_preview=true,
+        push_preview = true,
         versions = [
             "stable" => "v^",
-            "dev" => "dev"
+            "dev" => "dev",
         ]
     )
 end

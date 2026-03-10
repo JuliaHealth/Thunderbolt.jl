@@ -27,7 +27,7 @@ struct GenericSigmoidParameters{T}
 end
 
 @inline σ(s::T1, p::GenericSigmoidParameters{T2}) where {T1, T2} =
-    (p.A + p.B*s)/(p.C + p.D*exp(p.E + p.F*s) / p.G)
+    (p.A + p.B * s) / (p.C + p.D * exp(p.E + p.F * s) / p.G)
 
 """
 The classical gate formulation is stated in the normalized affine form:
@@ -73,11 +73,11 @@ struct HodgkinHuxleyTypeIonChannel{NGates} <: AbstractIonChannel where {NGates}
 end;
 
 @inline function g(gate::HodgkinHuxleyTypeGate, φₘ::T, 𝐬ᵢ::T) where {T}
-    α(gate, φₘ)*𝐬ᵢ + β(gate, φₘ)
+    return α(gate, φₘ) * 𝐬ᵢ + β(gate, φₘ)
 end
 
 @inline function g(gate::HodgkinHuxleyTypeGate, φₘ::T, 𝐬ᵢ::T, x::AbstractVector{T}) where {T}
-    α(gate, φₘ, x)*𝐬ᵢ + β(gate, φₘ, x)
+    return α(gate, φₘ, x) * 𝐬ᵢ + β(gate, φₘ, x)
 end
 
 """
@@ -143,24 +143,24 @@ struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 Describe the transmembrane stimulation by some analytical function on a given set of time intervals.
 """
 struct AnalyticalTransmembraneStimulationProtocol{
-    F <: AnalyticalCoefficient,
-    T,
-    VectorType <: AbstractVector{SVector{2, T}},
-} <: TransmembraneStimulationProtocol
+        F <: AnalyticalCoefficient,
+        T,
+        VectorType <: AbstractVector{SVector{2, T}},
+    } <: TransmembraneStimulationProtocol
     f::F
     nonzero_intervals::VectorType # Helper for sparsity in time
 end
 
 function setup_element_cache(
-    protocol::AnalyticalTransmembraneStimulationProtocol,
-    qr,
-    sdh::SubDofHandler,
-)
+        protocol::AnalyticalTransmembraneStimulationProtocol,
+        qr,
+        sdh::SubDofHandler,
+    )
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
-    AnalyticalCoefficientElementCache(
+    return AnalyticalCoefficientElementCache(
         setup_coefficient_cache(protocol.f, qr, sdh),
         protocol.nonzero_intervals,
         CellValues(qr, ip, ip_geo), # TODO something more lightweight
@@ -221,12 +221,12 @@ assumption is violated we can construct optimal κ (TODO citation+example) for t
 reconstruction of φₘ.
 """
 struct MonodomainModel{
-    F1,
-    F2,
-    F3,
-    STIM <: TransmembraneStimulationProtocol,
-    ION <: AbstractIonicModel,
-} <: AbstractEPModel
+        F1,
+        F2,
+        F3,
+        STIM <: TransmembraneStimulationProtocol,
+        ION <: AbstractIonicModel,
+    } <: AbstractEPModel
     χ::F1
     Cₘ::F2
     κ::F3
@@ -270,7 +270,7 @@ ReactionEikonalSplit(model) = ReactionEikonalSplit(model, nothing)
 """
 Wrapper around ionic cell models that adds foot current according to [NeicCamposPrassl:2017:ECE](@citet)
 """
-@kwdef struct StimulatedCellModel{TC,OffestT,T}<:AbstractIonicModel
+@kwdef struct StimulatedCellModel{TC, OffestT, T} <: AbstractIonicModel
     cell_model::TC
     stim_offset::OffestT = 0.0
     stim_length::T = 1.0
@@ -281,18 +281,18 @@ num_states(m::StimulatedCellModel) = num_states(m.cell_model)
 default_initial_state(m::StimulatedCellModel) = default_initial_state(m.cell_model)
 function cell_rhs!(du, u, i, t, m::StimulatedCellModel)
     # @assert i isa Integer
-    cell_rhs!(du,u,nothing,t,m.cell_model)
+    cell_rhs!(du, u, nothing, t, m.cell_model)
     if i isa AbstractVector
         if m.stim_offset[i] ≤ t ≤ m.stim_offset[i] + m.stim_length
             τᶠ = 0.25
             idx = transmembranepotential_index(m.cell_model)
-            du[idx] += m.stim_strength/τᶠ * exp((t-m.stim_offset[i])/τᶠ)
+            du[idx] += m.stim_strength / τᶠ * exp((t - m.stim_offset[i]) / τᶠ)
         end
     else
         if m.stim_offset ≤ t ≤ m.stim_offset + m.stim_length
             τᶠ = 0.25
             idx = transmembranepotential_index(m.cell_model)
-            du[idx] += m.stim_strength/τᶠ * exp((t-m.stim_offset)/τᶠ)
+            du[idx] += m.stim_strength / τᶠ * exp((t - m.stim_offset) / τᶠ)
         end
     end
 
