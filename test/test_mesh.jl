@@ -64,6 +64,41 @@
         end
     end
 
+    @testset "Tetrahedral $element_type" for element_type ∈ [
+        Hexahedron,
+        # Wedge,
+        # Tetrahedron,
+    ]
+        dim = Ferrite.getrefdim(element_type)
+        grid = generate_grid(element_type, ntuple(_ -> 4, dim))
+        addcellset!(grid, "right_cells", x -> x[1] ≥ 0.0)
+        addcellset!(grid, "left_cells", x -> x[1] ≤ 0.0)
+
+        grid_hex = Thunderbolt.tetrahedralize(grid)
+        @test all(typeof.(getcells(grid_hex)) .== Tetrahedron) # Test if we really hit all elements
+        test_detJ(grid_hex) # And for messed up elements
+
+        # Check for correct transfer of facetsets
+        addfacetset!(grid_hex, "right_new", x -> x[1] ≈ 1.0)
+        @test getfacetset(grid_hex, "right") == getfacetset(grid_hex, "right_new")
+        addfacetset!(grid_hex, "left_new", x -> x[1] ≈ -1.0)
+        @test getfacetset(grid_hex, "left") == getfacetset(grid_hex, "left_new")
+        addfacetset!(grid_hex, "top_new", x -> x[3] ≈ 1.0)
+        @test getfacetset(grid_hex, "top") == getfacetset(grid_hex, "top_new")
+        addfacetset!(grid_hex, "bottom_new", x -> x[3] ≈ -1.0)
+        @test getfacetset(grid_hex, "bottom") == getfacetset(grid_hex, "bottom_new")
+        addfacetset!(grid_hex, "front_new", x -> x[2] ≈ -1.0)
+        @test getfacetset(grid_hex, "front") == getfacetset(grid_hex, "front_new")
+        addfacetset!(grid_hex, "back_new", x -> x[2] ≈ 1.0)
+        @test getfacetset(grid_hex, "back") == getfacetset(grid_hex, "back_new")
+
+        # Check for correct transfer of cellsets
+        addcellset!(grid_hex, "right_cells_new", x -> x[1] ≥ 0.0)
+        @test getcellset(grid_hex, "right_cells") == getcellset(grid_hex, "right_cells_new")
+        addcellset!(grid_hex, "left_cells_new", x -> x[1] ≤ 0.0)
+        @test getcellset(grid_hex, "left_cells") == getcellset(grid_hex, "left_cells_new")
+    end
+
     @testset "Linear Hex Ring" begin
         ring_mesh = generate_ring_mesh(8, 3, 3)
         test_detJ(ring_mesh)
