@@ -4,22 +4,22 @@
     import Thunderbolt: BilinearMassIntegrator, BilinearDiffusionIntegrator
     import Thunderbolt: CompositeVolumetricElementCache, CompositeSurfaceElementCache
 
-    setup_test_cache(kwargs...) =
-        Thunderbolt.duplicate_for_device(PolyesterDevice(), setup_element_cache(kwargs...))
+    setup_test_cache(kwargs...) = Thunderbolt.duplicate_for_device(
+        PolyesterDevice(), setup_element_cache(kwargs...))
     function setup_test_composite_volume_cache(kwargs...)
-        element_cache =
-            Thunderbolt.duplicate_for_device(PolyesterDevice(), setup_element_cache(kwargs...))
+        element_cache = Thunderbolt.duplicate_for_device(
+            PolyesterDevice(), setup_element_cache(kwargs...))
         return Thunderbolt.duplicate_for_device(
             PolyesterDevice(),
-            CompositeVolumetricElementCache((element_cache, element_cache)),
+            CompositeVolumetricElementCache((element_cache, element_cache))
         )
     end
     function setup_test_composite_surface_cache(kwargs...)
-        element_cache =
-            Thunderbolt.duplicate_for_device(PolyesterDevice(), setup_boundary_cache(kwargs...))
+        element_cache = Thunderbolt.duplicate_for_device(
+            PolyesterDevice(), setup_boundary_cache(kwargs...))
         return Thunderbolt.duplicate_for_device(
             PolyesterDevice(),
-            CompositeSurfaceElementCache((element_cache, element_cache)),
+            CompositeSurfaceElementCache((element_cache, element_cache))
         )
     end
 
@@ -45,33 +45,32 @@
     sdhv = first(dhv.subdofhandlers)
     cell_cache_v = Ferrite.CellCache(sdhv)
     Ferrite.reinit!(cell_cache_v, 1)
-    uₑv =
-        [
-            -1.0,
-            -1.0,
-            -1.0,
-            -1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            -1.0,
-            -1.0,
-            -1.0,
-            -1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            -1.0,
-            -1.0,
-            -1.0,
-            -1.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-        ] .* 1e-4
+    uₑv = [
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+    ] .* 1e-4
 
     # We check for pairwise consistency of the assembly operations
     # First we check if the empty caches work correctly
@@ -88,7 +87,7 @@
             uₑs,
             cell_cache_s,
             Thunderbolt.EmptyVolumetricElementCache(),
-            0.0,
+            0.0
         )
         @test iszero(Kₑ¹)
         @test iszero(rₑ¹)
@@ -100,7 +99,7 @@
         @test iszero(Kₑ²)
 
         # Surface
-        for local_facet_index = 1:nfacets(cell_cache_s)
+        for local_facet_index in 1:nfacets(cell_cache_s)
             assemble_facet!(
                 Kₑ¹,
                 rₑ¹,
@@ -108,7 +107,7 @@
                 cell_cache_s,
                 local_facet_index,
                 Thunderbolt.EmptySurfaceElementCache(),
-                0.0,
+                0.0
             )
             @test iszero(Kₑ¹)
             @test iszero(rₑ¹)
@@ -119,7 +118,7 @@
                 cell_cache_s,
                 local_facet_index,
                 Thunderbolt.EmptySurfaceElementCache(),
-                0.0,
+                0.0
             )
             @test iszero(rₑ²)
 
@@ -129,7 +128,7 @@
                 cell_cache_s,
                 local_facet_index,
                 Thunderbolt.EmptySurfaceElementCache(),
-                0.0,
+                0.0
             )
             @test iszero(Kₑ²)
         end
@@ -138,7 +137,7 @@
     # No we check some examples for the implemented physics
     @testset "Scalar volumetric bilinear elements: $model" for model in (
         BilinearMassIntegrator(ConstantCoefficient(1.0), qrc, :u),
-        BilinearDiffusionIntegrator(ConstantCoefficient(one(Tensor{2, 3})), qrc, :u),
+        BilinearDiffusionIntegrator(ConstantCoefficient(one(Tensor{2, 3})), qrc, :u)
     )
         Kₑ¹ = zeros(ndofs(dhs), ndofs(dhs))
         Kₑ² = zeros(ndofs(dhs), ndofs(dhs))
@@ -156,15 +155,15 @@
 
     @testset "Vectorial volumetric nonlinear elements: $model" for model in (
         PK1Model(
-            HolzapfelOgden2009Model(),
-            ConstantCoefficient(
-                OrthotropicMicrostructure(
-                    Vec((1.0, 0.0, 0.0)),
-                    Vec((0.0, 1.0, 0.0)),
-                    Vec((0.0, 0.0, 1.0)),
-                ),
-            ),
+        HolzapfelOgden2009Model(),
+        ConstantCoefficient(
+            OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0))
         ),
+        )
+    ),
     )
         rₑ¹ = zeros(ndofs(dhv))
         rₑ² = zeros(ndofs(dhv))
@@ -186,8 +185,8 @@
         assemble_element!(Kₑ², uₑv, cell_cache_v, element_cache, 0.0)
         @test Kₑ² ≈ Kₑ¹
 
-        composite_element_cache =
-            setup_test_composite_volume_cache(QuasiStaticModel(:u, model, ()), qr, sdhv)
+        composite_element_cache = setup_test_composite_volume_cache(
+            QuasiStaticModel(:u, model, ()), qr, sdhv)
 
         Kₑ¹ .= 0.0
         rₑ¹ .= 0.0
@@ -213,7 +212,7 @@
         (NormalSpringBC(1.0, "left"), true),
         (BendingSpringBC(1.0, "left"), true),
         (ConstantPressureBC(1.0, "left"), true),
-        (PressureFieldBC(ConstantCoefficient(1.0), "left"), true),
+        (PressureFieldBC(ConstantCoefficient(1.0), "left"), true)
     )
         rₑ¹ = zeros(ndofs(dhv))
         rₑ² = zeros(ndofs(dhv))
@@ -222,7 +221,7 @@
 
         element_cache = setup_boundary_cache(model, qrf, sdhv)
 
-        for local_facet_index = 1:nfacets(cell_cache_v)
+        for local_facet_index in 1:nfacets(cell_cache_v)
             assemble_facet!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, local_facet_index, element_cache, 0.0)
             @test iszero(Kₑ¹) != has_jac
             @test iszero(rₑ¹) != has_jac
@@ -238,7 +237,7 @@
 
         Kₑ¹ .= 0.0
         rₑ¹ .= 0.0
-        for local_facet_index = 1:nfacets(cell_cache_v)
+        for local_facet_index in 1:nfacets(cell_cache_v)
             assemble_facet!(
                 Kₑ¹,
                 rₑ¹,
@@ -246,7 +245,7 @@
                 cell_cache_v,
                 local_facet_index,
                 composite_element_cache,
-                0.0,
+                0.0
             )
         end
         @test 2Kₑ² ≈ Kₑ¹
@@ -254,7 +253,7 @@
 
         Kₑ² .= 0.0
         rₑ² .= 0.0
-        for local_facet_index = 1:nfacets(cell_cache_v)
+        for local_facet_index in 1:nfacets(cell_cache_v)
             assemble_facet!(rₑ², uₑv, cell_cache_v, local_facet_index, composite_element_cache, 0.0)
             assemble_facet!(Kₑ², uₑv, cell_cache_v, local_facet_index, composite_element_cache, 0.0)
         end

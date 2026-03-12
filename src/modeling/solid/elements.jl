@@ -19,19 +19,19 @@ end
 # TODO how to control dispatch on required input for the material routin?
 # TODO finer granularity on the dispatch here. depending on the evolution law of the internal variable this routine looks slightly different.
 function assemble_element!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    element_cache::QuasiStaticElementCache,
-    time,
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        geometry_cache::CellCache,
+        element_cache::QuasiStaticElementCache,
+        time
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
 
     reinit!(cv, geometry_cache)
 
-    @inbounds for qp ∈ QuadratureIterator(cv)
+    @inbounds for qp in QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
         # Compute deformation gradient F
@@ -46,18 +46,18 @@ function assemble_element!(
             internal_cache,
             geometry_cache,
             qp,
-            time,
+            time
         )
 
         # Loop over test functions
-        for i = 1:ndofs
+        for i in 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
 
             # Add contribution to the residual from this test function
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
-            for j = 1:ndofs
+            for j in 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΩ
@@ -67,18 +67,18 @@ function assemble_element!(
 end
 
 function assemble_element!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    element_cache::QuasiStaticElementCache,
-    time,
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        geometry_cache::CellCache,
+        element_cache::QuasiStaticElementCache,
+        time
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
 
     reinit!(cv, geometry_cache)
 
-    @inbounds for qp ∈ QuadratureIterator(cv)
+    @inbounds for qp in QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
         # Compute deformation gradient F
@@ -93,18 +93,18 @@ function assemble_element!(
             internal_cache,
             geometry_cache,
             qp,
-            time,
+            time
         )
 
         # Loop over test functions
-        for i = 1:ndofs
+        for i in 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
 
             # Add contribution to the residual from this test function
             # residualₑ[i] += ∇δui ⊡ P * dΩ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
-            for j = 1:ndofs
+            for j in 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΩ
@@ -114,18 +114,18 @@ function assemble_element!(
 end
 
 function assemble_element!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    element_cache::QuasiStaticElementCache,
-    time,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        geometry_cache::CellCache,
+        element_cache::QuasiStaticElementCache,
+        time
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
 
     reinit!(cv, geometry_cache)
 
-    @inbounds for qp ∈ QuadratureIterator(cv)
+    @inbounds for qp in QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
         # Compute deformation gradient F
@@ -140,11 +140,11 @@ function assemble_element!(
             internal_cache,
             geometry_cache,
             qp,
-            time,
+            time
         )
 
         # Loop over test functions
-        for i = 1:ndofs
+        for i in 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
 
             # Add contribution to the residual from this test function
@@ -158,47 +158,47 @@ struct MultiMaterialModel{MaterialTuple} <: AbstractMaterialModel
     domains::Vector{OrderedSet{Int}} # These must match the subdofhandler sets and hence be disjoint
     domain_names::Vector{String}     # These must match the subdofhandler sets and hence be disjoint
     function MultiMaterialModel(
-        materials::MaterialTuple,
-        subdomain_names::Vector{String},
-        mesh::AbstractGrid,
+            materials::MaterialTuple,
+            subdomain_names::Vector{String},
+            mesh::AbstractGrid
     ) where {MaterialTuple}
         return new{MaterialTuple}(
             materials,
             [getcellset(mesh, subdomain_name) for subdomain_name in subdomain_names],
-            subdomain_names,
+            subdomain_names
         )
     end
 end
 
 function setup_quasistatic_element_cache(
-    material_model::MultiMaterialModel,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-    cv::CellValues,
+        material_model::MultiMaterialModel,
+        qr::QuadratureRule,
+        sdh::SubDofHandler,
+        cv::CellValues
 )
     return setup_quasistatic_element_cache_multi(
         material_model.materials,
         material_model.domains,
         qr,
         sdh,
-        cv,
+        cv
     )
 end
 @unroll function setup_quasistatic_element_cache_multi(
-    materials::Tuple,
-    domains::Vector,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-    cv::CellValues,
+        materials::Tuple,
+        domains::Vector,
+        qr::QuadratureRule,
+        sdh::SubDofHandler,
+        cv::CellValues
 )
     idx = 1
-    @unroll for material ∈ materials
+    @unroll for material in materials
         if first(domains[idx]) ∈ sdh.cellset
             return QuasiStaticElementCache(
                 material,
                 setup_coefficient_cache(material, qr, sdh),
                 setup_internal_cache(material, qr, sdh),
-                cv,
+                cv
             )
         end
         idx += 1
@@ -208,20 +208,20 @@ end
     )
 end
 function setup_quasistatic_element_cache(
-    material_model::AbstractMaterialModel,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-    cv::CellValues,
+        material_model::AbstractMaterialModel,
+        qr::QuadratureRule,
+        sdh::SubDofHandler,
+        cv::CellValues
 )
     return QuasiStaticElementCache(
         material_model,
         setup_coefficient_cache(material_model, qr, sdh),
         setup_internal_cache(material_model, qr, sdh),
-        cv,
+        cv
     )
 end
 function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, sdh::SubDofHandler)
-    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    @assert length(sdh.dh.field_names)==1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo     = geometric_subdomain_interpolation(sdh)
@@ -230,13 +230,13 @@ function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, sdh::S
 end
 
 @unroll function setup_internal_cache_multi(
-    materials::Tuple,
-    domains::Vector,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
+        materials::Tuple,
+        domains::Vector,
+        qr::QuadratureRule,
+        sdh::SubDofHandler
 )
     idx = 1
-    @unroll for material ∈ materials
+    @unroll for material in materials
         if first(domains[idx]) ∈ sdh.cellset
             return setup_internal_cache(material, qr, sdh)
         end
@@ -256,6 +256,6 @@ function duplicate_for_device(device, cache::QuasiStaticElementCache)
         duplicate_for_device(device, cache.constitutive_model),
         duplicate_for_device(device, cache.coefficient_cache),
         duplicate_for_device(device, cache.internal_cache),
-        duplicate_for_device(device, cache.cv),
+        duplicate_for_device(device, cache.cv)
     )
 end

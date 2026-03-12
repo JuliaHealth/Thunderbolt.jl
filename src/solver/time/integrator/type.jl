@@ -21,7 +21,7 @@ Base.@kwdef mutable struct IntegratorOptions{
     discType,
     tcache,
     savecache,
-    disccache,
+    disccache
 }
     force_dtmin::Bool = false
     dtmin::tType = eps(tType)
@@ -72,7 +72,7 @@ mutable struct ThunderboltTimeIntegrator{
     cacheType,
     callbackcacheType,
     solType,
-    controllerType,
+    controllerType
 } <: SciMLBase.DEIntegrator{algType, true, uType, tType}
     alg::algType
     const f::fType # Right hand side
@@ -117,7 +117,7 @@ function (integrator::ThunderboltTimeIntegrator)(tmp, t)
         integrator.uprev,
         integrator.u,
         integrator.t - integrator.dt,
-        integrator.t,
+        integrator.t
     )
 end
 
@@ -137,30 +137,30 @@ end
 end
 
 function SciMLBase.__init(
-    prob::AbstractSemidiscreteProblem,
-    alg::AbstractSolver,
-    args...;
-    dt,
-    saveat = (),
-    tstops = (),
-    d_discontinuities = (),
-    ts_init = (),
-    ks_init = (),
-    save_end = nothing,
-    save_everystep = false,
-    save_idxs = nothing,
-    callback = nothing,
-    advance_to_tstop = false,
-    adaptive = SciMLBase.isadaptive(alg),
-    verbose = false,
-    alias_u0 = true,
-    # alias_du0 = false,
-    controller = nothing,
-    maxiters = 1000000,
-    dense = save_everystep && !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem),
-    dtmin = nothing,
-    dtmax = nothing,
-    kwargs...,
+        prob::AbstractSemidiscreteProblem,
+        alg::AbstractSolver,
+        args...;
+        dt,
+        saveat = (),
+        tstops = (),
+        d_discontinuities = (),
+        ts_init = (),
+        ks_init = (),
+        save_end = nothing,
+        save_everystep = false,
+        save_idxs = nothing,
+        callback = nothing,
+        advance_to_tstop = false,
+        adaptive = SciMLBase.isadaptive(alg),
+        verbose = false,
+        alias_u0 = true,
+        # alias_du0 = false,
+        controller = nothing,
+        maxiters = 1000000,
+        dense = save_everystep && !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem),
+        dtmin = nothing,
+        dtmax = nothing,
+        kwargs...
 )
     (; f, u0, p) = prob
     t0, tf = prob.tspan
@@ -183,15 +183,14 @@ function SciMLBase.__init(
     end
 
     # Setup tstop logic
-    tstops_internal =
-        OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, prob.tspan)
+    tstops_internal = OrdinaryDiffEqCore.initialize_tstops(
+        tType, tstops, d_discontinuities, prob.tspan)
     saveat_internal = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, prob.tspan)
-    d_discontinuities_internal =
-        OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, prob.tspan)
+    d_discontinuities_internal = OrdinaryDiffEqCore.initialize_d_discontinuities(
+        tType, d_discontinuities, prob.tspan)
 
-    save_end =
-        save_end === nothing ?
-        save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
+    save_end = save_end === nothing ?
+               save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
 
     # Setup solution buffers
     u = setup_u(prob, alg, alias_u0)
@@ -205,11 +204,11 @@ function SciMLBase.__init(
     if max_len_cb !== nothing
         uBottomEltypeReal = real(uBottomEltype)
         if SciMLBase.isinplace(prob)
-            callback_cache =
-                SciMLBase.CallbackCache(u, max_len_cb, uBottomEltypeReal, uBottomEltypeReal)
+            callback_cache = SciMLBase.CallbackCache(
+                u, max_len_cb, uBottomEltypeReal, uBottomEltypeReal)
         else
-            callback_cache =
-                SciMLBase.CallbackCache(max_len_cb, uBottomEltypeReal, uBottomEltypeReal)
+            callback_cache = SciMLBase.CallbackCache(
+                max_len_cb, uBottomEltypeReal, uBottomEltypeReal)
         end
     else
         callback_cache = nothing
@@ -238,7 +237,7 @@ function SciMLBase.__init(
         dense = dense,
         k = ks,
         saved_subsystem = saved_subsystem,
-        calculate_error = false,
+        calculate_error = false
     )
 
     # Setup algorithm cache
@@ -279,7 +278,7 @@ function SciMLBase.__init(
             d_discontinuities = d_discontinuities_internal,
             tstops_cache = tstops,
             saveat_cache = saveat,
-            d_discontinuities_cache = d_discontinuities,
+            d_discontinuities_cache = d_discontinuities
         ),
         false,
         0,
@@ -289,7 +288,7 @@ function SciMLBase.__init(
         false,
         0,
         0,
-        false,
+        false
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
     DiffEqBase.initialize!(integrator, integrator.cache)
@@ -306,8 +305,10 @@ function SciMLBase.__init(
     return integrator
 end
 
-DiffEqBase.initialize!(integrator::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache) =
+function DiffEqBase.initialize!(
+        integrator::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
     nothing
+end
 
 function SciMLBase.solve!(integrator::ThunderboltTimeIntegrator)
     @inbounds while SciMLBase.has_tstop(integrator)
@@ -328,8 +329,8 @@ function SciMLBase.solve!(integrator::ThunderboltTimeIntegrator)
     if integrator.sol.retcode != SciMLBase.ReturnCode.Default
         return integrator.sol
     end
-    return integrator.sol =
-        SciMLBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Success)
+    return integrator.sol = SciMLBase.solution_new_retcode(
+        integrator.sol, SciMLBase.ReturnCode.Success)
 end
 
 # Utils
@@ -355,8 +356,9 @@ function reject_step!(integrator::ThunderboltTimeIntegrator, cache, ::Nothing)
     end
 end
 
-adapt_dt!(integrator::ThunderboltTimeIntegrator) =
+function adapt_dt!(integrator::ThunderboltTimeIntegrator)
     adapt_dt!(integrator, integrator.cache, integrator.controller)
+end
 function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, controller)
     error("Step size control not implemented for $(alg).")
 end

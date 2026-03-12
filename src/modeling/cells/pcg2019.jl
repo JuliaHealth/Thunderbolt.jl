@@ -3,12 +3,12 @@ The canine ventricular cardiomyocyte electrophysiology model by [PatCorGra:2019:
 """
 Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     # ------ I_Na -------
-    g_Na::T  = 12.0    # [mS/µF]
-    E_m::T   = -52.244 # [mV]
-    k_m::T   = 6.5472  # [mV]
+    g_Na::T = 12.0    # [mS/µF]
+    E_m::T  = -52.244 # [mV]
+    k_m::T  = 6.5472  # [mV]
     τ_m::T  = 0.12    # [ms]
-    E_h::T   = -78.7   # [mV]
-    k_h::T   = 5.93    # [mV]
+    E_h::T  = -78.7   # [mV]
+    k_h::T  = 5.93    # [mV]
     δ_h::T  = 0.799163 # dimensionless
     τ_h0::T = 6.80738  # [ms]
     # ------ I_K1 -------
@@ -21,14 +21,14 @@ Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     k_r::T  = 11.462   # [mV]
     E_s::T  = -47.9286 # [mV]
     k_s::T  = 4.9314   # [mV]
-    τ_s::T = 9.90669  # [ms]
+    τ_s::T  = 9.90669  # [ms]
     # ------ I_CaL -------
     g_CaL::T = 0.11503 # [mS/µF]
     E_d::T   = 0.7     # [mV]
     k_d::T   = 4.3     # [mV]
     E_f::T   = -15.7   # [mV]
     k_f::T   = 4.6     # [mV]
-    τ_f::T  = 30.0    # [ms]
+    τ_f::T   = 30.0    # [ms]
     # ------ I_Kr -------
     g_Kr::T = 0.056 # [mS/µF]
     E_xr::T = -26.6 # [mV]
@@ -83,14 +83,14 @@ function cell_rhs_fast!(du, φ, state, x, t, p::ParametrizedPCG2019Model{T}) whe
 
     I_total = I_Na + I_K1 + I_to + I_CaL + I_Kr + I_Ks
 
-    du[1] = -I_total/C_m
+    du[1] = -I_total / C_m
 
     τ_h = (2.0 * τ_h0 * exp(δ_h * (φ - E_h) / k_h)) / (1.0 + exp((φ - E_h) / k_h))
     h∞ = sigmoid(φ, E_h, k_h, 1.0)
-    du[2] = (h∞-h)/τ_h
+    du[2] = (h∞ - h) / τ_h
 
     m∞ = sigmoid(φ, E_m, k_m, -1.0)
-    du[3] = (m∞-m)/τ_m
+    du[3] = (m∞ - m) / τ_m
 end
 
 function cell_rhs_slow!(du, φ, state, x, t, p::ParametrizedPCG2019Model)
@@ -106,24 +106,24 @@ function cell_rhs_slow!(du, φ, state, x, t, p::ParametrizedPCG2019Model)
     xr = state[6]
 
     f∞ = sigmoid(φ, E_f, k_f, 1.0)
-    du[4] = (f∞-f)/τ_f
+    du[4] = (f∞ - f) / τ_f
 
     s∞ = sigmoid(φ, E_s, k_s, 1.0)
-    du[5] = (s∞-s)/τ_s
+    du[5] = (s∞ - s) / τ_s
 
     xs∞ = sigmoid(φ, E_xs, k_xs, -1.0)
-    du[6] = (xs∞-xs)/τ_xs
+    du[6] = (xs∞ - xs) / τ_xs
 
     xr∞ = sigmoid(φ, E_xr, k_xr, -1.0)
-    du[7] = (xr∞-xr)/τ_xr
+    du[7] = (xr∞ - xr) / τ_xr
 end
 
 function cell_rhs!(
-    du::TD,
-    u::TU,
-    x::TX,
-    t::TT,
-    cell_parameters::TP,
+        du::TD,
+        u::TU,
+        x::TX,
+        t::TT,
+        cell_parameters::TP
 ) where {TD, TU, TX, TT, TP <: ParametrizedPCG2019Model}
     φₘ = u[1]
     s = @view u[2:end]

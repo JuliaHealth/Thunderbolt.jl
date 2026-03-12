@@ -20,8 +20,9 @@ A collection of compatible vector-valued interpolations over some (possilby diff
 abstract type VectorInterpolationCollection <: InterpolationCollection end
 
 # Wildcard
-getinterpolation(ipc::InterpolationCollection, sdh::SubDofHandler) =
+function getinterpolation(ipc::InterpolationCollection, sdh::SubDofHandler)
     getinterpolation(ipc, get_first_cell(sdh))
+end
 
 """
     LagrangeCollection{order} <: InterpolationCollection
@@ -31,14 +32,18 @@ A collection of fixed-order Lagrange interpolations across different cell types.
 struct LagrangeCollection{order} <: ScalarInterpolationCollection end
 
 getorder(::LagrangeCollection{order}) where {order} = order
-getinterpolation(
-    lc::LagrangeCollection{order},
-    cell::AbstractCell{ref_shape},
-) where {order, ref_shape <: Ferrite.AbstractRefShape} = Lagrange{ref_shape, order}()
-getinterpolation(
-    lc::LagrangeCollection{order},
-    ::Type{ref_shape},
-) where {order, ref_shape <: Ferrite.AbstractRefShape} = Lagrange{ref_shape, order}()
+function getinterpolation(
+        lc::LagrangeCollection{order},
+        cell::AbstractCell{ref_shape}
+) where {order, ref_shape <: Ferrite.AbstractRefShape}
+    Lagrange{ref_shape, order}()
+end
+function getinterpolation(
+        lc::LagrangeCollection{order},
+        ::Type{ref_shape}
+) where {order, ref_shape <: Ferrite.AbstractRefShape}
+    Lagrange{ref_shape, order}()
+end
 
 """
     DiscontinuousLagrangeCollection{order} <: InterpolationCollection
@@ -48,14 +53,18 @@ A collection of fixed-order Lagrange interpolations across different cell types.
 struct DiscontinuousLagrangeCollection{order} <: ScalarInterpolationCollection end
 
 getorder(::DiscontinuousLagrangeCollection{order}) where {order} = order
-getinterpolation(
-    lc::DiscontinuousLagrangeCollection{order},
-    cell::AbstractCell{ref_shape},
-) where {order, ref_shape <: Ferrite.AbstractRefShape} = DiscontinuousLagrange{ref_shape, order}()
-getinterpolation(
-    lc::DiscontinuousLagrangeCollection{order},
-    ::Type{ref_shape},
-) where {order, ref_shape <: Ferrite.AbstractRefShape} = DiscontinuousLagrange{ref_shape, order}()
+function getinterpolation(
+        lc::DiscontinuousLagrangeCollection{order},
+        cell::AbstractCell{ref_shape}
+) where {order, ref_shape <: Ferrite.AbstractRefShape}
+    DiscontinuousLagrange{ref_shape, order}()
+end
+function getinterpolation(
+        lc::DiscontinuousLagrangeCollection{order},
+        ::Type{ref_shape}
+) where {order, ref_shape <: Ferrite.AbstractRefShape}
+    DiscontinuousLagrange{ref_shape, order}()
+end
 
 
 """
@@ -67,24 +76,29 @@ struct VectorizedInterpolationCollection{vdim, IPC <: ScalarInterpolationCollect
        VectorInterpolationCollection
     base::IPC
     function VectorizedInterpolationCollection{vdim}(
-        ip::SIPC,
+            ip::SIPC,
     ) where {vdim, SIPC <: ScalarInterpolationCollection}
         return new{vdim, SIPC}(ip)
     end
 end
 
-Base.:(^)(ip::ScalarInterpolationCollection, vdim::Int) =
+function Base.:(^)(ip::ScalarInterpolationCollection, vdim::Int)
     VectorizedInterpolationCollection{vdim}(ip)
+end
 
 getorder(ipc::VectorizedInterpolationCollection) = getorder(ipc.base)
-getinterpolation(
-    ipc::VectorizedInterpolationCollection{vdim, IPC},
-    cell::AbstractCell{ref_shape},
-) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape} = getinterpolation(ipc.base, cell)^vdim
-getinterpolation(
-    ipc::VectorizedInterpolationCollection{vdim, IPC},
-    type::Type{ref_shape},
-) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape} = getinterpolation(ipc.base, type)^vdim
+function getinterpolation(
+        ipc::VectorizedInterpolationCollection{vdim, IPC},
+        cell::AbstractCell{ref_shape}
+) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape}
+    getinterpolation(ipc.base, cell)^vdim
+end
+function getinterpolation(
+        ipc::VectorizedInterpolationCollection{vdim, IPC},
+        type::Type{ref_shape}
+) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape}
+    getinterpolation(ipc.base, type)^vdim
+end
 
 
 """
@@ -96,12 +110,15 @@ struct QuadratureRuleCollection{order} end
 
 QuadratureRuleCollection(order::Int) = QuadratureRuleCollection{order}()
 
-getquadraturerule(
-    qrc::QuadratureRuleCollection{order},
-    cell::AbstractCell{ref_shape},
-) where {order, ref_shape} = QuadratureRule{ref_shape}(order)
-getquadraturerule(qrc::QuadratureRuleCollection, sdh::SubDofHandler) =
+function getquadraturerule(
+        qrc::QuadratureRuleCollection{order},
+        cell::AbstractCell{ref_shape}
+) where {order, ref_shape}
+    QuadratureRule{ref_shape}(order)
+end
+function getquadraturerule(qrc::QuadratureRuleCollection, sdh::SubDofHandler)
     getquadraturerule(qrc, get_first_cell(sdh))
+end
 
 
 """
@@ -117,15 +134,16 @@ struct NodalQuadratureRuleCollection{IPC <: InterpolationCollection}
 end
 
 function getquadraturerule(
-    nqr::NodalQuadratureRuleCollection,
-    cell::AbstractCell{ref_shape},
+        nqr::NodalQuadratureRuleCollection,
+        cell::AbstractCell{ref_shape}
 ) where {ref_shape}
     ip = getinterpolation(nqr.ipc, cell)
     positions = Ferrite.reference_coordinates(ip)
-    return QuadratureRule{ref_shape}([NaN for _ = 1:length(positions)], positions)
+    return QuadratureRule{ref_shape}([NaN for _ in 1:length(positions)], positions)
 end
-getquadraturerule(qrc::NodalQuadratureRuleCollection, sdh::SubDofHandler) =
+function getquadraturerule(qrc::NodalQuadratureRuleCollection, sdh::SubDofHandler)
     getquadraturerule(qrc, get_first_cell(sdh))
+end
 
 
 """
@@ -137,12 +155,15 @@ struct FacetQuadratureRuleCollection{order} end
 
 FacetQuadratureRuleCollection(order::Int) = FacetQuadratureRuleCollection{order}()
 
-getquadraturerule(
-    qrc::FacetQuadratureRuleCollection{order},
-    cell::AbstractCell{ref_shape},
-) where {order, ref_shape} = FacetQuadratureRule{ref_shape}(order)
-getquadraturerule(qrc::FacetQuadratureRuleCollection, sdh::SubDofHandler) =
+function getquadraturerule(
+        qrc::FacetQuadratureRuleCollection{order},
+        cell::AbstractCell{ref_shape}
+) where {order, ref_shape}
+    FacetQuadratureRule{ref_shape}(order)
+end
+function getquadraturerule(qrc::FacetQuadratureRuleCollection, sdh::SubDofHandler)
     getquadraturerule(qrc, get_first_cell(sdh))
+end
 
 
 """
@@ -152,20 +173,22 @@ Helper to construct and query the correct cell values on mixed grids.
 """
 struct CellValueCollection{
     QRC <: Union{QuadratureRuleCollection, NodalQuadratureRuleCollection},
-    IPC <: InterpolationCollection,
+    IPC <: InterpolationCollection
 }
     qrc::QRC
     ipc::IPC
 end
 
-getcellvalues(cv::CellValueCollection, cell::CellType) where {CellType <: AbstractCell} =
+function getcellvalues(cv::CellValueCollection, cell::CellType) where {CellType <: AbstractCell}
     CellValues(
         getquadraturerule(cv.qrc, cell),
         getinterpolation(cv.ipc, cell),
-        Ferrite.geometric_interpolation(CellType),
+        Ferrite.geometric_interpolation(CellType)
     )
-getcellvalues(qrc::CellValueCollection, sdh::SubDofHandler) =
+end
+function getcellvalues(qrc::CellValueCollection, sdh::SubDofHandler)
     getcellvalues(qrc, get_first_cell(sdh))
+end
 
 
 """
@@ -178,14 +201,16 @@ struct FacetValueCollection{QRC <: FacetQuadratureRuleCollection, IPC <: Interpo
     ipc::IPC
 end
 
-getfacetvalues(fv::FacetValueCollection, cell::CellType) where {CellType <: AbstractCell} =
+function getfacetvalues(fv::FacetValueCollection, cell::CellType) where {CellType <: AbstractCell}
     FacetValues(
         getquadraturerule(fv.qrc, cell),
         getinterpolation(fv.ipc, cell),
-        Ferrite.geometric_interpolation(CellType),
+        Ferrite.geometric_interpolation(CellType)
     )
-getfacetvalues(qrc::FacetValueCollection, sdh::SubDofHandler) =
+end
+function getfacetvalues(qrc::FacetValueCollection, sdh::SubDofHandler)
     getfacetvalues(qrc, get_first_cell(sdh))
+end
 
 
 """
@@ -196,7 +221,7 @@ Container to handle manage quadrature data and friends on mixed grids.
 struct ElementwiseData{
     DataType,
     StorageType <: AbstractVector{DataType},
-    IndexStorageType <: AbstractVector{<:Int},
+    IndexStorageType <: AbstractVector{<:Int}
 } <: AbstractMatrix{DataType}
     data::StorageType
     offsets::IndexStorageType
@@ -207,13 +232,13 @@ Base.getindex(data::ElementwiseData, i::Int) = data.data[i]
 Base.length(data::ElementwiseData) = length(data.data)
 Base.size(data::ElementwiseData) = (0, length(data.offsets))
 function Base.show(
-    io::IO,
-    ::MIME"text/plain",
-    data::ElementwiseData{DataType, StorageType, IndexStorageType},
+        io::IO,
+        ::MIME"text/plain",
+        data::ElementwiseData{DataType, StorageType, IndexStorageType}
 ) where {DataType, StorageType, IndexStorageType}
     print(
         io,
-        "ElementwiseData{DataType=$DataType, StorageType=$StorageType, IndexStorageType=$IndexStorageType} with $(length(data.data)) entries and outer dimension $(length(data.offsets)).",
+        "ElementwiseData{DataType=$DataType, StorageType=$StorageType, IndexStorageType=$IndexStorageType} with $(length(data.data)) entries and outer dimension $(length(data.offsets))."
     )
 end
 
@@ -222,13 +247,13 @@ function Base.setindex!(data::ElementwiseData{T}, v::T, i::Int) where {T}
 end
 
 function Base.getindex(data::ElementwiseData, j::Int, i::Int)
-    os = data.offsets[i]:(data.offsets[i+1]-1)
+    os = data.offsets[i]:(data.offsets[i + 1] - 1)
     dv = @view data.data[os]
     return dv[j]
 end
 
 function Base.setindex!(data::ElementwiseData{T}, v::T, j::Int, i::Int) where {T}
-    os = data.offsets[i]:(data.offsets[i+1]-1)
+    os = data.offsets[i]:(data.offsets[i + 1] - 1)
     dv = @view data.data[os]
     dv[j] = v
 end
@@ -243,9 +268,9 @@ struct ApproximationDescriptor
 end
 
 function add_subdomain!(
-    dh::DofHandler{<:Any, <:SimpleMesh},
-    name::String,
-    approxmations::Vector{ApproximationDescriptor},
+        dh::DofHandler{<:Any, <:SimpleMesh},
+        name::String,
+        approxmations::Vector{ApproximationDescriptor}
 )
     mesh = dh.grid
     cells = mesh.grid.cells
@@ -260,11 +285,12 @@ function add_subdomain!(
         end
     end
 end
-add_subdomain!(dh, domain_name, descriptor::Pair) =
+function add_subdomain!(dh, domain_name, descriptor::Pair)
     add_subdomain!(dh, domain_name, [ApproximationDescriptor(descriptor[1], descriptor[2])])
+end
 function add_subdomain!(dh, descriptor)
     vsubdomain = get_grid(dh).volumetric_subdomains
-    @assert length(vsubdomain) > 1 "Mesh has multiple subdomains. Please specify the subdomain on which the approximation is defined."
+    @assert length(vsubdomain)>1 "Mesh has multiple subdomains. Please specify the subdomain on which the approximation is defined."
     add_subdomain!(dh, first(keys(vsubdomain)), descriptor)
 end
 

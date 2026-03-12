@@ -52,16 +52,21 @@ struct CoupledModel{MT <: Tuple, CT <: Tuple}
 end
 
 CoupledModel(base_models::Tuple, coupler::Coupling) = CoupledModel(base_models, (coupler,))
-CoupledModel(base_models::AbstractVector, coupler::Coupling) =
+function CoupledModel(base_models::AbstractVector, coupler::Coupling)
     CoupledModel(ntuple(i -> base_models[i], length(base_models)), (coupler,))
-CoupledModel(base_models::AbstractVector, couplers::Tuple) =
+end
+function CoupledModel(base_models::AbstractVector, couplers::Tuple)
     CoupledModel(ntuple(i -> base_models[i], length(base_models)), couplers)
-CoupledModel(base_models::Tuple, couplers::AbstractVector) =
+end
+function CoupledModel(base_models::Tuple, couplers::AbstractVector)
     CoupledModel(base_models, ntuple(i -> couplers[i], length(couplers)))
-CoupledModel(base_models::AbstractVector, couplers::AbstractVector) = CoupledModel(
-    ntuple(i -> base_models[i], length(base_models)),
-    ntuple(i -> couplers[i], length(couplers)),
-)
+end
+function CoupledModel(base_models::AbstractVector, couplers::AbstractVector)
+    CoupledModel(
+        ntuple(i -> base_models[i], length(base_models)),
+        ntuple(i -> couplers[i], length(couplers))
+    )
+end
 
 is_relevant_coupling(coupler::Coupling, i::Int) = is_relevant_coupler(coupler.coupling, i)
 
@@ -73,5 +78,6 @@ function get_coupler(model::CoupledModel, i::Int, j::Int)
     return NullCoupler()
 end
 
-relevant_couplings(model::CoupledModel, i::Int) =
+function relevant_couplings(model::CoupledModel, i::Int)
     [coupling for coupling in model.couplings if is_relevant_coupling(coupling, i)]
+end

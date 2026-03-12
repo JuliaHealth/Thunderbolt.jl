@@ -8,24 +8,24 @@ end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
 function OS.build_subintegrator_tree_with_cache(
-    prob::OS.OperatorSplittingProblem,
-    alg::AbstractSolver,
-    f,
-    p,
-    uprevouter::AbstractVector,
-    uouter::AbstractVector,
-    solution_indices,
-    t0,
-    dt,
-    tf,
-    tstops,
-    saveat,
-    d_discontinuities,
-    callback,
-    adaptive,
-    verbose,
-    save_end = false,
-    controller = nothing,
+        prob::OS.OperatorSplittingProblem,
+        alg::AbstractSolver,
+        f,
+        p,
+        uprevouter::AbstractVector,
+        uouter::AbstractVector,
+        solution_indices,
+        t0,
+        dt,
+        tf,
+        tstops,
+        saveat,
+        d_discontinuities,
+        callback,
+        adaptive,
+        verbose,
+        save_end = false,
+        controller = nothing
 )
     uprev = @view uprevouter[solution_indices]
     u = @view uouter[solution_indices]
@@ -43,11 +43,11 @@ function OS.build_subintegrator_tree_with_cache(
     end
 
     # Setup tstop logic
-    tstops_internal =
-        OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, (t0, tf))
+    tstops_internal = OrdinaryDiffEqCore.initialize_tstops(
+        tType, tstops, d_discontinuities, (t0, tf))
     saveat_internal = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, (t0, tf))
-    d_discontinuities_internal =
-        OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, (t0, tf))
+    d_discontinuities_internal = OrdinaryDiffEqCore.initialize_d_discontinuities(
+        tType, d_discontinuities, (t0, tf))
 
     cache = setup_solver_cache(f, alg, t0; uprev = uprev, u = u)
 
@@ -97,9 +97,8 @@ function OS.build_subintegrator_tree_with_cache(
         controller = default_controller(alg, cache)
     end
 
-    save_end =
-        save_end === nothing ?
-        save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
+    save_end = save_end === nothing ?
+               save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
 
     # Setup the actual integrator object
     integrator = ThunderboltTimeIntegrator(
@@ -131,7 +130,7 @@ function OS.build_subintegrator_tree_with_cache(
             d_discontinuities = d_discontinuities_internal,
             tstops_cache = tstops,
             saveat_cache = saveat,
-            d_discontinuities_cache = d_discontinuities,
+            d_discontinuities_cache = d_discontinuities
         ),
         false,
         0,
@@ -141,7 +140,7 @@ function OS.build_subintegrator_tree_with_cache(
         false,
         0,
         0,
-        false,
+        false
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
 

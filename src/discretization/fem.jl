@@ -29,8 +29,8 @@ struct FiniteElementDiscretization
             dbcs::Vector{Dirichlet} = Dirichlet[],
             subdomains::Vector{String} = [""],
             assembly_strategy = SequentialAssemblyStrategy(SequentialCPUDevice()),
-            mass_qrc = nothing,
-        )
+            mass_qrc = nothing
+    )
         return new(ips, dbcs, subdomains, mass_qrc, assembly_strategy)
     end
 end
@@ -71,15 +71,16 @@ function _get_facet_quadrature_from_discretization(disc::FiniteElementDiscretiza
     return FacetQuadratureRuleCollection(intorder)
 end
 
-semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) =
+function semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid)
     @error "No implementation for the generic discretization of coupled problems available yet."
+end
 
 function semidiscretize(
         model::TransientDiffusionModel,
         discretization::FiniteElementDiscretization,
-        mesh::AbstractGrid,
-    )
-    @assert length(discretization.dbcs) == 0 "Dirichlet conditions not supported yet for TransientDiffusionProblem"
+        mesh::AbstractGrid
+)
+    @assert length(discretization.dbcs)==0 "Dirichlet conditions not supported yet for TransientDiffusionProblem"
 
     sym = model.solution_variable_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
@@ -95,20 +96,20 @@ function semidiscretize(
         BilinearMassIntegrator(
             ConstantCoefficient(T(1.0)),
             discretization.mass_qrc === nothing ? qrc : mass_qrc, # Allow e.g. mass lumping for explicit integrators.
-            sym,
+            sym
         ),
         BilinearDiffusionIntegrator(model.κ, qrc, sym),
         LinearIntegrator(model.source, qrc),
         dh,
-        discretization.assembly_strategy,
+        discretization.assembly_strategy
     )
 end
 
 function semidiscretize(
         model::SteadyDiffusionModel,
         discretization::FiniteElementDiscretization,
-        mesh::AbstractGrid,
-    )
+        mesh::AbstractGrid
+)
     sym = model.solution_variable_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
@@ -129,22 +130,22 @@ function semidiscretize(
         LinearIntegrator(model.source, qrc),
         dh,
         ch,
-        discretization.assembly_strategy,
+        discretization.assembly_strategy
     )
 end
 
 function semidiscretize(
         split::ReactionDiffusionSplit{<:MonodomainModel},
         discretization::FiniteElementDiscretization,
-        mesh::AbstractGrid,
-    )
+        mesh::AbstractGrid
+)
     epmodel = split.model
     φsym = epmodel.transmembrane_solution_symbol
 
     heat_model = TransientDiffusionModel(
         ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
         epmodel.stim,
-        φsym,
+        φsym
     )
 
     heatfun = semidiscretize(heat_model, discretization, mesh)
@@ -157,7 +158,7 @@ function semidiscretize(
         # TODO epmodel.Cₘ(x)
         ndofsφ,
         epmodel.ion,
-        split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym),
+        split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym)
     )
     nstates_per_point = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
@@ -166,8 +167,7 @@ function semidiscretize(
     #
     semidiscrete_ode = GenericSplitFunction(
         (heatfun, odefun),
-        (heat_dofrange, ode_dofrange),
-        # No transfer operators needed, because the the solutions variables overlap with the subproblems perfectly
+        (heat_dofrange, ode_dofrange)        # No transfer operators needed, because the the solutions variables overlap with the subproblems perfectly
     )
 
     return semidiscrete_ode
@@ -185,10 +185,10 @@ function semidiscretize(
         split::ReactionEikonalSplit{<:MonodomainModel},
         discretizations::Tuple{
             <:FiniteElementDiscretization,
-            <:SimplicialEikonalDiscretization,
+            <:SimplicialEikonalDiscretization
         },
-        mesh::AbstractGrid,
-    )
+        mesh::AbstractGrid
+)
     epmodel = split.model
 
     eikonal_model = EikonalModel(
@@ -204,14 +204,16 @@ function semidiscretize(
         (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
         Thunderbolt.default_initial_state(epmodel.ion),
         (0.0, 50.0),
-        Thunderbolt.StimulatedCellModel(; cell_model = epmodel.ion),
+        Thunderbolt.StimulatedCellModel(; cell_model = epmodel.ion)
     )
 
-    prob_func = let activation_timings = fill(Inf, length(eikonal_function.vertices)), cellmodel = epmodel.ion
+    prob_func = let activation_timings = fill(Inf, length(eikonal_function.vertices)),
+        cellmodel = epmodel.ion
+
         (prob, i, repeat) -> begin
             model_i = Thunderbolt.StimulatedCellModel(;
                 cell_model = cellmodel,
-                stim_offset = activation_timings[i],
+                stim_offset = activation_timings[i]
             )
             OrdinaryDiffEqCore.remake(prob, p = model_i, tstops = [activation_timings[i]])
         end
@@ -231,8 +233,8 @@ function semidiscretize_register_subdomains!(
         lvh,
         model,
         material_model::AbstractMaterialModel,
-        discretization::FiniteElementDiscretization,
-    )
+        discretization::FiniteElementDiscretization
+)
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
@@ -248,8 +250,8 @@ function semidiscretize_register_subdomains!(
         lvh,
         model,
         material_models::MultiMaterialModel,
-        discretization::FiniteElementDiscretization,
-    )
+        discretization::FiniteElementDiscretization
+)
     return semidiscretize_register_subdomains_multi!(
         dh,
         lvh,
@@ -257,7 +259,7 @@ function semidiscretize_register_subdomains!(
         material_models.materials,
         material_models.domains,
         material_models.domain_names,
-        discretization,
+        discretization
     )
 end
 @unroll function semidiscretize_register_subdomains_multi!(
@@ -267,8 +269,8 @@ end
         material_models,
         domains,
         domain_names,
-        discretization,
-    )
+        discretization
+)
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
@@ -280,7 +282,7 @@ end
             domain_names[idx],
             gather_internal_variable_infos(material_model),
             qrc,
-            dh,
+            dh
         )
         idx += 1
     end
@@ -290,8 +292,8 @@ end
 function semidiscretize(
         model::QuasiStaticModel,
         discretization::FiniteElementDiscretization,
-        mesh::AbstractGrid,
-    )
+        mesh::AbstractGrid
+)
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
@@ -316,9 +318,9 @@ function semidiscretize(
             model.facet_models,
             [sym],
             qrc,
-            _get_facet_quadrature_from_discretization(discretization, sym),
+            _get_facet_quadrature_from_discretization(discretization, sym)
         ),
-        discretization.assembly_strategy,
+        discretization.assembly_strategy
     )
 
     return semidiscrete_problem

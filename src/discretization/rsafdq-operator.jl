@@ -4,7 +4,7 @@ struct AssembledRSAFDQ2022Operator{
     ElementModelType,
     FacetModelType,
     TyingModelType,
-    DHType,
+    DHType
 } <: AbstractBlockOperator
     J::MatrixType
     element_model::ElementModelType
@@ -12,20 +12,20 @@ struct AssembledRSAFDQ2022Operator{
     boundary_model::FacetModelType
     boundary_qrc::Union{<:FacetQuadratureRuleCollection, Nothing}
     tying_model::TyingModelType
-    tying_qrc::Union{<:QuadratureRuleCollection, <: FacetQuadratureRuleCollection, Nothing}
+    tying_qrc::Union{<:QuadratureRuleCollection, <:FacetQuadratureRuleCollection, Nothing}
     dh::DHType
 end
 
 function AssembledRSAFDQ2022Operator(
-    dh::AbstractDofHandler,
-    field_name::Symbol,
-    element_model,
-    element_qrc::QuadratureRuleCollection,
-    boundary_model,
-    boundary_qrc::FacetQuadratureRuleCollection,
-    tying::RSAFDQ2022TyingInfo,
+        dh::AbstractDofHandler,
+        field_name::Symbol,
+        element_model,
+        element_qrc::QuadratureRuleCollection,
+        boundary_model,
+        boundary_qrc::FacetQuadratureRuleCollection,
+        tying::RSAFDQ2022TyingInfo
 )
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
+    @assert length(dh.subdofhandlers)==1 "Multiple subdomains not yet supported in the nonlinear opeartor."
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
@@ -49,7 +49,7 @@ function AssembledRSAFDQ2022Operator(
         boundary_qrc,
         tying,
         boundary_qrc,
-        dh,
+        dh
     )
 end
 
@@ -97,11 +97,11 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
         boundary_cache,
         tying_cache,
         u,
-        time,
+        time
     )
 
     # Assemble forward and backward coupling contributions
-    for (chamber_index, chamber) ∈ enumerate(tying_cache.chambers)
+    for (chamber_index, chamber) in enumerate(tying_cache.chambers)
         V⁰ᴰ = chamber.V⁰ᴰval
         chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
 
@@ -114,7 +114,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
             dh,
             ud,
             chamber_pressure,
-            chamber,
+            chamber
         )
         @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(
             Jpd_current,
@@ -122,7 +122,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
             ud,
             chamber_pressure,
             V⁰ᴰ,
-            chamber,
+            chamber
         )
 
         @info chamber_index, chamber_pressure, V⁰ᴰ
@@ -133,17 +133,17 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
 end
 
 function update_linearization!(
-    op::AssembledRSAFDQ2022Operator,
-    residual_::AbstractVector,
-    u_::AbstractVector,
-    time,
+        op::AssembledRSAFDQ2022Operator,
+        residual_::AbstractVector,
+        u_::AbstractVector,
+        time
 )
     @unpack J, dh = op
     @unpack element_model, element_qrc = op
     @unpack boundary_model, boundary_qrc = op
     @unpack tying_model, tying_qrc = op
 
-    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
+    @assert length(dh.field_names)==1 "Please use block operators for problems with multiple fields."
     field_name = first(dh.field_names)
 
     bs = blocksizes(J)
@@ -187,11 +187,11 @@ function update_linearization!(
         boundary_cache,
         tying_cache,
         u,
-        time,
+        time
     )
 
     # Assemble forward and backward coupling contributions
-    for (chamber_index, chamber) ∈ enumerate(tying_cache.chambers)
+    for (chamber_index, chamber) in enumerate(tying_cache.chambers)
         V⁰ᴰ = chamber.V⁰ᴰval
         chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
 
@@ -206,7 +206,7 @@ function update_linearization!(
             dh,
             ud,
             chamber_pressure,
-            chamber,
+            chamber
         )
         @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(
             Jpd_current,
@@ -215,7 +215,7 @@ function update_linearization!(
             ud,
             chamber_pressure,
             V⁰ᴰ,
-            chamber,
+            chamber
         )
 
         @info "Chamber $chamber_index p=$chamber_pressure, V0=$V⁰ᴰ"
@@ -229,8 +229,8 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
     @unpack tying_info, structural_function = f
     @unpack dh, integrator = structural_function
     @unpack fqrc, qrc, volume_model, facet_model = integrator
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
-    @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
+    @assert length(dh.subdofhandlers)==1 "Multiple subdomains not yet supported in the Newton solver."
+    @assert length(dh.field_names)==1 "Multiple fields not yet supported in the nonlinear solver."
 
     displacement_symbol = first(dh.field_names)
 
@@ -241,7 +241,7 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
         qrc,
         facet_model,
         fqrc,
-        tying_info,
+        tying_info
     )
 end
 

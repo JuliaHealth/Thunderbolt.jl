@@ -32,7 +32,7 @@ struct SchurComplementLinearSolverScratch{
     z1Type <: AbstractVector,
     z2Type <: AbstractMatrix,
     rhs2Type <: AbstractVector,
-    sys2Type <: AbstractMatrix,
+    sys2Type <: AbstractMatrix
 }
     z₁::z1Type
     z₂::z2Type
@@ -55,17 +55,17 @@ struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
 end
 
 function LinearSolve.init_cacheval(
-    alg::AbstractLinear2x2BlockAlgorithm,
-    A::AbstractBlockMatrix,
-    b::AbstractVector,
-    u::AbstractVector,
-    args...;
-    kwargs...,
+        alg::AbstractLinear2x2BlockAlgorithm,
+        A::AbstractBlockMatrix,
+        b::AbstractVector,
+        u::AbstractVector,
+        args...;
+        kwargs...
 )
     # Check if input is okay
     bs = blocksizes(A)
-    @assert size(bs) == (2, 2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(size(bs))."
-    @assert bs[1, 1][1] == bs[1, 1][2] && bs[2, 2][1] == bs[2, 2][2] "Diagonal blocks are not quadratic matrices ($(bs)). Aborting."
+    @assert size(bs)==(2, 2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(size(bs))."
+    @assert bs[1, 1][1] == bs[1, 1][2]&&bs[2, 2][1] == bs[2, 2][2] "Diagonal blocks are not quadratic matrices ($(bs)). Aborting."
     s1 = bs[1, 1][1]
     s2 = bs[2, 2][1]
     # Transform Vectors to block vectors
@@ -90,9 +90,9 @@ function LinearSolve.init_cacheval(
 end
 
 function LinearSolve.solve!(
-    cache::LinearSolve.LinearCache,
-    alg::SchurComplementLinearSolver;
-    kwargs...,
+        cache::LinearSolve.LinearCache,
+        alg::SchurComplementLinearSolver;
+        kwargs...
 ) # 1 alloc from the call...?
     # Instead of solving directly for
     #  / A₁₁  A₁₂ \ u₁ | b₁
@@ -119,16 +119,16 @@ function LinearSolve.solve!(
     A₂₁ = @view A[Block(2, 1)]
     A₂₂ = @view A[Block(2, 2)]
     u₁ = @view u[1:s1]
-    u₂ = @view u[(s1+1):(s1+s2)]
+    u₂ = @view u[(s1 + 1):(s1 + s2)]
     b₁ = @view b[1:s1]
-    b₂ = @view b[(s1+1):(s1+s2)]
+    b₂ = @view b[(s1 + 1):(s1 + s2)]
 
     # Sync inner solver with outer solver
     innersolve.isfresh = cache.isfresh
 
     # First step is solving A₁₁ z₁ = b₁
     @. innersolve.b = -b₁
-    @timeit_debug "Solve A₁₁ z₁ = b₁" solz₁ = solve!(innersolve)
+    @timeit_debug "Solve A₁₁ z₁ = b₁" solz₁=solve!(innersolve)
     z₁ .= solz₁.u
     if !(
         LinearSolve.SciMLBase.successful_retcode(solz₁) ||
@@ -140,11 +140,11 @@ function LinearSolve.solve!(
             u,
             nothing,
             cache;
-            retcode = solz₁.retcode,
+            retcode = solz₁.retcode
         )
     end
     # Next step is solving for the transfer matrix A₁₁ z₂ = A₁₂
-    for i ∈ 1:s2
+    for i in 1:s2
         # Setup
         A₁₂i = @view A₁₂[:, i]
         innersolve.b .= A₁₂i
@@ -163,7 +163,7 @@ function LinearSolve.solve!(
                 u,
                 nothing,
                 cache;
-                retcode = solz₂.retcode,
+                retcode = solz₂.retcode
             )
         end
     end
@@ -192,7 +192,7 @@ function LinearSolve.solve!(
         u,
         nothing,
         cache;
-        retcode = LinearSolve.ReturnCode.Success,
+        retcode = LinearSolve.ReturnCode.Success
     )
 end
 
@@ -206,12 +206,12 @@ function inner_solve_schur(J::BlockMatrix, r::AbstractBlockArray)
     Jpd = @view J[Block(2, 1)]
     w = Jdd \ Vector(Jdp[:, 1])
 
-    Jpdv = Jpd*v
-    Jpdw = Jpd*w
+    Jpdv = Jpd * v
+    Jpdw = Jpd * w
     # Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
     Δp = (-rp[1] - Jpdv[1]) / Jpdw[1]
-    wΔp = w*Δp
-    Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
+    wΔp = w * Δp
+    Δd = -(v + wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
 
     Δu = BlockVector([Δd; [Δp]], blocksizes(r, 1))
     return Δu

@@ -15,8 +15,8 @@ function Adapt.adapt_structure(device::CudaDevice, dh::DofHandler)
     cell_dofs = dh.cell_dofs .|> (i -> convert(IT, i)) |> cu
     cell_dofs_offset = dh.cell_dofs_offset .|> (i -> convert(IT, i)) |> cu
     cell_to_sdh = dh.cell_to_subdofhandler .|> (i -> convert(IT, i)) |> cu
-    dh_data =
-        DeviceDofHandlerData(grid, cell_dofs, cell_dofs_offset, cell_to_sdh, convert(IT, dh.ndofs))
+    dh_data = DeviceDofHandlerData(
+        grid, cell_dofs, cell_dofs_offset, cell_to_sdh, convert(IT, dh.ndofs))
     subdofhandlers = dh.subdofhandlers .|> (sdh -> _adapt(device, sdh, dh_data))
     return DeviceDofHandler(dh, subdofhandlers)
 end
@@ -45,8 +45,8 @@ end
 ## adapt Coefficients ##
 ########################
 function Adapt.adapt_structure(
-    ::CudaDevice,
-    element_cache::Thunderbolt.AnalyticalCoefficientElementCache,
+        ::CudaDevice,
+        element_cache::Thunderbolt.AnalyticalCoefficientElementCache
 )
     cc = adapt_structure(CuArray, element_cache.cc)
     nz_intervals = adapt(CuArray, element_cache.nonzero_intervals)

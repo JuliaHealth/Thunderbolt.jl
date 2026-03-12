@@ -34,37 +34,45 @@ assemble_element!
 """
 struct EmptyVolumetricElementCache <: AbstractVolumetricElementCache end
 # Main entry point for bilinear operators
-assemble_element!(
-    Kₑ::AbstractMatrix,
-    cell::CellCache,
-    element_cache::EmptyVolumetricElementCache,
-    time,
-) = nothing
+function assemble_element!(
+        Kₑ::AbstractMatrix,
+        cell::CellCache,
+        element_cache::EmptyVolumetricElementCache,
+        time
+)
+    nothing
+end
 # Update element matrix in nonlinear operators
-assemble_element!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell::CellCache,
-    element_cache::EmptyVolumetricElementCache,
-    time,
-) = nothing
+function assemble_element!(
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell::CellCache,
+        element_cache::EmptyVolumetricElementCache,
+        time
+)
+    nothing
+end
 # Update element matrix and residual in nonlinear operators
-assemble_element!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell::CellCache,
-    element_cache::EmptyVolumetricElementCache,
-    time,
-) = nothing
+function assemble_element!(
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell::CellCache,
+        element_cache::EmptyVolumetricElementCache,
+        time
+)
+    nothing
+end
 # Update residual in nonlinear operators
-assemble_element!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell::CellCache,
-    element_cache::EmptyVolumetricElementCache,
-    time,
-) = nothing
+function assemble_element!(
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell::CellCache,
+        element_cache::EmptyVolumetricElementCache,
+        time
+)
+    nothing
+end
 
 
 
@@ -104,58 +112,70 @@ assemble_facet!
 """
 struct EmptySurfaceElementCache <: AbstractSurfaceElementCache end
 # Update element matrix in nonlinear operators
-assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell::CellCache,
-    local_facet_index::Int,
-    facet_caches::EmptySurfaceElementCache,
-    time,
-) = nothing
-assemble_element!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell::CellCache,
-    local_facet_index::Int,
-    facet_caches::EmptySurfaceElementCache,
-    time,
-) = nothing
+function assemble_facet!(
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell::CellCache,
+        local_facet_index::Int,
+        facet_caches::EmptySurfaceElementCache,
+        time
+)
+    nothing
+end
+function assemble_element!(
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell::CellCache,
+        local_facet_index::Int,
+        facet_caches::EmptySurfaceElementCache,
+        time
+)
+    nothing
+end
 # Update element matrix and residual in nonlinear operators
-assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    facet_caches::EmptySurfaceElementCache,
-    time,
-) = nothing
-assemble_element!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    facet_caches::EmptySurfaceElementCache,
-    time,
-) = nothing
+function assemble_facet!(
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        facet_caches::EmptySurfaceElementCache,
+        time
+)
+    nothing
+end
+function assemble_element!(
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        facet_caches::EmptySurfaceElementCache,
+        time
+)
+    nothing
+end
 # Update residual in nonlinear operators
-assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    facet_caches::EmptySurfaceElementCache,
-    time,
-) = nothing
-assemble_element!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    facet_caches::EmptySurfaceElementCache,
-    time,
-) = nothing
+function assemble_facet!(
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        facet_caches::EmptySurfaceElementCache,
+        time
+)
+    nothing
+end
+function assemble_element!(
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        facet_caches::EmptySurfaceElementCache,
+        time
+)
+    nothing
+end
 @inline is_facet_in_cache(::FacetIndex, cell, ::EmptySurfaceElementCache) = false
 
 """
@@ -194,30 +214,36 @@ Utility to execute noop assembly.
 """
 struct EmptyInterfaceCache <: AbstractInterfaceElementCache end
 # Update element matrix in nonlinear operators
-assemble_interface!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell::CellCache,
-    local_facet_index::Int,
-    facet_caches::EmptyInterfaceCache,
-    time,
-) = nothing
+function assemble_interface!(
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell::CellCache,
+        local_facet_index::Int,
+        facet_caches::EmptyInterfaceCache,
+        time
+)
+    nothing
+end
 # Update element matrix and residual in nonlinear operators
-assemble_interface!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    facet_caches::EmptyInterfaceCache,
-    time,
-) = nothing
+function assemble_interface!(
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        facet_caches::EmptyInterfaceCache,
+        time
+)
+    nothing
+end
 # Update residual in nonlinear operators
-assemble_interface!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    facet_caches::EmptyInterfaceCache,
-    time,
-) = nothing
+function assemble_interface!(
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        facet_caches::EmptyInterfaceCache,
+        time
+)
+    nothing
+end

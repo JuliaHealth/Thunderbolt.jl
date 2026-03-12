@@ -1,7 +1,7 @@
 function setup_boundary_cache(boundary_models::Tuple, qr::FacetQuadratureRule, sdh::SubDofHandler)
     length(boundary_models) == 0 && return EmptySurfaceElementCache()
     return CompositeSurfaceElementCache(
-        ntuple(i->setup_boundary_cache(boundary_models[i], qr, sdh), length(boundary_models)),
+        ntuple(i -> setup_boundary_cache(boundary_models[i], qr, sdh), length(boundary_models)),
     )
 end
 
@@ -83,16 +83,17 @@ end
 function duplicate_for_device(device, cache::SimpleFacetCache)
     return SimpleFacetCache(cache.mp, duplicate_for_device(device, cache.fv))
 end
-@inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::SimpleFacetCache) =
-    facet ∈ getfacetset(cell.grid, getboundaryname(facet_cache))
+@inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::SimpleFacetCache) = facet ∈
+                                                                                               getfacetset(
+    cell.grid, getboundaryname(facet_cache))
 @inline getboundaryname(facet_cache::SimpleFacetCache) = facet_cache.mp.boundary_name
 
 function setup_boundary_cache(
-    facet_model::AbstractWeakBoundaryCondition,
-    qr::FacetQuadratureRule,
-    sdh::SubDofHandler,
+        facet_model::AbstractWeakBoundaryCondition,
+        qr::FacetQuadratureRule,
+        sdh::SubDofHandler
 )
-    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    @assert length(sdh.dh.field_names)==1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo     = geometric_subdomain_interpolation(sdh)
@@ -100,13 +101,13 @@ function setup_boundary_cache(
 end
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    cache::SimpleFacetCache{<:RobinBC},
-    time,
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        cache::SimpleFacetCache{<:RobinBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack α = mp
@@ -118,14 +119,14 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
 
         u_q = function_value(fv, qp, uₑ)
-        ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)
+        ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α * u ⋅ u, u_q, :all)
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
             residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
 
-            for j = 1:ndofs_facet
+            for j in 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
@@ -135,12 +136,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:RobinBC},
-    time,
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:RobinBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack α = mp
@@ -152,13 +153,13 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
 
         u_q = function_value(fv, qp, uₑ)
-        ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)
+        ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α * u ⋅ u, u_q, :all)
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
 
-            for j = 1:ndofs_facet
+            for j in 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
@@ -168,12 +169,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    cache::SimpleFacetCache{<:RobinBC},
-    time,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        cache::SimpleFacetCache{<:RobinBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack α = mp
@@ -185,10 +186,10 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
 
         u_q = function_value(fv, qp, uₑ)
-        ∂Ψ∂u = Tensors.gradient(u -> α*u⋅u, u_q)
+        ∂Ψ∂u = Tensors.gradient(u -> α * u ⋅ u, u_q)
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
             residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
         end
@@ -198,13 +199,13 @@ end
 
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:NormalSpringBC},
-    time,
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:NormalSpringBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack kₛ = mp
@@ -217,14 +218,14 @@ function assemble_facet!(
         N = getnormal(fv, qp)
 
         u_q = function_value(fv, qp, uₑ)
-        ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
+        ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5 * kₛ * (u ⋅ N)^2, u_q, :all)
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
             residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
 
-            for j = 1:ndofs_facet
+            for j in 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
@@ -234,12 +235,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:NormalSpringBC},
-    time,
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:NormalSpringBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack kₛ = mp
@@ -252,13 +253,13 @@ function assemble_facet!(
         N = getnormal(fv, qp)
 
         u_q = function_value(fv, qp, uₑ)
-        ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
+        ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5 * kₛ * (u ⋅ N)^2, u_q, :all)
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
 
-            for j = 1:ndofs_facet
+            for j in 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
@@ -268,12 +269,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:NormalSpringBC},
-    time,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:NormalSpringBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack kₛ = mp
@@ -286,10 +287,10 @@ function assemble_facet!(
         N = getnormal(fv, qp)
 
         u_q = function_value(fv, qp, uₑ)
-        ∂Ψ∂u = Tensors.gradient(u -> 0.5*kₛ*(u⋅N)^2, u_q)
+        ∂Ψ∂u = Tensors.gradient(u -> 0.5 * kₛ * (u ⋅ N)^2, u_q)
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
             residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
         end
@@ -299,13 +300,13 @@ end
 
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:BendingSpringBC},
-    time,
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:BendingSpringBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack kᵇ = mp
@@ -321,18 +322,18 @@ function assemble_facet!(
         F = one(∇u) + ∇u
 
         ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
-            F_ -> 0.5*kᵇ*(transpose(inv(F_))⋅N - N)⋅(transpose(inv(F_))⋅N - N),
+            F_ -> 0.5 * kᵇ * (transpose(inv(F_)) ⋅ N - N) ⋅ (transpose(inv(F_)) ⋅ N - N),
             F,
-            :all,
+            :all
         )
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             ∇δui = shape_gradient(fv, qp, i)
             residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
-            for j = 1:ndofs_facet
+            for j in 1:ndofs_facet
                 ∇δuj = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
@@ -342,12 +343,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:BendingSpringBC},
-    time,
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:BendingSpringBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack kᵇ = mp
@@ -363,17 +364,17 @@ function assemble_facet!(
         F = one(∇u) + ∇u
 
         ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
-            F_ -> 0.5*kᵇ*(transpose(inv(F_))⋅N - N)⋅(transpose(inv(F_))⋅N - N),
+            F_ -> 0.5 * kᵇ * (transpose(inv(F_)) ⋅ N - N) ⋅ (transpose(inv(F_)) ⋅ N - N),
             F,
-            :all,
+            :all
         )
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             ∇δui = shape_gradient(fv, qp, i)
 
             ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
-            for j = 1:ndofs_facet
+            for j in 1:ndofs_facet
                 ∇δuj = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
@@ -383,12 +384,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:BendingSpringBC},
-    time,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:BendingSpringBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack kᵇ = mp
@@ -403,11 +404,11 @@ function assemble_facet!(
         ∇u = function_gradient(fv, qp, uₑ)
         F = one(∇u) + ∇u
 
-        ∂Ψ∂F =
-            Tensors.gradient(F_ -> 0.5*kᵇ*(transpose(inv(F_))⋅N - N)⋅(transpose(inv(F_))⋅N - N), F)
+        ∂Ψ∂F = Tensors.gradient(
+            F_ -> 0.5 * kᵇ * (transpose(inv(F_)) ⋅ N - N) ⋅ (transpose(inv(F_)) ⋅ N - N), F)
 
         # Add contribution to the residual from this test function
-        for i = 1:ndofs_facet
+        for i in 1:ndofs_facet
             ∇δui = shape_gradient(fv, qp, i)
             residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
         end
@@ -417,12 +418,12 @@ end
 
 
 function assemble_facet_pressure_qp!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    p,
-    qp,
-    fv::FacetValues,
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        p,
+        qp,
+        fv::FacetValues
 )
     ndofs_facet = getnbasefunctions(fv)
 
@@ -438,11 +439,11 @@ function assemble_facet_pressure_qp!(
     # @info qp, J, cofF ⋅ n₀
     neumann_term = p * J * cofF ⋅ n₀
     # neumann_term = p * n₀
-    for i = 1:ndofs_facet
+    for i in 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
         residualₑ[i] += neumann_term ⋅ δuᵢ * dΓ
 
-        for j = 1:ndofs_facet
+        for j in 1:ndofs_facet
             ∇δuⱼ = shape_gradient(fv, qp, j)
             # Add contribution to the tangent
             #   δF^-1 = -F^-1 δF F^-1
@@ -469,10 +470,10 @@ function assemble_facet_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector,
     cofF = transpose(invF)
     J = det(F)
     # neumann_term = p * J * cofF ⋅ n₀
-    for i = 1:ndofs_facet
+    for i in 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
 
-        for j = 1:ndofs_facet
+        for j in 1:ndofs_facet
             ∇δuⱼ = shape_gradient(fv, qp, j)
             # Add contribution to the tangent
             #   δF^-1 = -F^-1 δF F^-1
@@ -487,11 +488,11 @@ function assemble_facet_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector,
 end
 
 function assemble_facet_pressure_qp!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    p,
-    qp,
-    fv::FacetValues,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        p,
+        qp,
+        fv::FacetValues
 )
     ndofs_facet = getnbasefunctions(fv)
 
@@ -506,7 +507,7 @@ function assemble_facet_pressure_qp!(
     J = det(F)
     neumann_term = p * J * cofF ⋅ n₀
     # neumann_term = p * n₀
-    for i = 1:ndofs_facet
+    for i in 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
         residualₑ[i] += neumann_term ⋅ δuᵢ * dΓ
     end
@@ -514,13 +515,13 @@ end
 
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:PressureFieldBC},
-    time,
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:PressureFieldBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack pc = mp
@@ -534,12 +535,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:PressureFieldBC},
-    time,
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:PressureFieldBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack pc = mp
@@ -554,12 +555,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:PressureFieldBC},
-    time,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:PressureFieldBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack pc = mp
@@ -575,13 +576,13 @@ end
 
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:ConstantPressureBC},
-    time,
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:ConstantPressureBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack p = mp
@@ -594,12 +595,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:ConstantPressureBC},
-    time,
+        Kₑ::AbstractMatrix,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:ConstantPressureBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack p = mp
@@ -612,12 +613,12 @@ function assemble_facet!(
 end
 
 function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
-    cache::SimpleFacetCache{<:ConstantPressureBC},
-    time,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index,
+        cache::SimpleFacetCache{<:ConstantPressureBC},
+        time
 )
     @unpack mp, fv = cache
     @unpack p = mp
@@ -651,22 +652,21 @@ function duplicate_for_device(device, cache::ConsistencyCheckWeakBoundaryConditi
         duplicate_for_device(cache.uₑfd),
         duplicate_for_device(cache.residualₑfd),
         duplicate_for_device(cache.residualₑref),
-        cache.Δ,
+        cache.Δ
     )
 end
 @inline is_facet_in_cache(
-    facet::FacetIndex,
-    cell::CellCache,
-    facet_cache::ConsistencyCheckWeakBoundaryConditionCache,
+facet::FacetIndex,
+cell::CellCache,
+facet_cache::ConsistencyCheckWeakBoundaryConditionCache
 ) = is_facet_in_cache(facet, cell, facet_cache.inner_cache)
-@inline getboundaryname(facet_cache::ConsistencyCheckWeakBoundaryConditionCache) =
-    getboundaryname(facet_cache.inner_cache)
+@inline getboundaryname(facet_cache::ConsistencyCheckWeakBoundaryConditionCache) = getboundaryname(facet_cache.inner_cache)
 @inline getboundaryname(check::ConsistencyCheckWeakBoundaryCondition) = getboundaryname(check.bc)
 
 function setup_boundary_cache(
-    ccc::ConsistencyCheckWeakBoundaryCondition,
-    qr::FacetQuadratureRule,
-    sdh::SubDofHandler,
+        ccc::ConsistencyCheckWeakBoundaryCondition,
+        qr::FacetQuadratureRule,
+        sdh::SubDofHandler
 )
     N = ndofs_per_cell(sdh)
     return ConsistencyCheckWeakBoundaryConditionCache(
@@ -675,18 +675,18 @@ function setup_boundary_cache(
         zeros(N),
         zeros(N),
         zeros(N),
-        ccc.Δ,
+        ccc.Δ
     )
 end
 
 function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    cache::ConsistencyCheckWeakBoundaryConditionCache,
-    time,
+        Kₑ::AbstractMatrix,
+        residualₑ::AbstractVector,
+        uₑ::AbstractVector,
+        cell,
+        local_facet_index::Int,
+        cache::ConsistencyCheckWeakBoundaryConditionCache,
+        time
 )
     (; Δ, inner_cache, Kₑfd, uₑfd, residualₑfd, residualₑref) = cache
 
@@ -700,7 +700,7 @@ function assemble_facet!(
     fill!(residualₑref, 0.0)
     assemble_facet!(residualₑref, uₑ, cell, local_facet_index, inner_cache, time)
     # Here we actually compute teh finite difference
-    for i = 1:length(uₑfd)
+    for i in 1:length(uₑfd)
         fill!(residualₑfd, 0.0)
         uₑfd    .= uₑ
         uₑfd[i] += Δ

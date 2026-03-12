@@ -23,11 +23,11 @@ Thunderbolt.num_states(::ODEFunction) = 2                   # FIXME
 Thunderbolt.transmembranepotential_index(::ODEFunction) = 1 # FIXME
 
 function Thunderbolt.setup_solver_cache(
-    f::Any,
-    solver::DummyForwardEuler,
-    t₀;
-    u = nothing,
-    uprev = nothing,
+        f::Any,
+        solver::DummyForwardEuler,
+        t₀;
+        u = nothing,
+        uprev = nothing
 )
     n = u === nothing ? Thunderbolt.num_states(f) : length(u)
     du = zeros(n)
@@ -40,8 +40,8 @@ end
 
 # Dispatch innermost solve
 function Thunderbolt.OrdinaryDiffEqCore.perform_step!(
-    integ::ThunderboltTimeIntegrator,
-    cache::DummyForwardEulerCache,
+        integ::ThunderboltTimeIntegrator,
+        cache::DummyForwardEulerCache
 )
     (; f, dt, u, p, t) = integ
     (; du) = cache
@@ -89,11 +89,9 @@ end
 
     # Now the usual setup just with our new problem type.
     # u0 = rand(3)
-    u0 = [
-        0.7611944793397108
-        0.9059606424982555
-        0.5755174199139956
-    ]
+    u0 = [0.7611944793397108
+          0.9059606424982555
+          0.5755174199139956]
     tspan = (0.0, 100.0)
     prob1 = OperatorSplittingProblem(fsplit1, u0, tspan)
     probb = OperatorSplittingProblem(fsplit1b, u0, tspan)
@@ -149,40 +147,40 @@ end
 
     dt = 0.1π
     adaptive_tstep_range = (dt * 1, dt * 1)
-    @testset "Internal consistency" failfast = true begin
+    @testset "Internal consistency" failfast=true begin
         for TimeStepperType in (LieTrotterGodunov,)
             timestepper0 = TimeStepperType((Euler(), Euler()))
             timestepper1 = TimeStepperType((DummyForwardEuler(), DummyForwardEuler()))
-            timestepper1_adaptive =
-                Thunderbolt.ReactionTangentController(timestepper1, 0.5, 1.0, adaptive_tstep_range)
+            timestepper1_adaptive = Thunderbolt.ReactionTangentController(
+                timestepper1, 0.5, 1.0, adaptive_tstep_range)
             timestepper1_inner = TimeStepperType((DummyForwardEuler(), DummyForwardEuler()))
             timestepper1_inner_adaptive = Thunderbolt.ReactionTangentController(
                 timestepper1_inner,
                 0.5,
                 1.0,
-                adaptive_tstep_range,
+                adaptive_tstep_range
             ) #TODO: Copy the controller instead
 
             timestepper2 = TimeStepperType((DummyForwardEuler(), timestepper1_inner))
-            timestepper2_adaptive =
-                Thunderbolt.ReactionTangentController(timestepper2, 0.5, 1.0, adaptive_tstep_range)
+            timestepper2_adaptive = Thunderbolt.ReactionTangentController(
+                timestepper2, 0.5, 1.0, adaptive_tstep_range)
 
             @testset "$timestepper" for (prob, timestepper) in (
                 (prob1, timestepper1),
                 (prob2, timestepper2),
                 (prob1, timestepper1_adaptive),
-                (prob2, timestepper2_adaptive),
+                (prob2, timestepper2_adaptive)
             )
                 # The remaining code works as usual.
-                integrator =
-                    DiffEqBase.init(prob, timestepper, dt = dt, verbose = true, alias_u0 = false)
+                integrator = DiffEqBase.init(
+                    prob, timestepper, dt = dt, verbose = true, alias_u0 = false)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 ufinal = copy(integrator.u)
                 @test ufinal ≉ u0 # Make sure the solve did something
                 @test integrator.uprev ≉ u0
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 DiffEqBase.reinit!(integrator)
@@ -195,7 +193,7 @@ end
                 @test lastu ≈ integrator.u
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 @test isapprox(ufinal, integrator.u, atol = 1e-6)
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 DiffEqBase.reinit!(integrator)
@@ -205,7 +203,7 @@ end
                 end
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 @test isapprox(ufinal, integrator.u, atol = 1e-6)
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 DiffEqBase.reinit!(integrator)
@@ -213,7 +211,7 @@ end
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
             end
 
@@ -223,7 +221,7 @@ end
                     timestepper1,
                     dt = dt,
                     verbose = true,
-                    alias_u0 = false,
+                    alias_u0 = false
                 )
                 @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator_NaN)
@@ -231,8 +229,8 @@ end
                       (DiffEqBase.ReturnCode.Unstable, DiffEqBase.ReturnCode.DtNaN)
             end
 
-            integrator =
-                DiffEqBase.init(prob1, timestepper1, dt = dt, verbose = true, alias_u0 = false)
+            integrator = DiffEqBase.init(
+                prob1, timestepper1, dt = dt, verbose = true, alias_u0 = false)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
             end
             @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
@@ -242,7 +240,7 @@ end
                 timestepper1_adaptive,
                 dt = dt,
                 verbose = true,
-                alias_u0 = false,
+                alias_u0 = false
             )
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0)
             end
@@ -255,7 +253,7 @@ end
                     timestepper2_adaptive,
                     dt = dt,
                     verbose = true,
-                    alias_u0 = false,
+                    alias_u0 = false
                 )
                 @test_throws AssertionError(
                     "No or multiple integrators using PointwiseODEFunction found",
@@ -266,14 +264,14 @@ end
                     timestepper1,
                     Inf,
                     0.5,
-                    adaptive_tstep_range,
+                    adaptive_tstep_range
                 )
                 integrator_stepfunc_adaptive = DiffEqBase.init(
                     prob_force_half,
                     timestepper_stepfunc_adaptive,
                     dt = dt,
                     verbose = true,
-                    alias_u0 = false,
+                    alias_u0 = false
                 )
                 DiffEqBase.solve!(integrator_stepfunc_adaptive)
                 @test integrator_stepfunc_adaptive.sol.retcode == DiffEqBase.ReturnCode.Success
@@ -291,14 +289,14 @@ end
 
             for (tstepper1, tstepper2) in ((timestepper, timestepper2),)
                 # The remaining code works as usual.
-                integrator =
-                    DiffEqBase.init(probb, tstepper1, dt = dt, verbose = true, alias_u0 = false)
+                integrator = DiffEqBase.init(
+                    probb, tstepper1, dt = dt, verbose = true, alias_u0 = false)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 ufinal = copy(integrator.u)
                 @test ufinal ≉ u0 # Make sure the solve did something
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 DiffEqBase.reinit!(integrator)
@@ -306,7 +304,7 @@ end
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
                 end
                 @test isapprox(ufinal, integrator.u, atol = 1e-8)
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 DiffEqBase.reinit!(integrator)
@@ -314,24 +312,24 @@ end
                 for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
                 end
                 @test isapprox(ufinal, integrator.u, atol = 1e-8)
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
-                integrator2 =
-                    DiffEqBase.init(prob2b, tstepper2, dt = dt, verbose = true, alias_u0 = false)
+                integrator2 = DiffEqBase.init(
+                    prob2b, tstepper2, dt = dt, verbose = true, alias_u0 = false)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 ufinal2 = copy(integrator2.u)
                 @test ufinal2 ≉ u0 # Make sure the solve did something
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 DiffEqBase.reinit!(integrator2)
@@ -339,14 +337,14 @@ end
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
                 end
                 @test isapprox(ufinal2, integrator2.u, atol = 1e-8)
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 DiffEqBase.reinit!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
-                @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
+                @test integrator.iter == ceil(Int, (tspan[2] - tspan[1]) / dt)
                 @test integrator.t == tspan[2]
 
                 @testset "NaNs" begin
@@ -355,7 +353,7 @@ end
                         tstepper1,
                         dt = dt,
                         verbose = true,
-                        alias_u0 = false,
+                        alias_u0 = false
                     )
                     @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Default
                     DiffEqBase.solve!(integrator_NaN)
@@ -363,8 +361,8 @@ end
                           (DiffEqBase.ReturnCode.Unstable, DiffEqBase.ReturnCode.DtNaN)
                 end
             end
-            integrator =
-                DiffEqBase.init(probb, timestepper, dt = dt, verbose = true, alias_u0 = false)
+            integrator = DiffEqBase.init(
+                probb, timestepper, dt = dt, verbose = true, alias_u0 = false)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
             end
             @test integrator.u ≉ u0 # Make sure the solve did something

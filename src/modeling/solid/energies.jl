@@ -31,7 +31,7 @@ Base.@kwdef struct HartmannNeffCompressionPenalty1{TD1, TD2}
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty1)
     I₃ < 0 && return NaN
-    return mp.β * (I₃^mp.b + 1/(I₃^mp.b) - 2)^mp.a
+    return mp.β * (I₃^mp.b + 1 / (I₃^mp.b) - 2)^mp.a
 end
 
 
@@ -50,7 +50,7 @@ Base.@kwdef struct HartmannNeffCompressionPenalty2{TD1, TD2}
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty2)
     I₃ < 0 && return NaN
-    return mp.β * (√I₃-1)^mp.a
+    return mp.β * (√I₃ - 1)^mp.a
 end
 
 
@@ -83,7 +83,7 @@ end
 function U(I₃::T, mp::SimpleCompressionPenalty) where {T}
     I₃ < 0 && return NaN
     J = √I₃
-    mp.β * (I₃ - 1 - 2*log(J))
+    mp.β * (I₃ - 1 - 2 * log(J))
 end
 
 
@@ -99,9 +99,9 @@ Base.@kwdef struct TransverseIsotopicNeoHookeanModel{TD1, TD2, TU}
     mpU::TU = HartmannNeffCompressionPenalty1()
 end
 function Ψ(
-    F,
-    coeff::AbstractTransverselyIsotropicMicrostructure,
-    mp::TransverseIsotopicNeoHookeanModel,
+        F,
+        coeff::AbstractTransverselyIsotropicMicrostructure,
+        mp::TransverseIsotopicNeoHookeanModel
 )
     @unpack a₁, a₂, α₁, α₂, mpU = mp
     f₀ = coeff.f
@@ -110,7 +110,7 @@ function Ψ(
     I₁ = tr(C)
     I₃ = det(C)
 
-    Ī₁ = I₁/cbrt(I₃)
+    Ī₁ = I₁ / cbrt(I₃)
     # this is a hotfix to fight numerical noise when returning to the equilibrium state...
     if -1e-8 < Ī₁ - 3.0 < 0.0
         Ī₁ = 3.0
@@ -118,9 +118,9 @@ function Ψ(
 
     I₄ = tr(C ⋅ f₀ ⊗ f₀)
 
-    Ψᵖ = α₁*(Ī₁ - 3)^a₁ + U(I₃, mpU)
+    Ψᵖ = α₁ * (Ī₁ - 3)^a₁ + U(I₃, mpU)
     if I₄ ≥ 1
-        Ψᵖ += α₂*(I₄ - 1)^a₂
+        Ψᵖ += α₂ * (I₄ - 1)^a₂
     end
 
     return Ψᵖ
@@ -151,17 +151,18 @@ function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::HolzapfelOgden2009M
 
     C = tdot(F)
     I₃ = det(C)
-    I₁ = tr(C/cbrt(I₃))
+    I₁ = tr(C / cbrt(I₃))
     I₄ᶠ = f₀ ⋅ C ⋅ f₀
     I₄ˢ = s₀ ⋅ C ⋅ s₀
-    I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2.0
+    I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀) / 2.0
 
-    Ψᵖ = a/(2.0*b)*(exp(b*(I₁-3.0))-1.0) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U(I₃, mpU)
+    Ψᵖ = a / (2.0 * b) * (exp(b * (I₁ - 3.0)) - 1.0) +
+         aᶠˢ / (2.0 * bᶠˢ) * (exp(bᶠˢ * I₈ᶠˢ^2) - 1.0) + U(I₃, mpU)
     if I₄ᶠ >= 1.0
-        Ψᵖ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
+        Ψᵖ += aᶠ / (2.0 * bᶠ) * (exp(bᶠ * (I₄ᶠ - 1)^2) - 1.0)
     end
     if I₄ˢ >= 1.0
-        Ψᵖ += aˢ/(2.0*bˢ)*(exp(bˢ*(I₄ˢ - 1)^2)-1.0)
+        Ψᵖ += aˢ / (2.0 * bˢ) * (exp(bˢ * (I₄ˢ - 1)^2) - 1.0)
     end
 
     return Ψᵖ
@@ -194,8 +195,8 @@ function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYin
     I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
 
     # Exponential portion
-    Q = C₂*(I₁-3)^2 + C₃*(I₁-3)*(I₄-1) + C₄*(I₄-1)^2
-    return C₁*(exp(Q)-1) + U(I₃, mpU)
+    Q = C₂ * (I₁ - 3)^2 + C₃ * (I₁ - 3) * (I₄ - 1) + C₄ * (I₄ - 1)^2
+    return C₁ * (exp(Q) - 1) + U(I₃, mpU)
 end
 
 @doc raw"""
@@ -223,7 +224,8 @@ function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYin
     I₃ = det(C)
     I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
 
-    return C₀ + C₁*(I₁-3)*(I₄-1) + C₂*(I₁-3)^2 + C₃*(I₄-1)^2 + C₄*(I₁-3) + C₅*(I₄-1) + U(I₃, mpU)
+    return C₀ + C₁ * (I₁ - 3) * (I₄ - 1) + C₂ * (I₁ - 3)^2 + C₃ * (I₄ - 1)^2 + C₄ * (I₁ - 3) +
+           C₅ * (I₄ - 1) + U(I₃, mpU)
 end
 
 @doc raw"""
@@ -249,7 +251,8 @@ function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::Humphr
     I₃ = det(C)
     I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
 
-    return C₁*(√I₄-1)^2 + C₂*(√I₄-1)^3 + C₃*(√I₄-1)*(I₁-3) + C₄*(I₁-3)^2 + U(I₃, mpU)
+    return C₁ * (√I₄ - 1)^2 + C₂ * (√I₄ - 1)^3 + C₃ * (√I₄ - 1) * (I₁ - 3) + C₄ * (I₁ - 3)^2 +
+           U(I₃, mpU)
 end
 
 
@@ -298,7 +301,7 @@ function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991Passive
     C = tdot(F)
     I₃ = det(C)
 
-    E = (C-one(F))/2.0
+    E = (C - one(F)) / 2.0
 
     Eᶠᶠ = f₀ ⋅ E ⋅ f₀
     Eˢˢ = s₀ ⋅ E ⋅ s₀
@@ -313,15 +316,14 @@ function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991Passive
     Eᶠⁿ = f₀ ⋅ E ⋅ n₀
     Eⁿᶠ = n₀ ⋅ E ⋅ f₀
 
-    Q =
-        Bᶠᶠ*Eᶠᶠ^2 +
-        Bˢˢ*Eˢˢ^2 +
-        Bⁿⁿ*Eⁿⁿ^2 +
-        Bⁿˢ*(Eⁿˢ^2+Eˢⁿ^2) +
-        Bᶠˢ*(Eᶠˢ^2+Eˢᶠ^2) +
-        Bᶠⁿ*(Eᶠⁿ^2+Eⁿᶠ^2)
+    Q = Bᶠᶠ * Eᶠᶠ^2 +
+        Bˢˢ * Eˢˢ^2 +
+        Bⁿⁿ * Eⁿⁿ^2 +
+        Bⁿˢ * (Eⁿˢ^2 + Eˢⁿ^2) +
+        Bᶠˢ * (Eᶠˢ^2 + Eˢᶠ^2) +
+        Bᶠⁿ * (Eᶠⁿ^2 + Eⁿᶠ^2)
 
-    return C₀*exp(Q)/2.0 + U(I₃, mpU)
+    return C₀ * exp(Q) / 2.0 + U(I₃, mpU)
 end
 
 @doc raw"""
@@ -343,7 +345,7 @@ function Ψ(F, Fᵃ, coeff::AbstractTransverselyIsotropicMicrostructure, mp::Sim
     Cᵉ = tdot(Fᵉ)
     Iᵉ₄ᶠ = f₀ ⋅ Cᵉ ⋅ f₀
 
-    return aᶠ/2.0*(Iᵉ₄ᶠ-1.0)^2
+    return aᶠ / 2.0 * (Iᵉ₄ᶠ - 1.0)^2
 end
 
 # """
@@ -469,5 +471,5 @@ function Ψ(F, coeff, mp::BioNeoHookean)
     I₁ = tr(C)
     I₃ = det(C)
 
-    return α*(I₁/cbrt(I₃) - 3) + U(I₃, mpU)
+    return α * (I₁ / cbrt(I₃) - 3) + U(I₃, mpU)
 end

@@ -33,8 +33,8 @@ function Adapt.adapt_structure(::AbstractAssemblyStrategy, dh::DofHandler)
 end
 
 function Adapt.adapt_structure(
-    ::AbstractAssemblyStrategy,
-    element_cache::AnalyticalCoefficientElementCache,
+        ::AbstractAssemblyStrategy,
+        element_cache::AnalyticalCoefficientElementCache
 )
     error(
         "Device specific implementation for `adapt_structure(to, element_cache::AnalyticalCoefficientElementCache)` is not implemented yet",
