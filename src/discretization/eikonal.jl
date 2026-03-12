@@ -11,8 +11,7 @@ abstract type AbstractEikonalActivationProtocol end
 """
 Activation protocol for activating specific points with time offsets to mimic the behavior of a Purkinje network.
 """
-struct NodalEikonalActivationProtocol{VectorT <: AbstractVector{<:ActivationCoordinate}} <:
-       AbstractEikonalActivationProtocol
+struct NodalEikonalActivationProtocol{VectorT <: AbstractVector{<:ActivationCoordinate}} <: AbstractEikonalActivationProtocol
     nodes::VectorT
 end
 
@@ -32,8 +31,7 @@ end
 """
 Descriptor for a tetrahedral element discretization used for solving the Eikonal equation explicitly.
 """
-@kwdef struct SimplicialEikonalDiscretization{ActivationProtocolT <:
-                                              AbstractEikonalActivationProtocol}
+@kwdef struct SimplicialEikonalDiscretization{ActivationProtocolT <: AbstractEikonalActivationProtocol}
     order::Int = 1
     activation_protocol::ActivationProtocolT
     subdomains::Vector{String} = [""]
@@ -78,8 +76,7 @@ function get_nodes(protocol::AnalyticalEikonalActivationProtocol, mesh, cs)
     return nodes
 end
 
-function get_nodes(
-        protocol::AnalyticalEikonalActivationProtocol, mesh, cs::CartesianCoordinateSystem)
+function get_nodes(protocol::AnalyticalEikonalActivationProtocol, mesh, cs::CartesianCoordinateSystem)
     nodes = Int[]
     coords = mesh.grid.nodes
 
@@ -91,8 +88,7 @@ function get_nodes(
     return nodes
 end
 
-function get_nodes(
-        ::UniformEndocardialEikonalActivationProtocol, mesh, cs::CartesianCoordinateSystem)
+function get_nodes(::UniformEndocardialEikonalActivationProtocol, mesh, cs::CartesianCoordinateSystem)
     throw(error("Uniformally activating the endocardium requires using either
     LV or BiV coordinate system. usage with Cartesian Coordinate System is
     restricted to AnalyticalEikonalActivationProtocol"))
@@ -102,15 +98,15 @@ function semidiscretize(
         ::EikonalModel,
         discretization::SimplicialEikonalDiscretization,
         activation_points,
-        mesh::SimpleMesh
-)
+        mesh::SimpleMesh,
+    )
 
     vertices = getproperty.(mesh.grid.nodes, :x)
-    cells_ferrite = [Tetrahedron((0, 0, 0, 0)) for _ in 1:length(mesh.grid.cells)]
+    cells_ferrite = [Tetrahedron((0,0,0,0)) for _ in 1:length(mesh.grid.cells)]
     # TODO: true subdomains
     if first(discretization.subdomains) == ""
         cells_ferrite .= mesh.grid.cells
-    else
+    else    
         for subdomain in discretization.subdomains
             cellset = getcellset(mesh, subdomain)
             for cellidx in cellset
