@@ -21,8 +21,8 @@ CartesianCoordinateSystem(mesh::AbstractGrid{sdim}) where {sdim} = CartesianCoor
 Get interpolation function for the cartesian coordinate system.
 """
 getcoordinateinterpolation(
-cs::CartesianCoordinateSystem{sdim},
-cell::CellType
+    cs::CartesianCoordinateSystem{sdim},
+    cell::CellType,
 ) where {sdim, CellType <: AbstractCell} = Ferrite.geometric_interpolation(CellType)^sdim
 
 
@@ -65,8 +65,8 @@ value_type(::LVCoordinateSystem{T}) where {T} = LVCoordinate{T}
 
 Get interpolation function for the LV coordinate system.
 """
-getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = getinterpolation(
-    cs.ip_collection, cell)
+getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) =
+    getinterpolation(cs.ip_collection, cell)
 
 
 """
@@ -80,11 +80,11 @@ and a nodeset
     * Apex
 """
 function compute_lv_coordinate_system(
-        mesh::SimpleMesh{3, <:Any, T},
-        subdomains::Vector{String} = [""];
-        up = Vec((T(0.0), T(0.0), T(-1.0)))
+    mesh::SimpleMesh{3, <:Any, T},
+    subdomains::Vector{String} = [""];
+    up = Vec((T(0.0), T(0.0), T(-1.0))),
 ) where {T}
-    @assert abs.(up)≈Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
+    @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -111,9 +111,9 @@ function compute_lv_coordinate_system(
             for qp in QuadratureIterator(cellvalues)
                 dΩ = getdetJdV(cellvalues, qp)
 
-                for i in 1:n_basefuncs
+                for i = 1:n_basefuncs
                     ∇v = shape_gradient(cellvalues, qp, i)
-                    for j in 1:n_basefuncs
+                    for j = 1:n_basefuncs
                         ∇u = shape_gradient(cellvalues, qp, j)
                         Ke[i, j] += (∇v ⋅ ∇u) * dΩ
                     end
@@ -126,13 +126,13 @@ function compute_lv_coordinate_system(
 
     # Transmural coordinate
     begin
-        ch = ConstraintHandler(dh)
+        ch = ConstraintHandler(dh);
         dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
-        Ferrite.add!(ch, dbc)
+        Ferrite.add!(ch, dbc);
         dbc = Dirichlet(:coordinates, getfacetset(mesh, "Epicardium"), (x, t) -> 1)
-        Ferrite.add!(ch, dbc)
+        Ferrite.add!(ch, dbc);
         close!(ch)
-        update!(ch, 0.0)
+        update!(ch, 0.0);
 
         K_transmural = copy(K)
         f = zeros(ndofs(dh))
@@ -149,13 +149,13 @@ function compute_lv_coordinate_system(
         # apicobasal .-= minimum(apicobasal)
         # apicobasal = abs.(apicobasal)
         # apicobasal ./= maximum(apicobasal)
-        ch = ConstraintHandler(dh)
+        ch = ConstraintHandler(dh);
         dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 1)
-        Ferrite.add!(ch, dbc)
+        Ferrite.add!(ch, dbc);
         dbc = Dirichlet(:coordinates, getnodeset(mesh, "ApexInOut"), (x, t) -> 0)
-        Ferrite.add!(ch, dbc)
+        Ferrite.add!(ch, dbc);
         close!(ch)
-        update!(ch, 0.0)
+        update!(ch, 0.0);
 
         K_apicobasal = K
         f = zeros(ndofs(dh))
@@ -188,7 +188,7 @@ function compute_lv_coordinate_system(
                     rotational[dofs[qp.i]] = 0.0
                 else
                     x = x_planar / xlen
-                    rotational[dofs[qp.i]] = 1 / 2 + atan(x[1], x[2]) / (2π) # TODO tilted coordinate system
+                    rotational[dofs[qp.i]] = 1/2 + atan(x[1], x[2])/(2π) # TODO tilted coordinate system
                 end
             end
         end
@@ -207,11 +207,11 @@ Requires a mesh with facetsets
     * Myocardium
 """
 function compute_midmyocardial_section_coordinate_system(
-        mesh::SimpleMesh{3, <:Any, T},
-        subdomains::Vector{String} = [""];
-        up = Vec((T(0.0), T(0.0), T(1.0)))
+    mesh::SimpleMesh{3, <:Any, T},
+    subdomains::Vector{String} = [""];
+    up = Vec((T(0.0), T(0.0), T(1.0))),
 ) where {T}
-    @assert abs.(up)≈Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
+    @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -239,9 +239,9 @@ function compute_midmyocardial_section_coordinate_system(
             for qp in QuadratureIterator(cellvalues)
                 dΩ = getdetJdV(cellvalues, qp)
 
-                for i in 1:n_basefuncs
+                for i = 1:n_basefuncs
                     ∇v = shape_gradient(cellvalues, qp, i)
-                    for j in 1:n_basefuncs
+                    for j = 1:n_basefuncs
                         ∇u = shape_gradient(cellvalues, qp, j)
                         Ke[i, j] += (∇v ⋅ ∇u) * dΩ
                     end
@@ -253,13 +253,13 @@ function compute_midmyocardial_section_coordinate_system(
     end
 
     # Transmural coordinate
-    ch = ConstraintHandler(dh)
+    ch = ConstraintHandler(dh);
     dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
-    Ferrite.add!(ch, dbc)
+    Ferrite.add!(ch, dbc);
     dbc = Dirichlet(:coordinates, getfacetset(mesh, "Epicardium"), (x, t) -> 1)
-    Ferrite.add!(ch, dbc)
+    Ferrite.add!(ch, dbc);
     close!(ch)
-    update!(ch, 0.0)
+    update!(ch, 0.0);
 
     K_transmural = K
     f = zeros(ndofs(dh))
@@ -270,7 +270,7 @@ function compute_midmyocardial_section_coordinate_system(
 
     # Apicobasal coordinate
     apicobasal = zeros(ndofs(dh))
-    apply_analytical!(apicobasal, dh, :coordinates, x -> x ⋅ up)
+    apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
     apicobasal .-= minimum(apicobasal)
     apicobasal = abs.(apicobasal)
     apicobasal ./= maximum(apicobasal)
@@ -296,7 +296,7 @@ function compute_midmyocardial_section_coordinate_system(
                 x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
                 x = x_planar / norm(x_planar)
 
-                rotational[dofs[qp.i]] = 1 / 2 + atan(x[1], x[2]) / (2π) # TODO tilted coordinate system
+                rotational[dofs[qp.i]] = 1/2 + atan(x[1], x[2])/(2π) # TODO tilted coordinate system
             end
         end
     end
@@ -350,9 +350,8 @@ Base.eltype(::Type{BiVCoordinate{T}}) where {T} = T
 Base.eltype(::BiVCoordinate{T}) where {T} = T
 value_type(::BiVCoordinateSystem) = BiVCoordinate
 
-function getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell)
+getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) =
     Ferrite.getfieldinterpolation(cs.dh, (1, 1))
-end
 
 function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
     Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_transmural, "_transmural")

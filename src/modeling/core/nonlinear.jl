@@ -9,7 +9,7 @@ struct NonlinearIntegrator{
     VM,
     FM,
     QRC <: Union{<:QuadratureRuleCollection, Nothing},
-    FQRC <: Union{<:FacetQuadratureRuleCollection, Nothing}
+    FQRC <: Union{<:FacetQuadratureRuleCollection, Nothing},
 } <: AbstractNonlinearIntegrator
     volume_model::VM
     facet_model::FM

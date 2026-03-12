@@ -6,7 +6,7 @@ end
 Base.@kwdef mutable struct GenericLocalNonlinearSolverCache{
     JacobianType,
     ResidualType,
-    CorrectorRhsType
+    CorrectorRhsType,
 }
     const params::GenericLocalNonlinearSolver
     const J::JacobianType
@@ -71,10 +71,10 @@ function Base.show(io::IO, cache::MultiLevelNewtonRaphsonSolverCache)
 end
 
 function nlsolve!(
-        u::AbstractVector,
-        f::AbstractSemidiscreteFunction,
-        mlcache::MultiLevelNewtonRaphsonSolverCache,
-        t
+    u::AbstractVector,
+    f::AbstractSemidiscreteFunction,
+    mlcache::MultiLevelNewtonRaphsonSolverCache,
+    t,
 )
     cache = mlcache.global_solver_cache
 
@@ -110,10 +110,11 @@ function nlsolve!(
             return false
         end
 
-        @timeit_debug "solve" sol=LinearSolve.solve!(linear_solver_cache)
+        @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
         nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
-        solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) ||
-                          sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+        solve_succeeded =
+            LinearSolve.SciMLBase.successful_retcode(sol) ||
+            sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
         eliminate_constraints_from_increment!(Δu, f, cache)
@@ -126,7 +127,7 @@ function nlsolve!(
                 push!(Θks, Θ1prev^2)
                 break
             end
-            Θk = residualnorm / residualnormprev
+            Θk = residualnorm/residualnormprev
             push!(Θks, isnan(Θk) ? 0.0 : Θk)
             if Θk ≥ 1.0
                 @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve

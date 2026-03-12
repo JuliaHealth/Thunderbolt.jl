@@ -15,7 +15,7 @@ function debug_mode(; enable = true)
     elseif DEBUG == enable == false
         @info "Debug mode already disabled."
     else
-        Preferences.@set_preferences!("use_debug"=>enable)
+        Preferences.@set_preferences!("use_debug" => enable)
         @info "Debug mode $(enable ? "en" : "dis")abled. Restart the Julia session for this change to take effect!"
     end
     return
@@ -56,11 +56,10 @@ include("ferrite-addons/quadrature_iterator.jl")
 function celldofsview(dh::Ferrite.AbstractDofHandler, i::Integer)
     ndofs = ndofs_per_cell(dh, i)
     offset = dh.cell_dofs_offset[i]
-    return @views dh.cell_dofs[offset:(offset + ndofs - 1)]
+    return @views dh.cell_dofs[offset:(offset+ndofs-1)]
 end
 
-@inline angle(v1::Vec{dim, T}, v2::Vec{dim, T}) where {dim, T} = acos((v1 ⋅ v2) /
-                                                                      (norm(v1) * norm(v2)))
+@inline angle(v1::Vec{dim, T}, v2::Vec{dim, T}) where {dim, T} = acos((v1 ⋅ v2)/(norm(v1)*norm(v2)))
 @inline angle_deg(v1::Vec{dim, T}, v2::Vec{dim, T}) where {dim, T} = rad2deg(angle(v1, v2))
 
 """
@@ -87,9 +86,9 @@ resulting vector is `α` (given in radians).
     @debugonly @assert norm(n) ≈ 1.0
     @debugonly @assert v ⋅ n ≈ 0.0
 
-    α ≈ π / 2.0 && return n # special case to prevent division by 0
+    α ≈ π/2.0 && return n # special case to prevent division by 0
 
-    λ = (sqrt(1 - cos(α)^2)) / cos(α)
+    λ = (sqrt(1-cos(α)^2))/cos(α)
     return v + λ * n
 end
 
@@ -103,7 +102,7 @@ Perform a Rodrigues' rotation of the vector `v` around the axis `a` with `θ` ra
 @inline function rotate_around(v::Vec{dim, T}, a::Vec{dim, T}, θ::T)::Vec{dim, T} where {dim, T}
     @debugonly @assert norm(n) ≈ 1.0
 
-    return v * cos(θ) + (a × v) * sin(θ) + a * (a ⋅ v) * (1 - cos(θ))
+    return v * cos(θ) + (a × v) * sin(θ) + a * (a ⋅ v) * (1-cos(θ))
 end
 
 """
@@ -112,7 +111,7 @@ end
 Returns a new `v₁` which is orthogonal to `v₂`.
 """
 @inline function orthogonalize(v₁::Vec{dim, T}, v₂::Vec{dim, T})::Vec{dim, T} where {dim, T}
-    return v₁ - (v₁ ⋅ v₂) * v₂
+    return v₁ - (v₁ ⋅ v₂)*v₂
 end
 
 """
@@ -122,13 +121,11 @@ Returns new vectors which are orthogonal to each other.
 """
 @inline function orthogonalize_normal_system(v₁::Vec{2, T}, v₂::Vec{2, T}) where {T}
     w₁ = v₁
-    w₂ = v₂ - (w₁ ⋅ v₂) * w₁
+    w₂ = v₂ - (w₁ ⋅ v₂)*w₁
     return w₁, w₂
 end
 
-function orthogonalize_system(v₁::Vec{2}, v₂::Vec{2})
-    orthogonalize_normal_system(v₁ / norm(v₁), v₂ / norm(v₂))
-end
+orthogonalize_system(v₁::Vec{2}, v₂::Vec{2}) = orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂))
 
 """
     orthogonalize_normal_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
@@ -137,14 +134,13 @@ Returns new vectors which are orthogonal to each other.
 """
 @inline function orthogonalize_normal_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
     w₁ = v₁
-    w₂ = v₂ - (w₁ ⋅ v₂) * w₁
-    w₃ = v₃ - (w₁ ⋅ v₃) * w₁ - (w₂ ⋅ v₃) * w₂
+    w₂ = v₂ - (w₁ ⋅ v₂)*w₁
+    w₃ = v₃ - (w₁ ⋅ v₃)*w₁ - (w₂ ⋅ v₃)*w₂
     return w₁, w₂, w₃
 end
 
-function orthogonalize_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
-    orthogonalize_normal_system(v₁ / norm(v₁), v₂ / norm(v₂), v₃ / norm(v₃))
-end
+orthogonalize_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3}) =
+    orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂), v₃/norm(v₃))
 
 # Compute the relative rotation of `v_from_in` to `v_to` around `n` using the left hand rule.
 function compute_relative_rotation(v_from_in::Vec{3}, v_to::Vec{3}, n::Vec{3})
@@ -163,11 +159,11 @@ struct ThreadedSparseMatrixCSR{Tv, Ti <: Integer} <: AbstractSparseMatrix{Tv, Ti
 end
 
 function ThreadedSparseMatrixCSR(
-        m::Integer,
-        n::Integer,
-        rowptr::Vector{Ti},
-        colval::Vector{Ti},
-        nzval::Vector{Tv}
+    m::Integer,
+    n::Integer,
+    rowptr::Vector{Ti},
+    colval::Vector{Ti},
+    nzval::Vector{Tv},
 ) where {Tv, Ti <: Integer}
     ThreadedSparseMatrixCSR(SparseMatrixCSR{1}(m, n, rowptr, colval, nzval))
 end
@@ -177,24 +173,24 @@ function ThreadedSparseMatrixCSR(a::Transpose{Tv, <:SparseMatrixCSC} where {Tv})
 end
 
 function LinearAlgebra.mul!(
-        y::AbstractVector{<:Number},
-        A_::ThreadedSparseMatrixCSR,
-        x::AbstractVector{<:Number},
-        alpha::Number,
-        beta::Number
+    y::AbstractVector{<:Number},
+    A_::ThreadedSparseMatrixCSR,
+    x::AbstractVector{<:Number},
+    alpha::Number,
+    beta::Number,
 )
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
 
-    @batch minbatch=size(y, 1) ÷ Threads.nthreads() for row in 1:size(y, 1)
+    @batch minbatch = size(y, 1) ÷ Threads.nthreads() for row = 1:size(y, 1)
         @inbounds begin
             v = zero(eltype(y))
             for nz in nzrange(A, row)
                 col = A.colval[nz]
-                v += A.nzval[nz] * x[col]
+                v += A.nzval[nz]*x[col]
             end
-            y[row] = alpha * v + beta * y[row]
+            y[row] = alpha*v + beta*y[row]
         end
     end
 
@@ -202,20 +198,20 @@ function LinearAlgebra.mul!(
 end
 
 function LinearAlgebra.mul!(
-        y::AbstractVector{<:Number},
-        A_::ThreadedSparseMatrixCSR,
-        x::AbstractVector{<:Number}
+    y::AbstractVector{<:Number},
+    A_::ThreadedSparseMatrixCSR,
+    x::AbstractVector{<:Number},
 )
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
 
-    @batch minbatch=max(1, size(y, 1) ÷ Threads.nthreads()) for row in 1:size(y, 1)
+    @batch minbatch = max(1, size(y, 1) ÷ Threads.nthreads()) for row = 1:size(y, 1)
         @inbounds begin
             v = zero(eltype(y))
             for nz in nzrange(A, row)
                 col = A.colval[nz]
-                v += A.nzval[nz] * x[col]
+                v += A.nzval[nz]*x[col]
             end
             y[row] = v
         end
@@ -231,28 +227,24 @@ end
 *(A::ThreadedSparseMatrixCSR, v::AbstractVector) = mul(A, v)
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.FillArrays.AbstractZeros{<:Any, 1}) = mul(A, v)
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.ArrayLayouts.LayoutVector) = mul(A, v)
-function *(
-        A::ThreadedSparseMatrixCSR,
-        v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 1, D, Q, V}
+*(
+    A::ThreadedSparseMatrixCSR,
+    v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 1, D, Q, V},
 ) where {
-        T,
-        D <: ModelingToolkit.DynamicQuantities.AbstractDimensions,
-        Q <: ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D},
-        V <: AbstractVector{T}
-}
-    mul(A, v)
-end
-function *(
-        A::ThreadedSparseMatrixCSR,
-        v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 2, D, Q, V}
+    T,
+    D <: ModelingToolkit.DynamicQuantities.AbstractDimensions,
+    Q <: ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D},
+    V <: AbstractVector{T},
+} = mul(A, v)
+*(
+    A::ThreadedSparseMatrixCSR,
+    v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 2, D, Q, V},
 ) where {
-        T,
-        D <: ModelingToolkit.DynamicQuantities.AbstractDimensions,
-        Q <: ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D},
-        V <: AbstractMatrix{T}
-}
-    mul(A, v)
-end
+    T,
+    D <: ModelingToolkit.DynamicQuantities.AbstractDimensions,
+    Q <: ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D},
+    V <: AbstractMatrix{T},
+} = mul(A, v)
 
 Base.eltype(A::ThreadedSparseMatrixCSR)            = Base.eltype(A.A)
 Base.size(A::ThreadedSparseMatrixCSR)              = Base.size(A.A)
@@ -268,9 +260,9 @@ SparseArrays.nnz(A::ThreadedSparseMatrixCSR)      = nnz(A.A)
 SparseArrays.nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
 
 Base.@propagate_inbounds function SparseArrays.getindex(
-        A::ThreadedSparseMatrixCSR{T},
-        i0::Integer,
-        i1::Integer
+    A::ThreadedSparseMatrixCSR{T},
+    i0::Integer,
+    i1::Integer,
 ) where {T}
     getindex(A.A, i0, i1)
 end
@@ -278,21 +270,20 @@ SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, ::Colon) = copy(A)
 SparseArrays.getindex(A::ThreadedSparseMatrixCSR, i::Int, ::Colon) = getindex(A.A, i, 1:size(A, 2))
 SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, i::Int) = getindex(A.A, 1:size(A, 1), i)
 
-function Ferrite.apply_zero!(A::ThreadedSparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler)
+Ferrite.apply_zero!(A::ThreadedSparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler) =
     apply_zero!(A.A, f, ch)
-end
 function Ferrite.apply_zero!(K::SparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler)
     # m = Ferrite.meandiag(K)
 
     Ferrite.zero_out_columns!(K, ch.dofmapping)
     Ferrite.zero_out_rows!(K, ch.prescribed_dofs)
 
-    @inbounds for i in 1:length(ch.inhomogeneities)
+    @inbounds for i = 1:length(ch.inhomogeneities)
         d = ch.prescribed_dofs[i]
         K[d, d] = #m
-        if length(f) != 0
-            f[d] = 0.0
-        end
+            if length(f) != 0
+                f[d] = 0.0
+            end
     end
 end
 
@@ -346,20 +337,22 @@ end
 # end
 
 # Internal helper to throw uniform error messages on problems with multiple subdomains
-@noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 ||
-                                                             throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
-@noinline check_subdomains(grid::Ferrite.AbstractGrid) = length(elementtypes(grid)) == 1 ||
-                                                         throw(ArgumentError("Using mixed grid is not currently supported"))
+@noinline check_subdomains(dh::Ferrite.AbstractDofHandler) =
+    length(dh.subdofhandlers) == 1 ||
+    throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
+@noinline check_subdomains(grid::Ferrite.AbstractGrid) =
+    length(elementtypes(grid)) == 1 ||
+    throw(ArgumentError("Using mixed grid is not currently supported"))
 
 @inline function default_quadrature_order(f, fieldname)
     @unpack dh = f
     @assert fieldname ∈ dh.field_names "Field $fieldname not found in dof handler. Available fields are: $(dh.field_names)."
 
     for sdh in dh.subdofhandlers
-        idx = findfirst(s -> s == fieldname, sdh.field_names)
+        idx = findfirst(s->s==fieldname, sdh.field_names)
         idx === nothing && continue
         ip = sdh.field_interpolations[idx]
-        return max(2 * Ferrite.getorder(ip) - 1, 2)
+        return max(2*Ferrite.getorder(ip)-1, 2)
     end
 end
 
@@ -369,7 +362,7 @@ mtk_parameter_query_filter(param::ModelingToolkit.BasicSymbolic, sym) = true
 
 function query_mtk_parameter_by_symbol(sys, sym::Symbol)
     symbol_list = SymbolicIndexingInterface.parameter_symbols(sys)
-    idx = findfirst(param -> mtk_parameter_query_filter(param, sym), symbol_list)
+    idx = findfirst(param->mtk_parameter_query_filter(param, sym), symbol_list)
     idx === nothing && @error "Symbol $sym not found for system $sys."
     return symbol_list[idx]
 end
@@ -392,7 +385,7 @@ Base.eltype(data::DenseDataRange) = eltype(data.data)
 
 @inline function get_data_for_index(r::DenseDataRange, i::Integer)
     i1 = r.offsets[i]
-    i2 = r.offsets[i + 1] - 1
+    i2 = r.offsets[i+1]-1
     return @view r.data[i1:i2]
 end
 
@@ -407,7 +400,7 @@ struct EAVector{
     T,
     EADataType <: AbstractVector{T},
     IndexType <: AbstractVector{<:Integer},
-    DofMapType <: AbstractVector{<:ElementDofPair}
+    DofMapType <: AbstractVector{<:ElementDofPair},
 } <: AbstractVector{T}
     # Buffer for the per element data
     eadata::DenseDataRange{EADataType, IndexType}
@@ -419,9 +412,9 @@ Base.size(v::EAVector) = size(v.eadata)
 Base.getindex(v::EAVector, i::Integer) = getindex(v.eadata, i)
 
 function Base.show(
-        io::IO,
-        mime::MIME"text/plain",
-        data::EAVector{T, EADataType, IndexType}
+    io::IO,
+    mime::MIME"text/plain",
+    data::EAVector{T, EADataType, IndexType},
 ) where {T, EADataType, IndexType}
     println(
         io,
@@ -433,7 +426,7 @@ function Base.show(
         IndexType,
         "} with storate for ",
         size(data.eadata),
-        " entries."
+        " entries.",
     )
 end
 
@@ -450,7 +443,7 @@ function EAVector(::Type{ValueType}, ::Type{IndexType}, dh::DofHandler) where {V
     eaoffsets   = IndexType[]
     next_offset = 1
     push!(eaoffsets, next_offset)
-    for i in 1:getncells(grid)
+    for i = 1:getncells(grid)
         next_offset += ndofs_per_cell(dh, i)
         push!(eaoffsets, IndexType(next_offset))
     end
@@ -461,13 +454,13 @@ end
 # Transfer the element data into a vector
 function ea_collapse!(b::Vector, bes::EAVector)
     ndofs = size(b, 1)
-    @batch minbatch=max(1, ndofs ÷ Threads.nthreads()) for dof in 1:ndofs
+    @batch minbatch=max(1, ndofs÷Threads.nthreads()) for dof ∈ 1:ndofs
         _ea_collapse_kernel!(b, dof, bes)
     end
 end
 
 @inline function _ea_collapse_kernel!(b::AbstractVector, dof::Integer, bes::EAVector)
-    for edp in get_data_for_index(bes.dof_to_element_map, dof)
+    for edp ∈ get_data_for_index(bes.dof_to_element_map, dof)
         be_range = get_data_for_index(bes.eadata, edp.element_index)
         b[dof] += be_range[edp.local_dof_index]
     end
@@ -477,7 +470,7 @@ create_dof_to_element_map(dh::DofHandler) = create_dof_to_element_map(Int, dh::D
 
 function create_dof_to_element_map(::Type{IndexType}, dh::DofHandler) where {IndexType}
     # Preallocate storage
-    dof_to_element_vs = [Set{ElementDofPair{IndexType}}() for _ in 1:ndofs(dh)]
+    dof_to_element_vs = [Set{ElementDofPair{IndexType}}() for _ = 1:ndofs(dh)]
     # Fill set
     for sdh in dh.subdofhandlers
         for cc in CellIterator(sdh)
@@ -492,7 +485,7 @@ function create_dof_to_element_map(::Type{IndexType}, dh::DofHandler) where {Ind
     dof_to_element_vv = ElementDofPair{IndexType}[]
     offset = 1
     offsets = IndexType[]
-    for dof in 1:ndofs(dh)
+    for dof = 1:ndofs(dh)
         append!(offsets, offset)
         s = dof_to_element_vs[dof]
         offset += length(s)
@@ -505,9 +498,8 @@ end
 
 # To handle embedded elements in the same code
 _inner_product_helper(a::Vec, B::Union{Tensor, SymmetricTensor}, c::Vec) = a ⋅ B ⋅ c
-function _inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector)
+_inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector) =
     Vec(a.data) ⋅ B ⋅ Vec(c.data)
-end
 _inner_product_helper(a::Vec, B::AbstractFloat, c::Vec) = a ⋅ c * B
 _inner_product_helper(a::SVector, B::AbstractFloat, c::SVector) = Vec(a.data) ⋅ Vec(c.data) * B
 
@@ -552,9 +544,9 @@ end
     idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
     idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
     exps = Expr(:tuple)
-    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
-        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m in 1:dim]
-        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m in 1:dim]
+    for l = 1:dim, k = 1:dim, j = 1:dim, i = 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m = 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m = 1:dim]
         push!(exps.args, Tensors.reducer(ex1, ex2))
     end
     quote
@@ -567,9 +559,9 @@ end
     idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
     idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
     exps = Expr(:tuple)
-    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
-        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m in 1:dim]
-        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m in 1:dim]
+    for l = 1:dim, k = 1:dim, j = 1:dim, i = 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m = 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m = 1:dim]
         push!(exps.args, Tensors.reducer(ex1, ex2))
     end
     quote
@@ -582,9 +574,9 @@ end
     idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
     idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
     exps = Expr(:tuple)
-    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
-        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m in 1:dim]
-        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m in 1:dim]
+    for l = 1:dim, k = 1:dim, j = 1:dim, i = 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m = 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m = 1:dim]
         push!(exps.args, Tensors.reducer(ex1, ex2))
     end
     quote
@@ -597,9 +589,9 @@ end
     idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
     idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
     exps = Expr(:tuple)
-    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
-        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m in 1:dim]
-        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m in 1:dim]
+    for l = 1:dim, k = 1:dim, j = 1:dim, i = 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m = 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m = 1:dim]
         push!(exps.args, Tensors.reducer(ex1, ex2))
     end
     quote

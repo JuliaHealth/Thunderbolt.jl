@@ -42,29 +42,29 @@ end
 
 
 function _try_allocate_shared_mem(
-        ::Type{KeFeMemShape{Tv}},
-        block_dim::Ti,
-        n_basefuncs::Ti
+    ::Type{KeFeMemShape{Tv}},
+    block_dim::Ti,
+    n_basefuncs::Ti,
 ) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(
         Ti,
         sizeof(Tv) * (block_dim) * (n_basefuncs) * n_basefuncs +
-        sizeof(Tv) * (block_dim) * n_basefuncs
+        sizeof(Tv) * (block_dim) * n_basefuncs,
     )
     _can_use_dynshmem(shared_mem) || return nothing
     Ke = DynamicSharedMemFunction{3, Tv, Ti}((block_dim, n_basefuncs, n_basefuncs), convert(Ti, 0))
     fe = DynamicSharedMemFunction{2, Tv, Ti}(
         (block_dim, n_basefuncs),
-        convert(Ti, sizeof(Tv) * block_dim * n_basefuncs * n_basefuncs)
+        convert(Ti, sizeof(Tv) * block_dim * n_basefuncs * n_basefuncs),
     )
     return KeFeSharedMem(Ke, fe, shared_mem)
 end
 
 
 function _try_allocate_shared_mem(
-        ::Type{FeMemShape{Tv}},
-        block_dim::Ti,
-        n_basefuncs::Ti
+    ::Type{FeMemShape{Tv}},
+    block_dim::Ti,
+    n_basefuncs::Ti,
 ) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * n_basefuncs)
     _can_use_dynshmem(shared_mem) || return nothing
@@ -73,9 +73,9 @@ function _try_allocate_shared_mem(
 end
 
 function _try_allocate_shared_mem(
-        ::Type{KeMemShape{Tv}},
-        block_dim::Ti,
-        n_basefuncs::Ti
+    ::Type{KeMemShape{Tv}},
+    block_dim::Ti,
+    n_basefuncs::Ti,
 ) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * (n_basefuncs) * n_basefuncs)
     _can_use_dynshmem(shared_mem) || return nothing
@@ -102,9 +102,9 @@ end
 
 
 function _allocate_global_mem(
-        ::Type{KeFeMemShape{Tv}},
-        nactive_cells::Ti,
-        n_basefuncs::Ti
+    ::Type{KeFeMemShape{Tv}},
+    nactive_cells::Ti,
+    n_basefuncs::Ti,
 ) where {Ti <: Integer, Tv <: Real}
     # allocate memory for the active cells only (i.e. nblocks * threads)
     Kes = CUDA.zeros(Tv, nactive_cells, n_basefuncs, n_basefuncs)
@@ -113,32 +113,32 @@ function _allocate_global_mem(
 end
 
 function _allocate_global_mem(
-        ::Type{FeMemShape{Tv}},
-        nactive_cells::Ti,
-        n_basefuncs::Ti
+    ::Type{FeMemShape{Tv}},
+    nactive_cells::Ti,
+    n_basefuncs::Ti,
 ) where {Ti <: Integer, Tv <: Real}
     fes = CUDA.zeros(Tv, nactive_cells, n_basefuncs)
     return FeGlobalMem(fes)
 end
 
 function _allocate_global_mem(
-        ::Type{KeMemShape{Tv}},
-        nactive_cells::Ti,
-        n_basefuncs::Ti
+    ::Type{KeMemShape{Tv}},
+    nactive_cells::Ti,
+    n_basefuncs::Ti,
 ) where {Ti <: Integer, Tv <: Real}
     Kes = CUDA.zeros(Tv, nactive_cells, n_basefuncs, n_basefuncs)
     return KeGlobalMem(Kes)
 end
 
 function Thunderbolt.FerriteUtils.allocate_device_mem(
-        ::Type{MemShape},
-        threads::Ti,
-        blocks::Ti,
-        n_basefuncs::Ti
+    ::Type{MemShape},
+    threads::Ti,
+    blocks::Ti,
+    n_basefuncs::Ti,
 ) where {Ti <: Integer, Tv <: Real, MemShape <: AbstractMemShape{Tv}}
     shared_mem_alloc = _try_allocate_shared_mem(MemShape, threads, n_basefuncs)
     shared_mem_alloc isa Nothing &&
-        return _allocate_global_mem(MemShape, threads * blocks, n_basefuncs)
+        return _allocate_global_mem(MemShape, threads*blocks, n_basefuncs)
     return shared_mem_alloc
 end
 

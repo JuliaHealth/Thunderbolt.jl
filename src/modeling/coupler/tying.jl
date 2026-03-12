@@ -11,5 +11,5 @@ setup_tying_cache(::Nothing, qr, sdh::SubDofHandler) = EmptyTyingCache()
 
 function setup_tying_cache(tying_models::Union{<:AbstractVector, <:Tuple}, qr, sdh::SubDofHandler)
     length(tying_models) == 0 && return EmptyTyingCache()
-    return ntuple(i -> setup_tying_cache(tying_models[i], qr, sdh), length(tying_models))
+    return ntuple(i->setup_tying_cache(tying_models[i], qr, sdh), length(tying_models))
 end

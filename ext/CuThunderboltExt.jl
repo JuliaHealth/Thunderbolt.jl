@@ -8,90 +8,90 @@ using SparseMatricesCSR
 import SparseArrays: SparseMatrixCSC, AbstractSparseMatrix
 
 import CUDA:
-             CUDA,
-             CuArray,
-             CuVector,
-             CUSPARSE,
-             blockDim,
-             blockIdx,
-             gridDim,
-             threadIdx,
-             threadIdx,
-             blockIdx,
-             blockDim,
-             @cuda,
-             @cushow,
-             CUDABackend,
-             launch_configuration,
-             cu,
-             cudaconvert
+    CUDA,
+    CuArray,
+    CuVector,
+    CUSPARSE,
+    blockDim,
+    blockIdx,
+    gridDim,
+    threadIdx,
+    threadIdx,
+    blockIdx,
+    blockDim,
+    @cuda,
+    @cushow,
+    CUDABackend,
+    launch_configuration,
+    cu,
+    cudaconvert
 
 import Thunderbolt:
-                    SimpleMesh,
-                    SparseMatrixCSR,
-                    SparseMatrixCSC,
-                    AbstractSolver,
-                    AbstractSemidiscreteFunction,
-                    AbstractPointwiseFunction,
-                    solution_size,
-                    AbstractPointwiseSolverCache,
-                    assemble_element!,
-                    LinearIntegrator,
-                    LinearOperator,
-                    QuadratureRuleCollection,
-                    setup_element_cache,
-                    update_operator!,
-                    FieldCoefficientCache,
-                    CudaDevice,
-                    ElementAssemblyStrategy,
-                    value_type,
-                    index_type,
-                    convert_vec_to_concrete
+    SimpleMesh,
+    SparseMatrixCSR,
+    SparseMatrixCSC,
+    AbstractSolver,
+    AbstractSemidiscreteFunction,
+    AbstractPointwiseFunction,
+    solution_size,
+    AbstractPointwiseSolverCache,
+    assemble_element!,
+    LinearIntegrator,
+    LinearOperator,
+    QuadratureRuleCollection,
+    setup_element_cache,
+    update_operator!,
+    FieldCoefficientCache,
+    CudaDevice,
+    ElementAssemblyStrategy,
+    value_type,
+    index_type,
+    convert_vec_to_concrete
 
 import Thunderbolt.FerriteUtils:
-                                 StaticInterpolationValues,
-                                 StaticCellValues,
-                                 allocate_device_mem,
-                                 CellIterator,
-                                 mem_size,
-                                 cellmem,
-                                 ncells,
-                                 celldofsview,
-                                 DeviceDofHandlerData,
-                                 DeviceSubDofHandler,
-                                 DeviceDofHandler,
-                                 DeviceGrid,
-                                 cellfe,
-                                 AbstractDeviceGlobalMem,
-                                 AbstractDeviceSharedMem,
-                                 AbstractDeviceCellIterator,
-                                 AbstractCellMem,
-                                 FeMemShape,
-                                 KeMemShape,
-                                 KeFeMemShape,
-                                 DeviceCellIterator,
-                                 DeviceOutOfBoundCellIterator,
-                                 DeviceCellCache,
-                                 FeCellMem,
-                                 KeCellMem,
-                                 KeFeCellMem,
-                                 NoCellMem,
-                                 AbstractMemShape
+    StaticInterpolationValues,
+    StaticCellValues,
+    allocate_device_mem,
+    CellIterator,
+    mem_size,
+    cellmem,
+    ncells,
+    celldofsview,
+    DeviceDofHandlerData,
+    DeviceSubDofHandler,
+    DeviceDofHandler,
+    DeviceGrid,
+    cellfe,
+    AbstractDeviceGlobalMem,
+    AbstractDeviceSharedMem,
+    AbstractDeviceCellIterator,
+    AbstractCellMem,
+    FeMemShape,
+    KeMemShape,
+    KeFeMemShape,
+    DeviceCellIterator,
+    DeviceOutOfBoundCellIterator,
+    DeviceCellCache,
+    FeCellMem,
+    KeCellMem,
+    KeFeCellMem,
+    NoCellMem,
+    AbstractMemShape
 
 import Thunderbolt.Preconditioners: sparsemat_format_type, CSCFormat, CSRFormat
 
 
 import Ferrite:
-                AbstractDofHandler,
-                get_grid,
-                CellIterator,
-                get_node_coordinate,
-                getcoordinates,
-                get_coordinate_eltype,
-                getcells,
-                get_node_ids,
-                get_coordinate_type,
-                nnodes
+    AbstractDofHandler,
+    get_grid,
+    CellIterator,
+    get_node_coordinate,
+    getcoordinates,
+    get_coordinate_eltype,
+    getcells,
+    get_node_ids,
+    get_coordinate_type,
+    nnodes
 
 import StaticArrays: SVector, MVector
 
@@ -110,11 +110,11 @@ end
 
 # This controls the outer loop over the ODEs
 function Thunderbolt._pointwise_step_outer_kernel!(
-        f::AbstractPointwiseFunction,
-        t::Real,
-        Δt::Real,
-        cache::AbstractPointwiseSolverCache,
-        ::Union{<:CuVector, SubArray{<:Any, 1, <:CuVector}}
+    f::AbstractPointwiseFunction,
+    t::Real,
+    Δt::Real,
+    cache::AbstractPointwiseSolverCache,
+    ::Union{<:CuVector, SubArray{<:Any, 1, <:CuVector}},
 )
     kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f.ode, t, Δt, cache) # || return false
     config = launch_configuration(kernel.fun)
@@ -131,8 +131,8 @@ Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteF
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where {T}                  = CUDA.zeros(T, ndofs(dh))
 
 function Thunderbolt.create_system_matrix(
-        SpMatType::Type{<:Union{CUSPARSE.CuSparseMatrixCSC, CUSPARSE.CuSparseMatrixCSR}},
-        dh::AbstractDofHandler
+    SpMatType::Type{<:Union{CUSPARSE.CuSparseMatrixCSC, CUSPARSE.CuSparseMatrixCSR}},
+    dh::AbstractDofHandler,
 )
     # FIXME in general the pattern is not symmetric
     Acpu      = allocate_matrix(dh)

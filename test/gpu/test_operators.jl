@@ -12,13 +12,13 @@
     linint = Thunderbolt.LinearIntegrator(
         AnalyticalTransmembraneStimulationProtocol(
             AnalyticalCoefficient((x, t) -> cos(2π * t) * exp(-norm(x)^2), cs),
-            [SVector((0.0f0, 1.0f0))]
+            [SVector((0.0f0, 1.0f0))],
         ),
-        qrc
+        qrc,
     )
 
-    cpustrategy = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice{
-        Float32, Int32}())
+    cpustrategy =
+        Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice{Float32, Int32}())
     linop = Thunderbolt.setup_operator(cpustrategy, linint, BackwardEulerSolver(), dh)
     Thunderbolt.update_operator!(linop, 0.0f0)
 

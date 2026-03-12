@@ -12,10 +12,10 @@ using Thunderbolt, SHA
         close!(dh)
 
         coordinate_data = zeros(ndofs(dh))
-        apply_analytical!(coordinate_data, dh, :apicobasal, x -> 0.5x[1] + 0.5)
-        apply_analytical!(coordinate_data, dh, :transmural, x -> 1.5 - 0.5x[2])
-        apply_analytical!(coordinate_data, dh, :rotational, x -> 0.5(x[3]^3 + 1))
-        apply_analytical!(coordinate_data, dh, :transventricular, x -> 0.5(x[3] + 1)^2)
+        apply_analytical!(coordinate_data, dh, :apicobasal, x->0.5x[1]+0.5)
+        apply_analytical!(coordinate_data, dh, :transmural, x->1.5-0.5x[2])
+        apply_analytical!(coordinate_data, dh, :rotational, x->0.5(x[3]^3+1))
+        apply_analytical!(coordinate_data, dh, :transventricular, x->0.5(x[3]+1)^2)
 
         pvd = ParaViewWriter(joinpath("testdata", "cobivec"))
 
@@ -43,10 +43,10 @@ using Thunderbolt, SHA
         close!(dh)
 
         coordinate_data = zeros(ndofs(dh))
-        apply_analytical!(coordinate_data, dh, :apicobasal, x -> 0.5x[1] + 0.5)
-        apply_analytical!(coordinate_data, dh, :transmural, x -> 1.5 - 0.5x[2])
-        apply_analytical!(coordinate_data, dh, :rotational, x -> 0.5(x[3]^3 + 1))
-        apply_analytical!(coordinate_data, dh, :transventricular, x -> 0.5(x[3] + 1)^2)
+        apply_analytical!(coordinate_data, dh, :apicobasal, x->0.5x[1]+0.5)
+        apply_analytical!(coordinate_data, dh, :transmural, x->1.5-0.5x[2])
+        apply_analytical!(coordinate_data, dh, :rotational, x->0.5(x[3]^3+1))
+        apply_analytical!(coordinate_data, dh, :transventricular, x->0.5(x[3]+1)^2)
 
         filename = "cobivec.vtu"
         VTKGridFile(joinpath("testdata", filename), grid) do vtk
@@ -58,7 +58,7 @@ using Thunderbolt, SHA
             "transmural",
             "apicobasal",
             "rotational",
-            "transventricular"
+            "transventricular",
         )
         @test cobivec.dh.grid.cells == grid.cells
         @test cobivec.dh.grid.nodes == grid.nodes

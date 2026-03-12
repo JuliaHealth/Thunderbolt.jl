@@ -8,11 +8,11 @@ model = TransientDiffusionModel(
     ConstantCoefficient(SymmetricTensor{2, 2, Float32}((4.5e-5, 0, 2.0e-5))),
     # ConstantCoefficient(SymmetricTensor{2,2,Float32}((1.0, 0, 1.0))),
     NoStimulationProtocol(),
-    :u
+    :u,
 )
 
-odefun = semidiscretize(
-    model, FiniteElementDiscretization(Dict(:u => LagrangeCollection{1}())), mesh)
+odefun =
+    semidiscretize(model, FiniteElementDiscretization(Dict(:u => LagrangeCollection{1}())), mesh)
 
 u₀ = rand(Float32, solution_size(odefun))
 
@@ -32,7 +32,7 @@ end
 @assert u₀ ≉ cpuintegrator.u
 
 
-u₀gpu          = CuVector(u₀)
+u₀gpu        = CuVector(u₀)
 gputimestepper = BackwardEulerSolver(solution_vector_type = CuVector{Float32}, system_matrix_type = CUDA.CUSPARSE.CuSparseMatrixCSC{Float32, Int32})
 gpuproblem     = Thunderbolt.ODEProblem(odefun, u₀gpu, tspan)
 gpuintegrator  = init(gpuproblem, gputimestepper, dt = dt₀)

@@ -6,15 +6,13 @@ import Base: \
 using Adapt
 using UnPack
 import KernelAbstractions:
-                           Backend, @kernel, @index, @ndrange, @groupsize, @print, functional, CPU,
-                           synchronize
+    Backend, @kernel, @index, @ndrange, @groupsize, @print, functional, CPU, synchronize
 import SparseArrays: getcolptr, getnzval
 import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
 using LinearAlgebra
 import Thunderbolt:
-                    ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice,
-                    default_backend
+    ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice, default_backend
 using TimerOutputs: @timeit_debug
 
 ## Generic Code #
@@ -45,6 +43,6 @@ getrowptr(A::Union{SparseMatrixCSR, ThreadedSparseMatrixCSR}) = SparseMatricesCS
 include("l1_gauss_seidel.jl")
 
 export L1GSPrecBuilder,
-       ForwardSweep, BackwardSweep, SymmetricSweep, PackedBufferCache, MatrixViewCache
+    ForwardSweep, BackwardSweep, SymmetricSweep, PackedBufferCache, MatrixViewCache
 
 end

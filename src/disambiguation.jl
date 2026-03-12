@@ -1,9 +1,7 @@
 # Some dispatches to make the dispatcher happy
 *(::ThreadedSparseMatrixCSR, ::ModelingToolkit.Symbolics.Arr{<:Any, 1}) = @error "Not implemented"
-function mul!(
-        ::ModelingToolkit.JumpProcesses.ExtendedJumpArray,
-        ::ThreadedSparseMatrixCSR,
-        ::AbstractVector{<:Number}
-)
-    @error "Not implemented"
-end
+mul!(
+    ::ModelingToolkit.JumpProcesses.ExtendedJumpArray,
+    ::ThreadedSparseMatrixCSR,
+    ::AbstractVector{<:Number},
+) = @error "Not implemented"

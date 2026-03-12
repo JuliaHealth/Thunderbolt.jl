@@ -16,12 +16,10 @@ function Φ_RSAFDQ2022MTK(t, tc, tr, TC, TR, THB)
     c21 = 0 ≤ mod(t - tr, THB)
     c22 = mod(t - tr, THB) ≤ TR
 
-    return c11 * c12 * 0.5(1 - cos(π / TC * tnow1)) +
-           !(c11 * c12) * c21 * c22 * 0.5(1 + cos(π / TR * tnow2))
+    return c11 * c12 * 0.5(1-cos(π/TC * tnow1)) + !(c11*c12)*c21*c22*0.5(1+cos(π/TR * tnow2))
 end
-function elastance_RSAFDQ2022MTK(t, Epass, Emax, tC, tR, TC, TR, THB)
-    Epass + Emax * Φ_RSAFDQ2022MTK(t, tC, tR, TC, TR, THB)
-end
+elastance_RSAFDQ2022MTK(t, Epass, Emax, tC, tR, TC, TR, THB) =
+    Epass + Emax*Φ_RSAFDQ2022MTK(t, tC, tR, TC, TR, THB)
 
 @mtkmodel RSAFDQ2022CircuitMTK begin
     # Set these to false for external inputs
@@ -103,10 +101,10 @@ end
         τ = 800.0#ustrip(0.8u"s" |> us"ms") #, [unit = u"ms", description = "Contraction cycle length"]
     end
     @variables begin
-        Vₗₐ(t) = 65.0, [irreducible = true]
-        Vₗᵥ(t) = 120.0, [irreducible = true]
-        Vᵣₐ(t) = 65.0, [irreducible = true]
-        Vᵣᵥ(t) = 145.0, [irreducible = true]
+        Vₗₐ(t) = 65.0, [irreducible=true]
+        Vₗᵥ(t) = 120.0, [irreducible=true]
+        Vᵣₐ(t) = 65.0, [irreducible=true]
+        Vᵣᵥ(t) = 145.0, [irreducible=true]
         psysₐᵣ(t) = 10.66
         psysᵥₑₙ(t) = 4.0
         ppulₐᵣ(t) = 4.67
@@ -151,7 +149,7 @@ end
             pₗᵥ ~ external_input_lv_p
         else
             Eₗᵥ ~ elastance_RSAFDQ2022MTK(t, Epassₗᵥ, Eactmaxₗᵥ, tCₗᵥ, tCₗᵥ + TCₗᵥ, TCₗᵥ, TRₗᵥ, τ)
-            pₗᵥ ~ Eₗᵥ * (Vₗᵥ - V0ₗᵥ)
+            pₗᵥ ~ Eₗᵥ*(Vₗᵥ - V0ₗᵥ)
         end
         MTK.D(Vₗᵥ) ~ Qₘᵥ - Qₐᵥ
         # RV
@@ -159,7 +157,7 @@ end
             pᵣᵥ ~ external_input_rv_p
         else
             Eᵣᵥ ~ elastance_RSAFDQ2022MTK(t, Epassᵣᵥ, Eactmaxᵣᵥ, tCᵣᵥ, tCᵣᵥ + TCᵣᵥ, TCᵣᵥ, TRᵣᵥ, τ)
-            pᵣᵥ ~ Eᵣᵥ * (Vᵣᵥ - V0ᵣᵥ)
+            pᵣᵥ ~ Eᵣᵥ*(Vᵣᵥ - V0ᵣᵥ)
         end
         MTK.D(Vᵣᵥ) ~ Qₜᵥ - Qₚᵥ
         # LA
@@ -167,7 +165,7 @@ end
             pₗₐ ~ external_input_la_p
         else
             Eₗₐ ~ elastance_RSAFDQ2022MTK(t, Epassₗₐ, Eactmaxₗₐ, tCₗₐ, tCₗₐ + TCₗₐ, TCₗₐ, TRₗₐ, τ)
-            pₗₐ ~ Eₗₐ * (Vₗₐ - V0ₗₐ)
+            pₗₐ ~ Eₗₐ*(Vₗₐ - V0ₗₐ)
         end
         MTK.D(Vₗₐ) ~ Qpulᵥₑₙ - Qₘᵥ
         # RA
@@ -175,7 +173,7 @@ end
             pᵣₐ ~ external_input_ra_p
         else
             Eᵣₐ ~ elastance_RSAFDQ2022MTK(t, Epassᵣₐ, Eactmaxᵣₐ, tCᵣₐ, tCᵣₐ + TCᵣₐ, TCᵣₐ, TRᵣₐ, τ)
-            pᵣₐ ~ Eᵣₐ * (Vᵣₐ - V0ᵣₐ)
+            pᵣₐ ~ Eᵣₐ*(Vᵣₐ - V0ᵣₐ)
         end
         MTK.D(Vᵣₐ) ~ Qsysᵥₑₙ - Qₜᵥ
         # Pressure and flow
@@ -184,13 +182,13 @@ end
         MTK.D(ppulₐᵣ) ~ (Qₚᵥ - Qpulₐᵣ) / Cpulₐᵣ
         MTK.D(ppulᵥₑₙ) ~ (Qpulₐᵣ - Qpulᵥₑₙ) / Cpulᵥₑₙ
         Qsysᵥₑₙsysₐᵣ ~ (psysᵥₑₙ - psysₐᵣ) / Rsysₐᵣ
-        MTK.D(Qsysₐᵣ) ~ -Rsysₐᵣ / Lsysₐᵣ * (Qsysₐᵣ + Qsysᵥₑₙsysₐᵣ) # sys ar
+        MTK.D(Qsysₐᵣ) ~ - Rsysₐᵣ/Lsysₐᵣ * (Qsysₐᵣ + Qsysᵥₑₙsysₐᵣ) # sys ar
         Qᵣₐsysᵥₑₙ ~ (pᵣₐ - psysᵥₑₙ) / Rsysᵥₑₙ
-        MTK.D(Qsysᵥₑₙ) ~ -Rsysᵥₑₙ / Lsysᵥₑₙ * (Qsysᵥₑₙ + Qᵣₐsysᵥₑₙ) # sys ven
+        MTK.D(Qsysᵥₑₙ) ~ - Rsysᵥₑₙ/Lsysᵥₑₙ * (Qsysᵥₑₙ + Qᵣₐsysᵥₑₙ) # sys ven
         Qpulᵥₑₙpulₐᵣ ~ (ppulᵥₑₙ - ppulₐᵣ) / Rpulₐᵣ
-        MTK.D(Qpulₐᵣ) ~ -Rpulₐᵣ / Lpulₐᵣ * (Qpulₐᵣ + Qpulᵥₑₙpulₐᵣ) # pul ar
+        MTK.D(Qpulₐᵣ) ~ - Rpulₐᵣ/Lpulₐᵣ * (Qpulₐᵣ + Qpulᵥₑₙpulₐᵣ) # pul ar
         Qₗₐpulᵥₑₙ ~ (pₗₐ - ppulᵥₑₙ) / Rpulᵥₑₙ
-        MTK.D(Qpulᵥₑₙ) ~ -Rpulᵥₑₙ / Lpulᵥₑₙ * (Qpulᵥₑₙ + Qₗₐpulᵥₑₙ) # sys ar
+        MTK.D(Qpulᵥₑₙ) ~ - Rpulᵥₑₙ/Lpulᵥₑₙ * (Qpulᵥₑₙ + Qₗₐpulᵥₑₙ) # sys ar
     end
 end
 

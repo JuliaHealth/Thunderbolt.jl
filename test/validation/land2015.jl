@@ -12,7 +12,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
             celltype,
             (25, 3, 3),
             Ferrite.Vec{3}((0.0, 0.0, 0.0)),
-            Ferrite.Vec{3}((10.0, 1.0, 1.0))
+            Ferrite.Vec{3}((10.0, 1.0, 1.0)),
         )
         order = 2
 
@@ -29,7 +29,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
             Bⁿˢ = 1.0,
             Bᶠˢ = 2.0,
             Bᶠⁿ = 2.0,
-            mpU = SimpleCompressionPenalty(100.0)
+            mpU = SimpleCompressionPenalty(100.0),
         )
         # passive_material_model = HolzapfelOgden2009Model()
 
@@ -37,35 +37,35 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
             Dict(:displacement => LagrangeCollection{order}()^3),
             [
                 Dirichlet(
-                :displacement,
-                getfacetset(mesh, "left"),
-                (x, t) -> (0.0, 0.0, 0.0),
-                [1, 2, 3]
-            )
-            ]
+                    :displacement,
+                    getfacetset(mesh, "left"),
+                    (x, t) -> (0.0, 0.0, 0.0),
+                    [1, 2, 3],
+                ),
+            ],
         )
 
         constitutive_model = PK1Model(
             passive_material_model,
             ConstantCoefficient(
                 OrthotropicMicrostructure(
-                Vec((1.0, 0.0, 0.0)),
-                Vec((0.0, 1.0, 0.0)),
-                Vec((0.0, 0.0, 1.0))
+                    Vec((1.0, 0.0, 0.0)),
+                    Vec((0.0, 1.0, 0.0)),
+                    Vec((0.0, 0.0, 1.0)),
+                ),
             ),
-            )
         )
 
         pressure_profile(t) = min(t, 1.0) * 0.004
         pressure_profile_coefficient = TimeFunctionCoefficient(pressure_profile)
         bcs = Thunderbolt.ConsistencyCheckWeakBoundaryCondition(
             PressureFieldBC(pressure_profile_coefficient, "bottom"),
-            1e-7
+            1e-7,
         )
         quasistaticform = semidiscretize(
             QuasiStaticModel(:displacement, constitutive_model, (bcs,)),
             spatial_discretization_method,
-            mesh
+            mesh,
         )
 
         problem = QuasiStaticProblem(quasistaticform, (0.0, 1.0))
@@ -73,10 +73,11 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
         # Create sparse matrix and residual vector
         timestepper = HomotopyPathSolver(
             NewtonRaphsonSolver(;
-            tol = 1e-4,
-            max_iter = 10,
-            inner_solver = LinearSolve.UMFPACKFactorization()            # monitor=Thunderbolt.VTKNewtonMonitor(;outdir="./land2015-newton-debug/"),
-        ),
+                tol = 1e-4,
+                max_iter = 10,
+                inner_solver = LinearSolve.UMFPACKFactorization(),
+                # monitor=Thunderbolt.VTKNewtonMonitor(;outdir="./land2015-newton-debug/"),
+            ),
         )
         integrator = init(
             problem,
@@ -85,7 +86,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
             dtmax = 0.2,
             adaptive = true,
             verbose = true,
-            maxiters = 100
+            maxiters = 100,
         )
 
         solve!(integrator)
@@ -96,10 +97,10 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
             evaluate_at_points(
                 peh_deflection,
                 integrator.cache.inner_solver_cache.op.dh,
-                integrator.u
+                integrator.u,
             )[1][3],
             3.17;
-            atol = 0.02
+            atol = 0.02,
         )
 
         # VTKGridFile("Land2015Problem1-$(celltype)", mesh.grid) do vtk

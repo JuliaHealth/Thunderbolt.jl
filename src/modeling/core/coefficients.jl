@@ -17,18 +17,18 @@ end
 duplicate_for_device(device, cache::FieldCoefficientCache) = cache
 
 @inline function setup_coefficient_cache(
-        coefficient::FieldCoefficient,
-        qr::QuadratureRule,
-        sdh::SubDofHandler
+    coefficient::FieldCoefficient,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
 )
     return _create_field_coefficient_cache(coefficient, coefficient.ip_collection, qr, sdh)
 end
 
 function _create_field_coefficient_cache(
-        coefficient::FieldCoefficient{T},
-        ipc::ScalarInterpolationCollection,
-        qr::QuadratureRule,
-        sdh::SubDofHandler
+    coefficient::FieldCoefficient{T},
+    ipc::ScalarInterpolationCollection,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
 ) where {T}
     cell = get_first_cell(sdh)
     ip = getinterpolation(coefficient.ip_collection, cell)
@@ -36,15 +36,15 @@ function _create_field_coefficient_cache(
     Nξs = size(fv.Nξ)
     return FieldCoefficientCache(
         coefficient.elementwise_data,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing)
+        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
     )
 end
 
 function _create_field_coefficient_cache(
-        coefficient::FieldCoefficient{<:Vec{<:Any, T}},
-        ipc::VectorizedInterpolationCollection,
-        qr::QuadratureRule,
-        sdh::SubDofHandler
+    coefficient::FieldCoefficient{<:Vec{<:Any, T}},
+    ipc::VectorizedInterpolationCollection,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
 ) where {T}
     cell = get_first_cell(sdh)
     ip = getinterpolation(coefficient.ip_collection, cell)
@@ -52,21 +52,21 @@ function _create_field_coefficient_cache(
     Nξs = size(fv.Nξ)
     return FieldCoefficientCache(
         coefficient.elementwise_data,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing)
+        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
     )
 end
 
 function evaluate_coefficient(
-        cache::FieldCoefficientCache{T},
-        geometry_cache::FerriteUtils.AnyCellCache,
-        qp::QuadraturePoint,
-        t
+    cache::FieldCoefficientCache{T},
+    geometry_cache::FerriteUtils.AnyCellCache,
+    qp::QuadraturePoint,
+    t,
 ) where {T}
     @unpack elementwise_data, cv = cache
     val = zero(T)
     cellidx = cellid(geometry_cache)
 
-    @inbounds for i in 1:getnbasefunctions(cv)
+    @inbounds for i = 1:getnbasefunctions(cv)
         val += shape_value(cv, qp, i) * elementwise_data[i, cellidx]
     end
     return val
@@ -84,9 +84,9 @@ end
 duplicate_for_device(device, cache::ConstantCoefficient) = cache
 
 function setup_coefficient_cache(
-        coefficient::ConstantCoefficient,
-        qr::QuadratureRule,
-        sdh::SubDofHandler
+    coefficient::ConstantCoefficient,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
 )
     return coefficient
 end
@@ -112,34 +112,34 @@ struct ConductivityToDiffusivityCoefficientCache{DTC, CC, STVC}
 end
 
 function setup_coefficient_cache(
-        coefficient::ConductivityToDiffusivityCoefficient,
-        qr::QuadratureRule,
-        sdh::SubDofHandler
+    coefficient::ConductivityToDiffusivityCoefficient,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
 )
     return ConductivityToDiffusivityCoefficientCache(
         setup_coefficient_cache(coefficient.conductivity_tensor_coefficient, qr, sdh),
         setup_coefficient_cache(coefficient.capacitance_coefficient, qr, sdh),
-        setup_coefficient_cache(coefficient.χ_coefficient, qr, sdh)
+        setup_coefficient_cache(coefficient.χ_coefficient, qr, sdh),
     )
 end
 
 function evaluate_coefficient(
-        coeff::ConductivityToDiffusivityCoefficientCache,
-        cell_cache::FerriteUtils.AnyCellCache,
-        qp::QuadraturePoint,
-        t
+    coeff::ConductivityToDiffusivityCoefficientCache,
+    cell_cache::FerriteUtils.AnyCellCache,
+    qp::QuadraturePoint,
+    t,
 )
     κ = evaluate_coefficient(coeff.conductivity_tensor_cache, cell_cache, qp, t)
     Cₘ = evaluate_coefficient(coeff.capacitance_cache, cell_cache, qp, t)
     χ = evaluate_coefficient(coeff.χ_cache, cell_cache, qp, t)
-    return κ / (Cₘ * χ)
+    return κ/(Cₘ*χ)
 end
 
 function duplicate_for_device(device, cache::ConductivityToDiffusivityCoefficientCache)
     ConductivityToDiffusivityCoefficientCache(
         duplicate_for_device(device, cache.conductivity_tensor_cache),
         duplicate_for_device(device, cache.capacitance_cache),
-        duplicate_for_device(device, cache.χ_cache)
+        duplicate_for_device(device, cache.χ_cache),
     )
 end
 
@@ -179,9 +179,9 @@ end
 duplicate_for_device(device, cache::CartesianCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(
-        cs::CartesianCoordinateSystem,
-        qr::QuadratureRule{<:Any, <:AbstractArray{T}},
-        sdh::SubDofHandler
+    cs::CartesianCoordinateSystem,
+    qr::QuadratureRule{<:Any, <:AbstractArray{T}},
+    sdh::SubDofHandler,
 ) where {T}
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(cs, cell)
@@ -189,20 +189,20 @@ function setup_coefficient_cache(
     Nξs = size(fv.Nξ)
     return CartesianCoordinateSystemCache(
         cs,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing)
+        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
     )
 end
 
 function evaluate_coefficient(
-        coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}},
-        geometry_cache::FerriteUtils.AnyCellCache,
-        qp::QuadraturePoint{<:Any, T},
-        t
+    coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}},
+    geometry_cache::FerriteUtils.AnyCellCache,
+    qp::QuadraturePoint{<:Any, T},
+    t,
 ) where {sdim, T}
     @unpack cv = coeff
     x          = zero(Vec{sdim, T})
     coords     = getcoordinates(geometry_cache)
-    for i in 1:getnbasefunctions(cv)
+    for i = 1:getnbasefunctions(cv)
         x += shape_value(cv, qp, i) * coords[i]
     end
     return x
@@ -216,26 +216,26 @@ end
 duplicate_for_device(device, cache::LVCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(
-        cs::LVCoordinateSystem,
-        qr::QuadratureRule{<:Any, <:AbstractArray{T}},
-        sdh::SubDofHandler
+    cs::LVCoordinateSystem,
+    qr::QuadratureRule{<:Any, <:AbstractArray{T}},
+    sdh::SubDofHandler,
 ) where {T}
     cell   = get_first_cell(sdh)
     ip     = getcoordinateinterpolation(cs, cell)
     ip_geo = ip^3
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
-    Nξs    = size(fv.Nξ)
+    Nξs   = size(fv.Nξ)
     return LVCoordinateSystemCache(
         cs,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing)
+        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
     )
 end
 
 function evaluate_coefficient(
-        coeff::LVCoordinateSystemCache,
-        geometry_cache::FerriteUtils.AnyCellCache,
-        qp::QuadraturePoint{ref_shape, T},
-        t
+    coeff::LVCoordinateSystemCache,
+    geometry_cache::FerriteUtils.AnyCellCache,
+    qp::QuadraturePoint{ref_shape, T},
+    t,
 ) where {ref_shape, T}
     @unpack cv, cs = coeff
     @unpack dh     = cs
@@ -243,7 +243,7 @@ function evaluate_coefficient(
     x2             = zero(T)
     x3             = zero(T)
     dofs           = celldofsview(dh, cellid(geometry_cache))
-    @inbounds for i in 1:getnbasefunctions(cv)
+    @inbounds for i = 1:getnbasefunctions(cv)
         val = shape_value(cv, qp, i)::T
         x1 += val * cs.u_transmural[dofs[i]]
         x2 += val * cs.u_apicobasal[dofs[i]]
@@ -260,26 +260,26 @@ end
 duplicate_for_device(device, cache::BiVCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(
-        cs::BiVCoordinateSystem,
-        qr::QuadratureRule{<:Any, <:AbstractArray{T}},
-        sdh::SubDofHandler
+    cs::BiVCoordinateSystem,
+    qr::QuadratureRule{<:Any, <:AbstractArray{T}},
+    sdh::SubDofHandler,
 ) where {T}
     cell   = get_first_cell(sdh)
     ip     = getcoordinateinterpolation(cs, cell)
     ip_geo = ip^3
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
-    Nξs    = size(fv.Nξ)
+    Nξs   = size(fv.Nξ)
     return BiVCoordinateSystemCache(
         cs,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing)
+        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
     )
 end
 
 function evaluate_coefficient(
-        cc::BiVCoordinateSystemCache,
-        cell_cache::FerriteUtils.AnyCellCache,
-        qp::QuadraturePoint{<:Any, T},
-        t
+    cc::BiVCoordinateSystemCache,
+    cell_cache::FerriteUtils.AnyCellCache,
+    qp::QuadraturePoint{<:Any, T},
+    t,
 ) where {T}
     @unpack cv, cs = cc
     @unpack dh     = cs
@@ -288,7 +288,7 @@ function evaluate_coefficient(
     x2             = zero(T)
     x3             = zero(T)
     x4             = zero(T)
-    @inbounds for i in 1:getnbasefunctions(cv)
+    @inbounds for i = 1:getnbasefunctions(cv)
         val = shape_value(cv, qp, i)::T
         x1 += val * cs.u_transmural[dofs[i]]
         x2 += val * cs.u_apicobasal[dofs[i]]
@@ -316,26 +316,26 @@ end
 function duplicate_for_device(device, cache::SpectralTensorCoefficientCache)
     SpectralTensorCoefficientCache(
         duplicate_for_device(device, cache.eigenvector_cache),
-        duplicate_for_device(device, cache.eigenvalue_cache)
+        duplicate_for_device(device, cache.eigenvalue_cache),
     )
 end
 
 function setup_coefficient_cache(
-        coefficient::SpectralTensorCoefficient,
-        qr::QuadratureRule,
-        sdh::SubDofHandler
+    coefficient::SpectralTensorCoefficient,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
 )
     return SpectralTensorCoefficientCache(
         setup_coefficient_cache(coefficient.eigenvectors, qr, sdh),
-        setup_coefficient_cache(coefficient.eigenvalues, qr, sdh)
+        setup_coefficient_cache(coefficient.eigenvalues, qr, sdh),
     )
 end
 
 function evaluate_coefficient(
-        coeff::SpectralTensorCoefficientCache,
-        cell_cache::FerriteUtils.AnyCellCache,
-        qp::QuadraturePoint,
-        t
+    coeff::SpectralTensorCoefficientCache,
+    cell_cache::FerriteUtils.AnyCellCache,
+    qp::QuadraturePoint,
+    t,
 )
     M = evaluate_coefficient(coeff.eigenvector_cache, cell_cache, qp, t)
     λ = evaluate_coefficient(coeff.eigenvalue_cache, cell_cache, qp, t)
@@ -361,28 +361,26 @@ end
 duplicate_for_device(device, cache::SpatiallyHomogeneousDataField) = cache
 
 function setup_coefficient_cache(
-        coefficient::SpatiallyHomogeneousDataField,
-        qr::QuadratureRule,
-        sdh::SubDofHandler
+    coefficient::SpatiallyHomogeneousDataField,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
 )
     return coefficient
 end
 
-function evaluate_coefficient(
-        coeff::SpatiallyHomogeneousDataField,
-        ::FerriteUtils.AnyCellCache,
-        ::QuadraturePoint,
-        t
-)
-    _evaluate_coefficient(coeff, t)
-end
+evaluate_coefficient(
+    coeff::SpatiallyHomogeneousDataField,
+    ::FerriteUtils.AnyCellCache,
+    ::QuadraturePoint,
+    t,
+) = _evaluate_coefficient(coeff, t)
 
 function _evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, t)
     @unpack timings, data = coeff
     i = 1
     tᵢ = timings[1]
     while tᵢ < t
-        i += 1
+        i+=1
         if i > length(timings)
             return data[end]
         end

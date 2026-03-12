@@ -15,25 +15,24 @@ struct AnalyticalCoefficientCache{F <: Function, CSC}
 end
 
 function setup_coefficient_cache(
-        coeff::AnalyticalCoefficient,
-        qr::QuadratureRule,
-        sdh::SubDofHandler
+    coeff::AnalyticalCoefficient,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
 )
     return AnalyticalCoefficientCache(
         coeff.f,
-        setup_coefficient_cache(coeff.coordinate_system_coefficient, qr, sdh)
+        setup_coefficient_cache(coeff.coordinate_system_coefficient, qr, sdh),
     )
 end
 
-function duplicate_for_device(device, cache::AnalyticalCoefficientCache)
+duplicate_for_device(device, cache::AnalyticalCoefficientCache) =
     AnalyticalCoefficientCache(cache.f, duplicate_for_device(device, cache.coordinate_system_cache))
-end
 
 @inline function evaluate_coefficient(
-        coeff::F,
-        cell_cache::FerriteUtils.AnyCellCache,
-        qp::QuadraturePoint{<:Any, T},
-        t
+    coeff::F,
+    cell_cache::FerriteUtils.AnyCellCache,
+    qp::QuadraturePoint{<:Any, T},
+    t,
 ) where {F <: AnalyticalCoefficientCache, T}
     x = evaluate_coefficient(coeff.coordinate_system_cache, cell_cache, qp, t)
     return coeff.f(x, t)
@@ -49,42 +48,41 @@ struct AnalyticalCoefficientElementCache{
     CoefficientCacheType <: AnalyticalCoefficientCache,
     T,
     VectorType <: AbstractVector{SVector{2, T}},
-    FEValueType
+    FEValueType,
 }
     cc::CoefficientCacheType
     nonzero_intervals::VectorType
     cv::FEValueType
 end
-function duplicate_for_device(device, ec::AnalyticalCoefficientElementCache)
+duplicate_for_device(device, ec::AnalyticalCoefficientElementCache) =
     AnalyticalCoefficientElementCache(
         duplicate_for_device(device, ec.cc),
         ec.nonzero_intervals,
-        ec.cv
+        ec.cv,
     )
-end
 
 @inline function assemble_element!(
-        bₑ::AbstractVector,
-        geometry_cache::FerriteUtils.AnyCellCache,
-        element_cache::AnalyticalCoefficientElementCache,
-        time
+    bₑ::AbstractVector,
+    geometry_cache::FerriteUtils.AnyCellCache,
+    element_cache::AnalyticalCoefficientElementCache,
+    time,
 )
     _assemble_element!(
         bₑ,
         geometry_cache,
         getcoordinates(geometry_cache),
         element_cache::AnalyticalCoefficientElementCache,
-        time
+        time,
     )
 end
 
 # We want this to be as fast as possible, so throw away everything unused
 @inline function _assemble_element!(
-        bₑ::AbstractVector,
-        geometry_cache::CellCache,
-        coords::AbstractVector{<:Vec{dim, T}},
-        element_cache::AnalyticalCoefficientElementCache,
-        time
+    bₑ::AbstractVector,
+    geometry_cache::CellCache,
+    coords::AbstractVector{<:Vec{dim, T}},
+    element_cache::AnalyticalCoefficientElementCache,
+    time,
 ) where {dim, T}
     @unpack cc, cv = element_cache
     n_geom_basefuncs = Ferrite.getngeobasefunctions(cv)
@@ -95,7 +93,7 @@ end
         # Evaluate f
         fx = evaluate_coefficient(cc, geometry_cache, QuadraturePoint(qpi, cv.qr.points[qpi]), time)
         # Evaluate all basis functions
-        @inbounds for j in 1:getnbasefunctions(cv)
+        @inbounds for j ∈ 1:getnbasefunctions(cv)
             δu = shape_value(cv, qpi, j)
             bₑ[j] += fx * δu * dΩ
         end
@@ -103,11 +101,11 @@ end
 end
 
 @inline function _assemble_element!(
-        bₑ,
-        geometry_cache::FerriteUtils.DeviceCellCache,
-        coords,
-        element_cache::AnalyticalCoefficientElementCache,
-        time
+    bₑ,
+    geometry_cache::FerriteUtils.DeviceCellCache,
+    coords,
+    element_cache::AnalyticalCoefficientElementCache,
+    time,
 )
     @unpack cc, cv = element_cache
     for qv in FerriteUtils.QuadratureValuesIterator(cv, coords)
@@ -115,7 +113,7 @@ end
         idx = qv.idx
         ξ = qv.ξ
         qp = QuadraturePoint(idx, ξ)
-        @inbounds for j in 1:getnbasefunctions(cv)
+        @inbounds for j ∈ 1:getnbasefunctions(cv)
             fx = evaluate_coefficient(cc, geometry_cache, qp, time)
             δu = FerriteUtils.shape_value(qv, j)
             bₑ[j] += fx * δu * dΩ

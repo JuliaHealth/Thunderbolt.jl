@@ -12,8 +12,8 @@
 # end
 
 # TODO we might want to add this to Ferrite (and especially FerriteViz) in one or another way. Maybe traits are better, because they allow more extensibility.
-const LinearCellGeometry = Union{
-    Hexahedron, Tetrahedron, Pyramid, Wedge, Triangle, Quadrilateral, Line}
+const LinearCellGeometry =
+    Union{Hexahedron, Tetrahedron, Pyramid, Wedge, Triangle, Quadrilateral, Line}
 
 elementtypes(grid::Grid{3, Hexahedron}) = @SVector [Hexahedron]
 elementtypes(grid::Grid{3, QuadraticHexahedron}) = @SVector [QuadraticHexahedron]
@@ -24,9 +24,7 @@ include("simple_meshes.jl")
 include("tools.jl")
 include("generators.jl")
 
-function Ferrite.PointEvalHandler(
-        mesh::SimpleMesh{sdim},
-        points::AbstractVector{Vec{sdim, T}}
-) where {sdim, T}
-    Ferrite.PointEvalHandler(mesh.grid, points)
-end
+Ferrite.PointEvalHandler(
+    mesh::SimpleMesh{sdim},
+    points::AbstractVector{Vec{sdim, T}},
+) where {sdim, T} = Ferrite.PointEvalHandler(mesh.grid, points)

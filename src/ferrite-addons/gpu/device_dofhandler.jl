@@ -5,7 +5,7 @@ struct DeviceDofHandlerData{
     GridType <: Ferrite.AbstractGrid{sdim},
     IndexType,
     IndexVectorType <: AbstractVector{IndexType},
-    Ti <: Integer
+    Ti <: Integer,
 } <: Ferrite.AbstractDofHandler
     grid::GridType
     cell_dofs::IndexVectorType
@@ -20,7 +20,7 @@ struct DeviceSubDofHandler{
     IPVectorType,
     IndexType,
     IndexVectorType <: AbstractVector{IndexType},
-    DHDataType <: DeviceDofHandlerData
+    DHDataType <: DeviceDofHandlerData,
 } <: Ferrite.AbstractDofHandler
     cellset::IndexVectorType
     field_names::IndexVectorType
@@ -52,6 +52,6 @@ Ferrite.get_grid(dh::DeviceDofHandlerData) = dh.grid
 function celldofsview(sdh::DeviceSubDofHandler, i::Ti) where {Ti <: Integer}
     offset = cell_dof_offset(sdh.dh_data, i)
     ndofs = ndofs_per_cell(sdh)
-    view = @view sdh.dh_data.cell_dofs[offset:(offset + ndofs - convert(Ti, 1))]
+    view = @view sdh.dh_data.cell_dofs[offset:(offset+ndofs-convert(Ti, 1))]
     return view
 end

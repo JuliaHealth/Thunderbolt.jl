@@ -11,7 +11,7 @@ ncells(iterator::AbstractDeviceCellIterator) = iterator.n_cells ## any subtype h
 struct DeviceCellIterator{
     SDHType <: DeviceSubDofHandler,
     Ti <: Integer,
-    CellMemType <: AbstractCellMem
+    CellMemType <: AbstractCellMem,
 } <: AbstractDeviceCellIterator
     sdh::SDHType
     n_cells::Ti # depends whether we are iterating over all cells (i.e. all the dh) or a subset of cells (i.e. subdh)
@@ -35,7 +35,7 @@ struct DeviceCellCache{
     NodesType <: SVector{NN, Ti},
     X,
     CoordinatesType <: SVector{X},
-    CellMemType <: AbstractCellMem
+    CellMemType <: AbstractCellMem,
 } <: AbstractDeviceCellCache
     coords::CoordinatesType
     dofs::DofsType

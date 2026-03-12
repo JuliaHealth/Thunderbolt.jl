@@ -17,13 +17,13 @@ mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}, VTprev} 
 end
 
 function setup_solver_cache(
-        f::AbstractSemidiscreteFunction,
-        solver::HomotopyPathSolver,
-        t₀;
-        uprev       = nothing,
-        u           = nothing,
-        alias_uprev = true,
-        alias_u     = false
+    f::AbstractSemidiscreteFunction,
+    solver::HomotopyPathSolver,
+    t₀;
+    uprev       = nothing,
+    u           = nothing,
+    alias_uprev = true,
+    alias_u     = false,
 )
     inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
 
@@ -43,8 +43,8 @@ function setup_solver_cache(
         _uprev = alias_uprev ? uprev : recursivecopy(uprev)
     end
 
-    solver_cache = HomotopyPathSolverCache(
-        inner_solver_cache, _u, _uprev, vtype(undef, solution_size(f)))
+    solver_cache =
+        HomotopyPathSolverCache(inner_solver_cache, _u, _uprev, vtype(undef, solution_size(f)))
 
     # Make sure the initial state is consistent
     perform_step!(f, solver_cache, t₀, 0.0) ||
@@ -54,37 +54,37 @@ function setup_solver_cache(
 end
 
 function setup_solver_cache(
-        f::AbstractSemidiscreteBlockedFunction,
-        solver::HomotopyPathSolver,
-        t₀;
-        uprev       = nothing,
-        u           = nothing,
-        alias_uprev = true,
-        alias_u     = false
+    f::AbstractSemidiscreteBlockedFunction,
+    solver::HomotopyPathSolver,
+    t₀;
+    uprev       = nothing,
+    u           = nothing,
+    alias_uprev = true,
+    alias_u     = false,
 )
     inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
 
     vtype = Vector{Float64}
     if u === nothing
-        _u = mortar([vtype(undef, solution_size(fi)) for fi in blocks(f)])
+        _u = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
         @warn "Cannot initialize u for $(typeof(solver))."
     else
         if alias_u
             _u = u
         else
-            _u = mortar([vtype(undef, solution_size(fi)) for fi in blocks(f)])
+            _u = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
             _u .= u
         end
     end
 
     if uprev === nothing
-        _uprev = mortar([vtype(undef, solution_size(fi)) for fi in blocks(f)])
+        _uprev = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
         _uprev .= u
     else
         if alias_uprev
             _uprev = uprev
         else
-            _uprev = mortar([vtype(undef, solution_size(fi)) for fi in blocks(f)])
+            _uprev = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
             _uprev .= uprev
         end
     end
@@ -93,7 +93,7 @@ function setup_solver_cache(
         inner_solver_cache,
         _u,
         _uprev,
-        mortar([vtype(undef, solution_size(fi)) for fi in blocks(f)])
+        mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)]),
     )
 
     # Make sure the initial state is consistent
@@ -104,10 +104,10 @@ function setup_solver_cache(
 end
 
 function perform_step!(
-        f::AbstractSemidiscreteFunction,
-        solver_cache::HomotopyPathSolverCache,
-        t,
-        Δt
+    f::AbstractSemidiscreteFunction,
+    solver_cache::HomotopyPathSolverCache,
+    t,
+    Δt,
 )
     update_constraints!(f, solver_cache, t + Δt)
     if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t + Δt)
@@ -138,14 +138,14 @@ Base.@kwdef struct Deuflhard2004DiscreteContinuationController
     Θreject::Float64 = 0.95
     Θbar::Float64 = 0.5
     γ::Float64 = 0.95
-    qmin::Float64 = 1 / 5
+    qmin::Float64 = 1/5
     qmax::Float64 = 5.0
 end
 
 function should_accept_step(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::Deuflhard2004DiscreteContinuationController
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::Deuflhard2004DiscreteContinuationController,
 )
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
@@ -157,21 +157,21 @@ function should_accept_step(
     end
 end
 function reject_step!(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::Deuflhard2004DiscreteContinuationController
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::Deuflhard2004DiscreteContinuationController,
 )
     # Reset solution
     integrator.u .= integrator.uprev
 
-    @inline g(x) = √(1 + 4x) - 1
+    @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
     (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
         if Θk > Θreject
-            q = clamp(γ * (g(Θbar) / g(Θk))^(1 / p), qmin, qmax)
+            q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
             integrator.dt = q * integrator.dt
             return
         end
@@ -179,18 +179,18 @@ function reject_step!(
 end
 
 function adapt_dt!(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::Deuflhard2004DiscreteContinuationController
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::Deuflhard2004DiscreteContinuationController,
 )
-    @inline g(x) = √(1 + 4x) - 1
+    @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
-    q = clamp(γ * (g(Θbar) / (2Θ₀))^(1 / p), qmin, qmax)
+    q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
     integrator.dt = q * integrator.dt
 end
 
@@ -200,14 +200,14 @@ Base.@kwdef struct Deuflhard2004_B_DiscreteContinuationControllerVariant
     Θreject::Float64 = 0.95
     Θbar::Float64 = 0.5
     γ::Float64 = 0.95
-    qmin::Float64 = 1 / 5
+    qmin::Float64 = 1/5
     qmax::Float64 = 5.0
 end
 
 function should_accept_step(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::Deuflhard2004_B_DiscreteContinuationControllerVariant
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
@@ -219,21 +219,21 @@ function should_accept_step(
     end
 end
 function reject_step!(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::Deuflhard2004_B_DiscreteContinuationControllerVariant
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
     # Reset solution
     integrator.u .= integrator.uprev
 
-    @inline g(x) = √(1 + 4x) - 1
+    @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
     (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
         if Θk > Θreject
-            q = clamp(γ * (g(Θbar) / g(Θk))^(1 / p), qmin, qmax)
+            q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
             integrator.dt = q * integrator.dt
             return
         end
@@ -241,18 +241,18 @@ function reject_step!(
 end
 
 function adapt_dt!(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::Deuflhard2004_B_DiscreteContinuationControllerVariant
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
-    @inline g(x) = √(1 + 4x) - 1
+    @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
-    q = clamp(γ * (g(Θbar) / (g(Θ₀)))^(1 / p), qmin, qmax)
+    q = clamp(γ * (g(Θbar)/(g(Θ₀)))^(1/p), qmin, qmax)
     integrator.dt = q * integrator.dt
 end
 
@@ -265,14 +265,14 @@ Base.@kwdef struct ExperimentalDiscreteContinuationController
     Θreject::Float64 = 0.9
     Θbar::Float64 = 0.75
     γ::Float64 = 0.95
-    qmin::Float64 = 1 / 5
+    qmin::Float64 = 1/5
     qmax::Float64 = 5.0
 end
 
 function should_accept_step(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::ExperimentalDiscreteContinuationController
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::ExperimentalDiscreteContinuationController,
 )
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
@@ -284,42 +284,41 @@ function should_accept_step(
     end
 end
 function reject_step!(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::ExperimentalDiscreteContinuationController
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::ExperimentalDiscreteContinuationController,
 )
     # Reset solution
     integrator.u .= integrator.uprev
 
-    @inline g(x) = √(1 + 4x) - 1
+    @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θk = maximum(Θks)
-    q = clamp(γ * (g(Θbar) / g(Θk))^(1 / p), qmin, qmax)
+    q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
     integrator.dt = q * integrator.dt
 end
 
 function adapt_dt!(
-        integrator::ThunderboltTimeIntegrator,
-        cache::HomotopyPathSolverCache,
-        controller::ExperimentalDiscreteContinuationController
+    integrator::ThunderboltTimeIntegrator,
+    cache::HomotopyPathSolverCache,
+    controller::ExperimentalDiscreteContinuationController,
 )
-    @inline g(x) = √(1 + 4x) - 1
+    @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θ₀ = length(Θks) > 0 ? max(mean(Θks), Θmin) : Θmin
-    q = clamp(γ * (g(Θbar) / (2Θ₀))^(1 / p), qmin, qmax)
+    q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
     integrator.dt = q * integrator.dt
 end
 
 
 
 # default_controller(::HomotopyPathSolver, cache) = ExperimentalDiscreteContinuationController(; Θmin=1/8, p=1)
-function default_controller(::HomotopyPathSolver, cache)
-    Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin = 1 / 8, p = 1)
-end
+default_controller(::HomotopyPathSolver, cache) =
+    Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin = 1/8, p = 1)
 SciMLBase.isadaptive(::HomotopyPathSolver) = true

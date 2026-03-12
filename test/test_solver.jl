@@ -15,7 +15,7 @@ import LinearSolve: KrylovJL_GMRES, LinearProblem
     linsolve = init(prob, alg)
     sol = solve!(linsolve)
 
-    @test A \ b ≈ sol.u
+    @test A\b ≈ sol.u
 
     s1 = 5
     s2 = 3
@@ -24,12 +24,12 @@ import LinearSolve: KrylovJL_GMRES, LinearProblem
     A[Block(1), Block(2)] = rand(s1, s2)
     A[Block(2), Block(1)] = rand(s2, s1)
     A[Block(2), Block(2)] = rand(s2, s2)
-    b = rand(s1 + s2)
-    u0 = zeros(s1 + s2)
+    b = rand(s1+s2)
+    u0 = zeros(s1+s2)
 
     prob = LinearProblem(A, b; u0)
     linsolve = init(prob, alg)
     sol = solve!(linsolve)
 
-    @test A \ b ≈ sol.u
+    @test A\b ≈ sol.u
 end

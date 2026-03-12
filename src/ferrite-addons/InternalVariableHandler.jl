@@ -67,14 +67,13 @@ Ferrite.getnbasefunctions(ip::QuadratureInterpolation) = getnquadpoints(ip.qr)
 Ferrite.n_components(ip::QuadratureInterpolation) = 1
 Ferrite.n_dbc_components(::QuadratureInterpolation) = 0
 Ferrite.adjust_dofs_during_distribution(::QuadratureInterpolation) = false
-function Ferrite.volumedof_interior_indices(ip::QuadratureInterpolation)
-    ntuple(i -> i, getnbasefunctions(ip))
-end
+Ferrite.volumedof_interior_indices(ip::QuadratureInterpolation) =
+    ntuple(i->i, getnbasefunctions(ip))
 # conformity is only used for VTK export and updating the constraint handler. This is not needed since the internal variables are not constrained.
 Ferrite.conformity(::QuadratureInterpolation) = Ferrite.L2Conformity()
 
 function Ferrite.reference_coordinates(ip::QuadratureInterpolation)
-    return [qp for i in 1:(ip.num_components) for qp in getpoints(ip.qr)]
+    return [qp for i = 1:ip.num_components for qp in getpoints(ip.qr)]
 end
 
 function Ferrite.reference_shape_value(ip::QuadratureInterpolation, ::Vec, i::Int)
@@ -95,11 +94,11 @@ function _add_ivh_subdomain_recursive!(sdh, ivis::Base.AbstractVecOrTuple, qr)
 end
 
 function add_subdomain!(
-        lvh::InternalVariableHandler,
-        name::String,
-        ivis, #=::Vector{InternalVariableInfo}=#
-        qrc::QuadratureRuleCollection,
-        compatible_dh::DofHandler
+    lvh::InternalVariableHandler,
+    name::String,
+    ivis#=::Vector{InternalVariableInfo}=#,
+    qrc::QuadratureRuleCollection,
+    compatible_dh::DofHandler,
 )
     (; dh) = lvh
     mesh   = get_grid(dh)
@@ -116,23 +115,23 @@ end
 
 # Function to compute a vector-like object to store information at quadrature points on generic (mixed) meshes.
 function construct_qvector(
-        ::Type{StorageType},
-        ::Type{IndexType},
-        mesh::SimpleMesh,
-        qrc::QuadratureRuleCollection,
-        subdomains::Vector{String} = [""]
+    ::Type{StorageType},
+    ::Type{IndexType},
+    mesh::SimpleMesh,
+    qrc::QuadratureRuleCollection,
+    subdomains::Vector{String} = [""],
 ) where {StorageType, IndexType}
     num_points = 0
     num_cells  = 0
     for subdomain in subdomains
         for (celltype, cellset) in pairs(mesh.volumetric_subdomains[subdomain].data)
             qr         = getquadraturerule(qrc, getcells(mesh, first(cellset).idx))
-            num_points += getnquadpoints(qr) * length(cellset)
+            num_points += getnquadpoints(qr)*length(cellset)
             num_cells  += length(cellset)
         end
     end
     data    = zeros(eltype(StorageType), num_points)
-    offsets = zeros(num_cells + 1)
+    offsets = zeros(num_cells+1)
 
     offsets[1]        = 1
     next_point_offset = 1

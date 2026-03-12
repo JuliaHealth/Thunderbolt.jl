@@ -21,7 +21,7 @@
         close!(source_dh)
 
         source_u = ones(ndofs(source_dh))
-        apply_analytical!(source_u, source_dh, :v, x -> -norm(x))
+        apply_analytical!(source_u, source_dh, :v, x->-norm(x))
         apply_analytical!(source_u, source_dh, :z, x -> norm(x))
 
         target_dh = DofHandler(target_mesh)
@@ -34,7 +34,7 @@
         w_range = dof_range(target_dh.subdofhandlers[1], :w)
 
         op = Thunderbolt.NodalIntergridInterpolation(source_dh, target_dh, :v)
-        target_u = [NaN for i in 1:ndofs(target_dh)]
+        target_u = [NaN for i = 1:ndofs(target_dh)]
         Thunderbolt.transfer!(target_u, op, source_u)
         cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 2}())
         for cc in CellIterator(target_dh.subdofhandlers[1])
@@ -45,15 +45,15 @@
                 x = Thunderbolt.spatial_coordinate(
                     Lagrange{RefTriangle, 1}(),
                     qp.ξ,
-                    getcoordinates(cc)
+                    getcoordinates(cc),
                 )
-                @test function_value(cvv, qp, target_u[dofs_v])≈-norm(x) atol=3e-1
+                @test function_value(cvv, qp, target_u[dofs_v]) ≈ -norm(x) atol=3e-1
                 @test all(isnan.(target_u[dofs_w]))
             end
         end
 
         op = Thunderbolt.NodalIntergridInterpolation(source_dh, target_dh, :z, :w)
-        target_u = [NaN for i in 1:ndofs(target_dh)]
+        target_u = [NaN for i = 1:ndofs(target_dh)]
         Thunderbolt.transfer!(target_u, op, source_u)
         cvw = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 1}())
         for cc in CellIterator(target_dh.subdofhandlers[1])
@@ -64,17 +64,17 @@
                 x = Thunderbolt.spatial_coordinate(
                     Lagrange{RefTriangle, 1}(),
                     qp.ξ,
-                    getcoordinates(cc)
+                    getcoordinates(cc),
                 )
                 @test all(isnan.(target_u[dofs_v]))
-                @test function_value(cvw, qp, target_u[dofs_w])≈norm(x) atol=3e-1
+                @test function_value(cvw, qp, target_u[dofs_w]) ≈ norm(x) atol=3e-1
             end
         end
     end
 
     target_grid_nonmatching = generate_grid(Triangle, (40, 44), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
-    addcellset!(target_grid_nonmatching, "hole", x -> norm(x) ≤ 1.0)
-    addcellset!(target_grid_nonmatching, "remaining", x -> norm(x) ≥ 1.0)
+    addcellset!(target_grid_nonmatching, "hole", x->norm(x) ≤ 1.0)
+    addcellset!(target_grid_nonmatching, "remaining", x->norm(x) ≥ 1.0)
     target_mesh_nonmatching = to_mesh(target_grid_nonmatching)
 
     @testset "Nodal Intergrid Interpolation on Non-Matching Grids" begin
@@ -85,15 +85,15 @@
         close!(source_dh)
 
         source_u = ones(ndofs(source_dh))
-        apply_analytical!(source_u, source_dh, :v, x -> -norm(x))
+        apply_analytical!(source_u, source_dh, :v, x->-norm(x))
         apply_analytical!(source_u, source_dh, :z, x -> norm(x))
 
         target_dh = DofHandler(target_mesh_nonmatching)
         target_sdh_hole = SubDofHandler(target_dh, getcellset(target_mesh_nonmatching, "hole"))
         add!(target_sdh_hole, :v, Lagrange{RefTriangle, 2}())
         add!(target_sdh_hole, :w, Lagrange{RefTriangle, 1}())
-        target_sdh_remaining = SubDofHandler(
-            target_dh, getcellset(target_mesh_nonmatching, "remaining"))
+        target_sdh_remaining =
+            SubDofHandler(target_dh, getcellset(target_mesh_nonmatching, "remaining"))
         add!(target_sdh_remaining, :v, Lagrange{RefTriangle, 2}())
         add!(target_sdh_remaining, :w, Lagrange{RefTriangle, 1}())
         close!(target_dh)
@@ -108,9 +108,9 @@
             target_dh,
             :v,
             :v;
-            subdomains_to = target_sdhids
+            subdomains_to = target_sdhids,
         )
-        target_u = [NaN for i in 1:ndofs(target_dh)]
+        target_u = [NaN for i = 1:ndofs(target_dh)]
         Thunderbolt.transfer!(target_u, op, source_u)
         cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 2}())
         for cc in CellIterator(target_dh.subdofhandlers[1])
@@ -121,9 +121,9 @@
                 x = Thunderbolt.spatial_coordinate(
                     Lagrange{RefTriangle, 1}(),
                     qp.ξ,
-                    getcoordinates(cc)
+                    getcoordinates(cc),
                 )
-                @test function_value(cvv, qp, target_u[dofs_v])≈-norm(x) atol=3e-1
+                @test function_value(cvv, qp, target_u[dofs_v]) ≈ -norm(x) atol=3e-1
                 @test all(isnan.(target_u[dofs_w]))
             end
         end
@@ -133,9 +133,9 @@
             target_dh,
             :z,
             :w;
-            subdomains_to = target_sdhids
+            subdomains_to = target_sdhids,
         )
-        target_u = [NaN for i in 1:ndofs(target_dh)]
+        target_u = [NaN for i = 1:ndofs(target_dh)]
         Thunderbolt.transfer!(target_u, op, source_u)
         cvw = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 1}())
         for cc in CellIterator(target_dh.subdofhandlers[1])
@@ -146,10 +146,10 @@
                 x = Thunderbolt.spatial_coordinate(
                     Lagrange{RefTriangle, 1}(),
                     qp.ξ,
-                    getcoordinates(cc)
+                    getcoordinates(cc),
                 )
                 @test all(isnan.(target_u[dofs_v]))
-                @test function_value(cvw, qp, target_u[dofs_w])≈norm(x) atol=3e-1
+                @test function_value(cvw, qp, target_u[dofs_w]) ≈ norm(x) atol=3e-1
             end
         end
     end

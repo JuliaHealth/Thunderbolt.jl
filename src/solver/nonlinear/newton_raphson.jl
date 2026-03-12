@@ -20,7 +20,7 @@ mutable struct NewtonRaphsonSolverCache{
     ResidualType,
     T,
     NewtonType <: NewtonRaphsonSolver{T},
-    InnerSolverCacheType
+    InnerSolverCacheType,
 } <: AbstractNonlinearSolverCache
     # The nonlinear operator
     op::OpType
@@ -41,8 +41,8 @@ function Base.show(io::IO, cache::NewtonRaphsonSolverCache)
 end
 
 function setup_solver_cache(
-        f::AbstractSemidiscreteFunction,
-        solver::NewtonRaphsonSolver{T}
+    f::AbstractSemidiscreteFunction,
+    solver::NewtonRaphsonSolver{T},
 ) where {T}
     @unpack inner_solver = solver
     op = setup_operator(f, solver)
@@ -51,8 +51,8 @@ function setup_solver_cache(
 
     # Connect both solver caches
     inner_prob = LinearSolve.LinearProblem(getJ(op), residual; u0 = Δu)
-    inner_cache = init(
-        inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
+    inner_cache =
+        init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
@@ -60,8 +60,8 @@ function setup_solver_cache(
 end
 
 function setup_solver_cache(
-        f::AbstractSemidiscreteBlockedFunction,
-        solver::NewtonRaphsonSolver{T}
+    f::AbstractSemidiscreteBlockedFunction,
+    solver::NewtonRaphsonSolver{T},
 ) where {T}
     @unpack inner_solver = solver
     op = setup_operator(f, solver)
@@ -70,8 +70,8 @@ function setup_solver_cache(
     Δu = Vector{T}(undef, sizeu)
     # Connect both solver caches
     inner_prob = LinearSolve.LinearProblem(getJ(op), residual; u0 = Δu)
-    inner_cache = init(
-        inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
+    inner_cache =
+        init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
     @assert inner_cache.alg == inner_solver
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
@@ -80,10 +80,10 @@ function setup_solver_cache(
 end
 
 function nlsolve!(
-        u::AbstractVector{T},
-        f::AbstractSemidiscreteFunction,
-        cache::NewtonRaphsonSolverCache,
-        t
+    u::AbstractVector{T},
+    f::AbstractSemidiscreteFunction,
+    cache::NewtonRaphsonSolverCache,
+    t,
 ) where {T}
     @unpack op, residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
@@ -113,10 +113,11 @@ function nlsolve!(
             return false
         end
 
-        @timeit_debug "solve" sol=LinearSolve.solve!(linear_solver_cache)
+        @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
         nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
-        solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) ||
-                          sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+        solve_succeeded =
+            LinearSolve.SciMLBase.successful_retcode(sol) ||
+            sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
         eliminate_constraints_from_increment!(Δu, f, cache)
@@ -125,7 +126,7 @@ function nlsolve!(
         incrementnorm = norm(Δu)
 
         if cache.iter > 0
-            Θk = min(residualnorm / residualnormprev, incrementnorm / incrementnormprev)
+            Θk = min(residualnorm/residualnormprev, incrementnorm/incrementnormprev)
             if residualnormprev ≈ 0.0 || incrementnormprev ≈ 0.0
                 push!(Θks, 0.0)
             else

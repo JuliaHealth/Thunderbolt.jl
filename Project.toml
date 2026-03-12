@@ -40,8 +40,8 @@ CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 
 [extensions]
-CuThunderboltExt = ["CUDA", "GPUArrays"]
 ThunderboltGPUArraysExt = "GPUArrays"
+CuThunderboltExt = ["CUDA", "GPUArrays"]
 
 [compat]
 Aqua = "0.8"
@@ -72,7 +72,6 @@ julia = "1.10"
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
-FastIterativeMethod = "51611a6c-7c63-4cd2-9a52-92f780132403"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 MatrixDepot = "b51810bb-c9f3-55da-ae3c-350fc1fbce05"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
@@ -85,8 +84,5 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
-[sources]
-FastIterativeMethod = {url = "https://git.noc.ruhr-uni-bochum.de/mohama17/eikonal.jl.git"}
-
 [targets]
-test = ["Aqua", "DelimitedFiles", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot", "FastIterativeMethod"]
+test = ["Aqua", "DelimitedFiles", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot"]

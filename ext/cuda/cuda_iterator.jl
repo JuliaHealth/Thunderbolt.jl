@@ -13,9 +13,9 @@ end
 
 # iterator with global memory allocation
 function _build_cell_iterator(
-        sdh::DeviceSubDofHandler,
-        n_cells::Integer,
-        global_mem::AbstractDeviceGlobalMem
+    sdh::DeviceSubDofHandler,
+    n_cells::Integer,
+    global_mem::AbstractDeviceGlobalMem,
 )
     bd = blockDim().x
     local_thread_id = threadIdx().x
@@ -27,9 +27,9 @@ end
 
 # iterator with shared memory allocation
 function _build_cell_iterator(
-        sdh::DeviceSubDofHandler,
-        n_cells::Integer,
-        buffer_alloc::AbstractDeviceSharedMem
+    sdh::DeviceSubDofHandler,
+    n_cells::Integer,
+    buffer_alloc::AbstractDeviceSharedMem,
 )
     local_thread_id = threadIdx().x
     cell_mem = cellmem(buffer_alloc, local_thread_id)
@@ -38,8 +38,8 @@ end
 
 # Global memory allocation
 function Ferrite.CellIterator(
-        sdh::DeviceSubDofHandler{<:Ti},
-        buffer_alloc::AbstractDeviceGlobalMem
+    sdh::DeviceSubDofHandler{<:Ti},
+    buffer_alloc::AbstractDeviceGlobalMem,
 ) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
     n_cells = sdh.cellset |> length |> (x -> convert(Ti, x))
@@ -55,8 +55,8 @@ end
 
 # Shared memory allocation
 function Ferrite.CellIterator(
-        sdh::DeviceSubDofHandler{Ti},
-        buffer_alloc::AbstractDeviceSharedMem
+    sdh::DeviceSubDofHandler{Ti},
+    buffer_alloc::AbstractDeviceSharedMem,
 ) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
@@ -100,7 +100,7 @@ function _makecache(iterator::AbstractDeviceCellIterator, e::Ti) where {Ti <: In
     dofs = celldofsview(sdh, cellid)
 
     N = nnodes(cell)
-    coords = SVector((get_node_coordinate(grid, nodes[i]) for i in 1:N)...)
+    coords = SVector((get_node_coordinate(grid, nodes[i]) for i = 1:N)...)
 
     # Return the DeviceCellCache containing the cell's data.
     return DeviceCellCache(coords, dofs, cellid, nodes, iterator.cell_mem)

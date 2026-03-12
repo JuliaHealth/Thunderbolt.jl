@@ -44,9 +44,8 @@ struct CudaDevice{ValueType, IndexType} <: AbstractGPUDevice{ValueType, IndexTyp
 end
 
 CudaDevice() = CudaDevice{Float32, Int32}(nothing, nothing)
-function CudaDevice(threads::IndexType, blocks::IndexType) where {IndexType}
+CudaDevice(threads::IndexType, blocks::IndexType) where {IndexType} =
     CudaDevice{Float32, IndexType}(threads, blocks)
-end
 
 # KA compat
 default_backend(::SequentialCPUDevice) = KA.CPU()
