@@ -37,7 +37,7 @@
 #
 #
 # ## Commented Program
-using Thunderbolt, LinearAlgebra, StaticArrays, DifferentialEquations, Eikonal
+using Thunderbolt, LinearAlgebra, StaticArrays, DifferentialEquations, FastIterativeMethod
 
 # !!! todo
 #     The initializer API is not yet finished and hence we deconstruct stuff here manually.
@@ -137,7 +137,7 @@ steady_state_initializer!(u₀, heart_odeform)
 
 # Here we solve for the wave arrival time using the package *Eikonal.jl* as it's
 # required to be solved for once before timestepping.
-Eikonal.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
 
 # !!! danger
 #     The fast iterative method solver in `Eikonal.jl` uses `@inbounds` a lot

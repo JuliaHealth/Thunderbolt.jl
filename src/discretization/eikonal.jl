@@ -22,6 +22,13 @@ struct UniformEndocardialEikonalActivationProtocol <: AbstractEikonalActivationP
 end
 
 """
+Activation protocol for uniformally activating the endocardium with zero wave arrival time.
+"""
+struct AnalyticalEikonalActivationProtocol{fT} <: AbstractEikonalActivationProtocol
+    f::fT
+end
+
+"""
 Descriptor for a tetrahedral element discretization used for solving the Eikonal equation explicitly.
 """
 @kwdef struct SimplicialEikonalDiscretization{ActivationProtocolT <: AbstractEikonalActivationProtocol}
@@ -56,20 +63,62 @@ function get_nodes(::UniformEndocardialEikonalActivationProtocol, mesh, cs)
     return nodes
 end
 
+function get_nodes(protocol::AnalyticalEikonalActivationProtocol, mesh, cs)
+    dh = cs.dh
+    nodes = Int[]
+    coords = compute_nodal_values(cs, dh, first(dh.field_names))
+
+    for node in eachindex(mesh.grid.nodes)
+        node_coords = coords[node]
+        protocol.f(node_coords) && push!(nodes, node)
+    end
+
+    return nodes
+end
+
+function get_nodes(protocol::AnalyticalEikonalActivationProtocol, mesh, cs::CartesianCoordinateSystem)
+    nodes = Int[]
+    coords = mesh.grid.nodes
+
+    for node in eachindex(mesh.grid.nodes)
+        node_coords = coords[node].x
+        protocol.f(node_coords) && push!(nodes, node)
+    end
+
+    return nodes
+end
+
+function get_nodes(::UniformEndocardialEikonalActivationProtocol, mesh, cs::CartesianCoordinateSystem)
+    throw(error("Uniformally activating the endocardium requires using either
+    LV or BiV coordinate system. usage with Cartesian Coordinate System is
+    restricted to AnalyticalEikonalActivationProtocol"))
+end
+
 function semidiscretize(
         ::EikonalModel,
-        ::SimplicialEikonalDiscretization,
+        discretization::SimplicialEikonalDiscretization,
         activation_points,
         mesh::SimpleMesh,
     )
 
     vertices = getproperty.(mesh.grid.nodes, :x)
+    cells_ferrite = [Tetrahedron((0,0,0,0)) for _ in 1:length(mesh.grid.cells)]
     # TODO: true subdomains
-    cells = getproperty.(mesh.grid.cells, :nodes)
+    if first(discretization.subdomains) == ""
+        cells_ferrite .= mesh.grid.cells
+    else    
+        for subdomain in discretization.subdomains
+            cellset = getcellset(mesh, subdomain)
+            for cellidx in cellset
+                cells_ferrite[cellidx[]] = mesh.grid.cells[cellidx[]]
+            end
+        end
+    end
+    cells = getproperty.(cells_ferrite, :nodes)
     nnodes = getnnodes(mesh.grid)
 
     max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))
-    vertex_to_cell = (Ferrite.build_vertex_to_cell(getcells(mesh.grid); max_vertices, nnodes))
+    vertex_to_cell = (Ferrite.build_vertex_to_cell(cells_ferrite; max_vertices, nnodes))
     return EikonalFunction(
         vertices,
         cells,
