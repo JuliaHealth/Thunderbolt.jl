@@ -19,22 +19,21 @@ function poisson_test_matrix(N)
 end
 
 function test_sym_result(
-    testname,
-    A,
-    x,
-    y_exp,
-    D_Dl1_exp,
-    partsize,
-    sweep = ForwardSweep(),
-    cache_strategy = PackedBufferCache(),
-    test_buffer_fn = (P) -> nothing,
+        testname,
+        A,
+        x,
+        y_exp,
+        D_Dl1_exp,
+        partsize,
+        sweep = ForwardSweep(),
+        cache_strategy = PackedBufferCache(),
+        test_buffer_fn = (P) -> nothing
 )
     @testset "$testname Symmetric" begin
         total_ncores = 8 # Assuming 8 cores for testing
-        for ncores = 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
+        for ncores in 1:total_ncores # testing for multiple cores to check that the answer is independent of the number of cores
             builder = L1GSPrecBuilder(PolyesterDevice(ncores))
-            P =
-                A isa Symmetric ?
+            P = A isa Symmetric ?
                 builder(A, partsize; sweep = sweep, cache_strategy = cache_strategy) :
                 builder(A, partsize; isSymA = true, sweep = sweep, cache_strategy = cache_strategy)
             if sweep isa SymmetricSweep
@@ -51,15 +50,15 @@ function test_sym_result(
 end
 
 function test_l1gs_prec(
-    testname,
-    A,
-    b,
-    sweep = ForwardSweep(),
-    cache_strategy = PackedBufferCache();
-    ncores = 20,
-    partsize = nothing,
-    isSymA = false,
-    solver = KrylovJL_GMRES(),
+        testname,
+        A,
+        b,
+        sweep = ForwardSweep(),
+        cache_strategy = PackedBufferCache();
+        ncores = 20,
+        partsize = nothing,
+        isSymA = false,
+        solver = KrylovJL_GMRES()
 )
     @testset "$testname" begin
         ncores = ncores
@@ -75,7 +74,7 @@ function test_l1gs_prec(
                 A,
                 partsize;
                 sweep = sweep,
-                cache_strategy = cache_strategy,
+                cache_strategy = cache_strategy
             )
         else
             L1GSPrecBuilder(PolyesterDevice(ncores))(
@@ -83,7 +82,7 @@ function test_l1gs_prec(
                 partsize;
                 sweep = sweep,
                 cache_strategy = cache_strategy,
-                isSymA = isSymA,
+                isSymA = isSymA
             )
         end
 
@@ -114,7 +113,7 @@ end
     @testset "Algorithm" begin
         N = 9
         A = poisson_test_matrix(N)
-        x = 0:(N-1) |> collect .|> Float64
+        x = 0:(N - 1) |> collect .|> Float64
         y_exp_fwd = [0, 1 / 2, 1.0, 2.0, 2.0, 3.5, 3.0, 5.0, 4.0]
         y_exp_bwd = [0.25, 0.5, 1.75, 1.5, 3.25, 2.5, 4.75, 3.5, 4.0]
         y_exp_sym = [0.25, 0.5, 2.0, 2.0, 3.75, 3.5, 5.5, 5.0, 4.0]
@@ -139,7 +138,7 @@ end
             2,
             ForwardSweep(),
             PackedBufferCache(),
-            test_fwd_buffer_fn,
+            test_fwd_buffer_fn
         )
         B = SparseMatrixCSR(A)
         test_sym_result(
@@ -151,7 +150,7 @@ end
             2,
             ForwardSweep(),
             PackedBufferCache(),
-            test_fwd_buffer_fn,
+            test_fwd_buffer_fn
         )
         test_sym_result("Packed, Forward, CPU CSR", B, x, y_exp_fwd, D_Dl1_exp, 2, ForwardSweep())
         C = ThreadedSparseMatrixCSR(B)
@@ -164,7 +163,7 @@ end
             2,
             ForwardSweep(),
             PackedBufferCache(),
-            test_fwd_buffer_fn,
+            test_fwd_buffer_fn
         )
 
         # Backward sweep packed buffer tests
@@ -177,7 +176,7 @@ end
             2,
             BackwardSweep(),
             PackedBufferCache(),
-            test_bwd_buffer_fn,
+            test_bwd_buffer_fn
         )
         test_sym_result(
             "Packed, Backward, CPU CSR",
@@ -188,7 +187,7 @@ end
             2,
             BackwardSweep(),
             PackedBufferCache(),
-            test_bwd_buffer_fn,
+            test_bwd_buffer_fn
         )
         test_sym_result("Packed, Backward, CPU CSR", B, x, y_exp_bwd, D_Dl1_exp, 2, BackwardSweep())
         test_sym_result(
@@ -200,7 +199,7 @@ end
             2,
             BackwardSweep(),
             PackedBufferCache(),
-            test_bwd_buffer_fn,
+            test_bwd_buffer_fn
         )
 
         # Symmetric sweep packed buffer tests
@@ -213,7 +212,7 @@ end
             2,
             SymmetricSweep(),
             PackedBufferCache(),
-            test_sym_buffer_fn,
+            test_sym_buffer_fn
         )
         test_sym_result(
             "Packed, Symmetric, CPU CSR",
@@ -224,7 +223,7 @@ end
             2,
             SymmetricSweep(),
             PackedBufferCache(),
-            test_sym_buffer_fn,
+            test_sym_buffer_fn
         )
         test_sym_result(
             "Packed, Symmetric, CPU CSR",
@@ -233,7 +232,7 @@ end
             y_exp_sym,
             D_Dl1_exp,
             2,
-            SymmetricSweep(),
+            SymmetricSweep()
         )
         test_sym_result(
             "Packed, Symmetric, CPU Threaded CSR",
@@ -244,7 +243,7 @@ end
             2,
             SymmetricSweep(),
             PackedBufferCache(),
-            test_sym_buffer_fn,
+            test_sym_buffer_fn
         )
 
         # MatrixViewCache tests
@@ -257,7 +256,7 @@ end
             D_Dl1_exp,
             2,
             ForwardSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
         test_sym_result(
             "MatrixView, Forward, CPU CSR",
@@ -267,7 +266,7 @@ end
             D_Dl1_exp,
             2,
             ForwardSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
         test_sym_result(
             "MatrixView, Forward, CPU Threaded CSR",
@@ -277,7 +276,7 @@ end
             D_Dl1_exp,
             2,
             ForwardSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
 
         # Backward sweep MatrixViewCache tests
@@ -289,7 +288,7 @@ end
             D_Dl1_exp,
             2,
             BackwardSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
         test_sym_result(
             "MatrixView, Backward, CPU CSR",
@@ -299,7 +298,7 @@ end
             D_Dl1_exp,
             2,
             BackwardSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
         test_sym_result(
             "MatrixView, Backward, CPU Threaded CSR",
@@ -309,7 +308,7 @@ end
             D_Dl1_exp,
             2,
             BackwardSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
 
         # Symmetric sweep MatrixViewCache tests
@@ -321,7 +320,7 @@ end
             D_Dl1_exp,
             2,
             SymmetricSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
         test_sym_result(
             "MatrixView, Symmetric, CPU CSR",
@@ -331,7 +330,7 @@ end
             D_Dl1_exp,
             2,
             SymmetricSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
         test_sym_result(
             "MatrixView, Symmetric, CPU Threaded CSR",
@@ -341,7 +340,7 @@ end
             D_Dl1_exp,
             2,
             SymmetricSweep(),
-            MatrixViewCache(),
+            MatrixViewCache()
         )
 
         @testset "η parameter" begin
@@ -444,28 +443,28 @@ end
                 A,
                 b,
                 ForwardSweep(),
-                PackedBufferCache(),
+                PackedBufferCache()
             )
             test_l1gs_prec(
                 "MatrixView, ForwardSweep HB/sherman5",
                 A,
                 b,
                 ForwardSweep(),
-                MatrixViewCache(),
+                MatrixViewCache()
             )
             test_l1gs_prec(
                 "PackedBuffer, BackwardSweep HB/sherman5",
                 A,
                 b,
                 BackwardSweep(),
-                PackedBufferCache(),
+                PackedBufferCache()
             )
             test_l1gs_prec(
                 "MatrixView, BackwardSweep HB/sherman5",
                 A,
                 b,
                 BackwardSweep(),
-                MatrixViewCache(),
+                MatrixViewCache()
             )
         end
 
@@ -484,7 +483,7 @@ end
                     PackedBufferCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = KrylovJL_CG(),
+                    solver = KrylovJL_CG()
                 )
                 test_l1gs_prec(
                     "MatrixView,  ForwardSweep wathen",
@@ -494,7 +493,7 @@ end
                     MatrixViewCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = KrylovJL_CG(),
+                    solver = KrylovJL_CG()
                 )
 
                 test_l1gs_prec(
@@ -505,7 +504,7 @@ end
                     PackedBufferCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = KrylovJL_CG(),
+                    solver = KrylovJL_CG()
                 )
                 test_l1gs_prec(
                     "MatrixView,  BackwardSweep wathen",
@@ -515,7 +514,7 @@ end
                     MatrixViewCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = KrylovJL_CG(),
+                    solver = KrylovJL_CG()
                 )
 
                 test_l1gs_prec(
@@ -526,7 +525,7 @@ end
                     PackedBufferCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = KrylovJL_CG(),
+                    solver = KrylovJL_CG()
                 )
                 test_l1gs_prec(
                     "MatrixView,  SymmetricSweep wathen",
@@ -536,7 +535,7 @@ end
                     MatrixViewCache();
                     isSymA = true,
                     partsize = 10,
-                    solver = KrylovJL_CG(),
+                    solver = KrylovJL_CG()
                 )
             end
 
@@ -558,7 +557,7 @@ end
                     b,
                     ForwardSweep(),
                     PackedBufferCache();
-                    partsize = 10,
+                    partsize = 10
                 )
 
                 test_l1gs_prec(
@@ -574,7 +573,7 @@ end
                     b,
                     BackwardSweep(),
                     PackedBufferCache();
-                    partsize = 10,
+                    partsize = 10
                 )
 
                 test_l1gs_prec(
@@ -590,7 +589,7 @@ end
                     b,
                     SymmetricSweep(),
                     PackedBufferCache();
-                    partsize = 10,
+                    partsize = 10
                 )
             end
         end
@@ -604,10 +603,10 @@ end
 
             function poisson_dense(N)
                 A = zeros(N, N)
-                for i = 1:N
+                for i in 1:N
                     A[i, i] = 2.0
-                    i > 1 && (A[i, i-1] = -1.0)
-                    i < N && (A[i, i+1] = -1.0)
+                    i > 1 && (A[i, i - 1] = -1.0)
+                    i < N && (A[i, i + 1] = -1.0)
                 end
                 return A
             end
@@ -615,9 +614,9 @@ end
             # Forward sweep: for i = 1:n, x[i] = (b[i] - sum_{j!=i} A[i,j]*x[j]) / A[i,i]
             function gs_forward_sweep!(x, A, b)
                 n = length(x)
-                for i = 1:n
+                for i in 1:n
                     σ = 0.0
-                    for j = 1:n
+                    for j in 1:n
                         j != i && (σ += A[i, j] * x[j])
                     end
                     x[i] = (b[i] - σ) / A[i, i]
@@ -627,9 +626,9 @@ end
             # Backward sweep: same but iterate i from n to 1
             function gs_backward_sweep!(x, A, b)
                 n = length(x)
-                for i = n:-1:1
+                for i in n:-1:1
                     σ = 0.0
-                    for j = 1:n
+                    for j in 1:n
                         j != i && (σ += A[i, j] * x[j])
                     end
                     x[i] = (b[i] - σ) / A[i, i]
@@ -645,7 +644,7 @@ end
             # Solve Ax=b using GS as standalone solver
             function gs_solve(A, b, sweep_fn!; tol = 1e-10, maxiter = 10000)
                 x = zeros(length(b))
-                for iter = 1:maxiter
+                for iter in 1:maxiter
                     sweep_fn!(x, A, b)
                     residual = norm(A * x - b)
                     if residual < tol
@@ -694,21 +693,21 @@ end
                 N;
                 isSymA = true,
                 sweep = ForwardSweep(),
-                cache_strategy = MatrixViewCache(),
+                cache_strategy = MatrixViewCache()
             )
             P_bwd = builder(
                 A,
                 N;
                 isSymA = true,
                 sweep = BackwardSweep(),
-                cache_strategy = MatrixViewCache(),
+                cache_strategy = MatrixViewCache()
             )
             P_sym = builder(
                 A,
                 N;
                 isSymA = true,
                 sweep = SymmetricSweep(),
-                cache_strategy = MatrixViewCache(),
+                cache_strategy = MatrixViewCache()
             )
 
             tol = 1e-10
@@ -717,7 +716,7 @@ end
             # Forward GS iteration: x^{k+1} = (D+L)^{-1} * (b - U*x^k)
             x_fwd = zeros(N)
             iters_fwd = maxiter
-            for iter = 1:maxiter
+            for iter in 1:maxiter
                 rhs = b - U * x_fwd
                 x_fwd .= rhs
                 _apply_sweep!(x_fwd, P_fwd.partitioning, P_fwd.sweep)
@@ -730,7 +729,7 @@ end
             # Backward GS iteration: x^{k+1} = (D+U)^{-1} * (b - L*x^k)
             x_bwd = zeros(N)
             iters_bwd = maxiter
-            for iter = 1:maxiter
+            for iter in 1:maxiter
                 rhs = b - L * x_bwd
                 x_bwd .= rhs
                 _apply_sweep!(x_bwd, P_bwd.partitioning, P_bwd.sweep)
@@ -743,7 +742,7 @@ end
             # Symmetric GS iteration: forward half-step then backward half-step
             x_sym = zeros(N)
             iters_sym = maxiter
-            for iter = 1:maxiter
+            for iter in 1:maxiter
                 # Forward: x_half = (D+L)^{-1} * (b - U*x)
                 rhs_fwd = b - U * x_sym
                 x_half = copy(rhs_fwd)

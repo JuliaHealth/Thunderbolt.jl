@@ -39,21 +39,21 @@ abstract type AbstractPointwiseProblem <: AbstractSemidiscreteProblem end
 # abstract type AbstractSemidiscreteNonlinearProblem <: AbstractSemidiscreteProblem end
 
 function SciMLBase.build_solution(
-    prob::AbstractSemidiscreteProblem,
-    alg,
-    t,
-    u;
-    timeseries_errors = length(u) > 2,
-    dense = false,
-    dense_errors = dense,
-    calculate_error = true,
-    k = nothing,
-    alg_choice = nothing,
-    interp = SciMLBase.LinearInterpolation(t, u),
-    retcode = SciMLBase.ReturnCode.Default,
-    destats = missing,
-    stats = nothing,
-    kwargs...,
+        prob::AbstractSemidiscreteProblem,
+        alg,
+        t,
+        u;
+        timeseries_errors = length(u) > 2,
+        dense = false,
+        dense_errors = dense,
+        calculate_error = true,
+        k = nothing,
+        alg_choice = nothing,
+        interp = SciMLBase.LinearInterpolation(t, u),
+        retcode = SciMLBase.ReturnCode.Default,
+        destats = missing,
+        stats = nothing,
+        kwargs...
 )
     T = eltype(eltype(u))
     N = 2 # Why?
@@ -77,7 +77,7 @@ function SciMLBase.build_solution(
         alg_choice,
         retcode,
         resid,
-        original,
+        original
     )
 
     # xref https://github.com/xtalax/MethodOfLines.jl/blob/bc0bf8c4fcd2376dc5c3df9642806749bc0c1cdd/src/interface/solution/timedep.jl#L11
@@ -135,13 +135,16 @@ struct QuasiStaticProblem{fType <: AbstractQuasiStaticFunction, uType, tType, pT
     p::pType
 end
 
-QuasiStaticProblem(f::AbstractQuasiStaticFunction, tspan::Tuple{<:Real, <:Real}) =
+function QuasiStaticProblem(f::AbstractQuasiStaticFunction, tspan::Tuple{<:Real, <:Real})
     QuasiStaticProblem(f, zeros(solution_size(f)), tspan, SciMLBase.NullParameters())
-QuasiStaticProblem(
-    f::AbstractQuasiStaticFunction,
-    u0::AbstractVector,
-    tspan::Tuple{<:Real, <:Real},
-) = QuasiStaticProblem(f, u0, tspan, SciMLBase.NullParameters())
+end
+function QuasiStaticProblem(
+        f::AbstractQuasiStaticFunction,
+        u0::AbstractVector,
+        tspan::Tuple{<:Real, <:Real}
+)
+    QuasiStaticProblem(f, u0, tspan, SciMLBase.NullParameters())
+end
 
 
 struct PointwiseODEProblem{fType <: AbstractPointwiseFunction, uType, tType, pType} <:
@@ -152,13 +155,16 @@ struct PointwiseODEProblem{fType <: AbstractPointwiseFunction, uType, tType, pTy
     p::pType
 end
 
-PointwiseODEProblem(f::AbstractPointwiseFunction, tspan::Tuple{<:Real, <:Real}) =
+function PointwiseODEProblem(f::AbstractPointwiseFunction, tspan::Tuple{<:Real, <:Real})
     PointwiseODEProblem(f, zeros(solution_size(f)), tspan, SciMLBase.NullParameters())
-PointwiseODEProblem(
-    f::AbstractPointwiseFunction,
-    u0::AbstractVector,
-    tspan::Tuple{<:Real, <:Real},
-) = PointwiseODEProblem(f, u0, tspan, SciMLBase.NullParameters())
+end
+function PointwiseODEProblem(
+        f::AbstractPointwiseFunction,
+        u0::AbstractVector,
+        tspan::Tuple{<:Real, <:Real}
+)
+    PointwiseODEProblem(f, u0, tspan, SciMLBase.NullParameters())
+end
 
 
 struct ODEProblem{fType <: AbstractSemidiscreteFunction, uType, tType, pType} <:
@@ -169,7 +175,10 @@ struct ODEProblem{fType <: AbstractSemidiscreteFunction, uType, tType, pType} <:
     p::pType
 end
 
-ODEProblem(f::AbstractSemidiscreteFunction, tspan::Tuple{<:Real, <:Real}) =
+function ODEProblem(f::AbstractSemidiscreteFunction, tspan::Tuple{<:Real, <:Real})
     ODEProblem(f, zeros(ndofs(f.dh)), tspan, SciMLBase.NullParameters())
-ODEProblem(f::AbstractSemidiscreteFunction, u0::AbstractVector, tspan::Tuple{<:Real, <:Real}) =
+end
+function ODEProblem(
+        f::AbstractSemidiscreteFunction, u0::AbstractVector, tspan::Tuple{<:Real, <:Real})
     ODEProblem(f, u0, tspan, SciMLBase.NullParameters())
+end

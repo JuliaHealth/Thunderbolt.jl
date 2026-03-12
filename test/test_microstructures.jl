@@ -1,7 +1,7 @@
 @testset "microstructures" begin
     setup_test_cache(args...) = Thunderbolt.duplicate_for_device(
         PolyesterDevice(),
-        Thunderbolt.setup_coefficient_cache(args...),
+        Thunderbolt.setup_coefficient_cache(args...)
     )
 
     ring_grid = generate_ring_mesh(80, 1, 1)
@@ -26,9 +26,9 @@
         for cellcache in CellIterator(ring_cs.dh)
             for qp in QuadratureIterator(qr)
                 x = evaluate_coefficient(cs_cache, cellcache, qp, 0.0)
-                transmural = 4*(norm(Vec(x[1:2]..., 0.0))-0.75)
+                transmural = 4 * (norm(Vec(x[1:2]..., 0.0)) - 0.75)
                 coord = evaluate_coefficient(cache2, cellcache, qp, 0.0)
-                @test transmural ≈ coord.transmural atol=0.01
+                @test transmural≈coord.transmural atol=0.01
             end
         end
     end
@@ -43,8 +43,8 @@
                 βendo = 0.0,
                 βepi  = 0.0,
                 γendo = 0.0,
-                γepi  = 0.0,
-            ),
+                γepi  = 0.0
+            )
         )
         cache2 = setup_test_cache(ms, qr, sdh)
         for cellcache in CellIterator(ring_grid)
@@ -52,14 +52,14 @@
                 x = evaluate_coefficient(cs_cache, cellcache, qp, 0.0)
                 # If we set all angles to 0, then the generator on the ring simply generates sheetlets
                 # which point in negative z direction, where the normal point radially outwards.
-                ndir = Vec(x[1:2]..., 0.0)/norm(x[1:2])
+                ndir = Vec(x[1:2]..., 0.0) / norm(x[1:2])
                 sdir = Vec(0.0, 0.0, -1.0)
                 fdir = sdir × ndir
 
                 fsn = evaluate_coefficient(cache2, cellcache, qp, 0.0)
-                @test fsn.f ≈ fdir atol=0.05
+                @test fsn.f≈fdir atol=0.05
                 @test fsn.s ≈ sdir
-                @test fsn.n ≈ ndir atol=0.05
+                @test fsn.n≈ndir atol=0.05
             end
         end
     end

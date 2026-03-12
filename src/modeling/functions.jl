@@ -81,12 +81,12 @@ A discrete nonlinear (possibly multi-level) problem with time dependent terms.
 Abstractly written we want to solve the problem G(u, q, t) = 0, L(u, q, dₜq, t) = 0 on some time interval [t₁, t₂].
 """
 struct QuasiStaticFunction{
-        I <: AbstractNonlinearIntegrator,
-        DH <: Ferrite.AbstractDofHandler,
-        CH <: ConstraintHandler,
-        LVH <: InternalVariableHandler,
-        AS <: AbstractAssemblyStrategy,
-    } <: AbstractQuasiStaticFunction
+    I <: AbstractNonlinearIntegrator,
+    DH <: Ferrite.AbstractDofHandler,
+    CH <: ConstraintHandler,
+    LVH <: InternalVariableHandler,
+    AS <: AbstractAssemblyStrategy
+} <: AbstractQuasiStaticFunction
     dh::DH
     ch::CH
     lvh::LVH
@@ -121,8 +121,9 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     return
 end
 
-gather_internal_variable_infos(model::QuasiStaticModel) =
+function gather_internal_variable_infos(model::QuasiStaticModel)
     gather_internal_variable_infos(model.material_model)
+end
 gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]
 
 @unroll function __get_material_model_multi(materials, domains, sdh)
@@ -137,11 +138,13 @@ gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableI
         "MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.",
     )
 end
-__get_material_model(model::MultiMaterialModel, sdh) =
+function __get_material_model(model::MultiMaterialModel, sdh)
     __get_material_model_multi(model.materials, model.domains, sdh)
+end
 __get_material_model(model::AbstractMaterialModel, sdh) = model
-get_material_model(f::QuasiStaticFunction, sdh) =
+function get_material_model(f::QuasiStaticFunction, sdh)
     __get_material_model(f.integrator.volume_model.material_model, sdh)
+end
 
 #TODO: find a better name, this is a static nonlinear function that does not necessarily need FEM stuff like dh?
 """
@@ -152,11 +155,11 @@ We want to solve the problem √(∇tₐᵀ𝕍∇tₐ) = 1.
 Where tₐ are the nodal wave time of arrival, and 𝕍 is the conduction velocity.
 """
 struct EikonalFunction{
-        T <: Number,
-        VerticesVectorT <: AbstractVector{Vec{3, T}},
-        CellsVectorT <: AbstractVector{NTuple{4, Int}},
-        V2CT <: AbstractArray,
-    } <: AbstractSemidiscreteFunction
+    T <: Number,
+    VerticesVectorT <: AbstractVector{Vec{3, T}},
+    CellsVectorT <: AbstractVector{NTuple{4, Int}},
+    V2CT <: AbstractArray
+} <: AbstractSemidiscreteFunction
     vertices::VerticesVectorT
     cells::CellsVectorT # strictly for Tetrahedra
     vertex_to_cell::V2CT

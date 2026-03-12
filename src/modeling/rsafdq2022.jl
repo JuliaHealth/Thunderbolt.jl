@@ -24,7 +24,7 @@ end
 solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
 
 function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, sdh::SubDofHandler)
-    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    @assert length(sdh.dh.field_names)==1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
@@ -43,22 +43,22 @@ where p is the unknown chamber pressure and u contains the unknown deformation f
 """
 # Residual and Jacobian
 function assemble_LFSI_coupling_contribution_col!(
-    C,
-    R,
-    dh::AbstractDofHandler,
-    u::AbstractVector,
-    pressure,
-    method::RSAFDQ2022SingleChamberTying,
+        C,
+        R,
+        dh::AbstractDofHandler,
+        u::AbstractVector,
+        pressure,
+        method::RSAFDQ2022SingleChamberTying
 )
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
+    intorder = 2 * Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
     qr_facet = FacetQuadratureRule{ref_shape}(intorder)
     fv = FacetValues(qr_facet, ip, ip_geo)
 
-    for facet ∈ FacetIterator(dh, method.facets)
+    for facet in FacetIterator(dh, method.facets)
         assemble_LFSI_coupling_contribution_col_inner!(
             C,
             R,
@@ -67,27 +67,27 @@ function assemble_LFSI_coupling_contribution_col!(
             facet,
             dh,
             fv,
-            method.displacement_symbol,
+            method.displacement_symbol
         )
     end
 end
 # Residual only
 function assemble_LFSI_coupling_contribution_col!(
-    C,
-    dh::AbstractDofHandler,
-    u::AbstractVector,
-    pressure,
-    method::RSAFDQ2022SingleChamberTying,
+        C,
+        dh::AbstractDofHandler,
+        u::AbstractVector,
+        pressure,
+        method::RSAFDQ2022SingleChamberTying
 )
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
+    intorder = 2 * Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
     qr_facet = FacetQuadratureRule{ref_shape}(intorder)
     fv = FacetValues(qr_facet, ip, ip_geo)
 
-    for facet ∈ FacetIterator(dh, method.facets)
+    for facet in FacetIterator(dh, method.facets)
         assemble_LFSI_coupling_contribution_col_inner!(
             C,
             u,
@@ -95,7 +95,7 @@ function assemble_LFSI_coupling_contribution_col!(
             facet,
             dh,
             fv,
-            method.displacement_symbol,
+            method.displacement_symbol
         )
     end
 end
@@ -114,9 +114,9 @@ function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberT
         sdh = dh.subdofhandlers[sdhi]
         ip = Ferrite.getfieldinterpolation(sdh, method.displacement_symbol)
         drange = dof_range(sdh, method.displacement_symbol)
-        for facet ∈ FacetIterator(sdh, facetset)
+        for facet in FacetIterator(sdh, facetset)
             ip_geo = Ferrite.geometric_interpolation(typeof(cell))
-            intorder = 2*Ferrite.getorder(ip)
+            intorder = 2 * Ferrite.getorder(ip)
             ref_shape = Ferrite.getrefshape(ip)
             qr_facet = FacetQuadratureRule{ref_shape}(intorder)
             fv = FacetValues(qr_facet, ip, ip_geo)
@@ -179,12 +179,14 @@ struct RSAFDQ20223DFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo
     structural_function::MT
     tying_info::TP
 end
-BlockArrays.blocksizes(f::RSAFDQ20223DFunction) =
+function BlockArrays.blocksizes(f::RSAFDQ20223DFunction)
     (solution_size(f.structural_function), solution_size(f.tying_info))
+end
 
 getch(f::AbstractSemidiscreteFunction) = f.ch
-getch(f::AbstractSemidiscreteBlockedFunction) =
+function getch(f::AbstractSemidiscreteBlockedFunction)
     error("Overlaod getch to get the constraint handler for a blocked function")
+end
 getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 
 # struct RSAFDQ2022VolumeFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
@@ -198,9 +200,9 @@ getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 The split model described by [RegSalAfrFedDedQar:2022:cem](@citet) alone.
 """
 struct RSAFDQ2022Model{
-    SM#=<: QuasiStaticModel =#,
+    SM, #=<: QuasiStaticModel =#
     CM <: AbstractLumpedCirculatoryModel,
-    CT <: LumpedFluidSolidCoupler,
+    CT <: LumpedFluidSolidCoupler
 }
     structural_model::SM
     circuit_model::CM
@@ -231,7 +233,7 @@ function assemble_tying_facet_rsadfq!(Jₑ, uₑ, p, cell, local_facet_index, fv
 end
 
 function assemble_tying!(Jₑ, residualₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
-    for local_facet_index ∈ 1:nfacets(cell)
+    for local_facet_index in 1:nfacets(cell)
         for (chamber_index, chamber) in pairs(tying_cache.chambers)
             if (cellid(cell), local_facet_index) ∈ chamber.facets
                 assemble_tying_facet_rsadfq!(
@@ -242,7 +244,7 @@ function assemble_tying!(Jₑ, residualₑ, uₑ, uₜ, cell, tying_cache::RSAFD
                     cell,
                     local_facet_index,
                     tying_cache.fv,
-                    time,
+                    time
                 )
             end
         end
@@ -250,7 +252,7 @@ function assemble_tying!(Jₑ, residualₑ, uₑ, uₜ, cell, tying_cache::RSAFD
 end
 
 function assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
-    for local_facet_index ∈ 1:nfacets(cell)
+    for local_facet_index in 1:nfacets(cell)
         for (chamber_index, chamber) in pairs(tying_cache.chambers)
             if (cellid(cell), local_facet_index) ∈ chamber.facets
                 assemble_tying_facet_rsadfq!(
@@ -260,7 +262,7 @@ function assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCac
                     cell,
                     local_facet_index,
                     tying_cache.fv,
-                    time,
+                    time
                 )
             end
         end
@@ -270,13 +272,13 @@ end
 #################################################################################
 
 function create_chamber_tyings(
-    coupler::LumpedFluidSolidCoupler{CVM},
-    structural_problem,
-    circuit_model,
+        coupler::LumpedFluidSolidCoupler{CVM},
+        structural_problem,
+        circuit_model
 ) where {CVM}
     num_unknowns_structure = solution_size(structural_problem)
     chamber_tyings = RSAFDQ2022SingleChamberTying{CVM}[]
-    for i = 1:length(coupler.chamber_couplings)
+    for i in 1:length(coupler.chamber_couplings)
         # Get i-th ChamberVolumeCoupling
         coupling = coupler.chamber_couplings[i]
         # The pressure dof is just the last dof index for the structurel problem + the current chamber index
@@ -295,29 +297,29 @@ function create_chamber_tyings(
             coupler.displacement_symbol,
             NaN,
             chamber_volume_idx_lumped,
-            num_unknowns_structure+num_unknown_pressures(circuit_model)+chamber_volume_idx_lumped,
+            num_unknowns_structure + num_unknown_pressures(circuit_model) +
+            chamber_volume_idx_lumped
         )
-        tying.V⁰ᴰval =
-            initial_volume_lumped = compute_chamber_volume(
-                dh,
-                zeros(ndofs(dh)),
-                coupling.chamber_surface_setname,
-                tying,
-            )
+        tying.V⁰ᴰval = initial_volume_lumped = compute_chamber_volume(
+            dh,
+            zeros(ndofs(dh)),
+            coupling.chamber_surface_setname,
+            tying
+        )
         push!(chamber_tyings, tying)
     end
     return chamber_tyings
 end
 
 function semidiscretize(
-    split::RSAFDQ2022Split,
-    discretization::FiniteElementDiscretization,
-    mesh::AbstractGrid,
+        split::RSAFDQ2022Split,
+        discretization::FiniteElementDiscretization,
+        mesh::AbstractGrid
 )
     @unpack model = split
     @unpack structural_model, circuit_model, coupler = model
-    @assert length(coupler.chamber_couplings) ≥ 1 "Provide at least one coupling for the semi-discretization of an RSAFDQ2022 model"
-    @assert coupler.displacement_symbol == structural_model.displacement_symbol "Coupler is not compatible with structural model"
+    @assert length(coupler.chamber_couplings)≥1 "Provide at least one coupling for the semi-discretization of an RSAFDQ2022 model"
+    @assert coupler.displacement_symbol==structural_model.displacement_symbol "Coupler is not compatible with structural model"
 
     # Discretize individual problems
     structural_problem = semidiscretize(model.structural_model, discretization, mesh)
@@ -333,19 +335,19 @@ function semidiscretize(
     for chamber_tying in chamber_tyings
         @debug "$(chamber_tying.pressure_dof_index_local), $(chamber_tying.pressure_dof_index_global), $(chamber_tying.volume_method), $(chamber_tying.displacement_symbol), $(chamber_tying.V⁰ᴰidx_local), $(chamber_tying.V⁰ᴰidx_global)"
     end
-    @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
+    @assert num_chambers_lumped==length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
 
     tying_info = RSAFDQ2022TyingInfo(chamber_tyings)
     structural_fun = RSAFDQ20223DFunction(
         structural_problem,
-        tying_info,  # TODO replace with proper function
+        tying_info  # TODO replace with proper function
     )
 
     offset = solution_size(structural_fun)
     splitfun = GenericSplitFunction(
         (structural_fun, circuit_fun),
-        (1:offset, (offset+1):(offset+solution_size(model.circuit_model))),
-        (VolumeTransfer0D3D(tying_info), PressureTransfer3D0D(tying_info)),
+        (1:offset, (offset + 1):(offset + solution_size(model.circuit_model))),
+        (VolumeTransfer0D3D(tying_info), PressureTransfer3D0D(tying_info))
     )
 
     return splitfun
@@ -353,13 +355,13 @@ end
 
 
 function semidiscretize(
-    split::RSAFDQ2022Split{<:CoupledModel},
-    discretization::FiniteElementDiscretization,
-    grid::AbstractGrid,
+        split::RSAFDQ2022Split{<:CoupledModel},
+        discretization::FiniteElementDiscretization,
+        grid::AbstractGrid
 )
     ets = elementtypes(grid)
-    @assert length(ets) == 1 "Multiple element types not supported"
-    @assert length(split.model.base_models) == 2 "I can only handle pure mechanics coupled to pure circuit."
+    @assert length(ets)==1 "Multiple element types not supported"
+    @assert length(split.model.base_models)==2 "I can only handle pure mechanics coupled to pure circuit."
     error("Implementation for RSAFDQ2022Split{<:CoupledModel} currently broken. 💔")
 end
 
@@ -369,14 +371,16 @@ function residual_norm(cache::AbstractNonlinearSolverCache, f::RSAFDQ2022TyingIn
     norm(cache.residual[Block(2)])
 end
 
-eliminate_constraints_from_increment!(
-    Δu,
-    f::RSAFDQ2022TyingInfo,
-    solver_cache::AbstractNonlinearSolverCache,
-) = nothing
+function eliminate_constraints_from_increment!(
+        Δu,
+        f::RSAFDQ2022TyingInfo,
+        solver_cache::AbstractNonlinearSolverCache
+)
+    nothing
+end
 function eliminate_constraints_from_linearization!(
-    solver_cache::AbstractNonlinearSolverCache,
-    f::RSAFDQ20223DFunction,
+        solver_cache::AbstractNonlinearSolverCache,
+        f::RSAFDQ20223DFunction
 )
     @unpack structural_function = f
     @unpack op = solver_cache
@@ -393,9 +397,11 @@ function eliminate_constraints_from_linearization!(
     getJ(op, Block((2, 1)))[:, ch.prescribed_dofs] .= 0.0
 end
 
-update_constraints_block!(
-    ::RSAFDQ2022TyingInfo,
-    ::BlockArrays.Block,
-    ::HomotopyPathSolverCache,
-    ::Float64,
-) = nothing
+function update_constraints_block!(
+        ::RSAFDQ2022TyingInfo,
+        ::BlockArrays.Block,
+        ::HomotopyPathSolverCache,
+        ::Float64
+)
+    nothing
+end

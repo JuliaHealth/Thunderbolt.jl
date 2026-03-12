@@ -1,14 +1,14 @@
 using Thunderbolt
 import Thunderbolt:
-    NullOperator,
-    DiagonalOperator,
-    BlockOperator,
-    EAVector,
-    BilinearDiffusionIntegrator,
-    NonlinearIntegrator,
-    FacetQuadratureRuleCollection,
-    InternalVariableHandler,
-    QuasiStaticFunction
+                    NullOperator,
+                    DiagonalOperator,
+                    BlockOperator,
+                    EAVector,
+                    BilinearDiffusionIntegrator,
+                    NonlinearIntegrator,
+                    FacetQuadratureRuleCollection,
+                    InternalVariableHandler,
+                    QuasiStaticFunction
 import LinearAlgebra: mul!
 using BlockArrays, SparseArrays, StaticArrays, Test
 
@@ -73,14 +73,14 @@ using BlockArrays, SparseArrays, StaticArrays, Test
             DiagonalOperator(ones(4)),
             NullOperator{Float64, 2, 4}(),
             NullOperator{Float64, 4, 2}(),
-            DiagonalOperator(ones(2)),
+            DiagonalOperator(ones(2))
         ))
 
         @test vout != vin
         mul!(vout, bop_id, vin)
         @test vout == vin
         mul!(vout, bop_id, vin, 2.0, 1.0)
-        @test vout == 3.0*vin
+        @test vout == 3.0 * vin
 
         @test Thunderbolt.getJ(bop_id) ≈ spdiagm(ones(6))
     end
@@ -98,16 +98,16 @@ using BlockArrays, SparseArrays, StaticArrays, Test
             linint = Thunderbolt.LinearIntegrator(
                 AnalyticalTransmembraneStimulationProtocol(
                     AnalyticalCoefficient((x, t) -> 1.0, cs),
-                    [SVector((0.0, 1.0))],
+                    [SVector((0.0, 1.0))]
                 ),
-                qrc,
+                qrc
             )
 
             linop_base = Thunderbolt.setup_operator(
                 Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
                 linint,
                 solver,
-                dh,
+                dh
             )
             # Check that assembly works
             Thunderbolt.update_operator!(linop_base, 0.0)
@@ -125,7 +125,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
-                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3))
             )
                 linop = Thunderbolt.setup_operator(strategy, linint, solver, dh)
 
@@ -142,17 +142,17 @@ using BlockArrays, SparseArrays, StaticArrays, Test
             cs = CartesianCoordinateSystem(grid)
             linint = Thunderbolt.LinearIntegrator(
                 AnalyticalTransmembraneStimulationProtocol(
-                    AnalyticalCoefficient((x, t) -> norm(x)^2+1.0, cs),
-                    [SVector((0.0, 1.0))],
+                    AnalyticalCoefficient((x, t) -> norm(x)^2 + 1.0, cs),
+                    [SVector((0.0, 1.0))]
                 ),
-                qrc,
+                qrc
             )
 
             linop_base = Thunderbolt.setup_operator(
                 Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
                 linint,
                 solver,
-                dh,
+                dh
             )
 
             # Check that assembly works
@@ -171,7 +171,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
-                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3))
             )
                 linop = Thunderbolt.setup_operator(strategy, linint, solver, dh)
 
@@ -189,7 +189,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
     @testset "Bilinear" begin
         # Setup
         grid = generate_grid(Quadrilateral, (10, 9))
-        Ferrite.transform_coordinates!(grid, x->Vec{2}(sign.(x .- 0.5) .* (x .- 0.5) .^ 2))
+        Ferrite.transform_coordinates!(grid, x -> Vec{2}(sign.(x .- 0.5) .* (x .- 0.5) .^ 2))
         dh = DofHandler(grid)
         add!(dh, :u, Lagrange{RefQuadrilateral, 1}())
         close!(dh)
@@ -200,13 +200,13 @@ using BlockArrays, SparseArrays, StaticArrays, Test
             integrator = BilinearDiffusionIntegrator(
                 ConstantCoefficient(SymmetricTensor{2, 2, Float64, 3}((4.5e-5, 0, 2.0e-5))),
                 QuadratureRuleCollection(2),
-                :u,
+                :u
             )
             bilinop_base = Thunderbolt.setup_operator(
                 Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
                 integrator,
                 solver,
-                dh,
+                dh
             )
             # Check that assembly works
             Thunderbolt.update_operator!(bilinop_base, 0.0)
@@ -220,7 +220,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
-                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3))
             )
                 bilinop = Thunderbolt.setup_operator(strategy, integrator, solver, dh)
                 # Consistency
@@ -238,22 +238,22 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 LagrangeCollection{1}(),
                 rand(ndofs(dh)),
                 rand(ndofs(dh)),
-                rand(ndofs(dh)),
+                rand(ndofs(dh))
             )
             integrator = BilinearDiffusionIntegrator(
                 AnalyticalCoefficient(
-                    (x, t) ->
-                        SymmetricTensor{2, 2, Float64, 3}((abs(x.transmural)+1e-6, 0, 2.0e-5)),
-                    cs,
+                    (x, t) -> SymmetricTensor{2, 2, Float64, 3}((
+                        abs(x.transmural) + 1e-6, 0, 2.0e-5)),
+                    cs
                 ),
                 QuadratureRuleCollection(2),
-                :u,
+                :u
             )
             bilinop_base = Thunderbolt.setup_operator(
                 Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
                 integrator,
                 solver,
-                dh,
+                dh
             )
             # Check that assembly works
             Thunderbolt.update_operator!(bilinop_base, 0.0)
@@ -267,7 +267,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
-                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3))
             )
                 bilinop = Thunderbolt.setup_operator(strategy, integrator, solver, dh)
                 # Consistency
@@ -286,7 +286,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
 
         # Setup
         grid = generate_grid(Hexahedron, (2, 5, 9))
-        Ferrite.transform_coordinates!(grid, x->Vec{3}(sign.(x .- 0.5) .* (x .- 0.5) .^ 2))
+        Ferrite.transform_coordinates!(grid, x -> Vec{3}(sign.(x .- 0.5) .* (x .- 0.5) .^ 2))
         dh = DofHandler(grid)
         add!(dh, :u, Lagrange{RefHexahedron, 1}()^3)
         close!(dh)
@@ -305,18 +305,18 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                         HolzapfelOgden2009Model(),
                         ConstantCoefficient(
                             OrthotropicMicrostructure(
-                                Vec((1.0, 0.0, 0.0)),
-                                Vec((0.0, 1.0, 0.0)),
-                                Vec((0.0, 0.0, 1.0)),
-                            ),
+                            Vec((1.0, 0.0, 0.0)),
+                            Vec((0.0, 1.0, 0.0)),
+                            Vec((0.0, 0.0, 1.0))
                         ),
+                        )
                     ),
-                    (),
+                    ()
                 ),
                 (),
                 [:u],
                 QuadratureRuleCollection(2),
-                FacetQuadratureRuleCollection(2),
+                FacetQuadratureRuleCollection(2)
             )
             u = zeros(ndofs(dh))
             apply_analytical!(u, dh, :u, x -> 0.05x)
@@ -326,9 +326,9 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                     ch,
                     lvh,
                     integrator,
-                    Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+                    Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice())
                 ),
-                solver,
+                solver
             )
             # Check that assembly works
             residual_base = zeros(ndofs(dh))
@@ -344,11 +344,11 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 Thunderbolt.PerColorAssemblyStrategy(SequentialCPUDevice()),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(1)),
                 Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(2)),
-                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+                Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3))
             )
                 nlop = Thunderbolt.setup_operator(
                     QuasiStaticFunction(dh, ch, lvh, integrator, strategy),
-                    solver,
+                    solver
                 )
                 # Consistency
                 Thunderbolt.update_linearization!(nlop, residual, u, 0.0)
@@ -373,7 +373,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 DiagonalOperator([1.0, 2.0, 3.0]),
                 NullOperator{Float64, 2, 3}(),
                 NullOperator{Float64, 3, 2}(),
-                NullOperator{Float64, 2, 2}(),
+                NullOperator{Float64, 2, 2}()
             ))
             @test op1 * [1.0, 2.0, 3.0, 4.0, 5.0] ≈ [1.0, 4.0, 9.0, 0.0, 0.0]
 
@@ -381,7 +381,7 @@ using BlockArrays, SparseArrays, StaticArrays, Test
                 NullOperator{Float64, 3, 3}(),
                 NullOperator{Float64, 2, 3}(),
                 NullOperator{Float64, 3, 2}(),
-                DiagonalOperator([-1.0, 2.0]),
+                DiagonalOperator([-1.0, 2.0])
             ))
             @test op2 * [1.0, 2.0, 3.0, 4.0, 5.0] ≈ [0.0, 0.0, 0.0, -4.0, 10.0]
         end

@@ -12,14 +12,15 @@ function __paraview_collection(name::String; kwargs...)
     return WriteVTK.paraview_collection(basename)
 end
 
-ParaViewWriter(filename::String; kwargs...) =
+function ParaViewWriter(filename::String; kwargs...)
     ParaViewWriter(filename, __paraview_collection("$filename.pvd"; kwargs...), nothing)
+end
 
 function store_timestep!(io::ParaViewWriter, t, grid::AbstractGrid; write_discontinuous = false)
     if io.current_file === nothing
         mkpath(io.filename)
-        vtk, cellnodes, node_mapping =
-            Ferrite.create_vtk_grid(io.filename * "/$t.vtu", grid, write_discontinuous)
+        vtk, cellnodes, node_mapping = Ferrite.create_vtk_grid(
+            io.filename * "/$t.vtu", grid, write_discontinuous)
         io.current_file = VTKGridFile(vtk, cellnodes, node_mapping)
     end
 end
@@ -31,26 +32,26 @@ function store_timestep!(f::Function, io::ParaViewWriter, t, grid::AbstractGrid)
 end
 
 function store_timestep_field!(
-    io::ParaViewWriter,
-    t,
-    dh::AbstractDofHandler,
-    u::AbstractVector,
-    sym::Symbol,
-    name::String = String(sym),
+        io::ParaViewWriter,
+        t,
+        dh::AbstractDofHandler,
+        u::AbstractVector,
+        sym::Symbol,
+        name::String = String(sym)
 )
     @assert io.current_file !== nothing
     fieldnames = Ferrite.getfieldnames(dh)
-    idx = findfirst(f->f == sym, fieldnames)
+    idx = findfirst(f -> f == sym, fieldnames)
     if idx === nothing
         @warn "Cannot write data for PVD '$(io.filename)'. Field $sym not found in $fieldnames of DofHandler. Skipping."
         return nothing
     end
-    data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=#Val(true))
+    data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, Val(true)) #=vtk=#
     if Ferrite.write_discontinuous(io.current_file)
-        data =
-            Ferrite.evaluate_at_discontinuous_vtkgrid_nodes(dh, u, sym, io.current_file.cellnodes)
+        data = Ferrite.evaluate_at_discontinuous_vtkgrid_nodes(
+            dh, u, sym, io.current_file.cellnodes)
     else
-        data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=#Val(true))
+        data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, Val(true)) #=vtk=#
     end
     Ferrite._vtk_write_node_data(io.current_file.vtk, data, name)
 end
@@ -152,8 +153,9 @@ mutable struct JLD2Writer{FD}
     grid::Union{Nothing, AbstractGrid}
 end
 
-JLD2Writer(filename::String; overwrite::Bool = true, compress::Bool = true) =
+function JLD2Writer(filename::String; overwrite::Bool = true, compress::Bool = true)
     JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "w" : "a+"; compress), nothing)
+end
 
 function store_timestep!(io::JLD2Writer, t, grid::AbstractGrid)
     _jld2_maybe_store(io, t, grid)
@@ -181,12 +183,12 @@ function store_nodal_data!(io::JLD2Writer, t, grid::AbstractGrid, name::String)
 end
 
 function store_timestep_field!(
-    io::JLD2Writer,
-    t,
-    dh::AbstractDofHandler,
-    u::AbstractVector,
-    sym::Symbol,
-    name::String = String(sym),
+        io::JLD2Writer,
+        t,
+        dh::AbstractDofHandler,
+        u::AbstractVector,
+        sym::Symbol,
+        name::String = String(sym)
 )
     @assert get_grid(dh) === io.grid
     length(dh.field_names) > 1 &&
@@ -203,19 +205,19 @@ finalize_timestep!(io::JLD2Writer, t) = nothing
 finalize!(io::JLD2Writer) = nothing
 
 function reorder_nodal!(dh::DofHandler)
-    @assert length(dh.field_names) == 1 "Just single field possible."
+    @assert length(dh.field_names)==1 "Just single field possible."
     grid = Ferrite.get_grid(dh)
     for sdh in dh.subdofhandlers
         firstcellidx = first(sdh.cellset)
         celltype = typeof(getcells(grid, firstcellidx))
         vdim = Ferrite.n_components(sdh.field_interpolations[1])
-        for i ∈ 1:getncells(grid)
-            dof_offsets =
-                dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(dh, i)-1)
+        for i in 1:getncells(grid)
+            dof_offsets = dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i] + Ferrite.ndofs_per_cell(dh, i) - 1)
             for (j, dof_offset_idx) in enumerate(1:vdim:length(dof_offsets))
-                for d = 1:vdim
-                    dh.cell_dofs[dof_offsets[dof_offset_idx]+d-1] =
-                        vdim*(getcells(grid, i).nodes[j]-1) + d
+                for d in 1:vdim
+                    dh.cell_dofs[dof_offsets[dof_offset_idx] + d - 1] = vdim *
+                                                                        (getcells(grid, i).nodes[j] -
+                                                                         1) + d
                 end
             end
         end
@@ -223,7 +225,7 @@ function reorder_nodal!(dh::DofHandler)
 end
 
 function to_ferrite_elements(
-    cells_vtk::Vector{WriteVTK.MeshCell{WriteVTK.VTKCellType, Vector{Int64}}},
+        cells_vtk::Vector{WriteVTK.MeshCell{WriteVTK.VTKCellType, Vector{Int64}}},
 )
     celltype = if cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_TETRA
         Tetrahedron
@@ -235,20 +237,20 @@ function to_ferrite_elements(
     cells_ferrite = Vector{celltype}(undef, length(cells_vtk))
     for (i, cell_vtk) in enumerate(cells_vtk)
         cells_ferrite[i] = if cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_TETRA
-            Tetrahedron(ntuple(i->cell_vtk.connectivity[i], 4))
+            Tetrahedron(ntuple(i -> cell_vtk.connectivity[i], 4))
         elseif cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_HEXAHEDRON
-            Hexahedron(ntuple(i->cell_vtk.connectivity[i], 8))
+            Hexahedron(ntuple(i -> cell_vtk.connectivity[i], 8))
         end
     end
     return cells_ferrite
 end
 
 function read_vtk_cobivec(
-    filename::String,
-    transmural_id::String,
-    apicobasal_id::String,
-    radial_id::String,
-    transventricular_id::String,
+        filename::String,
+        transmural_id::String,
+        apicobasal_id::String,
+        radial_id::String,
+        transventricular_id::String
 )
     vtk = ReadVTK.VTKFile(filename)
     points_vtk = ReadVTK.get_points(vtk)
@@ -275,10 +277,10 @@ function read_vtk_cobivec(
     endocardium = OrderedSet{FacetIndex}()
     endocardiumlv = OrderedSet{FacetIndex}()
     endocardiumrv = OrderedSet{FacetIndex}()
-    for (cellidx, cell) ∈ enumerate(grid.cells)
+    for (cellidx, cell) in enumerate(grid.cells)
         for (facetidx, facetnodes) in enumerate(facets(cell))
             indices = collect(facetnodes)
-            if all(u_transmural[indices] .> 1.0-2e-2)
+            if all(u_transmural[indices] .> 1.0 - 2e-2)
                 push!(endocardium, FacetIndex(cellidx, facetidx))
                 if all(u_transventricular[indices] .> 0.5) # Right
                     push!(endocardiumrv, FacetIndex(cellidx, facetidx))
@@ -301,6 +303,6 @@ function read_vtk_cobivec(
         collect(u_transmural),
         collect(u_apicobasal),
         collect(u_radial),
-        collect(u_transventricular),
+        collect(u_transventricular)
     )
 end

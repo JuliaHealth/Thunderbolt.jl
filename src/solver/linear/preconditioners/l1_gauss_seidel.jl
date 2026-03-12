@@ -200,22 +200,22 @@ struct L1GSPrecBuilder{DeviceType <: AbstractDevice}
 end
 
 function (builder::L1GSPrecBuilder)(
-    A::AbstractMatrix,
-    partsize::Ti;
-    isSymA::Bool = false,
-    η = 1.5,
-    sweep::AbstractSweep = SymmetricSweep(),
-    cache_strategy::AbstractCacheStrategy = _choose_default_device_storage(builder.device),
+        A::AbstractMatrix,
+        partsize::Ti;
+        isSymA::Bool = false,
+        η = 1.5,
+        sweep::AbstractSweep = SymmetricSweep(),
+        cache_strategy::AbstractCacheStrategy = _choose_default_device_storage(builder.device)
 ) where {Ti <: Integer}
     build_l1prec(builder, A, partsize, isSymA, η, sweep, cache_strategy)
 end
 
 function (builder::L1GSPrecBuilder)(
-    A::Symmetric,
-    partsize::Ti;
-    η = 1.5,
-    sweep::AbstractSweep = SymmetricSweep(),
-    cache_strategy::AbstractCacheStrategy = MatrixViewCache(),
+        A::Symmetric,
+        partsize::Ti;
+        η = 1.5,
+        sweep::AbstractSweep = SymmetricSweep(),
+        cache_strategy::AbstractCacheStrategy = MatrixViewCache()
 ) where {Ti <: Integer}
     build_l1prec(builder, A, partsize, true, η, sweep, cache_strategy)
 end
@@ -223,13 +223,13 @@ end
 
 ## Preconditioner builder ##
 function build_l1prec(
-    builder::L1GSPrecBuilder,
-    _A::MatrixType,
-    partsize::Ti,
-    isSymA::Bool,
-    η,
-    sweep::AbstractSweep,
-    cache_strategy::AbstractCacheStrategy,
+        builder::L1GSPrecBuilder,
+        _A::MatrixType,
+        partsize::Ti,
+        isSymA::Bool,
+        η,
+        sweep::AbstractSweep,
+        cache_strategy::AbstractCacheStrategy
 ) where {Ti <: Integer, MatrixType}
 
     partsize == 0 && error("partsize must be greater than 0")
@@ -246,9 +246,9 @@ function build_l1prec(
 end
 
 function _blockpartitioning(
-    builder::L1GSPrecBuilder{<:AbstractCPUDevice},
-    A::AbstractSparseMatrix,
-    partsize::Ti,
+        builder::L1GSPrecBuilder{<:AbstractCPUDevice},
+        A::AbstractSparseMatrix,
+        partsize::Ti
 ) where {Ti <: Integer}
     (; device) = builder
     (; chunksize) = device
@@ -258,9 +258,9 @@ function _blockpartitioning(
 end
 
 function _blockpartitioning(
-    builder::L1GSPrecBuilder{<:AbstractGPUDevice},
-    A::AbstractSparseMatrix,
-    partsize::Ti,
+        builder::L1GSPrecBuilder{<:AbstractGPUDevice},
+        A::AbstractSparseMatrix,
+        partsize::Ti
 ) where {Ti <: Integer}
     (; device) = builder
     (; blocks, threads) = device
@@ -274,18 +274,18 @@ function _blockpartitioning(
 end
 
 function LinearSolve.ldiv!(
-    y::VectorType,
-    P::L1GSPreconditioner,
-    x::VectorType,
+        y::VectorType,
+        P::L1GSPreconditioner,
+        x::VectorType
 ) where {VectorType <: AbstractVector}
     @timeit_debug "ldiv! (generic)" begin
         # x: residual
         # y: preconditioned residual
-        @timeit_debug "y .= x" y .= x #works either way, whether x is GpuVectorType (e.g. CuArray) or Vector
+        @timeit_debug "y .= x" y.=x #works either way, whether x is GpuVectorType (e.g. CuArray) or Vector
         (; partitioning) = P
         (; backend) = partitioning
         # The following code is required because there is no assumption on the compatibality of x with the backend.
-        @timeit_debug "adapt(backend, y)" _y = adapt(backend, y)
+        @timeit_debug "adapt(backend, y)" _y=adapt(backend, y)
         @timeit_debug "_apply_sweep!" _apply_sweep!(_y, P)
         @timeit_debug "copyto!(y, _y)" copyto!(y, _y)
     end
@@ -293,20 +293,20 @@ function LinearSolve.ldiv!(
 end
 
 function LinearSolve.ldiv!(
-    y::Vector,
-    P::L1GSPreconditioner{BlockPartitioning{Ti, CPU}},
-    x::Vector,
+        y::Vector,
+        P::L1GSPreconditioner{BlockPartitioning{Ti, CPU}},
+        x::Vector
 ) where {Ti <: Integer}
     @timeit_debug "ldiv! (CPU)" begin
-        @timeit_debug "y .= x" y .= x
+        @timeit_debug "y .= x" y.=x
         @timeit_debug "_apply_sweep!" _apply_sweep!(y, P)
     end
     return nothing
 end
 
 function (\)(
-    P::L1GSPreconditioner{BlockPartitioning{Ti, Backend}},
-    x::VectorType,
+        P::L1GSPreconditioner{BlockPartitioning{Ti, Backend}},
+        x::VectorType
 ) where {VectorType <: AbstractVector, Ti, Backend}
     # P is a preconditioner
     # x is a vector
@@ -331,9 +331,9 @@ Adapt.@adapt_structure DiagonalIndices
 function DiagonalIndices(A::SparseMatrixCSC{Tv, Ti}) where {Tv, Ti}
     diag = Vector{Ti}(undef, A.n)
 
-    for col = 1:A.n
+    for col in 1:(A.n)
         r1 = Int(A.colptr[col])
-        r2 = Int(A.colptr[col+1] - 1)
+        r2 = Int(A.colptr[col + 1] - 1)
         r1 = searchsortedfirst(A.rowval, col, r1, r2, Base.Order.Forward)
         if r1 > r2 || A.rowval[r1] != col || iszero(A.nzval[r1])
             throw(LinearAlgebra.SingularException(col))
@@ -364,7 +364,7 @@ struct BlockStrictLowerView{
     MatrixType,
     SymmetryType <: AbstractMatrixSymmetry,
     FormatType <: AbstractMatrixFormat,
-    DIType <: AbstractDiagonalIndices,
+    DIType <: AbstractDiagonalIndices
 } <: AbstractLowerCache
     A::MatrixType
     symA::SymmetryType
@@ -377,7 +377,7 @@ struct BlockStrictUpperView{
     MatrixType,
     SymmetryType <: AbstractMatrixSymmetry,
     FormatType <: AbstractMatrixFormat,
-    DIType <: AbstractDiagonalIndices,
+    DIType <: AbstractDiagonalIndices
 } <: AbstractUpperCache
     A::MatrixType
     symA::SymmetryType
@@ -543,8 +543,8 @@ function _make_sweep_plan(::ForwardSweep, ::PackedBufferCache, A, partitioning, 
 
     # Buffer size: account for last partition potentially being smaller
     last_partsize = N - (nparts - 1) * partsize
-    buffer_size =
-        (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
+    buffer_size = (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 +
+                  (last_partsize * (last_partsize - 1)) ÷ 2
     SLbuffer = adapt(backend, zeros(Tf, buffer_size))
     cache = adapt(backend, PackedStrictLower(SLbuffer))
 
@@ -565,7 +565,7 @@ function _make_sweep_plan(::ForwardSweep, ::PackedBufferCache, A, partitioning, 
         nchunks,
         chunksize,
         η_converted;
-        ndrange = ndrange,
+        ndrange = ndrange
     )
     synchronize(backend)
 
@@ -590,8 +590,8 @@ function _make_sweep_plan(::BackwardSweep, ::PackedBufferCache, A, partitioning,
 
     # Buffer size: account for last partition potentially being smaller
     last_partsize = N - (nparts - 1) * partsize
-    buffer_size =
-        (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
+    buffer_size = (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 +
+                  (last_partsize * (last_partsize - 1)) ÷ 2
     SUbuffer = adapt(backend, zeros(Tf, buffer_size))
     cache = adapt(backend, PackedStrictUpper(SUbuffer))
 
@@ -612,7 +612,7 @@ function _make_sweep_plan(::BackwardSweep, ::PackedBufferCache, A, partitioning,
         nchunks,
         chunksize,
         η_converted;
-        ndrange = ndrange,
+        ndrange = ndrange
     )
     synchronize(backend)
 
@@ -637,8 +637,8 @@ function _make_sweep_plan(::SymmetricSweep, ::PackedBufferCache, A, partitioning
 
     # Buffer size: account for last partition potentially being smaller
     last_partsize = N - (nparts - 1) * partsize
-    buffer_size =
-        (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 + (last_partsize * (last_partsize - 1)) ÷ 2
+    buffer_size = (partsize * (partsize - 1) * (nparts - 1)) ÷ 2 +
+                  (last_partsize * (last_partsize - 1)) ÷ 2
     SLbuffer = adapt(backend, zeros(Tf, buffer_size))
     SUbuffer = adapt(backend, zeros(Tf, buffer_size))
     L_cache = adapt(backend, PackedStrictLower(SLbuffer))
@@ -661,7 +661,7 @@ function _make_sweep_plan(::SymmetricSweep, ::PackedBufferCache, A, partitioning
         nchunks,
         chunksize,
         η_converted;
-        ndrange = ndrange,
+        ndrange = ndrange
     )
     synchronize(backend)
 
@@ -678,7 +678,7 @@ function _make_sweep_plan(::SymmetricSweep, ::PackedBufferCache, A, partitioning
         nchunks,
         chunksize,
         η_converted;
-        ndrange = ndrange,
+        ndrange = ndrange
     )
     synchronize(backend)
 
@@ -703,8 +703,7 @@ function _apply_sweep!(y, partitioning, sweep_plan::TS) where {TS <: AbstractL1G
         D_Dl1 = sweep_plan.op.D_DL1
         cache = _cache(sweep_plan.op)
         ndrange = nchunks * chunksize
-        @timeit_debug "kernel construction" kernel =
-            _apply_sweep_kernel!(backend, chunksize, ndrange)
+        @timeit_debug "kernel construction" kernel=_apply_sweep_kernel!(backend, chunksize, ndrange)
         size_A = convert(typeof(nparts), length(y))
         @timeit_debug "kernel call" kernel(
             y,
@@ -715,7 +714,7 @@ function _apply_sweep!(y, partitioning, sweep_plan::TS) where {TS <: AbstractL1G
             nparts,
             nchunks,
             chunksize;
-            ndrange = ndrange,
+            ndrange = ndrange
         )
         @timeit_debug "synchronize" synchronize(backend)
     end
@@ -740,7 +739,7 @@ function _apply_sweep!(y, partitioning, sweep::SymmetricL1GSSweep)
             synchronize(backend)
         end
 
-        @timeit_debug "diagonal scaling" y .= D_Dl1 .* y
+        @timeit_debug "diagonal scaling" y.=D_Dl1 .* y
 
         # Backward sweep: y = (D_Dl1 + U)⁻¹ y
         @timeit_debug "backward kernel" begin
@@ -827,7 +826,7 @@ function _compute_D_Dl1(A, partitioning, symA, frmt, diag, η)
         nchunks,
         chunksize,
         η_converted;
-        ndrange = ndrange,
+        ndrange = ndrange
     )
     synchronize(backend)
 
@@ -837,16 +836,16 @@ end
 ## precomputation kernels ##
 # Kernel that computes D_Dl1 only
 @kernel function _compute_D_Dl1_kernel!(
-    D_Dl1,
-    @Const(A),
-    symA,
-    format_A,
-    @Const(diag),
-    partsize::Ti,
-    nparts::Ti,
-    nchunks::Ti,
-    chunksize::Ti,
-    η,
+        D_Dl1,
+        @Const(A),
+        symA,
+        format_A,
+        @Const(diag),
+        partsize::Ti,
+        nparts::Ti,
+        nchunks::Ti,
+        chunksize::Ti,
+        η
 ) where {Ti <: Integer}
     initial_partition_idx = @index(Global)
     size_A = convert(Ti, size(A, 1))
@@ -857,10 +856,10 @@ end
         nparts,
         nchunks,
         chunksize,
-        convert(Ti, initial_partition_idx),
+        convert(Ti, initial_partition_idx)
     )
         (; k, partsize, start_idx, end_idx) = part
-        for i = start_idx:end_idx
+        for i in start_idx:end_idx
             a_ii, dl1_ii = _diag_offpart(symA, format_A, A, diag, i, start_idx, end_idx)
             TF = eltype(D_Dl1)
             dl1star_ii = a_ii >= η * dl1_ii ? zero(TF) : dl1_ii / convert(TF, 2.0)
@@ -872,17 +871,17 @@ end
 # Unified kernel that computes D_Dl1 AND packs triangular elements
 # Dispatches to lower or upper packing based on cache type (PackedStrictLower or PackedStrictUpper)
 @kernel function _precompute_and_pack_kernel!(
-    D_Dl1,
-    cache,  # PackedStrictLower or PackedStrictUpper
-    @Const(A),
-    symA,
-    format_A,
-    @Const(diag),
-    partsize::Ti,
-    nparts::Ti,
-    nchunks::Ti,
-    chunksize::Ti,
-    η,
+        D_Dl1,
+        cache,  # PackedStrictLower or PackedStrictUpper
+        @Const(A),
+        symA,
+        format_A,
+        @Const(diag),
+        partsize::Ti,
+        nparts::Ti,
+        nchunks::Ti,
+        chunksize::Ti,
+        η
 ) where {Ti <: Integer}
     initial_partition_idx = @index(Global)
     size_A = convert(Ti, size(A, 1))
@@ -893,12 +892,12 @@ end
         nparts,
         nchunks,
         chunksize,
-        convert(Ti, initial_partition_idx),
+        convert(Ti, initial_partition_idx)
     )
         (; k, partsize, start_idx, end_idx) = part
 
         # Compute D_Dl1
-        for i = start_idx:end_idx
+        for i in start_idx:end_idx
             a_ii, dl1_ii = _diag_offpart(symA, format_A, A, diag, i, start_idx, end_idx)
             TF = eltype(D_Dl1)
             dl1star_ii = a_ii >= η * dl1_ii ? zero(TF) : dl1_ii / convert(TF, 2.0)
@@ -911,14 +910,14 @@ end
 end
 
 @kernel function _apply_sweep_kernel!(
-    y,
-    @Const(cache),
-    @Const(D_Dl1),
-    size_A::Ti,
-    partsize::Ti,
-    nparts::Ti,
-    nchunks::Ti,
-    chunksize::Ti,
+        y,
+        @Const(cache),
+        @Const(D_Dl1),
+        size_A::Ti,
+        partsize::Ti,
+        nparts::Ti,
+        nchunks::Ti,
+        chunksize::Ti
 ) where {Ti <: Integer}
     initial_partition_idx = @index(Global)
 
@@ -928,7 +927,7 @@ end
         nparts,
         nchunks,
         chunksize,
-        convert(Ti, initial_partition_idx),
+        convert(Ti, initial_partition_idx)
     )
         (; k, partsize, start_idx, end_idx) = part
         @inbounds for i in sweep_range(cache, start_idx, end_idx)
@@ -943,12 +942,12 @@ end
 #   - CSR format: pass (rowPtr, colVal, nzVal)
 #   - Symmetric CSC: pass (colPtr, rowVal, nzVal) since row i = column i
 function _diag_offpart_rowwise(
-    indPtr,   # rowPtr for CSR, colPtr for symmetric CSC
-    indices,  # colVal for CSR, rowVal for symmetric CSC
-    nzVal,
-    idx::Ti,
-    part_start::Ti,
-    part_end::Ti,
+        indPtr,   # rowPtr for CSR, colPtr for symmetric CSC
+        indices,  # colVal for CSR, rowVal for symmetric CSC
+        nzVal,
+        idx::Ti,
+        part_start::Ti,
+        part_end::Ti
 ) where {Ti <: Integer}
     Tv = eltype(nzVal)
     b = zero(Tv)
@@ -956,9 +955,9 @@ function _diag_offpart_rowwise(
 
     # Scan row i (or column i for symmetric CSC)
     p_start = indPtr[idx]
-    p_end = indPtr[idx+1] - 1
+    p_end = indPtr[idx + 1] - 1
 
-    for p = p_start:p_end
+    for p in p_start:p_end
         j = indices[p]
         v = nzVal[p]
 
@@ -977,13 +976,13 @@ end
 # For col < idx: A[idx,col] is below diagonal, search in [diag[col]+1, colPtr[col+1]-1]
 # For col > idx: A[idx,col] is above diagonal, search in [colPtr[col], diag[col]-1]
 function _diag_offpart(
-    ::NonSymmetricMatrix,
-    ::CSCFormat,
-    A,
-    diag::DiagonalIndices,
-    idx::Ti,
-    part_start::Ti,
-    part_end::Ti,
+        ::NonSymmetricMatrix,
+        ::CSCFormat,
+        A,
+        diag::DiagonalIndices,
+        idx::Ti,
+        part_start::Ti,
+        part_end::Ti
 ) where {Ti <: Integer}
     colPtr = getcolptr(A)
     rowVal = rowvals(A)
@@ -997,13 +996,13 @@ function _diag_offpart(
     @inbounds b = nzVal[diag[idx]] # diagonal element A[idx,idx]
 
     # Process columns before idx (element A[idx,col] is below diagonal)
-    @inbounds for col = 1:(idx-1)
+    @inbounds for col in 1:(idx - 1)
         # Only accumulate off-partition elements
         col < part_start || col > part_end || continue
 
         diag_idx = diag[col]
         p_lo = diag_idx + 1  # Below diagonal (i.e. has higher row index :D)
-        p_hi = colPtr[col+1] - 1
+        p_hi = colPtr[col + 1] - 1
 
         # Early exit if no elements below diagonal
         p_lo > p_hi && continue
@@ -1027,7 +1026,7 @@ function _diag_offpart(
     end
 
     # Process columns after idx (element A[idx,col] is above diagonal)
-    @inbounds for col = (idx+1):ncols
+    @inbounds for col in (idx + 1):ncols
         # Only accumulate off-partition elements
         col < part_start || col > part_end || continue
 
@@ -1060,26 +1059,26 @@ function _diag_offpart(
 end
 
 function _diag_offpart(
-    ::SymmetricMatrix,
-    ::CSCFormat,
-    A,
-    ::NoDiagonalIndices,
-    idx::Ti,
-    part_start::Ti,
-    part_end::Ti,
+        ::SymmetricMatrix,
+        ::CSCFormat,
+        A,
+        ::NoDiagonalIndices,
+        idx::Ti,
+        part_start::Ti,
+        part_end::Ti
 ) where {Ti <: Integer}
     # Symmetric CSC: row i = column i, so use row-wise access
     _diag_offpart_rowwise(getcolptr(A), rowvals(A), getnzval(A), idx, part_start, part_end)
 end
 
 function _diag_offpart(
-    ::AbstractMatrixSymmetry,
-    ::CSRFormat,
-    A,
-    ::NoDiagonalIndices,
-    idx::Ti,
-    part_start::Ti,
-    part_end::Ti,
+        ::AbstractMatrixSymmetry,
+        ::CSRFormat,
+        A,
+        ::NoDiagonalIndices,
+        idx::Ti,
+        part_start::Ti,
+        part_end::Ti
 ) where {Ti <: Integer}
     # CSR: direct row-wise access
     _diag_offpart_rowwise(getrowptr(A), colvals(A), getnzval(A), idx, part_start, part_end)
@@ -1090,24 +1089,24 @@ end
 #   - CSR format: pass (rowPtr, colVal, nzVal)
 #   - Symmetric CSC: pass (colPtr, rowVal, nzVal) since row i = column i
 function _pack_strict_lower_rowwise!(
-    SLbuffer,
-    indPtr,   # rowPtr for CSR, colPtr for symmetric CSC
-    indices,  # colVal for CSR, rowVal for symmetric CSC
-    nzVal,
-    start_idx::Ti,
-    end_idx::Ti,
-    partsize::Ti,
-    k::Ti,
+        SLbuffer,
+        indPtr,   # rowPtr for CSR, colPtr for symmetric CSC
+        indices,  # colVal for CSR, rowVal for symmetric CSC
+        nzVal,
+        start_idx::Ti,
+        end_idx::Ti,
+        partsize::Ti,
+        k::Ti
 ) where {Ti <: Integer}
     block_stride = (partsize * (partsize - 1)) ÷ 2
     block_offset = (k - 1) * block_stride
 
-    for i = start_idx:end_idx
+    for i in start_idx:end_idx
         local_i = i - start_idx + 1
         row_offset = ((local_i - 1) * (local_i - 2)) ÷ 2
 
         # Scan row i (or column i for symmetric CSC)
-        for p = indPtr[i]:(indPtr[i+1]-1)
+        for p in indPtr[i]:(indPtr[i + 1] - 1)
             j = indices[p]
             if j >= start_idx && j < i  # strictly lower within partition
                 local_j = j - start_idx + 1
@@ -1120,14 +1119,14 @@ function _pack_strict_lower_rowwise!(
 end
 
 function _pack_strict_triangular!(
-    cache::PackedStrictLower,
-    ::NonSymmetricMatrix,
-    ::CSCFormat,
-    A,
-    start_idx::Ti,
-    end_idx::Ti,
-    partsize::Ti,
-    k::Ti,
+        cache::PackedStrictLower,
+        ::NonSymmetricMatrix,
+        ::CSCFormat,
+        A,
+        start_idx::Ti,
+        end_idx::Ti,
+        partsize::Ti,
+        k::Ti
 ) where {Ti <: Integer}
     (; SLbuffer) = cache
     colPtr = getcolptr(A)
@@ -1137,10 +1136,10 @@ function _pack_strict_triangular!(
     block_offset = (k - 1) * block_stride
 
     # Scan columns in partition (except last column which has no lower elements)
-    for col = start_idx:(end_idx-1)
+    for col in start_idx:(end_idx - 1)
         local_j = col - start_idx + 1
         col_start = colPtr[col]
-        col_end = colPtr[col+1] - 1
+        col_end = colPtr[col + 1] - 1
 
         # Find first row > col in this column using linear scan
         # (binary search overhead not worth it for small partitions)
@@ -1166,14 +1165,14 @@ function _pack_strict_triangular!(
 end
 
 function _pack_strict_triangular!(
-    cache::PackedStrictLower,
-    ::SymmetricMatrix,
-    ::CSCFormat,
-    A,
-    start_idx::Ti,
-    end_idx::Ti,
-    partsize::Ti,
-    k::Ti,
+        cache::PackedStrictLower,
+        ::SymmetricMatrix,
+        ::CSCFormat,
+        A,
+        start_idx::Ti,
+        end_idx::Ti,
+        partsize::Ti,
+        k::Ti
 ) where {Ti <: Integer}
     # Symmetric CSC: row i = column i, so use row-wise access
     _pack_strict_lower_rowwise!(
@@ -1184,19 +1183,19 @@ function _pack_strict_triangular!(
         start_idx,
         end_idx,
         partsize,
-        k,
+        k
     )
 end
 
 function _pack_strict_triangular!(
-    cache::PackedStrictLower,
-    ::AbstractMatrixSymmetry,
-    ::CSRFormat,
-    A,
-    start_idx::Ti,
-    end_idx::Ti,
-    partsize::Ti,
-    k::Ti,
+        cache::PackedStrictLower,
+        ::AbstractMatrixSymmetry,
+        ::CSRFormat,
+        A,
+        start_idx::Ti,
+        end_idx::Ti,
+        partsize::Ti,
+        k::Ti
 ) where {Ti <: Integer}
     # CSR: direct row-wise access
     _pack_strict_lower_rowwise!(
@@ -1207,7 +1206,7 @@ function _pack_strict_triangular!(
         start_idx,
         end_idx,
         partsize,
-        k,
+        k
     )
 end
 
@@ -1216,26 +1215,26 @@ end
 #   - CSR format: pass (rowPtr, colVal, nzVal)
 #   - Symmetric CSC: pass (colPtr, rowVal, nzVal) since row i = column i
 function _pack_strict_upper_rowwise!(
-    SUbuffer,
-    indPtr,   # rowPtr for CSR, colPtr for symmetric CSC
-    indices,  # colVal for CSR, rowVal for symmetric CSC
-    nzVal,
-    start_idx::Ti,
-    end_idx::Ti,
-    partsize::Ti,
-    k::Ti,
+        SUbuffer,
+        indPtr,   # rowPtr for CSR, colPtr for symmetric CSC
+        indices,  # colVal for CSR, rowVal for symmetric CSC
+        nzVal,
+        start_idx::Ti,
+        end_idx::Ti,
+        partsize::Ti,
+        k::Ti
 ) where {Ti <: Integer}
     block_stride = (partsize * (partsize - 1)) ÷ 2
     block_offset = (k - 1) * block_stride
 
-    for i = start_idx:end_idx
+    for i in start_idx:end_idx
         local_i = i - start_idx + 1
         # Row i starts after: sum of upper elements in rows 1..(local_i-1)
         # = sum_{r=1}^{local_i-1} (partsize - r) = (local_i-1)*partsize - (local_i-1)*local_i/2
         row_start = (local_i - 1) * partsize - ((local_i - 1) * local_i) ÷ 2
 
         # Scan row i (or column i for symmetric CSC)
-        for p = indPtr[i]:(indPtr[i+1]-1)
+        for p in indPtr[i]:(indPtr[i + 1] - 1)
             j = indices[p]
             if j > i && j <= end_idx  # strictly upper within partition
                 local_j = j - start_idx + 1
@@ -1250,14 +1249,14 @@ function _pack_strict_upper_rowwise!(
 end
 
 function _pack_strict_triangular!(
-    cache::PackedStrictUpper,
-    ::NonSymmetricMatrix,
-    ::CSCFormat,
-    A,
-    start_idx::Ti,
-    end_idx::Ti,
-    partsize::Ti,
-    k::Ti,
+        cache::PackedStrictUpper,
+        ::NonSymmetricMatrix,
+        ::CSCFormat,
+        A,
+        start_idx::Ti,
+        end_idx::Ti,
+        partsize::Ti,
+        k::Ti
 ) where {Ti <: Integer}
     (; SUbuffer) = cache
     colPtr = getcolptr(A)
@@ -1268,13 +1267,13 @@ function _pack_strict_triangular!(
     block_offset = (k - 1) * block_stride
 
     # Process each column j (columns with j > start_idx have upper elements)
-    for col = (start_idx+1):end_idx
+    for col in (start_idx + 1):end_idx
         local_j = col - start_idx + 1
         col_start = colPtr[col]
-        col_end = colPtr[col+1] - 1
+        col_end = colPtr[col + 1] - 1
 
         # Scan elements in this column
-        for p = col_start:col_end
+        for p in col_start:col_end
             i = rowVal[p]
 
             # Check if element is strictly upper (i < col) and within partition
@@ -1310,14 +1309,14 @@ function _pack_strict_triangular!(
 end
 
 function _pack_strict_triangular!(
-    cache::PackedStrictUpper,
-    ::SymmetricMatrix,
-    ::CSCFormat,
-    A,
-    start_idx::Ti,
-    end_idx::Ti,
-    partsize::Ti,
-    k::Ti,
+        cache::PackedStrictUpper,
+        ::SymmetricMatrix,
+        ::CSCFormat,
+        A,
+        start_idx::Ti,
+        end_idx::Ti,
+        partsize::Ti,
+        k::Ti
 ) where {Ti <: Integer}
     # Symmetric CSC: row i = column i, so use row-wise access
     _pack_strict_upper_rowwise!(
@@ -1328,19 +1327,19 @@ function _pack_strict_triangular!(
         start_idx,
         end_idx,
         partsize,
-        k,
+        k
     )
 end
 
 function _pack_strict_triangular!(
-    cache::PackedStrictUpper,
-    ::AbstractMatrixSymmetry,
-    ::CSRFormat,
-    A,
-    start_idx::Ti,
-    end_idx::Ti,
-    partsize::Ti,
-    k::Ti,
+        cache::PackedStrictUpper,
+        ::AbstractMatrixSymmetry,
+        ::CSRFormat,
+        A,
+        start_idx::Ti,
+        end_idx::Ti,
+        partsize::Ti,
+        k::Ti
 ) where {Ti <: Integer}
     # CSR: direct row-wise access
     _pack_strict_upper_rowwise!(
@@ -1351,12 +1350,12 @@ function _pack_strict_triangular!(
         start_idx,
         end_idx,
         partsize,
-        k,
+        k
     )
 end
 
 
-_accumulate_from_cache(cache::BlockStrictLowerView, y, i, k, partsize, start_idx, end_idx) =
+function _accumulate_from_cache(cache::BlockStrictLowerView, y, i, k, partsize, start_idx, end_idx)
     _accumulate_lower_from_matrix(
         cache.A,
         cache.frmt,
@@ -1365,10 +1364,11 @@ _accumulate_from_cache(cache::BlockStrictLowerView, y, i, k, partsize, start_idx
         start_idx,
         end_idx,
         cache.diag,
-        cache.symA,
+        cache.symA
     )
+end
 
-_accumulate_from_cache(cache::BlockStrictUpperView, y, i, k, partsize, start_idx, end_idx) =
+function _accumulate_from_cache(cache::BlockStrictUpperView, y, i, k, partsize, start_idx, end_idx)
     _accumulate_upper_from_matrix(
         cache.A,
         cache.frmt,
@@ -1377,8 +1377,9 @@ _accumulate_from_cache(cache::BlockStrictUpperView, y, i, k, partsize, start_idx
         start_idx,
         end_idx,
         cache.diag,
-        cache.symA,
+        cache.symA
     )
+end
 
 # PackedBuffer caches - use k and partsize to compute buffer offsets
 function _accumulate_from_cache(cache::PackedStrictLower, y, i, k, partsize, start_idx, end_idx)
@@ -1390,7 +1391,7 @@ function _accumulate_from_cache(cache::PackedStrictLower, y, i, k, partsize, sta
     row_offset = ((local_i - 1) * (local_i - 2)) ÷ 2
 
     acc = zero(eltype(y))
-    @inbounds for local_j = 1:(local_i-1)
+    @inbounds for local_j in 1:(local_i - 1)
         gj = start_idx + (local_j - 1)
         off_idx = block_offset + row_offset + local_j
         acc += SLbuffer[off_idx] * y[gj]
@@ -1411,7 +1412,7 @@ function _accumulate_from_cache(cache::PackedStrictUpper, y, i, k, partsize, sta
     acc = zero(eltype(y))
     # Number of upper elements in row i = partsize - local_i
     num_upper = partsize - local_i
-    @inbounds for offset = 1:num_upper
+    @inbounds for offset in 1:num_upper
         gj = i + offset
         if gj > end_idx
             break
@@ -1425,7 +1426,7 @@ end
 # Row-wise lower accumulation - works for CSR and symmetric CSC
 function _accumulate_lower_rowwise(indPtr, indices, nzVal, y, i, start_idx)
     acc = zero(eltype(y))
-    @inbounds for p = indPtr[i]:(indPtr[i+1]-1)
+    @inbounds for p in indPtr[i]:(indPtr[i + 1] - 1)
         j = indices[p]
         if start_idx <= j < i  # strictly lower within partition
             acc += nzVal[p] * y[j]
@@ -1436,14 +1437,14 @@ end
 
 # CSR format: row-wise access (no diagonal indices needed)
 function _accumulate_lower_from_matrix(
-    A,
-    ::CSRFormat,
-    y,
-    i,
-    start_idx,
-    end_idx,
-    ::AbstractDiagonalIndices,
-    ::AbstractMatrixSymmetry,
+        A,
+        ::CSRFormat,
+        y,
+        i,
+        start_idx,
+        end_idx,
+        ::AbstractDiagonalIndices,
+        ::AbstractMatrixSymmetry
 )
     _accumulate_lower_rowwise(getrowptr(A), colvals(A), getnzval(A), y, i, start_idx)
 end
@@ -1452,12 +1453,12 @@ end
 # col_range: columns to iterate over
 # search_range_fn: (colPtr, col, diag_idx) -> (p_lo, p_hi) search bounds
 function _accumulate_triangular_csc_binsearch(
-    A,
-    y,
-    i,
-    col_range,
-    diag::DiagonalIndices,
-    search_range_fn::F,
+        A,
+        y,
+        i,
+        col_range,
+        diag::DiagonalIndices,
+        search_range_fn::F
 ) where {F}
     colPtr = getcolptr(A)
     rowVal = rowvals(A)
@@ -1489,47 +1490,47 @@ end
 
 # CSC format (non-symmetric): dispatch to unified binary search
 function _accumulate_lower_from_matrix(
-    A,
-    ::CSCFormat,
-    y,
-    i,
-    start_idx,
-    end_idx,
-    diag::DiagonalIndices,
-    ::NonSymmetricMatrix,
+        A,
+        ::CSCFormat,
+        y,
+        i,
+        start_idx,
+        end_idx,
+        diag::DiagonalIndices,
+        ::NonSymmetricMatrix
 )
-    col_range = start_idx:min(i-1, end_idx)
-    search_range_fn = (colPtr, col, diag_idx) -> (diag_idx + 1, colPtr[col+1] - 1)
+    col_range = start_idx:min(i - 1, end_idx)
+    search_range_fn = (colPtr, col, diag_idx) -> (diag_idx + 1, colPtr[col + 1] - 1)
     _accumulate_triangular_csc_binsearch(A, y, i, col_range, diag, search_range_fn)
 end
 
 
 # CSC format (symmetric): row i = column i, so use row-wise access
 function _accumulate_lower_from_matrix(
-    A,
-    ::CSCFormat,
-    y,
-    i,
-    start_idx,
-    end_idx,
-    ::NoDiagonalIndices,
-    ::SymmetricMatrix,
+        A,
+        ::CSCFormat,
+        y,
+        i,
+        start_idx,
+        end_idx,
+        ::NoDiagonalIndices,
+        ::SymmetricMatrix
 )
     _accumulate_lower_rowwise(getcolptr(A), rowvals(A), getnzval(A), y, i, start_idx)
 end
 
 ## Upper triangular accumulation ##
 function _accumulate_upper_from_matrix(
-    A,
-    ::CSCFormat,
-    y,
-    i,
-    start_idx,
-    end_idx,
-    diag::DiagonalIndices,
-    ::NonSymmetricMatrix,
+        A,
+        ::CSCFormat,
+        y,
+        i,
+        start_idx,
+        end_idx,
+        diag::DiagonalIndices,
+        ::NonSymmetricMatrix
 )
-    col_range = (i+1):end_idx
+    col_range = (i + 1):end_idx
     search_range_fn = (colPtr, col, diag_idx) -> (colPtr[col], diag_idx - 1)
     _accumulate_triangular_csc_binsearch(A, y, i, col_range, diag, search_range_fn)
 end
@@ -1537,7 +1538,7 @@ end
 # Row-wise upper accumulation - works for CSR and symmetric CSC
 function _accumulate_upper_rowwise(indPtr, indices, nzVal, y, i, end_idx)
     acc = zero(eltype(y))
-    @inbounds for p = indPtr[i]:(indPtr[i+1]-1)
+    @inbounds for p in indPtr[i]:(indPtr[i + 1] - 1)
         j = indices[p]
         if i < j <= end_idx  # strictly upper within partition
             acc += nzVal[p] * y[j]
@@ -1548,28 +1549,28 @@ end
 
 # CSR format: row-wise access (no diagonal indices needed)
 function _accumulate_upper_from_matrix(
-    A,
-    ::CSRFormat,
-    y,
-    i,
-    start_idx,
-    end_idx,
-    ::NoDiagonalIndices,
-    ::AbstractMatrixSymmetry,
+        A,
+        ::CSRFormat,
+        y,
+        i,
+        start_idx,
+        end_idx,
+        ::NoDiagonalIndices,
+        ::AbstractMatrixSymmetry
 )
     _accumulate_upper_rowwise(getrowptr(A), colvals(A), getnzval(A), y, i, end_idx)
 end
 
 # CSC format (symmetric): row i = column i, so use row-wise access
 function _accumulate_upper_from_matrix(
-    A,
-    ::CSCFormat,
-    y,
-    i,
-    start_idx,
-    end_idx,
-    ::NoDiagonalIndices,
-    ::SymmetricMatrix,
+        A,
+        ::CSCFormat,
+        y,
+        i,
+        start_idx,
+        end_idx,
+        ::NoDiagonalIndices,
+        ::SymmetricMatrix
 )
     _accumulate_upper_rowwise(getcolptr(A), rowvals(A), getnzval(A), y, i, end_idx)
 end

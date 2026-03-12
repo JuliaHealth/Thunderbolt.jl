@@ -11,9 +11,9 @@ Base.@kwdef struct MTKLumpedCicuitModel{ProbType <: SciMLBase.ODEProblem} <:
 end
 
 function MTKLumpedCicuitModel(
-    sys::ModelingToolkit.ODESystem,
-    u0,
-    pressure_symbols::Vector{ModelingToolkit.Num},
+        sys::ModelingToolkit.ODESystem,
+        u0,
+        pressure_symbols::Vector{ModelingToolkit.Num}
 )
     # To construct the ODEProblem we need to provide an initial value for the pressures
     ps = [sym => 0.0 for sym in pressure_symbols]

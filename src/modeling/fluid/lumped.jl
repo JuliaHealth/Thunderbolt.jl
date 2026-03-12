@@ -44,7 +44,7 @@ function default_initial_condition!(u, model::DummyLumpedCircuitModel)
 end
 
 function (model::DummyLumpedCircuitModel)(du, u, p, t)
-    du[1] = model.volume_fun(t)-u[1]
+    du[1] = model.volume_fun(t) - u[1]
 end
 
 """
@@ -60,17 +60,18 @@ Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
 function Φ_RSAFDQ2022(t, tC, tR, TC, TR, THB)
     tnow = mod(t - tC, THB)
     if 0 ≤ tnow < TC
-        return 1/2 * (1-cos(π/TC * tnow))
+        return 1 / 2 * (1 - cos(π / TC * tnow))
     end
     tnow = mod(t - tR, THB)
     if 0 ≤ tnow < TR
-        return 1/2 * (1+cos(π/TR * tnow))
+        return 1 / 2 * (1 + cos(π / TR * tnow))
     end
     return 0.0
 end
 
-elastance_RSAFDQ2022(t, Epass, Emax, tC, tR, TC, TR, THB) =
-    Epass + Emax*Φ_RSAFDQ2022(t, tC, tR, TC, TR, THB)
+function elastance_RSAFDQ2022(t, Epass, Emax, tC, tR, TC, TR, THB)
+    Epass + Emax * Φ_RSAFDQ2022(t, tC, tR, TC, TR, THB)
+end
 
 
 """
@@ -85,7 +86,7 @@ Base.@kwdef struct RSAFDQ2022LumpedCicuitModel{
     T4, # ms
     T5, # kPa ms^2 mL^-1
     T6, # kPa mL^-1
-    T7, # kPa
+    T7 # kPa
 } <: AbstractLumpedCirculatoryModel
     lv_pressure_given::Bool = true
     rv_pressure_given::Bool = true
@@ -143,11 +144,12 @@ Base.@kwdef struct RSAFDQ2022LumpedCicuitModel{
 end
 
 num_states(::RSAFDQ2022LumpedCicuitModel) = 12
-num_unknown_pressures(model::RSAFDQ2022LumpedCicuitModel) =
+function num_unknown_pressures(model::RSAFDQ2022LumpedCicuitModel)
     Int(!model.lv_pressure_given) +
     Int(!model.rv_pressure_given) +
     Int(!model.la_pressure_given) +
     Int(!model.ra_pressure_given)
+end
 function get_variable_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::Symbol)
     @unpack lv_pressure_given, la_pressure_given, ra_pressure_given, rv_pressure_given = model
 
@@ -200,7 +202,7 @@ function lumped_circuit_relative_rv_pressure_index(model::RSAFDQ2022LumpedCicuit
         @error "Trying to query extenal RV pressure index, but RV pressure is not an external input!"
     i = 1
     if model.lv_pressure_given
-        i+=1
+        i += 1
     end
     return i
 end
@@ -209,10 +211,10 @@ function lumped_circuit_relative_la_pressure_index(model::RSAFDQ2022LumpedCicuit
         @error "Trying to query extenal LA pressure index, but LA pressure is not an external input!"
     i = 1
     if model.lv_pressure_given
-        i+=1
+        i += 1
     end
     if model.rv_pressure_given
-        i+=1
+        i += 1
     end
     return i
 end
@@ -221,23 +223,23 @@ function lumped_circuit_relative_ra_pressure_index(model::RSAFDQ2022LumpedCicuit
         @error "Trying to query extenal RA pressure index, but RA pressure is not an external input!"
     i = 1
     if model.lv_pressure_given
-        i+=1
+        i += 1
     end
     if model.rv_pressure_given
-        i+=1
+        i += 1
     end
     if model.la_pressure_given
-        i+=1
+        i += 1
     end
     return i
 end
 
 function lumped_driver!(
-    du,
-    u,
-    t,
-    external_input::AbstractVector,
-    model::RSAFDQ2022LumpedCicuitModel,
+        du,
+        u,
+        t,
+        external_input::AbstractVector,
+        model::RSAFDQ2022LumpedCicuitModel
 )
     # Evaluate the right hand side of equation system (6) in the paper
     # V = volume
@@ -256,7 +258,7 @@ function lumped_driver!(
         p.tCₗᵥ + p.TCₗᵥ,
         p.TCₗᵥ,
         p.TRₗᵥ,
-        p.THB,
+        p.THB
     )
     @inline Eᵣᵥ(p::RSAFDQ2022LumpedCicuitModel, t) = elastance_RSAFDQ2022(
         t,
@@ -266,7 +268,7 @@ function lumped_driver!(
         p.tCᵣᵥ + p.TCᵣᵥ,
         p.TCᵣᵥ,
         p.TRᵣᵥ,
-        p.THB,
+        p.THB
     )
     @inline Eₗₐ(p::RSAFDQ2022LumpedCicuitModel, t) = elastance_RSAFDQ2022(
         t,
@@ -276,7 +278,7 @@ function lumped_driver!(
         p.tCₗₐ + p.TCₗₐ,
         p.TCₗₐ,
         p.TRₗₐ,
-        p.THB,
+        p.THB
     )
     @inline Eᵣₐ(p::RSAFDQ2022LumpedCicuitModel, t) = elastance_RSAFDQ2022(
         t,
@@ -286,7 +288,7 @@ function lumped_driver!(
         p.tCᵣₐ + p.TCᵣₐ,
         p.TCᵣₐ,
         p.TRᵣₐ,
-        p.THB,
+        p.THB
     )
 
     (; V0ₗₐ, V0ᵣₐ, V0ᵣᵥ, V0ₗᵥ) = model
@@ -295,18 +297,14 @@ function lumped_driver!(
     (; Lsysₐᵣ, Lpulₐᵣ, Lsysᵥₑₙ, Lpulᵥₑₙ) = model
 
     #pₑₓ = 0.0 # External pressure created by organs
-    pₗᵥ =
-        model.lv_pressure_given ? Eₗᵥ(model, t)*(Vₗᵥ - V0ₗᵥ) :
-        external_input[lumped_circuit_relative_lv_pressure_index(model)]
-    pᵣᵥ =
-        model.rv_pressure_given ? Eᵣᵥ(model, t)*(Vᵣᵥ - V0ᵣᵥ) :
-        external_input[lumped_circuit_relative_rv_pressure_index(model)]
-    pₗₐ =
-        model.la_pressure_given ? Eₗₐ(model, t)*(Vₗₐ - V0ₗₐ) :
-        external_input[lumped_circuit_relative_la_pressure_index(model)]
-    pᵣₐ =
-        model.ra_pressure_given ? Eᵣₐ(model, t)*(Vᵣₐ - V0ᵣₐ) :
-        external_input[lumped_circuit_relative_ra_pressure_index(model)]
+    pₗᵥ = model.lv_pressure_given ? Eₗᵥ(model, t) * (Vₗᵥ - V0ₗᵥ) :
+          external_input[lumped_circuit_relative_lv_pressure_index(model)]
+    pᵣᵥ = model.rv_pressure_given ? Eᵣᵥ(model, t) * (Vᵣᵥ - V0ᵣᵥ) :
+          external_input[lumped_circuit_relative_rv_pressure_index(model)]
+    pₗₐ = model.la_pressure_given ? Eₗₐ(model, t) * (Vₗₐ - V0ₗₐ) :
+          external_input[lumped_circuit_relative_la_pressure_index(model)]
+    pᵣₐ = model.ra_pressure_given ? Eᵣₐ(model, t) * (Vᵣₐ - V0ᵣₐ) :
+          external_input[lumped_circuit_relative_ra_pressure_index(model)]
 
     @inline Rᵢ(p₁, p₂, p) = p₁ > p₂ ? p.Rₘᵢₙ : p.Rₘₐₓ # Resistance
     @inline Qᵢ(p₁, p₂, model) = (p₁ - p₂) / Rᵢ(p₁, p₂, model)
@@ -329,11 +327,11 @@ function lumped_driver!(
 
     # Flows
     Q9     = (psysᵥₑₙ - psysₐᵣ) / Rsysₐᵣ
-    du[9]  = - Rsysₐᵣ/Lsysₐᵣ * (Qsysₐᵣ + Q9) # sys ar
+    du[9]  = -Rsysₐᵣ / Lsysₐᵣ * (Qsysₐᵣ + Q9) # sys ar
     Q10    = (pᵣₐ - psysᵥₑₙ) / Rsysᵥₑₙ
-    du[10] = - Rsysᵥₑₙ/Lsysᵥₑₙ * (Qsysᵥₑₙ + Q10) # sys ven
+    du[10] = -Rsysᵥₑₙ / Lsysᵥₑₙ * (Qsysᵥₑₙ + Q10) # sys ven
     Q11    = (ppulᵥₑₙ - ppulₐᵣ) / Rpulₐᵣ
-    du[11] = - Rpulₐᵣ/Lpulₐᵣ * (Qpulₐᵣ + Q11) # pul ar
+    du[11] = -Rpulₐᵣ / Lpulₐᵣ * (Qpulₐᵣ + Q11) # pul ar
     Q12    = (pₗₐ - ppulᵥₑₙ) / Rpulᵥₑₙ
-    du[12] = - Rpulᵥₑₙ/Lpulᵥₑₙ * (Qpulᵥₑₙ + Q12) # sys ar
+    du[12] = -Rpulᵥₑₙ / Lpulᵥₑₙ * (Qpulᵥₑₙ + Q12) # sys ar
 end
