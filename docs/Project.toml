@@ -3,7 +3,7 @@ DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
-Eikonal = "51611a6c-7c63-4cd2-9a52-92f780132403"
+FastIterativeMethod = "51611a6c-7c63-4cd2-9a52-92f780132403"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
@@ -22,5 +22,5 @@ Thunderbolt = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [sources]
-Eikonal = {url = "https://git.noc.ruhr-uni-bochum.de/mohama17/eikonal.jl.git"}
+FastIterativeMethod = {url = "https://git.noc.ruhr-uni-bochum.de/mohama17/eikonal.jl.git"}
 Thunderbolt = {path = ".."}
