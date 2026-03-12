@@ -6,7 +6,7 @@ using LinearAlgebra
     microstructure = OrthotropicMicrostructureModel(
         ConstantCoefficient((Vec(1.0, 0.0, 0.0))),
         ConstantCoefficient((Vec(0.0, 1.0, 0.0))),
-        ConstantCoefficient((Vec(0.0, 0.0, 1.0)))
+        ConstantCoefficient((Vec(0.0, 0.0, 1.0))),
     )
     function solve_waveprop(mesh, diffusion_tensor_field, subdomains)
         cs = CartesianCoordinateSystem(mesh)
@@ -21,19 +21,17 @@ using LinearAlgebra
             diffusion_tensor_field,
             NoStimulationProtocol(),
             cellmodel,
-            :φₘ, :s
+            :φₘ,
+            :s,
         )
 
         heart_odeform = semidiscretize(
             ReactionEikonalSplit(heart_model, cs),
             (
                 FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                Thunderbolt.SimplicialEikonalDiscretization(;
-                    activation_protocol,
-                    subdomains
-                )
+                Thunderbolt.SimplicialEikonalDiscretization(; activation_protocol, subdomains),
             ),
-            mesh
+            mesh,
         )
 
         FastIterativeMethod.solve!(heart_odeform, mesh, diffusion_tensor_field)
@@ -46,19 +44,26 @@ using LinearAlgebra
         errors = Float64[]
         for j in (10, 20, 30, 40)
             mesh = generate_mesh(
-                Tetrahedron, (j, j, j), Vec{3}((0.0, 0.0, 0.0)), Vec{3}((1.0, 1.0, 1.0)))
-            velocity = SVector((4.5e-5, 2.0e-5, 1.0e-5))
-            coeff = SpectralTensorCoefficient(
-                microstructure,
-                ConstantCoefficient(velocity)
+                Tetrahedron,
+                (j, j, j),
+                Vec{3}((0.0, 0.0, 0.0)),
+                Vec{3}((1.0, 1.0, 1.0)),
             )
+            velocity = SVector((4.5e-5, 2.0e-5, 1.0e-5))
+            coeff = SpectralTensorCoefficient(microstructure, ConstantCoefficient(velocity))
             u = solve_waveprop(mesh, coeff, [""])
             u_2 = Float64[]
             for (i, node) in enumerate(mesh.grid.nodes)
                 coords = node.x
                 unit_vec = normalize(coords)
                 M = SymmetricTensor{2, 3, Float64}((
-                    velocity[1]^2, 0.0, 0.0, velocity[2]^2, 0.0, velocity[3]^2))
+                    velocity[1]^2,
+                    0.0,
+                    0.0,
+                    velocity[2]^2,
+                    0.0,
+                    velocity[3]^2,
+                ))
                 time = sqrt(coords ⋅ inv(M) ⋅ coords)
                 push!(u_2, (time))
             end

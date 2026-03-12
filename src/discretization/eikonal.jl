@@ -11,15 +11,15 @@ abstract type AbstractEikonalActivationProtocol end
 """
 Activation protocol for activating specific points with time offsets to mimic the behavior of a Purkinje network.
 """
-struct NodalEikonalActivationProtocol{VectorT <: AbstractVector{<:ActivationCoordinate}} <: AbstractEikonalActivationProtocol
+struct NodalEikonalActivationProtocol{VectorT <: AbstractVector{<:ActivationCoordinate}} <:
+       AbstractEikonalActivationProtocol
     nodes::VectorT
 end
 
 """
 Activation protocol for uniformally activating the endocardium with zero wave arrival time.
 """
-struct UniformEndocardialEikonalActivationProtocol <: AbstractEikonalActivationProtocol
-end
+struct UniformEndocardialEikonalActivationProtocol <: AbstractEikonalActivationProtocol end
 
 """
 Activation protocol for uniformally activating the endocardium with zero wave arrival time.
@@ -31,7 +31,9 @@ end
 """
 Descriptor for a tetrahedral element discretization used for solving the Eikonal equation explicitly.
 """
-@kwdef struct SimplicialEikonalDiscretization{ActivationProtocolT <: AbstractEikonalActivationProtocol}
+@kwdef struct SimplicialEikonalDiscretization{
+    ActivationProtocolT <: AbstractEikonalActivationProtocol,
+}
     order::Int = 1
     activation_protocol::ActivationProtocolT
     subdomains::Vector{String} = [""]
@@ -43,8 +45,12 @@ Returns the permutation used to reverser [reorder_nodal!](@ref)
 function get_nodes_to_vertex_permutaion(dh::DofHandler)
     res = Vector{Int}(undef, dh.ndofs)
     grid = Ferrite.get_grid(dh)
-    for i in 1:getncells(grid)
-        res[SVector(getcells(grid, i).nodes)] .= (@view dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i] + Ferrite.ndofs_per_cell(dh, i) - 1)])
+    for i = 1:getncells(grid)
+        res[SVector(getcells(grid, i).nodes)] .=
+            (@view dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(
+                dh,
+                i,
+            )-1)])
     end
     return sortperm(res)
 end
@@ -76,7 +82,11 @@ function get_nodes(protocol::AnalyticalEikonalActivationProtocol, mesh, cs)
     return nodes
 end
 
-function get_nodes(protocol::AnalyticalEikonalActivationProtocol, mesh, cs::CartesianCoordinateSystem)
+function get_nodes(
+    protocol::AnalyticalEikonalActivationProtocol,
+    mesh,
+    cs::CartesianCoordinateSystem,
+)
     nodes = Int[]
     coords = mesh.grid.nodes
 
@@ -88,25 +98,29 @@ function get_nodes(protocol::AnalyticalEikonalActivationProtocol, mesh, cs::Cart
     return nodes
 end
 
-function get_nodes(::UniformEndocardialEikonalActivationProtocol, mesh, cs::CartesianCoordinateSystem)
+function get_nodes(
+    ::UniformEndocardialEikonalActivationProtocol,
+    mesh,
+    cs::CartesianCoordinateSystem,
+)
     throw(error("Uniformally activating the endocardium requires using either
     LV or BiV coordinate system. usage with Cartesian Coordinate System is
     restricted to AnalyticalEikonalActivationProtocol"))
 end
 
 function semidiscretize(
-        ::EikonalModel,
-        discretization::SimplicialEikonalDiscretization,
-        activation_points,
-        mesh::SimpleMesh,
-    )
+    ::EikonalModel,
+    discretization::SimplicialEikonalDiscretization,
+    activation_points,
+    mesh::SimpleMesh,
+)
 
     vertices = getproperty.(mesh.grid.nodes, :x)
-    cells_ferrite = [Tetrahedron((0,0,0,0)) for _ in 1:length(mesh.grid.cells)]
+    cells_ferrite = [Tetrahedron((0, 0, 0, 0)) for _ = 1:length(mesh.grid.cells)]
     # TODO: true subdomains
     if first(discretization.subdomains) == ""
         cells_ferrite .= mesh.grid.cells
-    else    
+    else
         for subdomain in discretization.subdomains
             cellset = getcellset(mesh, subdomain)
             for cellidx in cellset
@@ -119,10 +133,5 @@ function semidiscretize(
 
     max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))
     vertex_to_cell = (Ferrite.build_vertex_to_cell(cells_ferrite; max_vertices, nnodes))
-    return EikonalFunction(
-        vertices,
-        cells,
-        vertex_to_cell,
-        activation_points
-    )
+    return EikonalFunction(vertices, cells, vertex_to_cell, activation_points)
 end

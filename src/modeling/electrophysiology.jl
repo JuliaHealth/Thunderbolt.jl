@@ -143,19 +143,19 @@ struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 Describe the transmembrane stimulation by some analytical function on a given set of time intervals.
 """
 struct AnalyticalTransmembraneStimulationProtocol{
-        F <: AnalyticalCoefficient,
-        T,
-        VectorType <: AbstractVector{SVector{2, T}},
-    } <: TransmembraneStimulationProtocol
+    F <: AnalyticalCoefficient,
+    T,
+    VectorType <: AbstractVector{SVector{2, T}},
+} <: TransmembraneStimulationProtocol
     f::F
     nonzero_intervals::VectorType # Helper for sparsity in time
 end
 
 function setup_element_cache(
-        protocol::AnalyticalTransmembraneStimulationProtocol,
-        qr,
-        sdh::SubDofHandler,
-    )
+    protocol::AnalyticalTransmembraneStimulationProtocol,
+    qr,
+    sdh::SubDofHandler,
+)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip = Ferrite.getfieldinterpolation(sdh, field_name)
@@ -221,12 +221,12 @@ assumption is violated we can construct optimal κ (TODO citation+example) for t
 reconstruction of φₘ.
 """
 struct MonodomainModel{
-        F1,
-        F2,
-        F3,
-        STIM <: TransmembraneStimulationProtocol,
-        ION <: AbstractIonicModel,
-    } <: AbstractEPModel
+    F1,
+    F2,
+    F3,
+    STIM <: TransmembraneStimulationProtocol,
+    ION <: AbstractIonicModel,
+} <: AbstractEPModel
     χ::F1
     Cₘ::F2
     κ::F3
