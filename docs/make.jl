@@ -54,7 +54,7 @@ bibtex_plugin = CitationBibliography(
                 "EP02: Purkinje Network (TODO)" => "tutorials/ep02_purkinje.md",
                 "EP03: Defibrillation (TODO)" => "tutorials/ep03_bidomain.md",
                 "EP04: Monodomain ECG" => "tutorials/ep04_geselowitz-ecg.md",
-                "EP05: Eikonal Models (WIP)" => "tutorials/ep05_eikonal.md",
+                "EP05: Eikonal Models" => "tutorials/ep05_eikonal.md",
                 "EP06: Pacemakers (TODO)" => "tutorials/ep06_pacemaker.md",
             ],
         ],

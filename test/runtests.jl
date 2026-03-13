@@ -65,6 +65,9 @@ include("integration/test_solid_mechanics.jl")
 include("integration/test_electrophysiology.jl")
 include("integration/test_ecg.jl")
 include("integration/test_fsi.jl")
+# [sources] block was added in 1.11, TODO: find a way to test this withoud
+#   adding packages while testing nor modifying the CI script.
+VERSION.minor == 10 || include("integration/test_eikonal.jl")
 
 include("test_aqua.jl")
 

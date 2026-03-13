@@ -88,6 +88,9 @@ include("modeling/solid_mechanics.jl")
 include("modeling/fluid_mechanics.jl")
 
 include("modeling/multiphysics.jl")
+include("modeling/core/eikonal.jl")
+
+include("discretization/eikonal.jl")
 
 include("modeling/functions.jl")
 include("modeling/problems.jl")
@@ -198,6 +201,8 @@ export
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
     ReactionDiffusionSplit,
+    ReactionEikonalSplit,
+    EikonalCoupledODEFunction,
     # Circuit
     RSAFDQ2022LumpedCicuitModel,
     MTKLumpedCicuitModel,
