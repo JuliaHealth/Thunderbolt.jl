@@ -48,7 +48,7 @@ struct PointwiseODEFunction{IndexType <: Integer, ODEType, xType} <: AbstractPoi
 end
 Adapt.@adapt_structure PointwiseODEFunction
 
-solution_size(f::PointwiseODEFunction) = f.npoints * num_states(f.ode)
+solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
 
 struct AffineODEFunction{MI, BI, ST, DH, AS} <: AbstractSemidiscreteFunction
     mass_term::MI
@@ -95,7 +95,7 @@ struct QuasiStaticFunction{
 end
 get_strategy(f::QuasiStaticFunction) = f.assembly_strategy
 
-solution_size(f::QuasiStaticFunction) = ndofs(f.dh) + ndofs(f.lvh)
+solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
 function local_function_size(f::QuasiStaticFunction)
     error("Local function size of QuasiStaticFunction can vary!")
 end
@@ -118,7 +118,6 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
             end
         end
     end
-    return
 end
 
 gather_internal_variable_infos(model::QuasiStaticModel) =
@@ -127,7 +126,7 @@ gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableI
 
 @unroll function __get_material_model_multi(materials, domains, sdh)
     idx = 1
-    @unroll for material in materials
+    @unroll for material ∈ materials
         if first(domains[idx]) ∈ sdh.cellset
             return material
         end

@@ -27,7 +27,7 @@ struct GenericSigmoidParameters{T}
 end
 
 @inline σ(s::T1, p::GenericSigmoidParameters{T2}) where {T1, T2} =
-    (p.A + p.B * s) / (p.C + p.D * exp(p.E + p.F * s) / p.G)
+    (p.A + p.B*s)/(p.C + p.D*exp(p.E + p.F*s) / p.G)
 
 """
 The classical gate formulation is stated in the normalized affine form:
@@ -73,11 +73,11 @@ struct HodgkinHuxleyTypeIonChannel{NGates} <: AbstractIonChannel where {NGates}
 end;
 
 @inline function g(gate::HodgkinHuxleyTypeGate, φₘ::T, 𝐬ᵢ::T) where {T}
-    return α(gate, φₘ) * 𝐬ᵢ + β(gate, φₘ)
+    α(gate, φₘ)*𝐬ᵢ + β(gate, φₘ)
 end
 
 @inline function g(gate::HodgkinHuxleyTypeGate, φₘ::T, 𝐬ᵢ::T, x::AbstractVector{T}) where {T}
-    return α(gate, φₘ, x) * 𝐬ᵢ + β(gate, φₘ, x)
+    α(gate, φₘ, x)*𝐬ᵢ + β(gate, φₘ, x)
 end
 
 """
@@ -160,7 +160,7 @@ function setup_element_cache(
     field_name = first(sdh.dh.field_names)
     ip = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
-    return AnalyticalCoefficientElementCache(
+    AnalyticalCoefficientElementCache(
         setup_coefficient_cache(protocol.f, qr, sdh),
         protocol.nonzero_intervals,
         CellValues(qr, ip, ip_geo), # TODO something more lightweight

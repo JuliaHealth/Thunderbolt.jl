@@ -7,7 +7,7 @@ Descriptor for a finite element discretization of a part of a PDE over some subd
 struct FiniteElementDiscretization
     """
     """
-    interpolations::Dict{Symbol} #, Union{<:InterpolationCollection, Pair{<:InterpolationCollection, <:QuadratureRuleCollection}}}
+    interpolations::Dict{Symbol}#, Union{<:InterpolationCollection, Pair{<:InterpolationCollection, <:QuadratureRuleCollection}}}
     """
     """
     dbcs::Vector{Dirichlet}
@@ -31,7 +31,7 @@ struct FiniteElementDiscretization
         assembly_strategy = SequentialAssemblyStrategy(SequentialCPUDevice()),
         mass_qrc = nothing,
     )
-        return new(ips, dbcs, subdomains, mass_qrc, assembly_strategy)
+        new(ips, dbcs, subdomains, mass_qrc, assembly_strategy)
     end
 end
 
@@ -40,7 +40,7 @@ _extract_ipc(p::Pair{<:InterpolationCollection, <:QuadratureRuleCollection}) = f
 
 function _extract_qrc(ipc::InterpolationCollection)
     ansatzorder = getorder(ipc)
-    return QuadratureRuleCollection(max(2ansatzorder - 1, 2))
+    return QuadratureRuleCollection(max(2ansatzorder-1, 2))
 end
 _extract_qrc(p::Pair{<:InterpolationCollection, <:QuadratureRuleCollection}) = last(p)
 
@@ -119,7 +119,7 @@ function semidiscretize(
     close!(dh)
 
     ch = ConstraintHandler(dh)
-    for dbc in discretization.dbcs
+    for dbc ∈ discretization.dbcs
         Ferrite.add!(ch, dbc)
     end
     close!(ch)
@@ -237,7 +237,6 @@ function semidiscretize_register_subdomains!(
         add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
         add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
     end
-    return
 end
 
 function semidiscretize_register_subdomains!(
@@ -247,7 +246,7 @@ function semidiscretize_register_subdomains!(
     material_models::MultiMaterialModel,
     discretization::FiniteElementDiscretization,
 )
-    return semidiscretize_register_subdomains_multi!(
+    semidiscretize_register_subdomains_multi!(
         dh,
         lvh,
         model,
@@ -299,7 +298,7 @@ function semidiscretize(
     close!(lvh)
 
     ch = ConstraintHandler(dh)
-    for dbc in discretization.dbcs
+    for dbc ∈ discretization.dbcs
         Ferrite.add!(ch, dbc)
     end
     close!(ch)
