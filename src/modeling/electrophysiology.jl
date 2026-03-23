@@ -140,6 +140,14 @@ A dummy protocol describing the absence of stimuli for a simulation.
 struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 
 """
+Activation protocol for uniformally activating the endocardium with zero wave arrival time.
+"""
+struct UniformEndocardialActivationProtocol{CST} <: TransmembraneStimulationProtocol
+    subdomains_offsets::Dict{String, Float64}
+    cs::CST
+end
+
+"""
 Describe the transmembrane stimulation by some analytical function on a given set of time intervals.
 """
 struct AnalyticalTransmembraneStimulationProtocol{

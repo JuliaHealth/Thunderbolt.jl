@@ -188,20 +188,8 @@ function semidiscretize(
 )
     epmodel = split.model
 
-    eikonal_model =
-        EikonalModel(ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ))
-
-    activation_points = get_nodes(discretizations[2].activation_protocol, mesh, split.cs)
-
-    eikonal_function = semidiscretize(eikonal_model, discretizations[2], activation_points, mesh)
-
-    ndofsφ = solution_size(eikonal_function)
-    single_prob = OrdinaryDiffEqCore.ODEProblem(
-        (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
-        Thunderbolt.default_initial_state(epmodel.ion),
-        (0.0, 50.0),
-        Thunderbolt.StimulatedCellModel(; cell_model = epmodel.ion),
-    )
+    eikonal_model = EikonalModel(ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ))
+    eikonal_function = semidiscretize(eikonal_model, discretizations[2], mesh)
 
     prob_func =
         let activation_timings = fill(Inf, length(eikonal_function.vertices)),
@@ -215,9 +203,8 @@ function semidiscretize(
                 OrdinaryDiffEqCore.remake(prob, p = model_i, tstops = [activation_timings[i]])
             end
         end
-    ensemble_prob = SciMLBase.EnsembleProblem(single_prob, prob_func = prob_func)
 
-    semidiscrete_ode = EikonalCoupledODEFunction(ensemble_prob, eikonal_function)
+    semidiscrete_ode = EikonalCoupledODEFunction(prob_func, eikonal_function)
 
     return semidiscrete_ode
 end

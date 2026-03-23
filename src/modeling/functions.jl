@@ -160,6 +160,7 @@ struct EikonalFunction{
     cells::CellsVectorT # strictly for Tetrahedra
     vertex_to_cell::V2CT
     activation_points::Vector{Int}
+    activation_points_offsets::Vector{Float64}
 end
 get_strategy(f::EikonalFunction) = nothing # no assembly required
 

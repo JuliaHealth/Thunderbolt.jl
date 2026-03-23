@@ -37,14 +37,14 @@
 #
 #
 # ## Commented Program
-using Thunderbolt, LinearAlgebra, StaticArrays, DifferentialEquations, FastIterativeMethod
+using Thunderbolt, LinearAlgebra, StaticArrays, OrdinaryDiffEqRosenbrock, FastIterativeMethod
 
 # !!! todo
 #     The initializer API is not yet finished and hence we deconstruct stuff here manually.
 #     Please note that this method is quite fragile w.r.t. to many changes you can make in the code below.
 function steady_state_initializer!(u₀, f::Thunderbolt.EikonalCoupledODEFunction)
     ## TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    odefun = f.ode_function.prob_func
+    odefun = f.ode_function
     ionic_model = odefun.cellmodel
 
     φ₀ = @view u₀[1:solution_size(f.eikonal_function)]
@@ -73,16 +73,23 @@ heart_mesh = generate_ideal_lv_mesh(
     apex_inner = 0.7,
     apex_outer = 1.0
 ) |> Thunderbolt.hexahedralize |> Thunderbolt.tetrahedralize;
-
+addcellset!(heart_mesh.grid, "Left", x -> x[1] <= 0.0; all=false)
+addcellset!(heart_mesh.grid, "Right", x -> x[1] > 0.0)
+heart_mesh = Thunderbolt.to_mesh(heart_mesh.grid)
 # !!! tip
 #     We can also load realistic geometries with external formats. For this simply use either FerriteGmsh.jl
 #     or one of the loader functions stated in the [mesh API](@ref mesh-utility-api).
 
 # We also generate a coordinate system to be used for checking points for initial activation.
-cs = compute_lv_coordinate_system(heart_mesh)
+cs = compute_lv_coordinate_system(heart_mesh, ["Left", "Right"])
 
 # For this tutorial we define a uniform endocardial activation
-activation_protocol = Thunderbolt.UniformEndocardialEikonalActivationProtocol()
+activation_protocol = Thunderbolt.UniformEndocardialActivationProtocol(Dict(
+    "Left" => 0.0,
+    "Right" => 0.0
+),
+cs
+)
 
 # For our toy problem we use a very simple microstructure.
 microstructure = OrthotropicMicrostructureModel(
@@ -123,14 +130,15 @@ heart_odeform = semidiscretize(
     (
         FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
         Thunderbolt.SimplicialEikonalDiscretization(;
-            activation_protocol
+            activation_protocol,
+            subdomains = String["Left", "Right"]
         ),
     ),
     heart_mesh
 )
 
 # We allocate the solution vector for the reaction part. The activation times vector is allocated internally.
-u₀ = zeros(Float64, length(heart_odeform.ode_function.prob.u0) * length(heart_mesh.grid.nodes))
+u₀ = zeros(Float64, Thunderbolt.num_states(heart_odeform.ode_function.cellmodel) * length(heart_mesh.grid.nodes))
 
 # Apply the initial conditions.
 steady_state_initializer!(u₀, heart_odeform)
@@ -144,9 +152,9 @@ FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
 #     in its internals. It was observed that forcing bounds checks results in an
 #     enormous amount of dynamic allocations that can easily result in running out of memory.
 
-nodal_timings = heart_odeform.ode_function.prob_func.activation_timings
+nodal_timings = heart_odeform.ode_function.activation_timings
 VTKGridFile(("nein-activation-map-debug.vtu"), heart_mesh.grid) do vtk              # hide
-    vtk.vtk["timings"] = nodal_timings    # hide
+    vtk.vtk["timings2"] = nodal_timings    # hide
 end                                                                                 # hide
 
 dt₀ = 0.01
@@ -155,8 +163,15 @@ Tₘₐₓ = 50.0
 Tₘₐₓ = dtvis # hide
 tspan = (0.0, Tₘₐₓ)
 
+single_prob = ODEProblem(
+    (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
+    Thunderbolt.default_initial_state(cellmodel),
+    (first(tspan), last(tspan)),
+    Thunderbolt.StimulatedCellModel(; cell_model = cellmodel),
+)
+problem = SciMLBase.EnsembleProblem(single_prob, prob_func = heart_odeform.ode_function);
 
-sim = solve(heart_odeform.ode_function, Rodas5P(), saveat = collect(0.0:dtvis:Tₘₐₓ), trajectories = length(heart_odeform.ode_function.prob_func.activation_timings))
+sim = solve(problem, Rodas5P(), saveat = collect(0.0:dtvis:Tₘₐₓ), trajectories = length(heart_odeform.ode_function.activation_timings))
 dh = cs.dh |> deepcopy
 Thunderbolt.reorder_nodal!(dh)
 
