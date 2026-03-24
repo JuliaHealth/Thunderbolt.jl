@@ -1,30 +1,4 @@
 """
-Coordinates used for defining activation points when solving the eikonal equation.
-"""
-struct ActivationCoordinate{CoordT <: Union{LVCoordinate, BiVCoordinate}, T}
-    coord::CoordT
-    time_offset::T
-end
-
-abstract type AbstractEikonalActivationProtocol end
-
-"""
-Activation protocol for activating specific points with time offsets to mimic the behavior of a Purkinje network.
-"""
-struct NodalEikonalActivationProtocol{VectorT <: AbstractVector{<:ActivationCoordinate}} <:
-       AbstractEikonalActivationProtocol
-    nodes::VectorT
-end
-
-
-"""
-Activation protocol for uniformally activating the endocardium with zero wave arrival time.
-"""
-struct AnalyticalEikonalActivationProtocol{fT} <: AbstractEikonalActivationProtocol
-    f::fT
-end
-
-"""
 Descriptor for a tetrahedral element discretization used for solving the Eikonal equation explicitly.
 """
 @kwdef struct SimplicialEikonalDiscretization{
@@ -36,35 +10,21 @@ Descriptor for a tetrahedral element discretization used for solving the Eikonal
 end
 
 """
-Returns the permutation used to reverser [reorder_nodal!](@ref)
-"""
-function get_nodes_to_vertex_permutaion(dh::DofHandler)
-    res = Vector{Int}(undef, dh.ndofs)
-    grid = Ferrite.get_grid(dh)
-    for i = 1:getncells(grid)
-        res[SVector(getcells(grid, i).nodes)] .=
-            (@view dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(
-                dh,
-                i,
-            )-1)])
-    end
-    return sortperm(res)
-end
-
-"""
 Returns the indicies of the nodes belonging to the endocardium, defaulting to 5% of the
 transmural coordinate range as endocardium.
 """
 function get_nodes(protocol::UniformEndocardialActivationProtocol, mesh)
     cs = protocol.cs
     qrc = NodalQuadratureRuleCollection{}(LagrangeCollection{1}())
-
+    if haskey(mesh.grid.nodesets, "endocardium")
+        return collect(mesh.grid.nodesets["endocardium"])
+    end
     nodes = Int[]
     for sdh in cs.dh.subdofhandlers
         qr = getquadraturerule(qrc, sdh)
         csc = setup_coefficient_cache(cs, qr, sdh)
         for cell in CellIterator(sdh)
-            for qp in QuadratureIterator(qr) 
+            for qp in QuadratureIterator(qr)
                 coords = evaluate_coefficient(csc, cell, qp, 0.0)
                 coords.transmural <= 0.05 || continue
                 push!(nodes, cell.nodes[qp.i])
@@ -74,102 +34,162 @@ function get_nodes(protocol::UniformEndocardialActivationProtocol, mesh)
     return nodes
 end
 
-function get_nodes(protocol::AnalyticalEikonalActivationProtocol, mesh)
-    cs = protocol.cs
-    dh = cs.dh
+function get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol{
+                <:AnalyticalCoefficient{
+                    <:Function,
+                    <:CartesianCoordinateSystem
+                }},
+                mesh)
+
+    f = protocol.f.f
     nodes = Int[]
-    coords = compute_nodal_values(cs, dh, first(dh.field_names))
-
-    for node in eachindex(mesh.grid.nodes)
-        node_coords = coords[node]
-        protocol.f(node_coords) && push!(nodes, node)
+    for subdomain in mesh.grid.cellsets
+        # TODO: use domains defined in discretization instead?
+        cellset = last(subdomain)
+        for cellidx in cellset
+            for node in mesh.grid.cells[cellidx[]].nodes
+                stim_val = f(get_node_coordinate(mesh.grid, node), 0.0)
+                isnan(stim_val) && continue
+                push!(nodes, node)
+            end
+        end
     end
+    return nodes
+end
 
+function get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh)
+    cs = protocol.f.coordinate_system_coefficient
+    qrc = NodalQuadratureRuleCollection{}(LagrangeCollection{1}())
+    f = protocol.f.f
+    nodes = Int[]
+    for sdh in cs.dh.subdofhandlers
+        qr = getquadraturerule(qrc, sdh)
+        csc = setup_coefficient_cache(cs, qr, sdh)
+        for cell in CellIterator(sdh)
+            for qp in QuadratureIterator(qr)
+                coord = evaluate_coefficient(csc, cell, qp, 0.0)
+                stim_val = f(coord, 0.0)
+                isnan(stim_val) && continue
+                push!(nodes, cell.nodes[qp.i])
+            end
+        end
+    end
     return nodes
 end
 
 function get_nodes(
-    protocol::AnalyticalEikonalActivationProtocol,
-    mesh,
+        ::UniformEndocardialActivationProtocol{<:CartesianCoordinateSystem},
+        mesh
 )
-    nodes = Int[]
-    coords = mesh.grid.nodes
-
-    for node in eachindex(mesh.grid.nodes)
-        node_coords = coords[node].x
-        protocol.f(node_coords) && push!(nodes, node)
-    end
-
-    return nodes
-end
-
-function get_nodes(
-    ::UniformEndocardialActivationProtocol{<:CartesianCoordinateSystem},
-    mesh
-    )
     throw(error("Uniformally activating the endocardium requires using either
     LV or BiV coordinate system. usage with Cartesian Coordinate System is
-    restricted to AnalyticalEikonalActivationProtocol"))
+    restricted to AnalyticalTransmembraneStimulationProtocol"))
 end
 
 function semidiscretize(
-    ::EikonalModel,
-    discretization::SimplicialEikonalDiscretization{<:UniformEndocardialActivationProtocol},
-    mesh::SimpleMesh,
+        ::EikonalModel,
+        discretization::SimplicialEikonalDiscretization{<:UniformEndocardialActivationProtocol},
+        mesh::SimpleMesh
 )
     activation_points = get_nodes(discretization.activation_protocol, mesh)
     vertices = getproperty.(mesh.grid.nodes, :x)
-    activation_points_offsets = zeros(length(vertices))
-    cells_ferrite = [Tetrahedron((0, 0, 0, 0)) for _ = 1:length(mesh.grid.cells)]
+    activation_points_offsets = fill(NaN, length(vertices))
+    cells_ferrite = [Tetrahedron((0, 0, 0, 0)) for _ in 1:length(mesh.grid.cells)]
     if isempty(discretization.subdomains)
-        cells_ferrite .= mesh.grid.cells
+        for cellidx in 1:length(mesh.grid.cells)
+            for node in mesh.grid.cells[cellidx].nodes
+                isnan(activation_points_offsets[node]) || continue
+                activation_points_offsets[node] = 0.0 #TODO: Maybe allow this to change?
+            end
+        end
     else
         for subdomain in discretization.subdomains
+            haskey(discretization.activation_protocol.subdomains_offsets, subdomain) || continue
             cellset = getcellset(mesh, subdomain)
             for cellidx in cellset
-                cells_ferrite[cellidx[]] = mesh.grid.cells[cellidx[]]
                 for node in mesh.grid.cells[cellidx[]].nodes
-                    activation_points_offsets[node] > discretization.activation_protocol.subdomains_offsets[subdomain] && continue
+                    isnan(activation_points_offsets[node]) || continue
                     activation_points_offsets[node] = discretization.activation_protocol.subdomains_offsets[subdomain]
                 end
             end
         end
     end
+    cells_ferrite .= mesh.grid.cells
+
     activation_points_offsets = activation_points_offsets[activation_points]
     cells = getproperty.(cells_ferrite, :nodes)
     nnodes = getnnodes(mesh.grid)
 
     max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))
     vertex_to_cell = (Ferrite.build_vertex_to_cell(mesh.grid.cells; max_vertices, nnodes))
-    return EikonalFunction(vertices, cells, vertex_to_cell, activation_points, activation_points_offsets)
+    return EikonalFunction(
+        vertices, cells, vertex_to_cell, activation_points, activation_points_offsets)
 end
 
-# function semidiscretize(
-#     ::EikonalModel,
-#     discretization::SimplicialEikonalDiscretization{<:UniformEndocardialActivationProtocol},
-#     mesh::SimpleMesh,
-# )
-#     activation_points = get_nodes(discretization.activation_protocol, mesh)
-#     activation_points_offsets = zeros(activation_points)
-#     vertices = getproperty.(mesh.grid.nodes, :x)
-#     cells_ferrite = [Tetrahedron((0, 0, 0, 0)) for _ = 1:length(mesh.grid.cells)]
-#     if isempty(discretization.subdomains)
-#         cells_ferrite .= mesh.grid.cells
-#     else
-#         for subdomain in discretization.subdomains
-#             cellset = getcellset(mesh, subdomain)
-#             for cellidx in cellset
-#                 cells_ferrite[cellidx[]] = mesh.grid.cells[cellidx[]]
-#                 for node in mesh.grid.cells[cellidx[]]
-#                     activation_points_offsets[node] = discretization.activation_protocol.subdomains_offsets[subdomain]
-#                 end
-#             end
-#         end
-#     end
-#     cells = getproperty.(cells_ferrite, :nodes)
-#     nnodes = getnnodes(mesh.grid)
 
-#     max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))
-#     vertex_to_cell = (Ferrite.build_vertex_to_cell(cells_ferrite; max_vertices, nnodes))
-#     return EikonalFunction(vertices, cells, vertex_to_cell, activation_points, activation_points_offsets)
-# end
+function semidiscretize(
+        ::EikonalModel,
+        discretization::SimplicialEikonalDiscretization{
+            <:AnalyticalTransmembraneStimulationProtocol{
+                <:AnalyticalCoefficient{
+                    <:Function,
+                    <:CartesianCoordinateSystem
+                }}},
+        mesh::SimpleMesh
+) 
+    activation_points = get_nodes(discretization.activation_protocol, mesh)
+    vertices = getproperty.(mesh.grid.nodes, :x)
+    f = discretization.activation_protocol.f.f
+    activation_points_offsets = f.(get_node_coordinate.(Ref(mesh.grid), activation_points), 0.0)
+    cells_ferrite = [Tetrahedron((0, 0, 0, 0)) for _ in 1:length(mesh.grid.cells)]
+    
+    cells_ferrite .= mesh.grid.cells
+
+    cells = getproperty.(cells_ferrite, :nodes)
+    nnodes = getnnodes(mesh.grid)
+
+    max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))
+    vertex_to_cell = (Ferrite.build_vertex_to_cell(mesh.grid.cells; max_vertices, nnodes))
+    return EikonalFunction(
+        vertices, cells, vertex_to_cell, activation_points, activation_points_offsets)
+end
+
+function semidiscretize(
+        ::EikonalModel,
+        discretization::SimplicialEikonalDiscretization{
+            <:AnalyticalTransmembraneStimulationProtocol},
+        mesh::SimpleMesh
+)
+    activation_points = get_nodes(discretization.activation_protocol, mesh)
+    vertices = getproperty.(mesh.grid.nodes, :x)
+    f = discretization.activation_protocol.f.f
+    cs = discretization.activation_protocol.f.coordinate_system_coefficient
+    qrc = NodalQuadratureRuleCollection{}(LagrangeCollection{1}())
+    activation_points_offsets = Float64[]
+    activation_points = Int[]
+    for sdh in cs.dh.subdofhandlers
+        any(subdomain -> first(sdh.cellset) ∈ subdomain, discretization.subdomains) && continue
+        qr = getquadraturerule(qrc, sdh)
+        csc = setup_coefficient_cache(cs, qr, sdh)
+        for cell in CellIterator(sdh)
+            for qp in QuadratureIterator(qr)
+                coord = evaluate_coefficient(csc, cell, qp, 0.0)
+                stim_val = f(coord, 0.0)
+                isnan(stim_val) && continue
+                push!(activation_points_offsets, stim_val)
+                push!(activation_points, cell.nodes[qp.i])
+            end
+        end
+    end
+    cells_ferrite = [Tetrahedron((0, 0, 0, 0)) for _ in 1:length(mesh.grid.cells)]
+    
+    cells_ferrite .= mesh.grid.cells
+
+    cells = getproperty.(cells_ferrite, :nodes)
+    nnodes = getnnodes(mesh.grid)
+
+    max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))
+    vertex_to_cell = (Ferrite.build_vertex_to_cell(mesh.grid.cells; max_vertices, nnodes))
+    return EikonalFunction(
+        vertices, cells, vertex_to_cell, activation_points, activation_points_offsets)
+end
