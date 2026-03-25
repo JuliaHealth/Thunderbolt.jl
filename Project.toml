@@ -90,4 +90,4 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 FastIterativeMethod = {url = "https://git.noc.ruhr-uni-bochum.de/mohama17/eikonal.jl.git"}
 
 [targets]
-test = ["Aqua", "DelimitedFiles", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot", "FastIterativeMethod"]
+test = ["Aqua", "DelimitedFiles", "JET", "ModelingToolkit", "OrdinaryDiffEqRosenbrock", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot", "FastIterativeMethod"]

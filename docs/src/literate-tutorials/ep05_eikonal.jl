@@ -73,23 +73,17 @@ heart_mesh = generate_ideal_lv_mesh(
     apex_inner = 0.7,
     apex_outer = 1.0
 ) |> Thunderbolt.hexahedralize |> Thunderbolt.tetrahedralize;
-addcellset!(heart_mesh.grid, "Left", x -> (x[1] < -1e-6 && x[3] < 0.35); all=false)
-addcellset!(heart_mesh.grid, "Right", x -> (x[1] > 1e-6 && x[3] < 0.35); all=false)
-addcellset!(heart_mesh.grid, "Bot", x -> x[3] >= 0.35)
+
 heart_mesh = Thunderbolt.to_mesh(heart_mesh.grid)
 # !!! tip
 #     We can also load realistic geometries with external formats. For this simply use either FerriteGmsh.jl
 #     or one of the loader functions stated in the [mesh API](@ref mesh-utility-api).
 
 # We also generate a coordinate system to be used for checking points for initial activation.
-cs = compute_lv_coordinate_system(heart_mesh, ["Left", "Right", "Bot"])
+cs = compute_lv_coordinate_system(heart_mesh)
 
 # For this tutorial we define a uniform endocardial activation
-activation_protocol = Thunderbolt.UniformEndocardialActivationProtocol(Dict(
-    "Left" => 1.0,
-    "Right" => -1.0,
-    # "Bot" => 0.0
-),
+activation_protocol = Thunderbolt.UniformEndocardialActivationProtocol(Dict{String, Float64}(),
 cs
 )
 
@@ -119,7 +113,7 @@ heart_model = MonodomainModel(
     ConstantCoefficient(1.0),
     ConstantCoefficient(1.0),
     diffusion_tensor_field,
-    NoStimulationProtocol(),
+    activation_protocol,
     cellmodel,
     :φₘ, :s
 )
@@ -133,7 +127,7 @@ heart_odeform = semidiscretize(
         FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
         Thunderbolt.SimplicialEikonalDiscretization(;
             activation_protocol,
-            subdomains = String["Left", "Right", "Bot"]
+            subdomains = String[]
         ),
     ),
     heart_mesh
@@ -155,10 +149,11 @@ FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
 #     enormous amount of dynamic allocations that can easily result in running out of memory.
 
 nodal_timings = heart_odeform.ode_function.activation_timings
-VTKGridFile(("nein-activation-map-debug.vtu"), heart_mesh.grid) do vtk              # hide
-    vtk.vtk["timings2"] = nodal_timings    # hide
+VTKGridFile(("ep05_eikonal_timings.vtu"), heart_mesh.grid) do vtk          # hide
+    vtk.vtk["timings"] = nodal_timings    # hide
 end                                                                                 # hide
 
+# Now we solve for the reaction part, where we evolve state variables and transmembrane potential.
 dt₀ = 0.01
 dtvis = 0.5
 Tₘₐₓ = 50.0

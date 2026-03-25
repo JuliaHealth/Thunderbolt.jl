@@ -18,16 +18,17 @@ using DiffEqBase
 
         φ₀ = @view u₀[1:solution_size(f.eikonal_function)]
         ## TODO extraction these via utility functions
-        s₀flat = @view u₀[(solution_size(f.eikonal_function) + 1):end]
+        s₀flat = @view u₀[(solution_size(f.eikonal_function)+1):end]
         ## Should not be reshape but some array of arrays fun
         s₀ = reshape(
-            s₀flat, (solution_size(f.eikonal_function), Thunderbolt.num_states(ionic_model) - 1)
+            s₀flat,
+            (solution_size(f.eikonal_function), Thunderbolt.num_states(ionic_model) - 1),
         )
         default_values = Thunderbolt.default_initial_state(ionic_model)
 
         φ₀ .= default_values[1]
-        for i in 1:(Thunderbolt.num_states(ionic_model) - 1)
-            s₀[:, i] .= default_values[i + 1]
+        for i = 1:(Thunderbolt.num_states(ionic_model)-1)
+            s₀[:, i] .= default_values[i+1]
         end
         return
     end
@@ -49,11 +50,8 @@ using DiffEqBase
         cs = CartesianCoordinateSystem(mesh)
 
         activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
-            AnalyticalCoefficient(
-                (x, t) -> norm(x) ≈ 0.0 ? 0.0 : NaN,
-                cs
-            ),
-            [SVector(0.0, 100.0)]
+            AnalyticalCoefficient((x, t) -> norm(x) ≈ 0.0 ? 0.0 : NaN, cs),
+            [SVector(0.0, 100.0)],
         )
 
         cellmodel = Thunderbolt.PCG2019()
@@ -92,19 +90,24 @@ using DiffEqBase
         )
         problem = SciMLBase.EnsembleProblem(single_prob, prob_func = heart_odeform.ode_function);
 
-        sim = solve(problem, Rodas5P(), saveat = collect(0.0:dtvis:Tₘₐₓ), trajectories = length(heart_odeform.ode_function.activation_timings))
+        sim = solve(
+            problem,
+            Rodas5P(),
+            saveat = collect(0.0:dtvis:Tₘₐₓ),
+            trajectories = length(heart_odeform.ode_function.activation_timings),
+        )
         @test sim.converged
-        
+
         dh = create_helper_dh(mesh, LagrangeCollection{1}(), :coordinates)
         Thunderbolt.reorder_nodal!(dh)
 
         φₘfield = copy(nodal_timings)
-        for t in 0.0:Tₘₐₓ/2:Tₘₐₓ                                                          # hide
-            for i in 1:length(φₘfield)                                                  # hide
+        for t = 0.0:(Tₘₐₓ/2):Tₘₐₓ                                                          # hide
+            for i = 1:length(φₘfield)                                                  # hide
                 φₘfield[i] = sim.u[i](t)[1]                                             # hide
             end                                                                         # hide
             @test all(φₘ -> -90.0 < φₘ < 50.0, φₘfield) #PCG2019 range?
-        end 
+        end
 
         return nodal_timings
     end
@@ -119,7 +122,7 @@ using DiffEqBase
                 Vec{3}((1.0, 1.0, 1.0)),
             )
             # velocity = SVector((4.5e-5, 2.0e-5, 1.0e-5))
-            velocity = SVector(0.05 .*(1.0, 2.0, 3.0))
+            velocity = SVector(0.05 .* (1.0, 2.0, 3.0))
             coeff = SpectralTensorCoefficient(microstructure, ConstantCoefficient(velocity))
             u = solve_waveprop(mesh, coeff, String[])
             u_2 = Float64[]
