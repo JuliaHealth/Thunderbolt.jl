@@ -43,14 +43,24 @@ function get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol{
 
     f = protocol.f.f
     nodes = Int[]
-    for subdomain in mesh.grid.cellsets
-        # TODO: use domains defined in discretization instead?
-        cellset = last(subdomain)
-        for cellidx in cellset
-            for node in mesh.grid.cells[cellidx[]].nodes
+    if isempty(mesh.grid.cellsets)
+        for cell in mesh.grid.cells
+            for node in cell.nodes
                 stim_val = f(get_node_coordinate(mesh.grid, node), 0.0)
                 isnan(stim_val) && continue
                 push!(nodes, node)
+            end
+        end
+    else
+        for subdomain in mesh.grid.cellsets
+            # TODO: use domains defined in discretization instead?
+            cellset = last(subdomain)
+            for cellidx in cellset
+                for node in mesh.grid.cells[cellidx[]].nodes
+                    stim_val = f(get_node_coordinate(mesh.grid, node), 0.0)
+                    isnan(stim_val) && continue
+                    push!(nodes, node)
+                end
             end
         end
     end

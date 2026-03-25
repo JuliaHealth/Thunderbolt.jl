@@ -12,11 +12,6 @@ using LinearAlgebra
         apex_outer = 1.0
     ) |> Thunderbolt.hexahedralize |> Thunderbolt.tetrahedralize;
     heart_mesh = Thunderbolt.to_mesh(heart_mesh.grid)
-    cs = compute_lv_coordinate_system(heart_mesh)
-    activation_protocol = Thunderbolt.UniformEndocardialActivationProtocol(
-        Dict{String, Float64}(),
-        cs
-    )
     microstructure = OrthotropicMicrostructureModel(
         ConstantCoefficient((Vec(0.0, 0.0, 1.0))),
         ConstantCoefficient((Vec(0.0, 1.0, 0.0))),
@@ -36,28 +31,139 @@ using LinearAlgebra
         cellmodel,
         :φₘ, :s
     )
-    heart_odeform = semidiscretize(
-        ReactionEikonalSplit(heart_model, cs),
-        (
-            FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-            Thunderbolt.SimplicialEikonalDiscretization(;
-                activation_protocol,
-                subdomains = String[]
-            ),
-        ),
-        heart_mesh
-    )
-    FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
-    nodal_timings = heart_odeform.ode_function.activation_timings
-    error_vals = Float64[]
-    for cell in heart_mesh.grid.cells
-        for node in cell.nodes
-            coords = heart_mesh.grid.nodes[node].x
-            push!(error_vals, nodal_timings[node] - (norm(coords) - 0.7))
+    results = Vector{Float64}[]
+    @testset "Uniform Activation" begin
+        @testset "LV-CS" begin
+            cs = compute_lv_coordinate_system(heart_mesh)
+            activation_protocol = Thunderbolt.UniformEndocardialActivationProtocol(
+                Dict{String, Float64}(),
+                cs
+            )
+            heart_odeform = semidiscretize(
+                ReactionEikonalSplit(heart_model, cs),
+                (
+                    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+                    Thunderbolt.SimplicialEikonalDiscretization(;
+                        activation_protocol,
+                        subdomains = String[]
+                    ),
+                ),
+                heart_mesh
+            )
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            nodal_timings = heart_odeform.ode_function.activation_timings
+            error_vals = Float64[]
+            for cell in heart_mesh.grid.cells
+                for node in cell.nodes
+                    coords = heart_mesh.grid.nodes[node].x
+                    push!(error_vals, nodal_timings[node] - (norm(coords) - 0.7))
+                end
+            end
+            @test maximum(error_vals) < 0.03
+            @test minimum(error_vals) ≈ 0.0 atol=1e-12
+            push!(results, nodal_timings)
+        end
+        @testset "Cartesian-CS" begin
+            cs = CartesianCoordinateSystem(heart_mesh)
+            activation_protocol = Thunderbolt.UniformEndocardialActivationProtocol(
+                Dict{String, Float64}(),
+                cs
+            )
+            @test_throws "Uniformally activating the endocardium requires using either
+    LV or BiV coordinate system. usage with Cartesian Coordinate System is
+    restricted to AnalyticalTransmembraneStimulationProtocol" semidiscretize(
+                ReactionEikonalSplit(heart_model, cs),
+                (
+                    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+                    Thunderbolt.SimplicialEikonalDiscretization(;
+                        activation_protocol,
+                        subdomains = String[]
+                    ),
+                ),
+                heart_mesh
+            )
         end
     end
-    @test maximum(error_vals) < 0.03
-    @test minimum(error_vals) ≈ 0.0 atol=1e-12
+    @testset "Analytical Activation" begin
+        @testset "LV-CS" begin
+            cs = compute_lv_coordinate_system(heart_mesh)
+            activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
+                AnalyticalCoefficient(
+                    (x, t) -> if (x.transmural < 0.05)
+                        0.0
+                        else
+                        NaN
+                        end
+                    ,
+                    cs
+                ),
+                [SVector(0.0, 1.0)]
+            )
+            heart_odeform = semidiscretize(
+                ReactionEikonalSplit(heart_model, cs),
+                (
+                    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+                    Thunderbolt.SimplicialEikonalDiscretization(;
+                        activation_protocol,
+                        subdomains = String[]
+                    ),
+                ),
+                heart_mesh
+            )
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            nodal_timings = heart_odeform.ode_function.activation_timings
+            error_vals = Float64[]
+            for cell in heart_mesh.grid.cells
+                for node in cell.nodes
+                    coords = heart_mesh.grid.nodes[node].x
+                    push!(error_vals, nodal_timings[node] - (norm(coords) - 0.7))
+                end
+            end
+            @test maximum(error_vals) < 0.03
+            @test minimum(error_vals) ≈ 0.0 atol=1e-12
+            push!(results, nodal_timings)
+        end
+
+        @testset "Cartesian-CS" begin
+            cs = CartesianCoordinateSystem(heart_mesh)
+            activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
+                AnalyticalCoefficient(
+                    (x, t) -> if (norm(x) < 0.71)
+                        0.0
+                        else
+                        NaN
+                        end
+                    ,
+                    cs
+                ),
+                [SVector(0.0, 1.0)]
+            )
+            heart_odeform = semidiscretize(
+                ReactionEikonalSplit(heart_model, cs),
+                (
+                    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+                    Thunderbolt.SimplicialEikonalDiscretization(;
+                        activation_protocol,
+                        subdomains = String[]
+                    ),
+                ),
+                heart_mesh
+            )
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            nodal_timings = heart_odeform.ode_function.activation_timings
+            error_vals = Float64[]
+            for cell in heart_mesh.grid.cells
+                for node in cell.nodes
+                    coords = heart_mesh.grid.nodes[node].x
+                    push!(error_vals, nodal_timings[node] - (norm(coords) - 0.7))
+                end
+            end
+            @test maximum(error_vals) < 0.03
+            @test minimum(error_vals) ≈ 0.0 atol=1e-12
+            push!(results, nodal_timings)
+        end
+    end
+    
 end
 
 @testset "Subdomains" begin
@@ -78,11 +184,9 @@ end
         ConstantCoefficient((Vec(0.0, 1.0, 0.0))),
         ConstantCoefficient((Vec(1.0, 0.0, 0.0)))
     )
-    κ₁ = 0.17 * 0.62 / (0.17 + 0.62)
-    κᵣ = 0.019 * 0.24 / (0.019 + 0.24)
+    κ₁ = 0.17 * 0.62 / (0.17 + 0.62) #Copied from a tutorial
     diffusion_tensor_field = SpectralTensorCoefficient(
         microstructure,
-        # ConstantCoefficient(SVector(κ₁, κᵣ, κᵣ))
         ConstantCoefficient(SVector(κ₁, κ₁, κ₁))
     )
     cellmodel = Thunderbolt.PCG2019() # Does not really matter for this test
@@ -126,7 +230,6 @@ end
                 Dict(
                     "Left" => 1.0,
                     "Right" => -1.0,
-                    # "Bot" => 0.0
                 ),
                 cs
             )
