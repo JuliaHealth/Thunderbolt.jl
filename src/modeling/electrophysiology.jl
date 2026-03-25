@@ -263,9 +263,9 @@ ReactionDiffusionSplit(model) = ReactionDiffusionSplit(model, nothing)
 
 """
     ReactionEikonalSplit(model)
-    ReactionEikonalSplit(model, coeff)
+    ReactionEikonalSplit(model, cs)
 Annotation for the reaction-Eikonal split of a given model. The
-second argument is a coefficient describing the input `x` for the reaction model rhs,
+argument `cs` is a coefficient describing the input `x` for the reaction model rhs,
 which is usually some generalized coordinate.
 """
 struct ReactionEikonalSplit{mType, csType}
@@ -276,6 +276,8 @@ end
 ReactionEikonalSplit(model) = ReactionEikonalSplit(model, nothing)
 
 """
+    StimulatedCellModel(;cell_model, [stim_offset=0.0, stim_length=1.0, stim_strength= 0.91])
+
 Wrapper around ionic cell models that adds foot current according to [NeicCamposPrassl:2017:ECE](@citet)
 """
 @kwdef struct StimulatedCellModel{TC, OffestT, T} <: AbstractIonicModel
@@ -283,27 +285,16 @@ Wrapper around ionic cell models that adds foot current according to [NeicCampos
     stim_offset::OffestT = 0.0
     stim_length::T = 1.0
     stim_strength::T = 0.91
-    # x::TV
 end
 num_states(m::StimulatedCellModel) = num_states(m.cell_model)
 default_initial_state(m::StimulatedCellModel) = default_initial_state(m.cell_model)
 function cell_rhs!(du, u, i, t, m::StimulatedCellModel)
-    # @assert i isa Integer
     cell_rhs!(du, u, nothing, t, m.cell_model)
-    if i isa AbstractVector
-        if m.stim_offset[i] ≤ t ≤ m.stim_offset[i] + m.stim_length
-            τᶠ = 0.25
-            idx = transmembranepotential_index(m.cell_model)
-            du[idx] += m.stim_strength / τᶠ * exp((t - m.stim_offset[i]) / τᶠ)
-        end
-    else
-        if m.stim_offset ≤ t ≤ m.stim_offset + m.stim_length
-            τᶠ = 0.25
-            idx = transmembranepotential_index(m.cell_model)
-            du[idx] += m.stim_strength / τᶠ * exp((t - m.stim_offset) / τᶠ)
-        end
+    if m.stim_offset ≤ t ≤ m.stim_offset + m.stim_length
+        τᶠ = 0.25
+        idx = transmembranepotential_index(m.cell_model)
+        du[idx] += m.stim_strength / τᶠ * exp((t - m.stim_offset) / τᶠ)
     end
-
     return nothing
 end
 

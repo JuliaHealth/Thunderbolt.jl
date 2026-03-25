@@ -173,6 +173,8 @@ function semidiscretize(
     return semidiscrete_ode
 end
 """
+    ReactionEikonalFunction(ode_function, eikonal_function)
+
 A wrapper function containing the cell model dynamics function, as a pointwise ODE,
 and the eiknal function that needs to be solved once before solving the cell dynamics part.
 """

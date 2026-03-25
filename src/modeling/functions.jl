@@ -148,7 +148,7 @@ get_material_model(f::QuasiStaticFunction, sdh) =
 
 A discrete nonlinear Eikonal problem.
 We want to solve the problem √(∇tₐᵀ𝕍∇tₐ) = 1.
-Where tₐ are the nodal wave time of arrival, and 𝕍 is the conduction velocity.
+Where tₐ are the nodal wave time of arrival, and 𝕍 is the conduction velocity tensor.
 """
 struct EikonalFunction{
     T <: Number,
@@ -162,6 +162,5 @@ struct EikonalFunction{
     activation_points::Vector{Int}
     activation_points_offsets::Vector{Float64}
 end
-get_strategy(f::EikonalFunction) = nothing # no assembly required
 
 solution_size(f::EikonalFunction) = length(f.vertices)
