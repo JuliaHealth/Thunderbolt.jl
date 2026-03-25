@@ -176,7 +176,7 @@ end
 A wrapper function containing the cell model dynamics function, as a pointwise ODE,
 and the eiknal function that needs to be solved once before solving the cell dynamics part.
 """
-struct EikonalCoupledODEFunction{ODEFunctionT, EikonalFunctionT}
+struct ReactionEikonalFunction{ODEFunctionT, EikonalFunctionT}
     ode_function::ODEFunctionT
     eikonal_function::EikonalFunctionT
 end
@@ -205,7 +205,7 @@ function semidiscretize(
             end
         end
 
-    semidiscrete_ode = EikonalCoupledODEFunction(prob_func, eikonal_function)
+    semidiscrete_ode = ReactionEikonalFunction(prob_func, eikonal_function)
 
     return semidiscrete_ode
 end

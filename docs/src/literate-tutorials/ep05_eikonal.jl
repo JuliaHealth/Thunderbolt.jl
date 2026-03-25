@@ -42,7 +42,7 @@ using Thunderbolt, LinearAlgebra, StaticArrays, OrdinaryDiffEqRosenbrock, FastIt
 # !!! todo
 #     The initializer API is not yet finished and hence we deconstruct stuff here manually.
 #     Please note that this method is quite fragile w.r.t. to many changes you can make in the code below.
-function steady_state_initializer!(u₀, f::Thunderbolt.EikonalCoupledODEFunction)
+function steady_state_initializer!(u₀, f::Thunderbolt.ReactionEikonalFunction)
     ## TODO cleaner implementation. We need to extract this from the types or via dispatch.
     odefun = f.ode_function
     ionic_model = odefun.cellmodel

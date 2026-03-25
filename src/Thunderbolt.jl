@@ -202,7 +202,7 @@ export
     AnalyticalTransmembraneStimulationProtocol,
     ReactionDiffusionSplit,
     ReactionEikonalSplit,
-    EikonalCoupledODEFunction,
+    ReactionEikonalFunction,
     # Circuit
     RSAFDQ2022LumpedCicuitModel,
     MTKLumpedCicuitModel,

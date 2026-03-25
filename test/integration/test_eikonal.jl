@@ -11,7 +11,7 @@ using DiffEqBase
         ConstantCoefficient((Vec(0.0, 0.0, 1.0))),
     )
 
-    function steady_state_initializer!(u₀, f::Thunderbolt.EikonalCoupledODEFunction)
+    function steady_state_initializer!(u₀, f::Thunderbolt.ReactionEikonalFunction)
         ## TODO cleaner implementation. We need to extract this from the types or via dispatch.
         odefun = f.ode_function
         ionic_model = odefun.cellmodel
