@@ -155,12 +155,16 @@ struct EikonalFunction{
     VerticesVectorT <: AbstractVector{Vec{3, T}},
     CellsVectorT <: AbstractVector{NTuple{4, Int}},
     V2CT <: AbstractArray,
+    DTFT <: SpectralTensorCoefficient,
+    SetT <: AbstractSet{Int},
 } <: AbstractSemidiscreteFunction
     vertices::VerticesVectorT
     cells::CellsVectorT # strictly for Tetrahedra
     vertex_to_cell::V2CT
     activation_points::Vector{Int}
     activation_points_offsets::Vector{Float64}
+    diffusion_tensor_field::DTFT
+    subdomains::Vector{SetT}
 end
 
 solution_size(f::EikonalFunction) = length(f.vertices)

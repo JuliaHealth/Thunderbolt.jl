@@ -52,7 +52,7 @@ using LinearAlgebra
                 ),
                 heart_mesh,
             )
-            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh)
             nodal_timings = heart_odeform.ode_function.activation_timings
             error_vals = Float64[]
             for cell in heart_mesh.grid.cells
@@ -106,7 +106,7 @@ using LinearAlgebra
                 ),
                 heart_mesh,
             )
-            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh)
             nodal_timings = heart_odeform.ode_function.activation_timings
             error_vals = Float64[]
             for cell in heart_mesh.grid.cells
@@ -141,7 +141,7 @@ using LinearAlgebra
                 ),
                 heart_mesh,
             )
-            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh)
             nodal_timings = heart_odeform.ode_function.activation_timings
             error_vals = Float64[]
             for cell in heart_mesh.grid.cells
@@ -213,7 +213,7 @@ end
                 ),
                 heart_mesh,
             )
-            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh)
             nodal_timings = heart_odeform.ode_function.activation_timings
             push!(results, nodal_timings)
         end
@@ -266,7 +266,7 @@ end
                 ),
                 heart_mesh,
             )
-            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh)
             nodal_timings = heart_odeform.ode_function.activation_timings
             push!(results, nodal_timings)
         end
@@ -297,7 +297,7 @@ end
                 ),
                 heart_mesh,
             )
-            FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh)
             nodal_timings = heart_odeform.ode_function.activation_timings
             push!(results, nodal_timings)
         end

@@ -190,8 +190,7 @@ function semidiscretize(
 )
     epmodel = split.model
 
-    eikonal_model =
-        EikonalModel(ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ))
+    eikonal_model = EikonalModel(epmodel.κ)
     eikonal_function = semidiscretize(eikonal_model, discretizations[2], mesh)
 
     prob_func =

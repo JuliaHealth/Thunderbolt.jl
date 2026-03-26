@@ -94,7 +94,7 @@ function get_nodes(::UniformEndocardialActivationProtocol{<:CartesianCoordinateS
 end
 
 function semidiscretize(
-    ::EikonalModel,
+    model::EikonalModel,
     discretization::SimplicialEikonalDiscretization{<:UniformEndocardialActivationProtocol},
     mesh::SimpleMesh,
 )
@@ -136,12 +136,21 @@ function semidiscretize(
         vertex_to_cell,
         activation_points,
         activation_points_offsets,
+        model.κ,
+        OrderedSet{Int}[
+            OrderedSet(
+                reduce(
+                    (x, y) -> unique(vcat(x..., y...)),
+                    getproperty.(mesh.grid.cells[collect(mesh.grid.cellsets[subdomain])], :nodes),
+                ),
+            ) for subdomain in discretization.subdomains
+        ],
     )
 end
 
 
 function semidiscretize(
-    ::EikonalModel,
+    model::EikonalModel,
     discretization::SimplicialEikonalDiscretization{
         <:AnalyticalTransmembraneStimulationProtocol{
             <:AnalyticalCoefficient{<:Function, <:CartesianCoordinateSystem},
@@ -168,11 +177,20 @@ function semidiscretize(
         vertex_to_cell,
         activation_points,
         activation_points_offsets,
+        model.κ,
+        OrderedSet{Int}[
+            OrderedSet(
+                reduce(
+                    (x, y) -> unique(vcat(x..., y...)),
+                    getproperty.(mesh.grid.cells[collect(mesh.grid.cellsets[subdomain])], :nodes),
+                ),
+            ) for subdomain in discretization.subdomains
+        ],
     )
 end
 
 function semidiscretize(
-    ::EikonalModel,
+    model::EikonalModel,
     discretization::SimplicialEikonalDiscretization{<:AnalyticalTransmembraneStimulationProtocol},
     mesh::SimpleMesh,
 )
@@ -184,7 +202,6 @@ function semidiscretize(
     activation_points_offsets = Float64[]
     activation_points = Int[]
     for sdh in cs.dh.subdofhandlers
-        any(subdomain -> first(sdh.cellset) ∈ subdomain, discretization.subdomains) && continue
         qr = getquadraturerule(qrc, sdh)
         csc = setup_coefficient_cache(cs, qr, sdh)
         for cell in CellIterator(sdh)
@@ -212,5 +229,14 @@ function semidiscretize(
         vertex_to_cell,
         activation_points,
         activation_points_offsets,
+        model.κ,
+        OrderedSet{Int}[
+            OrderedSet(
+                reduce(
+                    (x, y) -> unique(vcat(x..., y...)),
+                    getproperty.(mesh.grid.cells[collect(mesh.grid.cellsets[subdomain])], :nodes),
+                ),
+            ) for subdomain in discretization.subdomains
+        ],
     )
 end
