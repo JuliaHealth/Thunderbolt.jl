@@ -20,6 +20,7 @@ default_initial_state(::ParametrizedFHNModel) = [0.0, 0.0]
 function cell_rhs!(
     du::TD,
     u::TU,
+    i,
     x::TX,
     t::TT,
     cell_parameters::TP,

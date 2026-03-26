@@ -10,8 +10,38 @@ using DiffEqBase
         ConstantCoefficient((Vec(0.0, 1.0, 0.0))),
         ConstantCoefficient((Vec(0.0, 0.0, 1.0))),
     )
+    function simple_initializer!(u₀, f::GenericSplitFunction)
+        # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+        heatfun = f.functions[1]
+        heat_dofrange = f.solution_indices[1]
+        odefun = f.functions[2]
+        ionic_model = odefun.ode
 
-    function steady_state_initializer!(u₀, f::Thunderbolt.ReactionEikonalFunction)
+        ϕ₀ = @view u₀[heat_dofrange];
+
+        s₀flat = @view u₀[(last(heat_dofrange)+1):end]
+        ## Should not be reshape but some array of arrays fun
+        s₀ = reshape(s₀flat, (last(heat_dofrange), Thunderbolt.num_states(ionic_model) - 1))
+        default_values = Thunderbolt.default_initial_state(ionic_model)
+
+        ϕ₀ .= default_values[1]
+        for i = 1:(Thunderbolt.num_states(ionic_model)-1)
+            s₀[:, i] .= default_values[i+1]
+        end
+    end
+    function get_nodes_to_vertex_permutaion(dh::DofHandler)
+        res = Vector{Int}(undef, dh.ndofs)
+        grid = Ferrite.get_grid(dh)
+        for i ∈ 1:getncells(grid)
+            res[SVector(getcells(grid, i).nodes)] .=
+                (@view dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(
+                    dh,
+                    i,
+                )-1)])
+        end
+        return sortperm(res)
+    end
+    function steady_state_initializer!(u₀, f)
         ## TODO cleaner implementation. We need to extract this from the types or via dispatch.
         odefun = f.ode_function
         ionic_model = odefun.cellmodel
@@ -46,7 +76,7 @@ using DiffEqBase
         close!(dh)
         return dh
     end
-    function solve_waveprop(mesh, diffusion_tensor_field, subdomains)
+    function solve_waveprop_RE(mesh, diffusion_tensor_field, subdomains)
         cs = CartesianCoordinateSystem(mesh)
 
         activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
@@ -60,7 +90,7 @@ using DiffEqBase
             ConstantCoefficient(1.0),
             ConstantCoefficient(1.0),
             diffusion_tensor_field,
-            activation_protocol,
+            NoStimulationProtocol(),
             cellmodel,
             :φₘ,
             :s,
@@ -83,7 +113,7 @@ using DiffEqBase
         tspan = (0.0, Tₘₐₓ)
 
         single_prob = ODEProblem(
-            (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
+            (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, nothing, m.stim_offset, t, m),
             Thunderbolt.default_initial_state(cellmodel),
             (first(tspan), last(tspan)),
             Thunderbolt.StimulatedCellModel(; cell_model = cellmodel),
@@ -112,6 +142,67 @@ using DiffEqBase
         return nodal_timings
     end
 
+    function solve_waveprop_RED(mesh, diffusion_tensor_field, subdomains)
+        cs = CartesianCoordinateSystem(mesh)
+
+        activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
+            AnalyticalCoefficient((x, t) -> norm(x) ≈ 0.0 ? 0.0 : NaN, cs),
+            [SVector(0.0, 100.0)],
+        )
+
+        cellmodel = Thunderbolt.PCG2019()
+
+        heart_model = MonodomainModel(
+            ConstantCoefficient(1.0),
+            ConstantCoefficient(1.0),
+            diffusion_tensor_field,
+            NoStimulationProtocol(),
+            cellmodel,
+            :φₘ,
+            :s,
+        )
+
+        heart_odeform = semidiscretize(
+            ReactionEikonalDiffusionSplit(heart_model, cs),
+            (
+                FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+                Thunderbolt.SimplicialEikonalDiscretization(; activation_protocol, subdomains),
+            ),
+            mesh,
+        )
+
+        FastIterativeMethod.solve!(heart_odeform, mesh)
+        perm = get_nodes_to_vertex_permutaion(
+            heart_odeform.reaction_diffusion_function.functions[1].dh,
+        )
+        nodal_timings = heart_odeform.activation_timings
+        nodal_timings_vertexwise = copy(heart_odeform.activation_timings)
+        nodal_timings .= nodal_timings[perm]
+        u₀ = zeros(Float64, solution_size(heart_odeform.reaction_diffusion_function))
+        simple_initializer!(u₀, heart_odeform.reaction_diffusion_function)
+
+        tspan = (0.0, 100.0)
+        problem = OperatorSplittingProblem(heart_odeform.reaction_diffusion_function, u₀, tspan)
+        u₀ = copy(u₀)
+        timestepper = LieTrotterGodunov((BackwardEulerSolver(), ForwardEulerCellSolver()))
+
+        integrator = DiffEqBase.init(problem, timestepper, dt = 0.01, verbose = true)
+        # io = ParaViewWriter("EP01_spiral_wave")
+        # for (u, t) in TimeChoiceIterator(integrator, tspan[1]:0.1:tspan[2])
+        #     (; dh) = heart_odeform.reaction_diffusion_function.functions[1]
+        #     φ = u[heart_odeform.reaction_diffusion_function.solution_indices[1]]
+        #     store_timestep!(io, t, dh.grid) do file
+        #         Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+        #     end
+        # end;
+        DiffEqBase.solve!(integrator)
+
+        φₘfield = integrator.u
+        @test all(φₘ -> -90.0 < φₘ < 50.0, φₘfield) #PCG2019 range?
+
+        return nodal_timings_vertexwise
+    end
+
     @testset "Anisotropic Eikonal Cube" begin
         errors = Float64[]
         for j in (5, 10, 15)
@@ -124,7 +215,8 @@ using DiffEqBase
             # velocity = SVector((4.5e-5, 2.0e-5, 1.0e-5))
             velocity = SVector(0.05 .* (1.0, 2.0, 3.0))
             coeff = SpectralTensorCoefficient(microstructure, ConstantCoefficient(velocity))
-            u = solve_waveprop(mesh, coeff, String[])
+            u_RE = solve_waveprop_RE(mesh, coeff, String[])
+            u_RED = solve_waveprop_RED(mesh, coeff, String[])
             u_2 = Float64[]
             for (i, node) in enumerate(mesh.grid.nodes)
                 coords = node.x
@@ -140,9 +232,12 @@ using DiffEqBase
                 time = sqrt(coords ⋅ inv(M) ⋅ coords)
                 push!(u_2, (time))
             end
-            @test minimum(u .- u_2)≈0.0 atol=1e-8
-            @test count(isapprox.(u .- u_2, 0.0, atol = 1e-8)) == 1 + 4j
-            push!(errors, maximum(u .- u_2))
+            @test minimum(u_RE .- u_2)≈0.0 atol=1e-8
+            @test minimum(u_RED .- u_2)≈0.0 atol=1e-8
+            @test count(isapprox.(u_RE .- u_2, 0.0, atol = 1e-8)) == 1 + 4j
+            @test count(isapprox.(u_RED .- u_2, 0.0, atol = 1e-8)) == 1 + 4j
+            push!(errors, maximum(u_RE .- u_2))
+            push!(errors, maximum(u_RED .- u_2))
         end
         @test issorted(errors, rev = true)
     end

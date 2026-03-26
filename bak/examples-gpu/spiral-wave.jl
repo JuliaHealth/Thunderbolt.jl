@@ -14,7 +14,7 @@ Thunderbolt.transmembranepotential_index(cell_model::HeterogeneousFHNModel) = 1
 Thunderbolt.num_states(::HeterogeneousFHNModel) = 2
 Thunderbolt.default_initial_state(::HeterogeneousFHNModel) = [0.0, 0.0]
 
-function Thunderbolt.cell_rhs!(du::TD,u::TU,x::TX,t::TT,cell_parameters::TP) where {TD,TU,TX,TT,TP <: HeterogeneousFHNModel}
+function Thunderbolt.cell_rhs!(du::TD,u::TU, i, x::TX,t::TT,cell_parameters::TP) where {TD,TU,TX,TT,TP <: HeterogeneousFHNModel}
     @unpack a,b,c,d,e = cell_parameters
     φₘ = u[1]
     s  = u[2]

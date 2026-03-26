@@ -5,7 +5,7 @@ solver_cache = Thunderbolt.ForwardEulerCellSolverCache(zeros(7), zeros(1), zeros
 @code_warntype Thunderbolt.perform_step!(cell_model, 0.0, 0.1, solver_cache)
 
 
-@btime Thunderbolt.cell_rhs!($solver_cache.du, $solver_cache.uₙ[1], $solver_cache.sₙ[1,:], nothing, 0.0, $cell_model)
+@btime Thunderbolt.cell_rhs!($solver_cache.du, $solver_cache.uₙ[1], nothing, $solver_cache.sₙ[1,:], nothing, 0.0, $cell_model)
 @code_warntype Thunderbolt.cell_rhs_fast!(solver_cache.du, solver_cache.uₙ[1], solver_cache.sₙ[1,:], nothing, 0.0, cell_model)
 
 cell_model = Thunderbolt.FHNModel()

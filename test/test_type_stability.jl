@@ -125,6 +125,6 @@
     @testset "Cell Model $model" for model ∈ [Thunderbolt.FHNModel(), Thunderbolt.PCG2019()]
         du = Thunderbolt.default_initial_state(model)
         u = copy(du)
-        @test_opt Thunderbolt.cell_rhs!(du, u, nothing, 0.0, model)
+        @test_opt Thunderbolt.cell_rhs!(du, u, nothing, nothing, 0.0, model)
     end
 end
