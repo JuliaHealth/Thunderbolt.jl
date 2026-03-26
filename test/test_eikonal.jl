@@ -81,6 +81,43 @@ using LinearAlgebra
                 heart_mesh,
             )
         end
+        endocardial_nodes = Set{Int}()
+        for (cell_idx, facet_idx_local) in heart_mesh.grid.facetsets["Endocardium"]
+            cell = getcells(heart_mesh.grid, cell_idx)
+            face = Ferrite.faces(cell)[facet_idx_local]
+            for node in face
+                push!(endocardial_nodes, node)
+            end
+        end
+        Ferrite.addnodeset!(heart_mesh.grid, "endocardium", endocardial_nodes)
+        @testset "LV-CS Nodeset" begin
+            cs = compute_lv_coordinate_system(heart_mesh)
+            activation_protocol =
+                Thunderbolt.UniformEndocardialActivationProtocol(Dict{String, Float64}(), cs)
+            heart_odeform = semidiscretize(
+                ReactionEikonalSplit(heart_model, cs),
+                (
+                    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+                    Thunderbolt.SimplicialEikonalDiscretization(;
+                        activation_protocol,
+                        subdomains = String[],
+                    ),
+                ),
+                heart_mesh,
+            )
+            FastIterativeMethod.solve!(heart_odeform, heart_mesh)
+            nodal_timings = heart_odeform.ode_function.activation_timings
+            error_vals = Float64[]
+            for cell in heart_mesh.grid.cells
+                for node in cell.nodes
+                    coords = heart_mesh.grid.nodes[node].x
+                    push!(error_vals, nodal_timings[node] - (norm(coords) - 0.7))
+                end
+            end
+            @test maximum(error_vals) < 0.03
+            @test minimum(error_vals) ≈ 0.0 atol=1e-12
+            push!(results, nodal_timings)
+        end
     end
     @testset "Analytical Activation" begin
         @testset "LV-CS" begin
@@ -152,9 +189,8 @@ using LinearAlgebra
             @test minimum(error_vals) ≈ 0.0 atol=1e-12                                                                             # hide
             push!(results, nodal_timings)
         end
-        @test results[1] ≈ results[2] ≈ results[3]
     end
-
+        @test results[1] ≈ results[2] ≈ results[3] ≈ results[4]
 end
 
 @testset "Subdomains" begin
