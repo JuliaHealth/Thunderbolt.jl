@@ -92,7 +92,7 @@ Tₘₐₓ = dtvis # hide
 tspan = (0.0, Tₘₐₓ)
 
 single_prob = ODEProblem(
-    (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
+    (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, nothing, m.stim_offset, t, m),
     Thunderbolt.default_initial_state(cellmodel),
     (first(tspan), last(tspan)),
     Thunderbolt.StimulatedCellModel(; cell_model = cellmodel),

@@ -31,7 +31,7 @@ Thunderbolt.default_initial_state(::HeterogeneousFHNModel) = [0.0, 0.0]
 # !!! note
 #     You may have noticed that all inputs are parametrized.
 #     This seems to be necessary to force specialization for the GPU code -- removing the type parameters leads to cryptic CUDA.jl errors.
-function Thunderbolt.cell_rhs!(du::TD,u::TU,x::TX,t::TT,p::TP) where {TD,TU,TX,TT,TP <: HeterogeneousFHNModel}
+function Thunderbolt.cell_rhs!(du::TD,u::TU, i, x::TX,t::TT,p::TP) where {TD,TU,TX,TT,TP <: HeterogeneousFHNModel}
     ## Flatten out parameters ...
     (;a,b,c,d) = p
     ## ... and the state variables

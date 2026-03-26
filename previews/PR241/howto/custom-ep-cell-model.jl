@@ -15,7 +15,7 @@ Thunderbolt.num_states(::HeterogeneousFHNModel) = 1
 
 Thunderbolt.default_initial_state(::HeterogeneousFHNModel) = [0.0, 0.0]
 
-function Thunderbolt.cell_rhs!(du::TD,u::TU,x::TX,t::TT,p::TP) where {TD,TU,TX,TT,TP <: HeterogeneousFHNModel}
+function Thunderbolt.cell_rhs!(du::TD,u::TU, i, x::TX,t::TT,p::TP) where {TD,TU,TX,TT,TP <: HeterogeneousFHNModel}
     # Flatten out parameters ...
     (;a,b,c,d) = p
     # ... and the state variables

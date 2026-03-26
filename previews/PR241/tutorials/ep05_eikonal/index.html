@@ -110,7 +110,7 @@ Tₘₐₓ = 50.0
 tspan = (0.0, Tₘₐₓ)
 
 single_prob = ODEProblem(
-    (du, u, m, t) -&gt; Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
+    (du, u, m, t) -&gt; Thunderbolt.cell_rhs!(du, u, nothing, m.stim_offset, t, m),
     Thunderbolt.default_initial_state(cellmodel),
     (first(tspan), last(tspan)),
     Thunderbolt.StimulatedCellModel(; cell_model = cellmodel),
@@ -215,7 +215,7 @@ Tₘₐₓ = dtvis # hide
 tspan = (0.0, Tₘₐₓ)
 
 single_prob = ODEProblem(
-    (du, u, m, t) -&gt; Thunderbolt.cell_rhs!(du, u, m.stim_offset, t, m),
+    (du, u, m, t) -&gt; Thunderbolt.cell_rhs!(du, u, nothing, m.stim_offset, t, m),
     Thunderbolt.default_initial_state(cellmodel),
     (first(tspan), last(tspan)),
     Thunderbolt.StimulatedCellModel(; cell_model = cellmodel),
@@ -236,4 +236,4 @@ for t in 0.0:dtvis:Tₘₐₓ                                                   
     store_timestep!(io, t, dh.grid) do file                                     # hide
         Thunderbolt.store_timestep_field!(file, t, dh, φₘfield, :coordinates)   # hide
     end                                                                         # hide
-end                                                                             # hide</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../ep04_geselowitz-ecg/">« EP04: Monodomain ECG</a><a class="docs-footer-nextpage" href="../ep06_pacemaker/">EP06: Pacemakers (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Thursday 26 March 2026 20:05">Thursday 26 March 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end                                                                             # hide</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../ep04_geselowitz-ecg/">« EP04: Monodomain ECG</a><a class="docs-footer-nextpage" href="../ep06_pacemaker/">EP06: Pacemakers (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Thursday 26 March 2026 22:51">Thursday 26 March 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
