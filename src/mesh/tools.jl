@@ -1086,11 +1086,6 @@ function tetrahedralize_cell(
     return tets
 end
 
-# Fallback for unsupported cell types
-function tetrahedralize_cell(cell, face_center_ids, cell_center_id, all_nodes)
-    error("Tetrahedralization not implemented for cell type $(typeof(cell))")
-end
-
 # -----------------------------------------------------------------------------
 # Mapping of original faces to new triangular facets
 # -----------------------------------------------------------------------------
