@@ -885,138 +885,103 @@ function compute_center_of_surface(grid::AbstractGrid{sdim}, name::String) where
     center = sum(centerpoints .* volumes) ./ sum(volumes)
     return Vec((center[1], center[2], center[3]))
 end
+# -----------------------------------------------------------------------------
+# Tetrahedralization (symmetric, positive‑volume)
+# -----------------------------------------------------------------------------
 
 """
     tetrahedralize(grid)
 
-Convert elements of mesh ``grid`` of hexahedral elements into conforming tetrahedral elements.
+Convert elements of mesh ``grid`` into conforming tetrahedral elements.
+Adds face‑center and cell‑center nodes, splits each original cell into tetrahedra.
 """
-function tetrahedralize(grid::Grid{3, Hexahedron})
+function tetrahedralize(grid::Grid{3})
     return _tetrahedralize(to_mesh(grid))
 end
 
-function tetrahedralize(mesh::SimpleMesh{3, Hexahedron})
+function tetrahedralize(mesh::SimpleMesh{3})
     grid = _tetrahedralize(mesh)
     return to_mesh(grid)
 end
 
-# signed 6x volume helper (using new_nodes so cell-centers are available)
-function signed_vol6(nt::NTuple{4, Int}, new_nodes)
-    a, b, c, d = nt
-    x1 = new_nodes[a].x;
-    x2 = new_nodes[b].x
-    x3 = new_nodes[c].x;
-    x4 = new_nodes[d].x
-    return LinearAlgebra.dot(x2 - x1, LinearAlgebra.cross(x3 - x1, x4 - x1))
-end
-
-# brute-force search for a permutation with positive signed volume
-function orient_to_positive(nt::NTuple{4, Int}, new_nodes)
-    signed_vol6(nt, new_nodes) > 0.0 && return nt
-    inds = collect(nt)
-    for i = 1:4, j = 1:4, k = 1:4, l = 1:4
-        a, b, c, d = inds[i], inds[j], inds[k], inds[l]
-        if length(Set((a, b, c, d))) == 4
-            cand = (a, b, c, d)
-            if signed_vol6(cand, new_nodes) > 0.0
-                return cand
-            end
-        end
-    end
-    @warn "Could not orient tetra to positive volume; keeping original nodes $nt"
-    return nt
-end
-
 function _tetrahedralize(mgrid::SimpleMesh{3, <:Any, T}) where {T}
-    materialize_all_entities!(mgrid)
-    (; grid) = mgrid
+    materialize_faces!(mgrid)          # need unique global face indices
+    grid = mgrid.grid
 
     cells = getcells(grid)
 
-    new_nodes = copy(grid.nodes)
+    # ---- Create new nodes: face centers and cell centers ----
+    nfaces = length(mgrid.mfaces)
+    new_face_nodes = Vector{Node{3,T}}(undef, nfaces)
+    # Face center nodes
+    for cell in cells
+        for face in Ferrite.faces(cell)
+            center = zero(Vec{3,T})
+            for vid in face
+                center += grid.nodes[vid].x
+            end
+            center /= length(face)
+            new_face_nodes[mgrid.mfaces[first(sortface(face))]] = Node(center)
+        end
+    end
+    ncell = length(cells)
+    new_cell_nodes = Vector{Node{3,T}}(undef, ncell)
+    # Cell center nodes
+    for (cell_idx, cell) in enumerate(cells)
+        center = zero(Vec{3,T})
+        for vid in vertices(cell)
+            center += grid.nodes[vid].x
+        end
+        center /= length(vertices(cell))
+        new_cell_nodes[cell_idx] = Node(center)
+    end
+
+    # Global node list: original + face centers + cell centers
+    all_nodes = [grid.nodes; new_face_nodes; new_cell_nodes]
+    # Offsets for face and cell center indices
+    node_offset_faces = length(grid.nodes)
+    node_offset_cells = node_offset_faces + nfaces
+
+    # ---- Generate tetrahedra ----
     new_cells = Tetrahedron[]
-    cell_ranges = UnitRange{Int}[]
-    cell_offsets = Int[]  # starting index of new_cells for each original cell
+    cell_offsets = Int[]          # start index in new_cells for each original cell
 
     for (cell_idx, cell) in enumerate(cells)
         push!(cell_offsets, length(new_cells))
-        start_idx = length(new_cells) + 1
-        if isa(cell, Hexahedron)
-            vnids = vertices(cell)
-            center = zero(new_nodes[vnids[1]].x)
-            for vid in vnids
-                center += new_nodes[vid].x
-            end
-            center /= length(vnids)
-            push!(new_nodes, Node(center))
-            cnid = length(new_nodes)
 
-            for f in Ferrite.faces(cell)
-                @assert length(f) == 4 "Expected quadrilateral face for Hexahedron"
-                v1, v2, v3, v4 = f[1], f[2], f[3], f[4]
-                # Triangulate face using (v1,v3,v2) and (v1,v4,v3)
-                t1 = orient_to_positive((v1, v3, v2, cnid), new_nodes)
-                t2 = orient_to_positive((v1, v4, v3, cnid), new_nodes)
-                push!(new_cells, Tetrahedron(t1))
-                push!(new_cells, Tetrahedron(t2))
-            end
-        elseif isa(cell, Tetrahedron)
-            nt = orient_to_positive(
-                (cell.nodes[1], cell.nodes[2], cell.nodes[3], cell.nodes[4]),
-                new_nodes,
-            )
-            push!(new_cells, Tetrahedron(nt))
-        else
-            throw(error("Tetrahedralizing cell type $(typeof(cell)) not implemented yet"))
-        end
-        added = length(new_cells) - (start_idx - 1)
-        push!(cell_ranges, start_idx:(start_idx+added-1))
+        # Global face indices for this cell (1‑based)
+        global_face_ids = global_faces(mgrid, cell)
+        # Convert to new node indices
+        face_center_ids = [node_offset_faces + gid for gid in global_face_ids]
+        cell_center_id = node_offset_cells + cell_idx
+
+        tets = tetrahedralize_cell(cell, face_center_ids, cell_center_id, all_nodes)
+        append!(new_cells, tets)
     end
 
-    # transfer cellsets
+    # ---- Transfer cellsets ----
     new_cellsets = Dict{String, OrderedSet{Int}}()
-    sizehint!(new_cellsets, length(grid.cellsets))
     for (setname, cellset) in grid.cellsets
         s = OrderedSet{Int}()
         for cid in cellset
-            for nid in cell_ranges[cid]
-                push!(s, nid)
+            start = cell_offsets[cid]
+            n = length(tetrahedralize_cell(cells[cid], zeros(Int, length(Ferrite.reference_faces(cells[cid]))), 0, all_nodes))  # dummy call to get count
+            for i in 1:n
+                push!(s, start + i)
             end
         end
         new_cellsets[setname] = s
     end
 
-    # transfer facetsets: map original face -> one or two triangular facets in the new tetra mesh
+    # ---- Transfer facetsets ----
     new_facetsets = Dict{String, OrderedSet{FacetIndex}}()
     for (setname, facetset) in grid.facetsets
         s = OrderedSet{FacetIndex}()
         for (cellidx, lfi) in facetset
-            orig_cell = getcells(grid, cellidx)
-            fnodes = Ferrite.faces(orig_cell)[lfi]
-            triangles =
-                length(fnodes) == 3 ? [(fnodes[1], fnodes[2], fnodes[3])] :
-                [(fnodes[1], fnodes[3], fnodes[2]), (fnodes[1], fnodes[4], fnodes[3])]
-            rng = cell_ranges[cellidx]
-            for tri in triangles
-                tri_set = Set(tri)
-                matched = false
-                for newcid in rng
-                    for localf = 1:length(Ferrite.faces(new_cells[newcid]))
-                        if Set(Ferrite.faces(new_cells[newcid])[localf]) == tri_set
-                            push!(s, FacetIndex(newcid, localf))
-                            matched = true
-                            break
-                        end
-                    end
-                    matched && break
-                end
-                if !matched
-                    throw(
-                        error(
-                            "Could not map facet (cell=$cellidx, face=$lfi, tri=$tri) into tetrahedral mesh",
-                        ),
-                    )
-                end
+            cell = cells[cellidx]
+            offset = cell_offsets[cellidx]
+            for fi in tetrahedralize_local_face_transfer(cell, offset, lfi)
+                push!(s, fi)
             end
         end
         if !isempty(s)
@@ -1024,13 +989,95 @@ function _tetrahedralize(mgrid::SimpleMesh{3, <:Any, T}) where {T}
         end
     end
 
-    !isempty(grid.vertexsets) && @warn("Vertexsets are not transferred to new mesh!")
+    # Nodesets remain unchanged (they refer to original nodes)
+    !isempty(grid.vertexsets) && @warn("Vertexsets are not transferred to tetrahedral mesh")
 
-    return Grid(
-        new_cells,
-        new_nodes;
-        cellsets = new_cellsets,
-        facetsets = new_facetsets,
-        nodesets = deepcopy(grid.nodesets),
-    )
+    return Grid(new_cells, all_nodes;
+                cellsets = new_cellsets,
+                facetsets = new_facetsets,
+                nodesets = deepcopy(grid.nodesets))
+end
+
+# -----------------------------------------------------------------------------
+# Tetrahedralization of individual cell types (positive volume ensured)
+# -----------------------------------------------------------------------------
+
+function tetrahedralize_cell(cell::Tetrahedron, face_center_ids::Vector{Int}, cell_center_id::Int, all_nodes::Vector{<:Node{3}})
+    return [cell]
+end
+
+function tetrahedralize_cell(cell::Hexahedron, face_center_ids::Vector{Int}, cell_center_id::Int, all_nodes::Vector{<:Node{3}})
+    # 6 quadrilateral faces → each splits into 4 triangles → 24 tetrahedra
+    v = vertices(cell)
+    tets = Tetrahedron[]
+    for (i, face_verts) in enumerate(Ferrite.reference_faces(cell))
+        fc = face_center_ids[i]
+        for j in 1:4
+            a = v[face_verts[j]]
+            b = v[face_verts[mod1(j+1, 4)]]
+            tet = Tetrahedron((b, a, fc, cell_center_id))
+            push!(tets, tet)
+        end
+    end
+    return tets
+end
+
+function tetrahedralize_cell(cell::Wedge, face_center_ids::Vector{Int}, cell_center_id::Int, all_nodes::Vector{<:Node{3}})
+    # 2 triangular + 3 quadrilateral faces → 2*3 + 3*4 = 18 tetrahedra
+    v = vertices(cell)
+    tets = Tetrahedron[]
+    for (i, face_verts) in enumerate(Ferrite.reference_faces(cell))
+        fc = face_center_ids[i]
+        n = length(face_verts)
+        for j in 1:n
+            a = v[face_verts[j]]
+            b = v[face_verts[mod1(j+1, n)]]
+            tet = Tetrahedron((b, a, fc, cell_center_id))
+            push!(tets, tet)
+        end
+    end
+    return tets
+end
+
+function tetrahedralize_cell(cell::Pyramid, face_center_ids::Vector{Int}, cell_center_id::Int, all_nodes::Vector{<:Node{3}})
+    # 1 quadrilateral + 4 triangular faces → 4 + 4*3 = 16 tetrahedra
+    v = vertices(cell)
+    tets = Tetrahedron[]
+    for (i, face_verts) in enumerate(Ferrite.reference_faces(cell))
+        fc = face_center_ids[i]
+        n = length(face_verts)
+        for j in 1:n
+            a = v[face_verts[j]]
+            b = v[face_verts[mod1(j+1, n)]]
+            tet = Tetrahedron((b, a, fc, cell_center_id))
+            push!(tets, tet)
+        end
+    end
+    return tets
+end
+
+# Fallback for unsupported cell types
+function tetrahedralize_cell(cell, face_center_ids, cell_center_id, all_nodes)
+    error("Tetrahedralization not implemented for cell type $(typeof(cell))")
+end
+
+# -----------------------------------------------------------------------------
+# Mapping of original faces to new triangular facets
+# -----------------------------------------------------------------------------
+
+function tetrahedralize_local_face_transfer(cell, offset::Int, local_face::Int)
+    # Number of triangles per face = number of edges of that face
+    face_verts = Ferrite.faces(cell)[local_face]
+    n = length(face_verts)
+    # Compute starting index of the first tetrahedron belonging to this face
+    start = offset + 1
+    for i in 1:(local_face-1)
+        start += length(Ferrite.faces(cell)[i])
+    end
+    # All triangles for this face are the first face of the generated tetrahedra
+    return OrderedSet([FacetIndex(start + i - 1, 1) for i in 1:n])
+end
+
+function tetrahedralize_local_face_transfer(cell::Tetrahedron, offset::Int, local_face::Int)
+    return OrderedSet([FacetIndex(offset + 1, local_face)])
 end

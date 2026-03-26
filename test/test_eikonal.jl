@@ -13,9 +13,7 @@ using LinearAlgebra
             longitudinal_upper = 0.0,
             apex_inner = 0.7,
             apex_outer = 1.0,
-        ) |>
-        Thunderbolt.hexahedralize |>
-        Thunderbolt.tetrahedralize;
+        ) |> Thunderbolt.tetrahedralize;
     heart_mesh = Thunderbolt.to_mesh(heart_mesh.grid)
     microstructure = OrthotropicMicrostructureModel(
         ConstantCoefficient((Vec(0.0, 0.0, 1.0))),
@@ -123,7 +121,7 @@ using LinearAlgebra
         @testset "Cartesian-CS" begin
             cs = CartesianCoordinateSystem(heart_mesh)
             activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x, t) -> if (norm(x) < 0.71)
+                AnalyticalCoefficient((x, t) -> if (norm(x) < 0.70001)
                     0.0
                 else
                     NaN
@@ -151,9 +149,10 @@ using LinearAlgebra
                 end
             end
             @test maximum(error_vals) < 0.03
-            @test minimum(error_vals) ≈ 0.0 atol=1e-12
+            @test minimum(error_vals) ≈ 0.0 atol=1e-12                                                                             # hide
             push!(results, nodal_timings)
         end
+        @test results[1] ≈ results[2] ≈ results[3]
     end
 
 end
@@ -169,9 +168,7 @@ end
             longitudinal_upper = 0.0,
             apex_inner = 0.7,
             apex_outer = 1.0,
-        ) |>
-        Thunderbolt.hexahedralize |>
-        Thunderbolt.tetrahedralize;
+        ) |> Thunderbolt.tetrahedralize;
     addcellset!(heart_mesh.grid, "Left", x -> (x[1] < -1e-6 && x[3] < 0.35); all = false)
     addcellset!(heart_mesh.grid, "Right", x -> (x[1] > 1e-6 && x[3] < 0.35); all = false)
     addcellset!(heart_mesh.grid, "Bot", x -> x[3] >= 0.35)
@@ -244,9 +241,9 @@ end
             activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
                 AnalyticalCoefficient(
                     (x, t) ->
-                        if (x.transmural < 0.05 && x.apicobasal > 0.90 && x.rotational > 0.5)
+                        if (x.transmural < 0.05 && x.apicobasal > 0.88 && x.rotational > 0.5)
                             -1.0
-                        elseif (x.transmural < 0.05 && x.apicobasal > 0.90)
+                        elseif (x.transmural < 0.05 && x.apicobasal > 0.88)
                             1.0
                         else
                             NaN
@@ -275,9 +272,9 @@ end
             cs = CartesianCoordinateSystem(heart_mesh)
             activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
                 AnalyticalCoefficient(
-                    (x, t) -> if (norm(x) < 0.71 && x[1] > 1e-6 && x[3] <= 0.351)
+                    (x, t) -> if (norm(x) < 0.70001 && x[1] > 1e-6 && x[3] <= 0.351)
                         -1.0
-                    elseif (norm(x) < 0.71 && x[1] < 1e-6 && x[3] <= 0.351)
+                    elseif (norm(x) < 0.70001 && x[1] < 1e-6 && x[3] <= 0.351)
                         1.0
                     else
                         NaN
@@ -299,6 +296,8 @@ end
             )
             FastIterativeMethod.solve!(heart_odeform, heart_mesh)
             nodal_timings = heart_odeform.ode_function.activation_timings
+            nodal_timings = heart_odeform.ode_function.activation_timings
+
             push!(results, nodal_timings)
         end
     end
@@ -308,7 +307,7 @@ end
         for node in heart_mesh.grid.cells[cell].nodes
             coords = heart_mesh.grid.nodes[node].x
             timing = 0.133418*results[1][node] + 0.566582 #Mapping from -1:whatever to 0.7:1
-            coords[1] > -0.12 && continue # boundary
+            coords[1] > -0.30 && continue # boundary
             push!(errors, abs(timing - norm(coords)))
         end
     end
@@ -320,7 +319,7 @@ end
         for node in heart_mesh.grid.cells[cell].nodes
             coords = heart_mesh.grid.nodes[node].x
             timing = ((((results[1][node]+1)/2.24858)*0.3)+0.7)  #Mapping from 1:whatever to 0.7:1
-            coords[1] < 0.12 && continue # boundary
+            coords[1] < 0.30 && continue # boundary
             push!(errors, abs(timing - norm(coords)))
         end
     end

@@ -66,8 +66,9 @@
 
     @testset "Tetrahedral $element_type" for element_type ∈ [
         Hexahedron,
-        # Wedge,
-        # Tetrahedron,
+        Wedge,
+        Pyramid,
+        Tetrahedron,
     ]
         dim = Ferrite.getrefdim(element_type)
         grid = generate_grid(element_type, ntuple(_ -> 4, dim))
