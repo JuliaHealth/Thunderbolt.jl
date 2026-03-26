@@ -75,7 +75,7 @@ using DiffEqBase
             mesh,
         )
 
-        FastIterativeMethod.solve!(heart_odeform, mesh, diffusion_tensor_field)
+        FastIterativeMethod.solve!(heart_odeform, mesh)
         nodal_timings = heart_odeform.ode_function.activation_timings
 
         dtvis = 0.5

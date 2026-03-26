@@ -101,7 +101,6 @@ microstructure = OrthotropicMicrostructureModel(
 κᵣ = 0.019 * 0.24 / (0.019 + 0.24)
 diffusion_tensor_field = SpectralTensorCoefficient(
     microstructure,
-    # ConstantCoefficient(SVector(κ₁, κᵣ, κᵣ))
     ConstantCoefficient(SVector(κ₁, κ₁, κ₁))
 )
 # Now we choose our *inner* cell model, used to compute the ionic currents, since
@@ -141,7 +140,7 @@ steady_state_initializer!(u₀, heart_odeform)
 
 # Here we solve for the wave arrival time using the package *Eikonal.jl* as it's
 # required to be solved for once before timestepping.
-FastIterativeMethod.solve!(heart_odeform, heart_mesh, diffusion_tensor_field)
+FastIterativeMethod.solve!(heart_odeform, heart_mesh)
 
 # !!! danger
 #     The fast iterative method solver in `Eikonal.jl` uses `@inbounds` a lot
