@@ -190,7 +190,7 @@ using LinearAlgebra
             push!(results, nodal_timings)
         end
     end
-        @test results[1] ≈ results[2] ≈ results[3] ≈ results[4]
+    @test results[1] ≈ results[2] ≈ results[3] ≈ results[4]
 end
 
 @testset "Subdomains" begin
