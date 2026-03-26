@@ -273,8 +273,6 @@ struct ReactionEikonalSplit{mType, csType}
     cs::csType
 end
 
-ReactionEikonalSplit(model) = ReactionEikonalSplit(model, nothing)
-
 """
     StimulatedCellModel(;cell_model, [stim_offset=0.0, stim_length=1.0, stim_strength= 0.91])
 
@@ -285,15 +283,15 @@ Wrapper around ionic cell models that adds foot current according to [NeicCampos
     stim_offset::OffestT = 0.0
     stim_length::T = 1.0
     stim_strength::T = 0.91
+    τᶠ::T = 0.25
 end
 num_states(m::StimulatedCellModel) = num_states(m.cell_model)
 default_initial_state(m::StimulatedCellModel) = default_initial_state(m.cell_model)
 function cell_rhs!(du, u, i, t, m::StimulatedCellModel)
     cell_rhs!(du, u, nothing, t, m.cell_model)
     if m.stim_offset ≤ t ≤ m.stim_offset + m.stim_length
-        τᶠ = 0.25
         idx = transmembranepotential_index(m.cell_model)
-        du[idx] += m.stim_strength / τᶠ * exp((t - m.stim_offset) / τᶠ)
+        du[idx] += m.stim_strength / m.τᶠ * exp((t - m.stim_offset) / m.τᶠ)
     end
     return nothing
 end
