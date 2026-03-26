@@ -928,12 +928,7 @@ function _tetrahedralize(mgrid::SimpleMesh{3, <:Any, T}) where {T}
     new_cell_nodes = Vector{Node{3, T}}(undef, ncell)
     # Cell center nodes
     for (cell_idx, cell) in enumerate(cells)
-        center = zero(Vec{3, T})
-        for vid in vertices(cell)
-            center += grid.nodes[vid].x
-        end
-        center /= length(vertices(cell))
-        new_cell_nodes[cell_idx] = Node(center)
+        new_cell_nodes[cell_idx] = create_center_node(grid, cell)
     end
 
     # Global node list: original + face centers + cell centers
