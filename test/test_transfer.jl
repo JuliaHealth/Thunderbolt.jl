@@ -150,9 +150,10 @@
             push!(cells_remaining, cellid(cc))
         end
     end
-    @testset "Transfer Operator: $transfer_operator" for transfer_operator in (
-        Thunderbolt.NodalIntergridInterpolation,
-        Thunderbolt.RadialBasisFunctionTransferOperator,
+    @testset "Transfer Operator: $name" for (name, transfer_operator) in (
+        ("NodalIntergridInterpolation", Thunderbolt.NodalIntergridInterpolation),
+        ("RL-RBF", (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(varargs...; rescale = true, kwargs...)),
+        ("RBF", (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(varargs...; rescale = false, kwargs...)),
     )
         test_transfer(source_mesh, target_mesh, transfer_operator)
     end

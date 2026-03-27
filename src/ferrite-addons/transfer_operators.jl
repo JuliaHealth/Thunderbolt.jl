@@ -151,24 +151,19 @@ end
     (max((1 - d / r), zero(r))^4) * (1 + 4d / r)
 end
 
-function build_sparse_matrix_kdtree(coords_vec, rbf_func, α = 2.0, M = 12)
+function build_sparse_matrix_kdtree(coords_vec, rbf_func, α = 2.0, M = 15)
     N = length(coords_vec)
-    # Convert vector-of-vectors to a matrix: each column is a point    
-    # Build KD-tree (dim=3)
     tree = KDTree(coords_vec)
     distances = maximum.(last.(knn.(Ref(tree), coords_vec, M)))
 
     rows = Int[]
     cols = Int[]
     vals = Float64[]
-    # Optional: estimate average neighbors to sizehint
-    # avg_neighbors = something like N * (max radius / bounding box)^3, but we skip for clarity
 
     @views for j = 1:N
         radius = distances[j] * α
         # Query all points within radius around point j (including j itself)
-        # idxs = inrange(tree, coords_vec[j], radius, true)
-        idxs = findall(x -> norm(x - coords_vec[j]) <= radius, coords_vec)
+        idxs = inrange(tree, coords_vec[j], radius)
         dists_vec = norm.(coords_vec[idxs] .- Ref(coords_vec[j]))
         for (i, d) in zip(idxs, dists_vec)
             # No need to check d < radius – guaranteed by inrange
@@ -197,9 +192,7 @@ function construct_RBF_dist_kdtree(coords_src, distances, coords_dist, rbf_func,
 
     @views for j = 1:N_src
         radius = distances[j] * α
-        # Find all destination points i within radius of source point j
-        # idxs = inrange(tree, coords_src[j], radius, true)
-        idxs = findall(x -> norm(x - coords_src[j]) <= radius, coords_dist)
+        idxs = inrange(tree, coords_src[j], radius)
         dists_vec = norm.(coords_dist[idxs] .- Ref(coords_src[j]))
         for (i, d) in zip(idxs, dists_vec)
             val = rbf_func(d, radius)
@@ -227,11 +220,13 @@ interpolation values, as this operator does not have extrapolation functionality
     We assume a continuous coordinate field, if the interpolation of the named field is continuous.
 """
 struct RadialBasisFunctionTransferOperator{
+    Rescale,
+    Geodesic,
     DH1 <: AbstractDofHandler,
     DH2 <: AbstractDofHandler,
     SIMT <: AbstractMatrix,
     DIMT <: AbstractMatrix,
-    γT <: AbstractVector,
+    γT <:Tuple{<: AbstractVector, <: AbstractVector},
     SLinsolveCT,
 } <: AbstractTransferOperator
     dh_from::DH1
@@ -244,7 +239,7 @@ struct RadialBasisFunctionTransferOperator{
     field_name_to::Symbol
     source_influence_matrix::SIMT
     destination_influence_matrix::DIMT
-    γ::γT
+    interpolation_weights::γT
     source_linsolve_cache::SLinsolveCT
 end
 
@@ -255,6 +250,8 @@ function RadialBasisFunctionTransferOperator(
     field_name_to::Symbol;
     subdomains_from = 1:length(dh_from.subdofhandlers),
     subdomains_to = 1:length(dh_to.subdofhandlers),
+    rescale = true,
+    geodesic = false
 ) where {sdim}
     @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
     @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
@@ -346,15 +343,23 @@ function RadialBasisFunctionTransferOperator(
             ref_coords,
         )
     end
-    γ = zeros(length(node_to_dof_map_from))
+    γf = zeros(length(node_to_dof_map_from))
+    γg = zeros(length(node_to_dof_map_from))
     source_influence_matrix, distances = build_sparse_matrix_kdtree(nodes_from, rbf_value)
-    destination_influence_matrix =
-        construct_RBF_dist_kdtree(nodes_from, distances, nodes_to, rbf_value)
-    prob = LinearSolve.LinearProblem(source_influence_matrix, copy(γ))
-    # linsolve = LinearSolve.init(prob, LinearSolve.KrylovJL_CG())
+    destination_influence_matrix = construct_RBF_dist_kdtree(nodes_from, distances, nodes_to, rbf_value)
+    prob = LinearSolve.LinearProblem(source_influence_matrix, copy(γf))
     linsolve = LinearSolve.init(prob)
 
-    RadialBasisFunctionTransferOperator(
+    RadialBasisFunctionTransferOperator{
+        rescale,
+        geodesic,
+        typeof(dh_from),
+        typeof(dh_to),
+        typeof(source_influence_matrix),
+        typeof(destination_influence_matrix),
+        typeof((γf, γg)),
+        typeof(linsolve),
+    }(
         dh_from,
         dh_to,
         node_to_dof_map_from,
@@ -365,14 +370,16 @@ function RadialBasisFunctionTransferOperator(
         field_name_to,
         source_influence_matrix,
         destination_influence_matrix,
-        γ,
+        (γf, γg),
         linsolve,
     )
 end
 
 function RadialBasisFunctionTransferOperator(
     dh_from::DofHandler{sdim},
-    dh_to::DofHandler{sdim},
+    dh_to::DofHandler{sdim};
+    rescale = true,
+    geodesic = false
 ) where {sdim}
     @assert length(Ferrite.getfieldnames(dh_from)) == 1 "Multiple fields found in source dof handler. Please specify which field you want to transfer."
     return RadialBasisFunctionTransferOperator(
@@ -385,7 +392,9 @@ end
 function RadialBasisFunctionTransferOperator(
     dh_from::DofHandler{sdim},
     dh_to::DofHandler{sdim},
-    field_name::Symbol,
+    field_name::Symbol;
+    rescale = true,
+    geodesic = false
 ) where {sdim}
     return RadialBasisFunctionTransferOperator(dh_from, dh_to, field_name, field_name)
 end
@@ -395,20 +404,32 @@ end
 """
 function transfer!(
     u_to::AbstractArray,
-    operator::RadialBasisFunctionTransferOperator,
-    u_from::AbstractArray,
+    operator::RadialBasisFunctionTransferOperator{true},
+    u_from::AbstractArray
 )
     operator.source_linsolve_cache.b = u_from[operator.node_to_dof_map_from]
     sol = LinearSolve.solve!(operator.source_linsolve_cache)
-    γf = deepcopy(sol.u)
-    operator.source_linsolve_cache.b = ones(length(operator.node_to_dof_map_from))
+    operator.interpolation_weights[1] .= sol.u
+    operator.source_linsolve_cache.b = ones(length(operator.node_to_dof_map_from)) #TODO Cache this
     sol = LinearSolve.solve!(operator.source_linsolve_cache)
-    γg = deepcopy(sol.u)
-    # TODO non-allocating version
+    operator.interpolation_weights[2] .= sol.u
     u_to[operator.node_to_dof_map_to] .=
-        (operator.destination_influence_matrix * γf) ./ (operator.destination_influence_matrix * γg)
+        (operator.destination_influence_matrix * operator.interpolation_weights[1]) ./ (operator.destination_influence_matrix * operator.interpolation_weights[2])
 end
 
+"""
+    This is basically a fancy matrix-vector product to transfer the solution from one problem to another one.
+"""
+function transfer!(
+    u_to::AbstractArray,
+    operator::RadialBasisFunctionTransferOperator{false},
+    u_from::AbstractArray
+)
+    operator.source_linsolve_cache.b = u_from[operator.node_to_dof_map_from]
+    sol = LinearSolve.solve!(operator.source_linsolve_cache)
+    operator.interpolation_weights[1] .= sol.u
+    u_to[operator.node_to_dof_map_to] .= (operator.destination_influence_matrix * operator.interpolation_weights[1])
+end
 
 """
     This is basically a fancy matrix-vector product to transfer the solution from one problem to another one.
