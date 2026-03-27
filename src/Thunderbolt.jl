@@ -14,6 +14,7 @@ import Polyester: @batch
 using SparseMatricesCSR, LinearAlgebra
 using OrderedCollections: OrderedDict, OrderedSet
 using BlockArrays, SparseArrays, StaticArrays
+using NearestNeighbors
 
 using JLD2: jldopen
 import WriteVTK
