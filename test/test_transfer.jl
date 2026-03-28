@@ -1,6 +1,6 @@
 @testset "Transfer Opeartors" begin
     function test_transfer(source_mesh, target_mesh, transfer_operator)
-        @testset "RBF Transfer on Matching Grids" begin
+        @testset "Matching Grids" begin
             source_dh = DofHandler(source_mesh)
             add!(source_dh, :z, Lagrange{RefQuadrilateral, 1}())
             add!(source_dh, :u, Lagrange{RefQuadrilateral, 2}())
@@ -72,7 +72,7 @@
         addcellset!(target_grid_nonmatching, "remaining", x->norm(x) ≥ 1.0)
         target_mesh_nonmatching = to_mesh(target_grid_nonmatching)
 
-        @testset "Nodal Intergrid Interpolation on Non-Matching Grids" begin
+        @testset "Non-Matching Grids" begin
             source_dh = DofHandler(source_mesh)
             add!(source_dh, :z, Lagrange{RefQuadrilateral, 1}())
             add!(source_dh, :u, Lagrange{RefQuadrilateral, 2}())
@@ -152,8 +152,42 @@
     end
     @testset "Transfer Operator: $name" for (name, transfer_operator) in (
         ("NodalIntergridInterpolation", Thunderbolt.NodalIntergridInterpolation),
-        ("RL-RBF", (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(varargs...; rescale = true, kwargs...)),
-        ("RBF", (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(varargs...; rescale = false, kwargs...)),
+        (
+            "RL-RBF",
+            (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
+                varargs...;
+                rescale = true,
+                geodesic = false,
+                kwargs...,
+            ),
+        ),
+        (
+            "RBF",
+            (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
+                varargs...;
+                rescale = false,
+                geodesic = false,
+                kwargs...,
+            ),
+        ),
+        (
+            "RL-RBF-G",
+            (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
+                varargs...;
+                rescale = true,
+                geodesic = true,
+                kwargs...,
+            ),
+        ),
+        (
+            "RBF-G",
+            (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
+                varargs...;
+                rescale = false,
+                geodesic = true,
+                kwargs...,
+            ),
+        ),
     )
         test_transfer(source_mesh, target_mesh, transfer_operator)
     end

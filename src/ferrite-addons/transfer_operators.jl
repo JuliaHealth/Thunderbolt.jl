@@ -17,7 +17,15 @@ function get_subdofhandler_indices_on_subdomains(dh::DofHandler, subdomain_names
     return collect(1:length(dh.subdofhandlers))
 end
 
-function _compute_dof_nodes_barrier!(nodes, sdh, dofrange, gip, dof_to_node_map, ref_coords)
+function _compute_dof_nodes_barrier!(
+    nodes,
+    sdh,
+    dofrange,
+    gip,
+    dof_to_node_map,
+    ref_coords,
+    adj = nothing,
+)
     for cc ∈ CellIterator(sdh)
         # Compute for each dof the spatial coordinate of from the reference coordiante and store.
         # NOTE We assume a continuous coordinate field if the interpolation is continuous.
@@ -25,6 +33,12 @@ function _compute_dof_nodes_barrier!(nodes, sdh, dofrange, gip, dof_to_node_map,
         for (dofidx, dof) in enumerate(dofs)
             nodes[dof_to_node_map[dof]] =
                 spatial_coordinate(gip, ref_coords[dofidx], getcoordinates(cc))
+        end
+        isnothing(adj) || for dof_i in dofs
+            for dof_j in dofs
+                adj[dof_i, dof_j] =
+                    norm(nodes[dof_to_node_map[dof_i]] - nodes[dof_to_node_map[dof_j]])
+            end
         end
     end
 end
@@ -151,9 +165,15 @@ end
     (max((1 - d / r), zero(r))^4) * (1 + 4d / r)
 end
 
-function build_sparse_matrix_kdtree(coords_vec, rbf_func, α = 2.0, M = 15)
+function build_sparse_matrix_kdtree(
+    coords_vec,
+    rbf_func,
+    tree,
+    distance_func = (x, xi, y, yi) -> norm.(x[xi] .- Ref(y[yi])),
+    α = 2.0,
+    M = 15,
+)
     N = length(coords_vec)
-    tree = KDTree(coords_vec)
     distances = maximum.(last.(knn.(Ref(tree), coords_vec, M)))
 
     rows = Int[]
@@ -164,7 +184,8 @@ function build_sparse_matrix_kdtree(coords_vec, rbf_func, α = 2.0, M = 15)
         radius = distances[j] * α
         # Query all points within radius around point j (including j itself)
         idxs = inrange(tree, coords_vec[j], radius)
-        dists_vec = norm.(coords_vec[idxs] .- Ref(coords_vec[j]))
+        # dists_vec = norm.(coords_vec[idxs] .- Ref(coords_vec[j]))
+        dists_vec = distance_func(coords_vec, j, coords_vec, idxs)
         for (i, d) in zip(idxs, dists_vec)
             # No need to check d < radius – guaranteed by inrange
             val = rbf_func(d, radius)
@@ -176,10 +197,17 @@ function build_sparse_matrix_kdtree(coords_vec, rbf_func, α = 2.0, M = 15)
 
     # Build CSC matrix; duplicate entries (if any) will be summed automatically
     A = sparse(rows, cols, vals)
-    return A, distances
+    return A, distances, tree
 end
 
-function construct_RBF_dist_kdtree(coords_src, distances, coords_dist, rbf_func, α = 2.0)
+function construct_RBF_dist_kdtree(
+    coords_src,
+    distances,
+    coords_dist,
+    rbf_func,
+    distance_func = (x, xi, y, yi) -> norm.(x[xi] .- Ref(y[yi])),
+    α = 2.0,
+)
     N_src = length(coords_src)   # number of columns in A
     N_dst = length(coords_dist)  # number of rows in A
 
@@ -193,7 +221,8 @@ function construct_RBF_dist_kdtree(coords_src, distances, coords_dist, rbf_func,
     @views for j = 1:N_src
         radius = distances[j] * α
         idxs = inrange(tree, coords_src[j], radius)
-        dists_vec = norm.(coords_dist[idxs] .- Ref(coords_src[j]))
+        # dists_vec = norm.(coords_dist[idxs] .- Ref(coords_src[j]))
+        dists_vec = distance_func(coords_src, j, coords_dist, idxs)
         for (i, d) in zip(idxs, dists_vec)
             val = rbf_func(d, radius)
             push!(rows, i)
@@ -226,8 +255,9 @@ struct RadialBasisFunctionTransferOperator{
     DH2 <: AbstractDofHandler,
     SIMT <: AbstractMatrix,
     DIMT <: AbstractMatrix,
-    γT <:Tuple{<: AbstractVector, <: AbstractVector},
+    γT <: Tuple{<: AbstractVector, <: AbstractVector},
     SLinsolveCT,
+    TreeT,
 } <: AbstractTransferOperator
     dh_from::DH1
     dh_to::DH2
@@ -241,6 +271,7 @@ struct RadialBasisFunctionTransferOperator{
     destination_influence_matrix::DIMT
     interpolation_weights::γT
     source_linsolve_cache::SLinsolveCT
+    source_kdtree::TreeT
 end
 
 function RadialBasisFunctionTransferOperator(
@@ -251,13 +282,14 @@ function RadialBasisFunctionTransferOperator(
     subdomains_from = 1:length(dh_from.subdofhandlers),
     subdomains_to = 1:length(dh_to.subdofhandlers),
     rescale = true,
-    geodesic = false
+    geodesic = false,
 ) where {sdim}
     @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
     @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
 
     dofset_from = Set{Int}()
     dofset_to = Set{Int}()
+    distances_source = allocate_matrix(dh_from)
     for sdh in dh_to.subdofhandlers[subdomains_to]
         # Skip subdofhandler if field is not present
         field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
@@ -321,6 +353,7 @@ function RadialBasisFunctionTransferOperator(
             gip,
             dof_to_node_map_from,
             ref_coords,
+            distances_source,
         )
     end
     for sdh in dh_to.subdofhandlers[subdomains_to]
@@ -345,8 +378,45 @@ function RadialBasisFunctionTransferOperator(
     end
     γf = zeros(length(node_to_dof_map_from))
     γg = zeros(length(node_to_dof_map_from))
-    source_influence_matrix, distances = build_sparse_matrix_kdtree(nodes_from, rbf_value)
-    destination_influence_matrix = construct_RBF_dist_kdtree(nodes_from, distances, nodes_to, rbf_value)
+    source_kdtree = KDTree(nodes_from)
+    source_graph = SimpleGraph(length(nodes_from))
+    for i in eachindex(IndexCartesian(), distances_source)
+        add_edge!(source_graph, i[1], i[2]);
+        add_edge!(source_graph, i[2], i[1]);
+    end
+    source_sortest_path = Parallel.dijkstra_shortest_paths(
+        source_graph,
+        GraphsVertices(source_graph),
+        distances_source,
+        parallel = :threads,
+    ).dists
+    M = 15
+    α = 2
+    support_radii = maximum.(last.(knn.(Ref(source_kdtree), nodes_from, M)))
+    h_max = maximum(distances_source)
+    β = 2
+    distance_func = if geodesic
+        geodesic_func =
+            (x, xi, y, yi) -> begin
+                coords_destination = y[yi]
+                nearest_node_in_source, distance_to_neighbor =
+                    nn(source_kdtree, coords_destination)
+                norm_distance = norm.(Ref(x[xi]) .- (y[yi]))
+                nn_distance = source_sortest_path[nearest_node_in_source, xi]
+                ret = [
+                    nn_distance[i] <= (norm_distance[i] + β*h_max) ? norm_distance[i] :
+                    (nn_distance[i] < support_radii[i]*α ? nn_distance[i] : Inf) for
+                    i = 1:length(norm_distance)
+                ]
+                return ret
+            end
+    else
+        (x, xi, y, yi) -> norm.(Ref(x[xi]) .- (y[yi]))
+    end
+    source_influence_matrix, distances, source_kdtree =
+        build_sparse_matrix_kdtree(nodes_from, rbf_value, source_kdtree, distance_func)
+    destination_influence_matrix =
+        construct_RBF_dist_kdtree(nodes_from, distances, nodes_to, rbf_value, distance_func)
     prob = LinearSolve.LinearProblem(source_influence_matrix, copy(γf))
     linsolve = LinearSolve.init(prob)
 
@@ -359,6 +429,7 @@ function RadialBasisFunctionTransferOperator(
         typeof(destination_influence_matrix),
         typeof((γf, γg)),
         typeof(linsolve),
+        typeof(source_kdtree),
     }(
         dh_from,
         dh_to,
@@ -372,6 +443,7 @@ function RadialBasisFunctionTransferOperator(
         destination_influence_matrix,
         (γf, γg),
         linsolve,
+        source_kdtree,
     )
 end
 
@@ -379,13 +451,15 @@ function RadialBasisFunctionTransferOperator(
     dh_from::DofHandler{sdim},
     dh_to::DofHandler{sdim};
     rescale = true,
-    geodesic = false
+    geodesic = false,
 ) where {sdim}
     @assert length(Ferrite.getfieldnames(dh_from)) == 1 "Multiple fields found in source dof handler. Please specify which field you want to transfer."
     return RadialBasisFunctionTransferOperator(
         dh_from,
         dh_to,
-        first(Ferrite.getfieldnames(dh_from)),
+        first(Ferrite.getfieldnames(dh_from));
+        rescale = rescale,
+        geodesic = geodesic,
     )
 end
 
@@ -394,9 +468,16 @@ function RadialBasisFunctionTransferOperator(
     dh_to::DofHandler{sdim},
     field_name::Symbol;
     rescale = true,
-    geodesic = false
+    geodesic = false,
 ) where {sdim}
-    return RadialBasisFunctionTransferOperator(dh_from, dh_to, field_name, field_name)
+    return RadialBasisFunctionTransferOperator(
+        dh_from,
+        dh_to,
+        field_name,
+        field_name;
+        rescale = rescale,
+        geodesic = geodesic,
+    )
 end
 
 """
@@ -405,7 +486,7 @@ end
 function transfer!(
     u_to::AbstractArray,
     operator::RadialBasisFunctionTransferOperator{true},
-    u_from::AbstractArray
+    u_from::AbstractArray,
 )
     operator.source_linsolve_cache.b = u_from[operator.node_to_dof_map_from]
     sol = LinearSolve.solve!(operator.source_linsolve_cache)
@@ -414,7 +495,8 @@ function transfer!(
     sol = LinearSolve.solve!(operator.source_linsolve_cache)
     operator.interpolation_weights[2] .= sol.u
     u_to[operator.node_to_dof_map_to] .=
-        (operator.destination_influence_matrix * operator.interpolation_weights[1]) ./ (operator.destination_influence_matrix * operator.interpolation_weights[2])
+        (operator.destination_influence_matrix * operator.interpolation_weights[1]) ./
+        (operator.destination_influence_matrix * operator.interpolation_weights[2])
 end
 
 """
@@ -423,12 +505,13 @@ end
 function transfer!(
     u_to::AbstractArray,
     operator::RadialBasisFunctionTransferOperator{false},
-    u_from::AbstractArray
+    u_from::AbstractArray,
 )
     operator.source_linsolve_cache.b = u_from[operator.node_to_dof_map_from]
     sol = LinearSolve.solve!(operator.source_linsolve_cache)
     operator.interpolation_weights[1] .= sol.u
-    u_to[operator.node_to_dof_map_to] .= (operator.destination_influence_matrix * operator.interpolation_weights[1])
+    u_to[operator.node_to_dof_map_to] .=
+        (operator.destination_influence_matrix * operator.interpolation_weights[1])
 end
 
 """
