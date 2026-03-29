@@ -156,8 +156,8 @@
             "RL-RBF",
             (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
                 varargs...;
-                rescale = true,
-                geodesic = false,
+                rescale = Val(true),
+                geodesic = Val(false),
                 kwargs...,
             ),
         ),
@@ -165,8 +165,8 @@
             "RBF",
             (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
                 varargs...;
-                rescale = false,
-                geodesic = false,
+                rescale = Val(false),
+                geodesic = Val(false),
                 kwargs...,
             ),
         ),
@@ -174,8 +174,8 @@
             "RL-RBF-G",
             (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
                 varargs...;
-                rescale = true,
-                geodesic = true,
+                rescale = Val(true),
+                geodesic = Val(true),
                 kwargs...,
             ),
         ),
@@ -183,8 +183,8 @@
             "RBF-G",
             (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
                 varargs...;
-                rescale = false,
-                geodesic = true,
+                rescale = Val(false),
+                geodesic = Val(true),
                 kwargs...,
             ),
         ),

@@ -26,6 +26,26 @@ function _compute_dof_nodes_barrier!(
     ref_coords,
     adj = nothing,
 )
+    _compute_dof_nodes_barrier!(
+        nodes,
+        sdh,
+        dofrange,
+        gip,
+        dof_to_node_map,
+        ref_coords,
+        adj,
+    )
+end
+
+function _compute_dof_nodes_barrier!(
+    nodes,
+    sdh,
+    dofrange,
+    gip,
+    dof_to_node_map,
+    ref_coords,
+    adj::AbstractMatrix,
+)
     for cc ∈ CellIterator(sdh)
         # Compute for each dof the spatial coordinate of from the reference coordiante and store.
         # NOTE We assume a continuous coordinate field if the interpolation is continuous.
@@ -34,7 +54,7 @@ function _compute_dof_nodes_barrier!(
             nodes[dof_to_node_map[dof]] =
                 spatial_coordinate(gip, ref_coords[dofidx], getcoordinates(cc))
         end
-        isnothing(adj) || for dof_i in dofs
+        for dof_i in dofs
             for dof_j in dofs
                 adj[dof_i, dof_j] =
                     norm(nodes[dof_to_node_map[dof_i]] - nodes[dof_to_node_map[dof_j]])
@@ -43,6 +63,25 @@ function _compute_dof_nodes_barrier!(
     end
 end
 
+function _compute_dof_nodes_barrier!(
+    nodes,
+    sdh,
+    dofrange,
+    gip,
+    dof_to_node_map,
+    ref_coords,
+    adj::Nothing,
+)
+    for cc ∈ CellIterator(sdh)
+        # Compute for each dof the spatial coordinate of from the reference coordiante and store.
+        # NOTE We assume a continuous coordinate field if the interpolation is continuous.
+        dofs = @view celldofs(cc)[dofrange]
+        for (dofidx, dof) in enumerate(dofs)
+            nodes[dof_to_node_map[dof]] =
+                spatial_coordinate(gip, ref_coords[dofidx], getcoordinates(cc))
+        end
+    end
+end
 """
     NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
     NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
@@ -169,12 +208,11 @@ function build_sparse_matrix_kdtree(
     coords_vec,
     rbf_func,
     tree,
-    distance_func = (x, xi, y, yi) -> norm.(x[xi] .- Ref(y[yi])),
+    distances,
+    distance_func,
     α = 2.0,
-    M = 15,
 )
     N = length(coords_vec)
-    distances = maximum.(last.(knn.(Ref(tree), coords_vec, M)))
 
     rows = Int[]
     cols = Int[]
@@ -197,7 +235,7 @@ function build_sparse_matrix_kdtree(
 
     # Build CSC matrix; duplicate entries (if any) will be summed automatically
     A = sparse(rows, cols, vals)
-    return A, distances, tree
+    return A
 end
 
 function construct_RBF_dist_kdtree(
@@ -205,7 +243,7 @@ function construct_RBF_dist_kdtree(
     distances,
     coords_dist,
     rbf_func,
-    distance_func = (x, xi, y, yi) -> norm.(x[xi] .- Ref(y[yi])),
+    distance_func,
     α = 2.0,
 )
     N_src = length(coords_src)   # number of columns in A
@@ -275,14 +313,38 @@ struct RadialBasisFunctionTransferOperator{
 end
 
 function RadialBasisFunctionTransferOperator(
-    dh_from::DofHandler{sdim},
-    dh_to::DofHandler{sdim},
+    dh_from::DofHandler,
+    dh_to::DofHandler,
     field_name_from::Symbol,
     field_name_to::Symbol;
     subdomains_from = 1:length(dh_from.subdofhandlers),
     subdomains_to = 1:length(dh_to.subdofhandlers),
-    rescale = true,
-    geodesic = false,
+    rescale = Val(false),
+    geodesic = Val(true),
+) 
+    _RadialBasisFunctionTransferOperator(
+    dh_from,
+    dh_to,
+    field_name_from,
+    field_name_to,
+    rescale,
+    geodesic;
+    subdomains_from,
+    subdomains_to,
+    )
+
+end
+
+function _RadialBasisFunctionTransferOperator(
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    field_name_from::Symbol,
+    field_name_to::Symbol,
+    rescale,
+    geodesic::Val{true};
+    subdomains_from = 1:length(dh_from.subdofhandlers),
+    subdomains_to = 1:length(dh_to.subdofhandlers),
+
 ) where {sdim}
     @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
     @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
@@ -395,34 +457,173 @@ function RadialBasisFunctionTransferOperator(
     support_radii = maximum.(last.(knn.(Ref(source_kdtree), nodes_from, M)))
     h_max = maximum(distances_source)
     β = 2
-    distance_func = if geodesic
-        geodesic_func =
-            (x, xi, y, yi) -> begin
-                coords_destination = y[yi]
-                nearest_node_in_source, distance_to_neighbor =
-                    nn(source_kdtree, coords_destination)
-                norm_distance = norm.(Ref(x[xi]) .- (y[yi]))
-                nn_distance = source_sortest_path[nearest_node_in_source, xi]
-                ret = [
-                    nn_distance[i] <= (norm_distance[i] + β*h_max) ? norm_distance[i] :
-                    (nn_distance[i] < support_radii[i]*α ? nn_distance[i] : Inf) for
-                    i = 1:length(norm_distance)
-                ]
-                return ret
-            end
-    else
-        (x, xi, y, yi) -> norm.(Ref(x[xi]) .- (y[yi]))
-    end
-    source_influence_matrix, distances, source_kdtree =
-        build_sparse_matrix_kdtree(nodes_from, rbf_value, source_kdtree, distance_func)
+    distance_func = (x, xi, y, yi) -> begin
+            coords_destination = y[yi]
+            nearest_node_in_source, distance_to_neighbor =
+                nn(source_kdtree, coords_destination)
+            norm_distance = norm.(Ref(x[xi]) .- (y[yi]))
+            nn_distance = source_sortest_path[nearest_node_in_source, xi]
+            ret = [
+                nn_distance[i] <= (norm_distance[i] + β*h_max) ? norm_distance[i] :
+                (nn_distance[i] < support_radii[i]*α ? nn_distance[i] : Inf) for
+                i = 1:length(norm_distance)
+            ]
+            return ret
+        end
+
+    source_influence_matrix =
+        build_sparse_matrix_kdtree(nodes_from, rbf_value, source_kdtree, support_radii, distance_func, α)
     destination_influence_matrix =
-        construct_RBF_dist_kdtree(nodes_from, distances, nodes_to, rbf_value, distance_func)
+        construct_RBF_dist_kdtree(nodes_from, support_radii, nodes_to, rbf_value, distance_func, α)
     prob = LinearSolve.LinearProblem(source_influence_matrix, copy(γf))
     linsolve = LinearSolve.init(prob)
 
     RadialBasisFunctionTransferOperator{
-        rescale,
-        geodesic,
+        typeof(rescale),
+        typeof(geodesic),
+        typeof(dh_from),
+        typeof(dh_to),
+        typeof(source_influence_matrix),
+        typeof(destination_influence_matrix),
+        typeof((γf, γg)),
+        typeof(linsolve),
+        typeof(source_kdtree),
+    }(
+        dh_from,
+        dh_to,
+        node_to_dof_map_from,
+        node_to_dof_map_to,
+        dof_to_node_map_from,
+        dof_to_node_map_to,
+        field_name_from,
+        field_name_to,
+        source_influence_matrix,
+        destination_influence_matrix,
+        (γf, γg),
+        linsolve,
+        source_kdtree,
+    )
+end
+
+function _RadialBasisFunctionTransferOperator(
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    field_name_from::Symbol,
+    field_name_to::Symbol,
+    rescale,
+    geodesic::Val{false};
+    subdomains_from = 1:length(dh_from.subdofhandlers),
+    subdomains_to = 1:length(dh_to.subdofhandlers),
+
+) where {sdim}
+    @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
+    @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
+
+    dofset_from = Set{Int}()
+    dofset_to = Set{Int}()
+    for sdh in dh_to.subdofhandlers[subdomains_to]
+        # Skip subdofhandler if field is not present
+        field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
+        # Just gather the dofs of the given field in the set
+        for cellidx ∈ sdh.cellset
+            dofs = celldofs(dh_to, cellidx)
+            for dof in dofs[dof_range(sdh, field_name_to)]
+                push!(dofset_to, dof)
+            end
+        end
+    end
+    for sdh in dh_from.subdofhandlers[subdomains_from]
+        # Skip subdofhandler if field is not present
+        field_name_from ∈ Ferrite.getfieldnames(sdh) || continue
+        # Just gather the dofs of the given field in the set
+        for cellidx ∈ sdh.cellset
+            dofs = celldofs(dh_from, cellidx)
+            for dof in dofs[dof_range(sdh, field_name_from)]
+                push!(dofset_from, dof)
+            end
+        end
+    end
+    node_to_dof_map_to = sort(collect(dofset_to))
+    node_to_dof_map_from = sort(collect(dofset_from))
+
+    # Build inverse map
+    dof_to_node_map_to = Dict{Int, Int}()
+    dof_to_node_map_from = Dict{Int, Int}()
+    next_dof_index = 1
+    for dof ∈ node_to_dof_map_to
+        dof_to_node_map_to[dof] = next_dof_index
+        next_dof_index += 1
+    end
+
+    next_dof_index = 1
+    for dof ∈ node_to_dof_map_from
+        dof_to_node_map_from[dof] = next_dof_index
+        next_dof_index += 1
+    end
+
+    # Compute nodes
+    grid_to = Ferrite.get_grid(dh_to)
+    grid_from = Ferrite.get_grid(dh_from)
+    nodes_from = Vector{Ferrite.get_coordinate_type(grid_from)}(undef, length(dofset_from))
+    nodes_to = Vector{Ferrite.get_coordinate_type(grid_to)}(undef, length(dofset_to))
+    for sdh in dh_from.subdofhandlers[subdomains_from]
+        # Skip subdofhandler if field is not present
+        field_name_from ∈ Ferrite.getfieldnames(sdh) || continue
+        # Grab the reference coordinates of the field to interpolate
+        ip = Ferrite.getfieldinterpolation(sdh, field_name_from)
+        ref_coords = Ferrite.reference_coordinates(ip)
+        # Grab the geometric interpolation
+        first_cell = getcells(grid_from, first(sdh.cellset))
+        cell_type  = typeof(first_cell)
+        gip        = Ferrite.geometric_interpolation(cell_type)
+
+        _compute_dof_nodes_barrier!(
+            nodes_from,
+            sdh,
+            Ferrite.dof_range(sdh, field_name_from),
+            gip,
+            dof_to_node_map_from,
+            ref_coords,
+            nothing,
+        )
+    end
+    for sdh in dh_to.subdofhandlers[subdomains_to]
+        # Skip subdofhandler if field is not present
+        field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
+        # Grab the reference coordinates of the field to interpolate
+        ip = Ferrite.getfieldinterpolation(sdh, field_name_to)
+        ref_coords = Ferrite.reference_coordinates(ip)
+        # Grab the geometric interpolation
+        first_cell = getcells(grid_to, first(sdh.cellset))
+        cell_type  = typeof(first_cell)
+        gip        = Ferrite.geometric_interpolation(cell_type)
+
+        _compute_dof_nodes_barrier!(
+            nodes_to,
+            sdh,
+            Ferrite.dof_range(sdh, field_name_to),
+            gip,
+            dof_to_node_map_to,
+            ref_coords,
+        )
+    end
+    γf = zeros(length(node_to_dof_map_from))
+    γg = zeros(length(node_to_dof_map_from))
+    source_kdtree = KDTree(nodes_from)
+    M = 15
+    α = 2
+    support_radii = maximum.(last.(knn.(Ref(source_kdtree), nodes_from, M)))
+    distance_func = (x, xi, y, yi) -> norm.(Ref(x[xi]) .- (y[yi]))
+    source_influence_matrix =
+        build_sparse_matrix_kdtree(nodes_from, rbf_value, source_kdtree, support_radii, distance_func, α)
+    destination_influence_matrix =
+        construct_RBF_dist_kdtree(nodes_from, support_radii, nodes_to, rbf_value, distance_func, α)
+    prob = LinearSolve.LinearProblem(source_influence_matrix, copy(γf))
+    linsolve = LinearSolve.init(prob)
+
+    RadialBasisFunctionTransferOperator{
+        typeof(rescale),
+        typeof(geodesic),
         typeof(dh_from),
         typeof(dh_to),
         typeof(source_influence_matrix),
@@ -450,8 +651,8 @@ end
 function RadialBasisFunctionTransferOperator(
     dh_from::DofHandler{sdim},
     dh_to::DofHandler{sdim};
-    rescale = true,
-    geodesic = false,
+    rescale = Val(true),
+    geodesic = Val(false),
 ) where {sdim}
     @assert length(Ferrite.getfieldnames(dh_from)) == 1 "Multiple fields found in source dof handler. Please specify which field you want to transfer."
     return RadialBasisFunctionTransferOperator(
@@ -467,8 +668,8 @@ function RadialBasisFunctionTransferOperator(
     dh_from::DofHandler{sdim},
     dh_to::DofHandler{sdim},
     field_name::Symbol;
-    rescale = true,
-    geodesic = false,
+    rescale = Val(true),
+    geodesic = Val(false),
 ) where {sdim}
     return RadialBasisFunctionTransferOperator(
         dh_from,
@@ -485,7 +686,7 @@ end
 """
 function transfer!(
     u_to::AbstractArray,
-    operator::RadialBasisFunctionTransferOperator{true},
+    operator::RadialBasisFunctionTransferOperator{Val{true}},
     u_from::AbstractArray,
 )
     operator.source_linsolve_cache.b = u_from[operator.node_to_dof_map_from]
@@ -504,7 +705,7 @@ end
 """
 function transfer!(
     u_to::AbstractArray,
-    operator::RadialBasisFunctionTransferOperator{false},
+    operator::RadialBasisFunctionTransferOperator{Val{false}},
     u_from::AbstractArray,
 )
     operator.source_linsolve_cache.b = u_from[operator.node_to_dof_map_from]
