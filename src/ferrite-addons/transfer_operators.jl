@@ -26,15 +26,7 @@ function _compute_dof_nodes_barrier!(
     ref_coords,
     adj = nothing,
 )
-    _compute_dof_nodes_barrier!(
-        nodes,
-        sdh,
-        dofrange,
-        gip,
-        dof_to_node_map,
-        ref_coords,
-        adj,
-    )
+    _compute_dof_nodes_barrier!(nodes, sdh, dofrange, gip, dof_to_node_map, ref_coords, adj)
 end
 
 function _compute_dof_nodes_barrier!(
@@ -204,14 +196,7 @@ end
     (max((1 - d / r), zero(r))^4) * (1 + 4d / r)
 end
 
-function build_sparse_matrix_kdtree(
-    coords_vec,
-    rbf_func,
-    tree,
-    distances,
-    distance_func,
-    α = 2.0,
-)
+function build_sparse_matrix_kdtree(coords_vec, rbf_func, tree, distances, distance_func, α = 2.0)
     N = length(coords_vec)
 
     rows = Int[]
@@ -223,7 +208,7 @@ function build_sparse_matrix_kdtree(
         # Query all points within radius around point j (including j itself)
         idxs = inrange(tree, coords_vec[j], radius)
         for i in idxs
-            d =  distance_func(coords_vec, j, coords_vec, i)
+            d = distance_func(coords_vec, j, coords_vec, i)
             # No need to check d < radius – guaranteed by inrange
             val = rbf_func(d, radius)
             push!(rows, i)
@@ -318,16 +303,16 @@ function RadialBasisFunctionTransferOperator(
     subdomains_to = 1:length(dh_to.subdofhandlers),
     rescale = Val(true),
     geodesic = Val(false),
-) 
+)
     _RadialBasisFunctionTransferOperator(
-    dh_from,
-    dh_to,
-    field_name_from,
-    field_name_to,
-    rescale,
-    geodesic;
-    subdomains_from,
-    subdomains_to,
+        dh_from,
+        dh_to,
+        field_name_from,
+        field_name_to,
+        rescale,
+        geodesic;
+        subdomains_from,
+        subdomains_to,
     )
 
 end
@@ -341,7 +326,6 @@ function _RadialBasisFunctionTransferOperator(
     geodesic::Val{true};
     subdomains_from = 1:length(dh_from.subdofhandlers),
     subdomains_to = 1:length(dh_to.subdofhandlers),
-
 ) where {sdim}
     @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
     @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
@@ -454,19 +438,26 @@ function _RadialBasisFunctionTransferOperator(
     support_radii = maximum.(last(knn(source_kdtree, nodes_from, M)))
     h_max = maximum(distances_source)
     β = 2
-    distance_func = (x, xi, y, yi) -> begin
+    distance_func =
+        (x, xi, y, yi) -> begin
             coords_destination = y[yi]
-            nearest_node_in_source, distance_to_neighbor =
-                nn(source_kdtree, coords_destination)
+            nearest_node_in_source, distance_to_neighbor = nn(source_kdtree, coords_destination)
             norm_distance = norm(x[xi] - y[yi])
             nn_distance = source_sortest_path[nearest_node_in_source, xi]
-            ret = nn_distance <= (norm_distance + β*h_max) ? norm_distance :
-                (nn_distance < support_radii*α ? nn_distance : Inf) 
+            ret =
+                nn_distance <= (norm_distance + β*h_max) ? norm_distance :
+                (nn_distance < support_radii*α ? nn_distance : Inf)
             return ret
         end
 
-    source_influence_matrix =
-        build_sparse_matrix_kdtree(nodes_from, rbf_value, source_kdtree, support_radii, distance_func, α)
+    source_influence_matrix = build_sparse_matrix_kdtree(
+        nodes_from,
+        rbf_value,
+        source_kdtree,
+        support_radii,
+        distance_func,
+        α,
+    )
     destination_influence_matrix =
         construct_RBF_dist_kdtree(nodes_from, support_radii, nodes_to, rbf_value, distance_func, α)
     prob = LinearSolve.LinearProblem(source_influence_matrix, copy(γf))
@@ -508,7 +499,6 @@ function _RadialBasisFunctionTransferOperator(
     geodesic::Val{false};
     subdomains_from = 1:length(dh_from.subdofhandlers),
     subdomains_to = 1:length(dh_to.subdofhandlers),
-
 ) where {sdim}
     @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
     @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
@@ -608,8 +598,14 @@ function _RadialBasisFunctionTransferOperator(
     α = 2
     support_radii = maximum.(last(knn(source_kdtree, nodes_from, M)))
     distance_func = (x, xi, y, yi) -> norm(x[xi] - y[yi])
-    source_influence_matrix =
-        build_sparse_matrix_kdtree(nodes_from, rbf_value, source_kdtree, support_radii, distance_func, α)
+    source_influence_matrix = build_sparse_matrix_kdtree(
+        nodes_from,
+        rbf_value,
+        source_kdtree,
+        support_radii,
+        distance_func,
+        α,
+    )
     destination_influence_matrix =
         construct_RBF_dist_kdtree(nodes_from, support_radii, nodes_to, rbf_value, distance_func, α)
     prob = LinearSolve.LinearProblem(source_influence_matrix, copy(γf))
