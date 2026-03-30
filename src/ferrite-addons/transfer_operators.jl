@@ -222,9 +222,8 @@ function build_sparse_matrix_kdtree(
         radius = distances[j] * α
         # Query all points within radius around point j (including j itself)
         idxs = inrange(tree, coords_vec[j], radius)
-        # dists_vec = norm.(coords_vec[idxs] .- Ref(coords_vec[j]))
-        dists_vec = distance_func(coords_vec, j, coords_vec, idxs)
-        for (i, d) in zip(idxs, dists_vec)
+        for i in idxs
+            d =  distance_func(coords_vec, j, coords_vec, i)
             # No need to check d < radius – guaranteed by inrange
             val = rbf_func(d, radius)
             push!(rows, i)
@@ -247,7 +246,6 @@ function construct_RBF_dist_kdtree(
     α = 2.0,
 )
     N_src = length(coords_src)   # number of columns in A
-    N_dst = length(coords_dist)  # number of rows in A
 
     # Build KD‑tree on destination points (used to query points within radius)
     tree = KDTree(coords_dist)
@@ -259,9 +257,8 @@ function construct_RBF_dist_kdtree(
     @views for j = 1:N_src
         radius = distances[j] * α
         idxs = inrange(tree, coords_src[j], radius)
-        # dists_vec = norm.(coords_dist[idxs] .- Ref(coords_src[j]))
-        dists_vec = distance_func(coords_src, j, coords_dist, idxs)
-        for (i, d) in zip(idxs, dists_vec)
+        for i in idxs
+            d = distance_func(coords_src, j, coords_dist, i)
             val = rbf_func(d, radius)
             push!(rows, i)
             push!(cols, j)
@@ -319,8 +316,8 @@ function RadialBasisFunctionTransferOperator(
     field_name_to::Symbol;
     subdomains_from = 1:length(dh_from.subdofhandlers),
     subdomains_to = 1:length(dh_to.subdofhandlers),
-    rescale = Val(false),
-    geodesic = Val(true),
+    rescale = Val(true),
+    geodesic = Val(false),
 ) 
     _RadialBasisFunctionTransferOperator(
     dh_from,
@@ -454,20 +451,17 @@ function _RadialBasisFunctionTransferOperator(
     ).dists
     M = 15
     α = 2
-    support_radii = maximum.(last.(knn.(Ref(source_kdtree), nodes_from, M)))
+    support_radii = maximum.(last(knn(source_kdtree, nodes_from, M)))
     h_max = maximum(distances_source)
     β = 2
     distance_func = (x, xi, y, yi) -> begin
             coords_destination = y[yi]
             nearest_node_in_source, distance_to_neighbor =
                 nn(source_kdtree, coords_destination)
-            norm_distance = norm.(Ref(x[xi]) .- (y[yi]))
+            norm_distance = norm(x[xi] - y[yi])
             nn_distance = source_sortest_path[nearest_node_in_source, xi]
-            ret = [
-                nn_distance[i] <= (norm_distance[i] + β*h_max) ? norm_distance[i] :
-                (nn_distance[i] < support_radii[i]*α ? nn_distance[i] : Inf) for
-                i = 1:length(norm_distance)
-            ]
+            ret = nn_distance <= (norm_distance + β*h_max) ? norm_distance :
+                (nn_distance < support_radii*α ? nn_distance : Inf) 
             return ret
         end
 
@@ -612,8 +606,8 @@ function _RadialBasisFunctionTransferOperator(
     source_kdtree = KDTree(nodes_from)
     M = 15
     α = 2
-    support_radii = maximum.(last.(knn.(Ref(source_kdtree), nodes_from, M)))
-    distance_func = (x, xi, y, yi) -> norm.(Ref(x[xi]) .- (y[yi]))
+    support_radii = maximum.(last(knn(source_kdtree, nodes_from, M)))
+    distance_func = (x, xi, y, yi) -> norm(x[xi] - y[yi])
     source_influence_matrix =
         build_sparse_matrix_kdtree(nodes_from, rbf_value, source_kdtree, support_radii, distance_func, α)
     destination_influence_matrix =
