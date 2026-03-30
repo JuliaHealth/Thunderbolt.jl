@@ -43,29 +43,29 @@ function generate_mixed_dimensional_grid_3D()
     return Grid(elements, nodes; cellsets, facetsets)
 end
 
-# include("test_elements.jl")
-# include("test_sarcomere.jl")
-# include("test_operators.jl")
+include("test_elements.jl")
+include("test_sarcomere.jl")
+include("test_operators.jl")
 
-# include("test_solver.jl")
-# include("test_preconditioners.jl")
+include("test_solver.jl")
+include("test_preconditioners.jl")
 
 include("test_transfer.jl")
 
-# include("test_integrators.jl")
+include("test_integrators.jl")
 
-# include("test_type_stability.jl")
-# include("test_mesh.jl")
-# include("test_coefficients.jl")
-# include("test_microstructures.jl")
+include("test_type_stability.jl")
+include("test_mesh.jl")
+include("test_coefficients.jl")
+include("test_microstructures.jl")
 
-# include("test_io.jl")
+include("test_io.jl")
 
-# include("integration/test_solid_mechanics.jl")
-# include("integration/test_electrophysiology.jl")
-# include("integration/test_ecg.jl")
-# include("integration/test_fsi.jl")
+include("integration/test_solid_mechanics.jl")
+include("integration/test_electrophysiology.jl")
+include("integration/test_ecg.jl")
+include("integration/test_fsi.jl")
 
-# include("test_aqua.jl")
+include("test_aqua.jl")
 
-# include("validation/land2015.jl")
+include("validation/land2015.jl")
