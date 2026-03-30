@@ -19,4 +19,4 @@ Thunderbolt = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [sources]
-Thunderbolt = {path = "."}
+Thunderbolt = {path = ".."}
