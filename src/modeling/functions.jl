@@ -141,3 +141,29 @@ __get_material_model(model::MultiMaterialModel, sdh) =
 __get_material_model(model::AbstractMaterialModel, sdh) = model
 get_material_model(f::QuasiStaticFunction, sdh) =
     __get_material_model(f.integrator.volume_model.material_model, sdh)
+
+"""
+    EikonalFunction{...}
+
+A discrete nonlinear Eikonal problem.
+We want to solve the problem √(∇tₐᵀ𝕍∇tₐ) = 1.
+Where tₐ are the nodal wave time of arrival, and 𝕍 is the conduction velocity tensor.
+"""
+struct EikonalFunction{
+    T <: Number,
+    VerticesVectorT <: AbstractVector{Vec{3, T}},
+    CellsVectorT <: AbstractVector{NTuple{4, Int}},
+    V2CT <: AbstractArray,
+    DTFT <: SpectralTensorCoefficient,
+    SetT <: AbstractSet{Int},
+} <: AbstractSemidiscreteFunction
+    vertices::VerticesVectorT
+    cells::CellsVectorT # strictly for Tetrahedra
+    vertex_to_cell::V2CT
+    activation_points::Vector{Int}
+    activation_points_offsets::Vector{Float64}
+    diffusion_tensor_field::DTFT
+    subdomains::Vector{SetT}
+end
+
+solution_size(f::EikonalFunction) = length(f.vertices)

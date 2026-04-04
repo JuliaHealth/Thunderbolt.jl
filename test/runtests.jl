@@ -66,6 +66,9 @@ include("integration/test_electrophysiology.jl")
 include("integration/test_ecg.jl")
 include("integration/test_fsi.jl")
 
+include("test_eikonal.jl")
+include("integration/test_eikonal.jl")
+
 include("test_aqua.jl")
 
 include("validation/land2015.jl")

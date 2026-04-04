@@ -173,6 +173,101 @@ function semidiscretize(
     return semidiscrete_ode
 end
 
+"""
+    ReactionEikonalDiffusionFunction(reaction_diffusion_function, eikonal_function)
+
+A wrapper function containing the reaction-diffusion split as a generic split function,
+and the eiknal function that needs to be solved once to add foot current contribution.
+"""
+struct ReactionEikonalDiffusionFunction{
+    RDFunctionT <: GenericSplitFunction,
+    EikonalFunctionT,
+    ActivationTimingsT,
+}
+    reaction_diffusion_function::RDFunctionT
+    eikonal_function::EikonalFunctionT
+    activation_timings::ActivationTimingsT
+end
+
+function semidiscretize(
+    split::ReactionEikonalDiffusionSplit,
+    discretizations::Tuple{<:FiniteElementDiscretization, <:SimplicialEikonalDiscretization},
+    mesh::AbstractGrid,
+)
+    epmodel = split.model
+
+    eikonal_model = EikonalModel(epmodel.κ)
+    eikonal_function = semidiscretize(eikonal_model, discretizations[2], mesh)
+    activation_timings = fill(Inf, solution_size(eikonal_function))
+
+    reaction_diffusion_function = semidiscretize(
+        ReactionDiffusionSplit(
+            MonodomainModel(
+                split.model.χ,
+                split.model.Cₘ,
+                split.model.κ,
+                split.model.stim, #Set to nostim?
+                StimulatedCellModel(;
+                    cell_model = split.model.ion,
+                    stim_offset = activation_timings,
+                    stim_length = 1.3,
+                ),
+                split.model.transmembrane_solution_symbol,
+                split.model.internal_state_symbol,
+            ),
+            split.cs,
+        ),
+        discretizations[1],
+        mesh,
+    )
+    semidiscrete_ode = ReactionEikonalDiffusionFunction(
+        reaction_diffusion_function,
+        eikonal_function,
+        activation_timings,
+    )
+
+    return semidiscrete_ode
+end
+
+"""
+    ReactionEikonalFunction(ode_function, eikonal_function)
+
+A wrapper function containing the cell model dynamics function, as a pointwise ODE,
+and the eiknal function that needs to be solved once before solving the cell dynamics part.
+"""
+struct ReactionEikonalFunction{ODEFunctionT, EikonalFunctionT}
+    ode_function::ODEFunctionT
+    eikonal_function::EikonalFunctionT
+end
+
+function semidiscretize(
+    split::ReactionEikonalSplit{<:MonodomainModel},
+    discretizations::Tuple{<:FiniteElementDiscretization, <:SimplicialEikonalDiscretization},
+    mesh::AbstractGrid,
+)
+    epmodel = split.model
+
+    eikonal_model = EikonalModel(epmodel.κ)
+    eikonal_function = semidiscretize(eikonal_model, discretizations[2], mesh)
+
+    prob_func =
+        let activation_timings = fill(Inf, length(eikonal_function.vertices)),
+            cellmodel = epmodel.ion
+
+            (prob, i, repeat) -> begin
+                model_i = Thunderbolt.StimulatedCellModel(;
+                    cell_model = cellmodel,
+                    stim_offset = activation_timings[i],
+                )
+                OrdinaryDiffEqCore.remake(prob, p = model_i, tstops = [activation_timings[i]])
+            end
+        end
+
+    semidiscrete_ode = ReactionEikonalFunction(prob_func, eikonal_function)
+
+    return semidiscrete_ode
+end
+
 # Solid mechanics semidiscretize interface
 function semidiscretize_register_subdomains!(
     dh,
