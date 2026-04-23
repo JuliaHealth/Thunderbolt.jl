@@ -25,6 +25,8 @@ jobs:
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.julia-version }}
+      - run: julia -e 'using Pkg; Pkg.Registry.add(RegistrySpec(url = "https://github.com/termi-official/termis-backyard"))'
+        shell: bash
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
