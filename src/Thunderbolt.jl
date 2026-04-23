@@ -40,6 +40,7 @@ import FerriteOperators:
     LinearFerriteOperator,
     AbstractBlockOperator,
     AbstractLinearOperator,
+    LinearNullOperator,
     setup_operator,
     update_operator!
 
