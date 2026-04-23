@@ -744,7 +744,8 @@ end
 LinearMaxwellMaterial(E₀::T, Eₗ::T, μ::T, η₁::T, ν::T) where {T} =
     LinearMaxwellMaterial{T, 3}(E₀, Eₗ, μ, η₁, ν)
 
-internal_variable_size(model::QuasiStaticModel, cid, qp) = internal_variable_size(model.material_model, cid, qp)
+internal_variable_size(model::QuasiStaticModel, cid, qp) =
+    internal_variable_size(model.material_model, cid, qp)
 function internal_variable_size(model::AbstractMaterialModel, cid, qp)
     return _compute_internal_variable_size(0, gather_internal_variable_infos(model))
 end

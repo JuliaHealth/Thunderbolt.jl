@@ -1,6 +1,6 @@
 struct DummyODESolution <: SciMLBase.AbstractODESolution{Float64, 2, Vector{Float64}}
     retcode::SciMLBase.ReturnCode.T
-    prob
+    prob::Any
 end
 DummyODESolution(prob) = DummyODESolution(SciMLBase.ReturnCode.Default, prob)
 function SciMLBase.solution_new_retcode(sol::DummyODESolution, retcode)
@@ -9,20 +9,26 @@ end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
 function OS._build_child(
-        prob::OS.OperatorSplittingProblem,
-        alg::AbstractSolver,
-        f::F,
-        p::P,
-        uprevouter::S,
-        uouter::S,
-        u_master::S,
-        solution_indices,
-        t0::T, dt::T, tf::T,
-        tstops, saveat, d_discontinuities, callback,
-        adaptive, verbose,
-        save_end = false,
-        controller = nothing
-    ) where {S, T, P, F}
+    prob::OS.OperatorSplittingProblem,
+    alg::AbstractSolver,
+    f::F,
+    p::P,
+    uprevouter::S,
+    uouter::S,
+    u_master::S,
+    solution_indices,
+    t0::T,
+    dt::T,
+    tf::T,
+    tstops,
+    saveat,
+    d_discontinuities,
+    callback,
+    adaptive,
+    verbose,
+    save_end = false,
+    controller = nothing,
+) where {S, T, P, F}
 
     uprev = @view uprevouter[solution_indices]
     u = @view uouter[solution_indices]
@@ -88,7 +94,9 @@ function OS._build_child(
     #     # dense = dense, k = ks, saved_subsystem = saved_subsystem,
     #     calculate_error = false
     # )
-    sol = DummyODESolution(OS.OperatorSplittingProblem(prob.f, view(prob.u0, solution_indices), prob.tspan))
+    sol = DummyODESolution(
+        OS.OperatorSplittingProblem(prob.f, view(prob.u0, solution_indices), prob.tspan),
+    )
 
     if controller === nothing && adaptive && SciMLBase.isadaptive(alg)
         controller = default_controller(alg, cache)

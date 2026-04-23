@@ -57,7 +57,12 @@ function _add_ivh_subdomain_recursive!(lvh, sdh, ivi::InternalVariableInfo, qr)
     return nothing
 end
 
-function _add_ivh_subdomain_recursive!(lvh, sdh, ivis::Base.AbstractVecOrTuple{<:InternalVariableInfo}, qr)
+function _add_ivh_subdomain_recursive!(
+    lvh,
+    sdh,
+    ivis::Base.AbstractVecOrTuple{<:InternalVariableInfo},
+    qr,
+)
     offset = lvh.ndofs + 1
     ivsize_per_qp = sum([ivi.size for ivi in ivis]; init = 0)
     for cell in sdh.cellset
@@ -76,8 +81,8 @@ function add_subdomain!(
     qrc::QuadratureRuleCollection,
     compatible_dh::DofHandler,
 )
-    mesh   = get_grid(compatible_dh)
-    cells  = mesh.grid.cells
+    mesh  = get_grid(compatible_dh)
+    cells = mesh.grid.cells
     haskey(mesh.volumetric_subdomains, name) || error(
         "Volumetric Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.volumetric_subdomains))",
     )

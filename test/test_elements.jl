@@ -15,8 +15,10 @@
         )
     end
     function setup_test_composite_surface_cache(kwargs...)
-        element_cache =
-            FerriteOperators.duplicate_for_device(PolyesterDevice(), setup_boundary_cache(kwargs...))
+        element_cache = FerriteOperators.duplicate_for_device(
+            PolyesterDevice(),
+            setup_boundary_cache(kwargs...),
+        )
         return FerriteOperators.duplicate_for_device(
             PolyesterDevice(),
             FerriteOperators.CompositeSurfaceElementCache((element_cache, element_cache)),

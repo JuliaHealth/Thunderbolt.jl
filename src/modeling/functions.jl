@@ -97,7 +97,8 @@ get_strategy(f::QuasiStaticFunction) = f.assembly_strategy
 
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
 internal_variable_offset(f::QuasiStaticFunction, cid) = internal_variable_offset(f.lvh, cid)
-internal_variable_size(f::QuasiStaticFunction, cid, qp) = internal_variable_size(get_material_model(f, cid, qp), cid, qp)
+internal_variable_size(f::QuasiStaticFunction, cid, qp) =
+    internal_variable_size(get_material_model(f, cid, qp), cid, qp)
 function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     fill!(u, 0.0)
     ndofs(f.lvh) == 0 && return # no internal variable

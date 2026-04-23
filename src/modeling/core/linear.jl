@@ -3,7 +3,8 @@
 
 Represents the integrand a the linear form over some function space.
 """
-struct LinearIntegrator{IntegrandType, QRC <: Union{<:QuadratureRuleCollection, Nothing}} <: AbstractLinearIntegrator
+struct LinearIntegrator{IntegrandType, QRC <: Union{<:QuadratureRuleCollection, Nothing}} <:
+       AbstractLinearIntegrator
     integrand::IntegrandType
     qrc::QRC
 end

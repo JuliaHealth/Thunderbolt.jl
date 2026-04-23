@@ -461,18 +461,23 @@ OrdinaryDiffEqCore.isfsal(::AbstractSolver) = false
 OrdinaryDiffEqCore._get_W(::ThunderboltTimeIntegrator) = nothing
 
 function SciMLBase.change_t_via_interpolation!(
-        integrator::ThunderboltTimeIntegrator,
+    integrator::ThunderboltTimeIntegrator,
+    t,
+    modify_save_endpoint::Type{Val{T}} = Val{false},
+    reinitialize_alg = nothing,
+) where {T}
+    OrdinaryDiffEqCore._change_t_via_interpolation!(
+        integrator,
         t,
-        modify_save_endpoint::Type{Val{T}} = Val{
-            false,
-        }, reinitialize_alg = nothing
-    ) where {
-        T,
-    }
-    OrdinaryDiffEqCore._change_t_via_interpolation!(integrator, t, modify_save_endpoint, reinitialize_alg)
+        modify_save_endpoint,
+        reinitialize_alg,
+    )
     return nothing
 end
 
-function OrdinaryDiffEqCore.post_newton_controller!(integrator::ThunderboltTimeIntegrator, alg::AbstractSolver)
+function OrdinaryDiffEqCore.post_newton_controller!(
+    integrator::ThunderboltTimeIntegrator,
+    alg::AbstractSolver,
+)
     integrator.dt = integrator.dt / 4
 end

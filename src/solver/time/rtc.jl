@@ -109,19 +109,16 @@ end
 end
 
 function OS.init_cache(
-        f::GenericSplitFunction, alg::ReactionTangentController;
-        uprev::AbstractArray, u::AbstractVector,
-    )
+    f::GenericSplitFunction,
+    alg::ReactionTangentController;
+    uprev::AbstractArray,
+    u::AbstractVector,
+)
     inner_cache = OS.init_cache(f, alg.ltg; uprev, u)
     return ReactionTangentControllerCache(inner_cache, zero(eltype(u)))
 end
 
-function OS._perform_step!(
-        parent,
-        children::Tuple,
-        cache::ReactionTangentControllerCache,
-        dt
-    )
+function OS._perform_step!(parent, children::Tuple, cache::ReactionTangentControllerCache, dt)
     OS._perform_step!(parent, children, cache.ltg_cache, dt)
 end
 
@@ -129,23 +126,37 @@ OS.isdtchangeable(rtc::ReactionTangentController) = OS.isdtchangeable(rtc.ltg)
 
 # FIXME RTC should be a real controller with OrdinaryDiffEq v7.
 function OS.build_subintegrators(
-        prob::OS.OperatorSplittingProblem,
-        alg::ReactionTangentController,
-        uprevouter::AbstractVector,
-        uouter::AbstractVector,
-        u_master::AbstractVector,
-        solution_indices,
-        t0, dt, tf,
-        tstops, saveat, d_discontinuities, callback,
-        adaptive, verbose
+    prob::OS.OperatorSplittingProblem,
+    alg::ReactionTangentController,
+    uprevouter::AbstractVector,
+    uouter::AbstractVector,
+    u_master::AbstractVector,
+    solution_indices,
+    t0,
+    dt,
+    tf,
+    tstops,
+    saveat,
+    d_discontinuities,
+    callback,
+    adaptive,
+    verbose,
 )
-    return OS.build_subintegrators(prob, alg.ltg,
+    return OS.build_subintegrators(
+        prob,
+        alg.ltg,
         uprevouter,
         uouter,
         u_master,
         solution_indices,
-        t0, dt, tf,
-        tstops, saveat, d_discontinuities, callback,
-        adaptive, verbose
+        t0,
+        dt,
+        tf,
+        tstops,
+        saveat,
+        d_discontinuities,
+        callback,
+        adaptive,
+        verbose,
     )
 end
