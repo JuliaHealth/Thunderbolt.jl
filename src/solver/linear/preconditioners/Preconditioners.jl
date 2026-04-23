@@ -11,8 +11,10 @@ import SparseArrays: getcolptr, getnzval
 import SparseMatricesCSR: getnzval
 import LinearAlgebra: Symmetric
 using LinearAlgebra
+import FerriteOperators:
+    AbstractDevice, AbstractCPUDevice, AbstractGPUDevice
 import Thunderbolt:
-    ThreadedSparseMatrixCSR, AbstractDevice, AbstractCPUDevice, AbstractGPUDevice, default_backend
+    ThreadedSparseMatrixCSR, default_backend
 using TimerOutputs: @timeit_debug
 
 ## Generic Code #

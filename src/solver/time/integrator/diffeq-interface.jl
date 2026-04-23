@@ -343,7 +343,7 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
     if should_accept_step(integrator)
         integrator.last_step_failed = false
         integrator.tprev = integrator.t
-        integrator.t = OrdinaryDiffEqCore.fixed_t_for_floatingpoint_error!(integrator, ttmp)
+        integrator.t = OrdinaryDiffEqCore.fixed_t_for_tstop_error!(integrator, ttmp)
         OrdinaryDiffEqCore.handle_callbacks!(integrator)
         adapt_dt!(integrator) # Noop for non-adaptive algorithms
     elseif integrator.force_stepfail
@@ -428,26 +428,6 @@ function compute_rate_prototype(prob::AbstractSemidiscreteProblem)
     _compute_rate_prototype_mass_matrix_form(prob)
 end
 
-# Slightly modified functions are here
-function OrdinaryDiffEqCore.modify_dt_for_tstops!(integrator::ThunderboltTimeIntegrator)
-    if SciMLBase.has_tstop(integrator)
-        tdir_t = integrator.tdir * integrator.t
-        tdir_tstop = SciMLBase.first_tstop(integrator)
-        if integrator.opts.adaptive
-            integrator.dt = integrator.tdir * min(abs(integrator.dt), abs(tdir_tstop - tdir_t)) # step! to the end
-        elseif integrator.dtchangeable
-            dtpropose = SciMLBase.get_proposed_dt(integrator)
-            if iszero(dtpropose)
-                integrator.dt = integrator.tdir * abs(tdir_tstop - tdir_t)
-            elseif !integrator.force_stepfail
-                # always try to step! with dtcache, but lower if a tstop
-                # however, if force_stepfail then don't set to dtcache, and no tstop worry
-                integrator.dt = integrator.tdir * min(abs(dtpropose), abs(tdir_tstop - tdir_t)) # step! to the end
-            end
-        end
-    end
-end
-
 function OrdinaryDiffEqCore.handle_tstop!(integrator::ThunderboltTimeIntegrator)
     if SciMLBase.has_tstop(integrator)
         tdir_t = integrator.tdir * integrator.t
@@ -475,4 +455,24 @@ function OrdinaryDiffEqCore.handle_tstop!(integrator::ThunderboltTimeIntegrator)
         end
     end
     return nothing
+end
+
+OrdinaryDiffEqCore.isfsal(::AbstractSolver) = false
+OrdinaryDiffEqCore._get_W(::ThunderboltTimeIntegrator) = nothing
+
+function SciMLBase.change_t_via_interpolation!(
+        integrator::ThunderboltTimeIntegrator,
+        t,
+        modify_save_endpoint::Type{Val{T}} = Val{
+            false,
+        }, reinitialize_alg = nothing
+    ) where {
+        T,
+    }
+    OrdinaryDiffEqCore._change_t_via_interpolation!(integrator, t, modify_save_endpoint, reinitialize_alg)
+    return nothing
+end
+
+function OrdinaryDiffEqCore.post_newton_controller!(integrator::ThunderboltTimeIntegrator, alg::AbstractSolver)
+    integrator.dt = integrator.dt / 4
 end

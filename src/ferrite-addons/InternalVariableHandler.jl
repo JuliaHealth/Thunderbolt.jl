@@ -48,49 +48,25 @@ end
 #     # Well...
 # end
 
-# This is the easiest solution for now
-# TODO optimize.
-struct InternalVariableHandler{DH} <: AbstractDofHandler
-    dh::DH
-end
-InternalVariableHandler(mesh::SimpleMesh) = InternalVariableHandler(DofHandler(mesh))
-Ferrite.close!(lvh::InternalVariableHandler) = close!(lvh.dh)
-Ferrite.ndofs(lvh::InternalVariableHandler) = ndofs(lvh.dh)
+InternalVariableHandler(mesh::SimpleMesh) = InternalVariableHandler(zeros(Int, getncells(mesh)), 0)
 
-# Utils to visualize local variables
-struct QuadratureInterpolation{RefShape, QR <: QuadratureRule{RefShape}} <:
-       Ferrite.ScalarInterpolation{RefShape, -1}
-    qr::QR
+_add_ivh_subdomain_recursive!(lvh, sdh, ::Nothing, qr) = nothing
+
+function _add_ivh_subdomain_recursive!(lvh, sdh, ivi::InternalVariableInfo, qr)
+    _add_ivh_subdomain_recursive!(lvh, sdh, (ivi,), qr)
+    return nothing
 end
 
-Ferrite.getnbasefunctions(ip::QuadratureInterpolation) = getnquadpoints(ip.qr)
-Ferrite.n_components(ip::QuadratureInterpolation) = 1
-Ferrite.n_dbc_components(::QuadratureInterpolation) = 0
-Ferrite.adjust_dofs_during_distribution(::QuadratureInterpolation) = false
-Ferrite.volumedof_interior_indices(ip::QuadratureInterpolation) =
-    ntuple(i->i, getnbasefunctions(ip))
-# conformity is only used for VTK export and updating the constraint handler. This is not needed since the internal variables are not constrained.
-Ferrite.conformity(::QuadratureInterpolation) = Ferrite.L2Conformity()
-
-function Ferrite.reference_coordinates(ip::QuadratureInterpolation)
-    return [qp for i = 1:ip.num_components for qp in getpoints(ip.qr)]
-end
-
-function Ferrite.reference_shape_value(ip::QuadratureInterpolation, ::Vec, i::Int)
-    throw(ArgumentError("shape function evaluation for interpolation $ip not implemented yet"))
-end
-
-
-_add_ivh_subdomain_recursive!(sdh, ::Nothing, qr) = nothing
-
-function _add_ivh_subdomain_recursive!(sdh, ivi::InternalVariableInfo, qr)
-    add!(sdh, ivi.name, QuadratureInterpolation(qr)^ivi.size)
-end
-
-function _add_ivh_subdomain_recursive!(sdh, ivis::Base.AbstractVecOrTuple, qr)
-    for ivi in ivis
-        _add_ivh_subdomain_recursive!(sdh, ivi, qr)
+function _add_ivh_subdomain_recursive!(lvh, sdh, ivis::Base.AbstractVecOrTuple{<:InternalVariableInfo}, qr)
+    offset = lvh.ndofs + 1
+    ivsize_per_qp = sum([ivi.size for ivi in ivis]; init = 0)
+    for cell in sdh.cellset
+        @assert lvh.internal_variable_offsets[cell] == 0
+        lvh.internal_variable_offsets[cell] = offset
+        offset += ivsize_per_qp*getnquadpoints(qr)
     end
+    lvh.ndofs = offset - 1
+    return nothing
 end
 
 function add_subdomain!(
@@ -100,17 +76,20 @@ function add_subdomain!(
     qrc::QuadratureRuleCollection,
     compatible_dh::DofHandler,
 )
-    (; dh) = lvh
-    mesh   = get_grid(dh)
+    mesh   = get_grid(compatible_dh)
     cells  = mesh.grid.cells
     haskey(mesh.volumetric_subdomains, name) || error(
         "Volumetric Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.volumetric_subdomains))",
     )
     for (celltype, cellset) in mesh.volumetric_subdomains[name].data
-        sdh = SubDofHandler(dh, _compatible_cellset(compatible_dh, first(cellset).idx))
-        qr = getquadraturerule(qrc, sdh)
-        _add_ivh_subdomain_recursive!(sdh, ivis, qr)
+        for sdh in compatible_dh.subdofhandlers
+            first(cellset).idx ∈ sdh.cellset || continue
+            qr = getquadraturerule(qrc, sdh)
+            _add_ivh_subdomain_recursive!(lvh, sdh, ivis, qr)
+            return
+        end
     end
+    error("Subdomain $name not found?")
 end
 
 # Function to compute a vector-like object to store information at quadrature points on generic (mixed) meshes.

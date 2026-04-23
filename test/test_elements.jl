@@ -2,24 +2,24 @@
     import Thunderbolt: assemble_element!, assemble_facet!
     import Thunderbolt: setup_element_cache, setup_boundary_cache
     import Thunderbolt: BilinearMassIntegrator, BilinearDiffusionIntegrator
-    import Thunderbolt: CompositeVolumetricElementCache, CompositeSurfaceElementCache
+    import FerriteOperators
 
     setup_test_cache(kwargs...) =
-        Thunderbolt.duplicate_for_device(PolyesterDevice(), setup_element_cache(kwargs...))
+        FerriteOperators.duplicate_for_device(PolyesterDevice(), setup_element_cache(kwargs...))
     function setup_test_composite_volume_cache(kwargs...)
         element_cache =
-            Thunderbolt.duplicate_for_device(PolyesterDevice(), setup_element_cache(kwargs...))
-        return Thunderbolt.duplicate_for_device(
+            FerriteOperators.duplicate_for_device(PolyesterDevice(), setup_element_cache(kwargs...))
+        return FerriteOperators.duplicate_for_device(
             PolyesterDevice(),
-            CompositeVolumetricElementCache((element_cache, element_cache)),
+            FerriteOperators.CompositeVolumetricElementCache((element_cache, element_cache)),
         )
     end
     function setup_test_composite_surface_cache(kwargs...)
         element_cache =
-            Thunderbolt.duplicate_for_device(PolyesterDevice(), setup_boundary_cache(kwargs...))
-        return Thunderbolt.duplicate_for_device(
+            FerriteOperators.duplicate_for_device(PolyesterDevice(), setup_boundary_cache(kwargs...))
+        return FerriteOperators.duplicate_for_device(
             PolyesterDevice(),
-            CompositeSurfaceElementCache((element_cache, element_cache)),
+            FerriteOperators.CompositeSurfaceElementCache((element_cache, element_cache)),
         )
     end
 
@@ -72,68 +72,6 @@
             1.0,
             1.0,
         ] .* 1e-4
-
-    # We check for pairwise consistency of the assembly operations
-    # First we check if the empty caches work correctly
-    @testset "Empty caches" begin
-        rₑ¹ = zeros(ndofs(dhs))
-        rₑ² = zeros(ndofs(dhs))
-        Kₑ¹ = zeros(ndofs(dhs), ndofs(dhs))
-        Kₑ² = zeros(ndofs(dhs), ndofs(dhs))
-
-        # Volume
-        assemble_element!(
-            Kₑ¹,
-            rₑ¹,
-            uₑs,
-            cell_cache_s,
-            Thunderbolt.EmptyVolumetricElementCache(),
-            0.0,
-        )
-        @test iszero(Kₑ¹)
-        @test iszero(rₑ¹)
-
-        assemble_element!(rₑ², uₑs, cell_cache_s, Thunderbolt.EmptyVolumetricElementCache(), 0.0)
-        @test iszero(rₑ²)
-
-        assemble_element!(Kₑ², uₑs, cell_cache_s, Thunderbolt.EmptyVolumetricElementCache(), 0.0)
-        @test iszero(Kₑ²)
-
-        # Surface
-        for local_facet_index = 1:nfacets(cell_cache_s)
-            assemble_facet!(
-                Kₑ¹,
-                rₑ¹,
-                uₑs,
-                cell_cache_s,
-                local_facet_index,
-                Thunderbolt.EmptySurfaceElementCache(),
-                0.0,
-            )
-            @test iszero(Kₑ¹)
-            @test iszero(rₑ¹)
-
-            assemble_facet!(
-                rₑ²,
-                uₑs,
-                cell_cache_s,
-                local_facet_index,
-                Thunderbolt.EmptySurfaceElementCache(),
-                0.0,
-            )
-            @test iszero(rₑ²)
-
-            assemble_facet!(
-                Kₑ²,
-                uₑs,
-                cell_cache_s,
-                local_facet_index,
-                Thunderbolt.EmptySurfaceElementCache(),
-                0.0,
-            )
-            @test iszero(Kₑ²)
-        end
-    end
 
     # No we check some examples for the implemented physics
     @testset "Scalar volumetric bilinear elements: $model" for model in (

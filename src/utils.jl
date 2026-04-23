@@ -389,120 +389,12 @@ Base.eltype(data::DenseDataRange) = eltype(data.data)
     return @view r.data[i1:i2]
 end
 
-struct ElementDofPair{IndexType}
-    element_index::IndexType
-    local_dof_index::IndexType
-end
-
-"""
-"""
-struct EAVector{
-    T,
-    EADataType <: AbstractVector{T},
-    IndexType <: AbstractVector{<:Integer},
-    DofMapType <: AbstractVector{<:ElementDofPair},
-} <: AbstractVector{T}
-    # Buffer for the per element data
-    eadata::DenseDataRange{EADataType, IndexType}
-    # Map from global dof index to element index and local dof index
-    dof_to_element_map::DenseDataRange{DofMapType, IndexType}
-end
-
-Base.size(v::EAVector) = size(v.eadata)
-Base.getindex(v::EAVector, i::Integer) = getindex(v.eadata, i)
-
-function Base.show(
-    io::IO,
-    mime::MIME"text/plain",
-    data::EAVector{T, EADataType, IndexType},
-) where {T, EADataType, IndexType}
-    println(
-        io,
-        "EAVector{T=",
-        T,
-        ", EADataType=",
-        EADataType,
-        ", IndexType=",
-        IndexType,
-        "} with storate for ",
-        size(data.eadata),
-        " entries.",
-    )
-end
-
-@inline get_data_for_index(r::EAVector, i::Integer) = get_data_for_index(r.eadata, i)
-
-EAVector(dh::DofHandler) = EAVector(Float64, Int, dh)
-function EAVector(::Type{ValueType}, ::Type{IndexType}, dh::DofHandler) where {ValueType, IndexType}
-    @assert length(dh.field_names) == 1
-    map  = create_dof_to_element_map(dh)
-    grid = get_grid(dh)
-
-    num_entries = length(dh.cell_dofs)
-    eadata      = zeros(ValueType, num_entries)
-    eaoffsets   = IndexType[]
-    next_offset = 1
-    push!(eaoffsets, next_offset)
-    for i = 1:getncells(grid)
-        next_offset += ndofs_per_cell(dh, i)
-        push!(eaoffsets, IndexType(next_offset))
-    end
-
-    return EAVector(DenseDataRange(eadata, eaoffsets), map)
-end
-
-# Transfer the element data into a vector
-function ea_collapse!(b::Vector, bes::EAVector)
-    ndofs = size(b, 1)
-    @batch minbatch=max(1, ndofs÷Threads.nthreads()) for dof ∈ 1:ndofs
-        _ea_collapse_kernel!(b, dof, bes)
-    end
-end
-
-@inline function _ea_collapse_kernel!(b::AbstractVector, dof::Integer, bes::EAVector)
-    for edp ∈ get_data_for_index(bes.dof_to_element_map, dof)
-        be_range = get_data_for_index(bes.eadata, edp.element_index)
-        b[dof] += be_range[edp.local_dof_index]
-    end
-end
-
-create_dof_to_element_map(dh::DofHandler) = create_dof_to_element_map(Int, dh::DofHandler)
-
-function create_dof_to_element_map(::Type{IndexType}, dh::DofHandler) where {IndexType}
-    # Preallocate storage
-    dof_to_element_vs = [Set{ElementDofPair{IndexType}}() for _ = 1:ndofs(dh)]
-    # Fill set
-    for sdh in dh.subdofhandlers
-        for cc in CellIterator(sdh)
-            eid = Ferrite.cellid(cc)
-            for (ldi, dof) in enumerate(celldofs(cc))
-                s = dof_to_element_vs[dof]
-                push!(s, ElementDofPair(eid, ldi))
-            end
-        end
-    end
-    #
-    dof_to_element_vv = ElementDofPair{IndexType}[]
-    offset = 1
-    offsets = IndexType[]
-    for dof = 1:ndofs(dh)
-        append!(offsets, offset)
-        s = dof_to_element_vs[dof]
-        offset += length(s)
-        append!(dof_to_element_vv, s)
-    end
-    append!(offsets, offset)
-    #
-    return DenseDataRange(dof_to_element_vv, offsets)
-end
-
 # To handle embedded elements in the same code
 _inner_product_helper(a::Vec, B::Union{Tensor, SymmetricTensor}, c::Vec) = a ⋅ B ⋅ c
 _inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector) =
     Vec(a.data) ⋅ B ⋅ Vec(c.data)
 _inner_product_helper(a::Vec, B::AbstractFloat, c::Vec) = a ⋅ c * B
 _inner_product_helper(a::SVector, B::AbstractFloat, c::SVector) = Vec(a.data) ⋅ Vec(c.data) * B
-
 
 function geometric_subdomain_interpolation(sdh::SubDofHandler)
     grid      = get_grid(sdh.dh)

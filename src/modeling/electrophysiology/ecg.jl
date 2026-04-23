@@ -58,7 +58,7 @@ struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
     op::OperatorType
 end
 
-function Plonsey1964ECGGaussCache(op::AssembledBilinearOperator, φₘ::AbstractVector{T}) where {T}
+function Plonsey1964ECGGaussCache(op::BilinearFerriteOperator, φₘ::AbstractVector{T}) where {T}
     @unpack dh, integrator = op
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     grid = get_grid(dh)
@@ -304,8 +304,8 @@ end
 function PoissonECGReconstructionCache(
     heart_fun::AffineODEFunction,
     torso_fun::AffineSteadyStateFunction,
-    source_op::AssembledBilinearOperator,
-    torso_op::AssembledBilinearOperator,
+    source_op::BilinearFerriteOperator,
+    torso_op::BilinearFerriteOperator,
     transfer_op::AbstractTransferOperator,
     ph::PointEvalHandler;
     linear_solver        = LinearSolve.KrylovJL_CG(),
@@ -549,8 +549,8 @@ end
 function Geselowitz1989ECGLeadCache(
     heart_fun::AffineODEFunction,
     lead_fun::AffineSteadyStateFunction,
-    lead_op::AssembledBilinearOperator,
-    source_op::AssembledBilinearOperator,
+    lead_op::BilinearFerriteOperator,
+    source_op::BilinearFerriteOperator,
     transfer_op,
     electrode_positions::AbstractVector{Vector{VertexIndex}};
     linear_solver        = LinearSolve.KrylovJL_CG(),

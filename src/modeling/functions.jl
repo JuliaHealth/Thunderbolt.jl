@@ -96,22 +96,22 @@ end
 get_strategy(f::QuasiStaticFunction) = f.assembly_strategy
 
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
-function local_function_size(f::QuasiStaticFunction)
-    error("Local function size of QuasiStaticFunction can vary!")
-end
+internal_variable_offset(f::QuasiStaticFunction, cid) = internal_variable_offset(f.lvh, cid)
+internal_variable_size(f::QuasiStaticFunction, cid, qp) = internal_variable_size(get_material_model(f, cid, qp), cid, qp)
 function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     fill!(u, 0.0)
     ndofs(f.lvh) == 0 && return # no internal variable
-    offset = 1
     uq = @view u[(ndofs(f.dh)+1):end]
-    for sdh in f.lvh.dh.subdofhandlers
+    for sdh in f.dh.subdofhandlers
         qr = getquadraturerule(f.integrator.qrc, sdh)
-        # ivsize_per_qp = sum(sdh.field_n_components; init=0) # FIXME broken...
-        ivsize_per_qp = sum(Ferrite.n_components.(sdh.field_interpolations); init = 0)
-        ivsize_per_qp == 0 && continue
-        material_model = get_material_model(f, sdh)
         for cell in CellIterator(sdh)
+            cid = cellid(cell)
+            offset = internal_variable_offset(f.lvh, cid)
+            offset == 0 && continue
             for qp in QuadratureIterator(qr)
+                material_model = get_material_model(f, cid, qp)
+                ivsize_per_qp = internal_variable_size(material_model, cid, qp)
+                ivsize_per_qp == 0 && continue
                 q = @view uq[offset:(offset+ivsize_per_qp-1)]
                 default_initial_state!(q, material_model)
                 offset += ivsize_per_qp
@@ -124,10 +124,10 @@ gather_internal_variable_infos(model::QuasiStaticModel) =
     gather_internal_variable_infos(model.material_model)
 gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]
 
-@unroll function __get_material_model_multi(materials, domains, sdh)
+@unroll function __get_material_model_multi(materials, domains, cid, qp)
     idx = 1
     @unroll for material ∈ materials
-        if first(domains[idx]) ∈ sdh.cellset
+        if cid ∈ domains[idx]
             return material
         end
         idx += 1
@@ -136,8 +136,8 @@ gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableI
         "MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.",
     )
 end
-__get_material_model(model::MultiMaterialModel, sdh) =
-    __get_material_model_multi(model.materials, model.domains, sdh)
-__get_material_model(model::AbstractMaterialModel, sdh) = model
-get_material_model(f::QuasiStaticFunction, sdh) =
-    __get_material_model(f.integrator.volume_model.material_model, sdh)
+__get_material_model(model::MultiMaterialModel, cid, qp) =
+    __get_material_model_multi(model.materials, model.domains, cid, qp)
+__get_material_model(model::AbstractMaterialModel, cid, qp) = model
+get_material_model(f::QuasiStaticFunction, cid, qp) =
+    __get_material_model(f.integrator.volume_model.material_model, cid, qp)

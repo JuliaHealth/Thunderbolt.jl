@@ -4,6 +4,28 @@ import KernelAbstractions as KA
 
 using TimerOutputs: @timeit_debug
 
+import FerriteOperators: FerriteOperators,
+    SequentialCPUDevice, PolyesterDevice,
+    duplicate_for_device, EAVector, InternalVariableHandler,
+    AbstractAssemblyStrategy, AbstractCPUDevice,
+    SequentialAssemblyStrategy, PerColorAssemblyStrategy,
+    ElementAssemblyStrategy, AbstractGPUDevice,
+    AbstractNonlinearIntegrator, QuadratureRuleCollection, getquadraturerule,
+    setup_boundary_cache, setup_element_cache,
+    AbstractVolumetricElementCache, AbstractSurfaceElementCache,
+    EmptySurfaceElementCache, EmptyVolumetricElementCache,
+    update_linearization!, assemble_element!, internal_variable_offset,
+    AbstractBilinearIntegrator, AbstractLinearIntegrator, 
+    is_facet_in_cache, assemble_facet!
+
+import FerriteOperators:
+    LinearizedFerriteOperator, BilinearFerriteOperator, LinearFerriteOperator,
+    AbstractBlockOperator, AbstractLinearOperator, setup_operator, update_operator!
+
+# TODO remove these
+import FerriteOperators:
+    CompositeSurfaceElementCache
+
 import Unrolled: @unroll
 import FastBroadcast: @..
 
@@ -70,9 +92,7 @@ include("mesh/meshes.jl")
 include("utils.jl")
 
 include("devices.jl")
-include("strategy.jl")
 
-include("ferrite-addons/parallel_duplication_api.jl")
 include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 

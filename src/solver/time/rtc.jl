@@ -44,24 +44,6 @@ end
     cache::ReactionTangentControllerCache,
 ) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
 
-@inline function OS.advance_solution_to!(
-    outer_integrator::OS.OperatorSplittingIntegrator,
-    subintegrators::Tuple,
-    solution_indices::Tuple,
-    synchronizers::Tuple,
-    cache::ReactionTangentControllerCache,
-    tnext,
-)
-    OS.advance_solution_to!(
-        outer_integrator,
-        subintegrators,
-        solution_indices,
-        synchronizers,
-        cache.ltg_cache,
-        tnext,
-    )
-end
-
 @inline DiffEqBase.isadaptive(::ReactionTangentController) = true
 
 """
@@ -70,7 +52,7 @@ Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) 
 It is assumed that the problem containing the reaction tangent is a [`PointwiseODEFunction`](@ref).
 """
 @inline function get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
-    R, _ = _get_reaction_tangent(integrator.subintegrator_tree)
+    R, _ = _get_reaction_tangent(integrator.child_subintegrators)
     return R
 end
 
@@ -126,38 +108,44 @@ end
     return nothing # Do nothing
 end
 
-function OS.build_subintegrator_tree_with_cache(
-    prob::OS.OperatorSplittingProblem,
-    alg::ReactionTangentController,
-    uprevouter::AbstractVector,
-    uouter::AbstractVector,
-    solution_indices,
-    t0,
-    dt,
-    tf,
-    tstops,
-    saveat,
-    d_discontinuities,
-    callback,
-    adaptive,
-    verbose,
+function OS.init_cache(
+        f::GenericSplitFunction, alg::ReactionTangentController;
+        uprev::AbstractArray, u::AbstractVector,
+    )
+    inner_cache = OS.init_cache(f, alg.ltg; uprev, u)
+    return ReactionTangentControllerCache(inner_cache, zero(eltype(u)))
+end
+
+function OS._perform_step!(
+        parent,
+        children::Tuple,
+        cache::ReactionTangentControllerCache,
+        dt
+    )
+    OS._perform_step!(parent, children, cache.ltg_cache, dt)
+end
+
+OS.isdtchangeable(rtc::ReactionTangentController) = OS.isdtchangeable(rtc.ltg)
+
+# FIXME RTC should be a real controller with OrdinaryDiffEq v7.
+function OS.build_subintegrators(
+        prob::OS.OperatorSplittingProblem,
+        alg::ReactionTangentController,
+        uprevouter::AbstractVector,
+        uouter::AbstractVector,
+        u_master::AbstractVector,
+        solution_indices,
+        t0, dt, tf,
+        tstops, saveat, d_discontinuities, callback,
+        adaptive, verbose
 )
-    subintegrators, inner_cache = OS.build_subintegrator_tree_with_cache(
-        prob,
-        alg.ltg,
+    return OS.build_subintegrators(prob, alg.ltg,
         uprevouter,
         uouter,
+        u_master,
         solution_indices,
-        t0,
-        dt,
-        tf,
-        tstops,
-        saveat,
-        d_discontinuities,
-        callback,
-        adaptive,
-        verbose,
+        t0, dt, tf,
+        tstops, saveat, d_discontinuities, callback,
+        adaptive, verbose
     )
-
-    return subintegrators, ReactionTangentControllerCache(inner_cache, zero(eltype(uouter)))
 end

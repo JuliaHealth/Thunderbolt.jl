@@ -86,24 +86,6 @@ getinterpolation(
     type::Type{ref_shape},
 ) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape} = getinterpolation(ipc.base, type)^vdim
 
-
-"""
-    QuadratureRuleCollection(order::Int)
-
-A collection of quadrature rules across different cell types.
-"""
-struct QuadratureRuleCollection{order} end
-
-QuadratureRuleCollection(order::Int) = QuadratureRuleCollection{order}()
-
-getquadraturerule(
-    qrc::QuadratureRuleCollection{order},
-    cell::AbstractCell{ref_shape},
-) where {order, ref_shape} = QuadratureRule{ref_shape}(order)
-getquadraturerule(qrc::QuadratureRuleCollection, sdh::SubDofHandler) =
-    getquadraturerule(qrc, get_first_cell(sdh))
-
-
 """
     NodalQuadratureRuleCollection(::InterpolationCollection)
 
