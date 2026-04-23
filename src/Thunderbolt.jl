@@ -15,7 +15,7 @@ import FerriteOperators: FerriteOperators,
     AbstractVolumetricElementCache, AbstractSurfaceElementCache,
     EmptySurfaceElementCache, EmptyVolumetricElementCache,
     update_linearization!, assemble_element!, internal_variable_offset,
-    AbstractBilinearIntegrator, AbstractLinearIntegrator, 
+    AbstractBilinearIntegrator, AbstractLinearIntegrator,
     is_facet_in_cache, assemble_facet!
 
 import FerriteOperators:
