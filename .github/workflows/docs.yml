@@ -14,7 +14,7 @@ jobs:
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.12'
-      - run: julia -e 'using Pkg; Pkg.Registry.add(RegistrySpec(url = "https://github.com/termi-official/termis-backyard"))'
+      - run: julia -e 'using Pkg; Pkg.Registry.add(); Pkg.Registry.add(RegistrySpec(url = "https://github.com/termi-official/termis-backyard"))'
         shell: bash
       - uses: julia-actions/cache@v3
       - name: Install dependencies
