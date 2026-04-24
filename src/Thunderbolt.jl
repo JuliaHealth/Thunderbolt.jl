@@ -32,7 +32,8 @@ import FerriteOperators:
     AbstractBilinearIntegrator,
     AbstractLinearIntegrator,
     is_facet_in_cache,
-    assemble_facet!
+    assemble_facet!,
+    value_type
 
 import FerriteOperators:
     LinearizedFerriteOperator,
