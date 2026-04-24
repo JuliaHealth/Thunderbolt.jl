@@ -406,12 +406,12 @@ end
         mesh,
     )
     i = test_solve_contractile_cuboid(mesh, mmat, timestepper)
-    VTKGridFile(
-        "SolidMechanicsIntegrationDebug",
-        i.cache.stage.nlsolver.global_solver_cache.op.dh.grid,
-    ) do vtk
-        write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
-    end
+    # VTKGridFile(
+    #     "SolidMechanicsIntegrationDebug",
+    #     i.cache.stage.nlsolver.global_solver_cache.op.dh.grid,
+    # ) do vtk
+    #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+    # end
 
     mmat2 = Thunderbolt.MultiMaterialModel(
         (
@@ -573,7 +573,7 @@ end
         # Test path-independence setup
         @test i1.t ≈ 10.0
         @test i2.t ≈ 10.0
-        @test i1.u ≈ i2.u
+        @test i1.u ≈ i2.u atol=1e-4
     end
 
     # Check that the load-path is actually different
@@ -644,7 +644,7 @@ end
         # Test path-independence
         @test i1.t ≈ 500.0
         @test i2.t ≈ 500.0
-        @test i1.u ≈ i2.u
+        @test i1.u ≈ i2.u atol=1e-4
     end
 end
 

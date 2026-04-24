@@ -18,11 +18,10 @@ include("core/coordinate_systems.jl")
 include("core/coefficients.jl")
 include("core/analytical_coefficient.jl")
 
-include("core/element_interface.jl")
-include("core/composite_elements.jl")
+# include("core/element_interface.jl")
+# include("core/composite_elements.jl")
 include("core/weak_boundary_conditions.jl")
 
-abstract type AbstractBilinearIntegrator end
 include("core/mass.jl")
 include("core/diffusion.jl")
 include("core/linear.jl")

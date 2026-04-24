@@ -210,7 +210,7 @@ function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     material_model::AbstractMaterialModel,
 )
-    singleQsize = local_function_size(material_model)
+    singleQsize = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
     @debug "Setting up local nonlinear solver with size(Q)=$(singleQsize) for material $(material_model)" _group=:nlsolve
     return GenericLocalNonlinearSolverCache(
         # Solver parameters
@@ -263,8 +263,8 @@ end
     )
     # This is copy paste of setup_solver_cache(G, solver.newton)
     # TODO call setup_operator here
-    op = AssembledNonlinearOperator(
-        allocate_matrix(dh),
+    op = setup_operator(
+        SequentialAssemblyStrategy(SequentialCPUDevice()),
         NonlinearIntegrator(
             volume_wrapper,
             facet_wrapper,
@@ -273,7 +273,6 @@ end
             integrator.fqrc,
         ),
         dh,
-        SequentialAssemblyStrategyCache(nothing),
     )
     # op = setup_operator(f, solver)
     T = Float64
@@ -281,14 +280,14 @@ end
     Δu = Vector{T}(undef, ndofs(dh))#solution_size(G))
 
     # Connect both solver caches
-    inner_prob = LinearSolve.LinearProblem(getJ(op), residual; u0 = Δu)
+    inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
     inner_cache = init(
         inner_prob,
         newton.inner_solver;
         alias = LinearAliasSpecifier(alias_A = true, alias_b = true),
     )
     @assert inner_cache.b === residual
-    @assert inner_cache.A === getJ(op)
+    @assert inner_cache.A === op.J
 
     newton_cache = NewtonRaphsonSolverCache(op, residual, newton, inner_cache, T[], 0)
 
@@ -297,7 +296,7 @@ end
         local_solver_cache, #setup_solver_cache(L, solver.local_newton), # FIXME pass
     )
     @debug "Setting up Multi-Level Newton-Raphson solver." _group=:nlsolve
-    @debug cache _group=:nlsolve
+    # @debug cache _group=:nlsolve
     return cache
 end
 
@@ -411,12 +410,17 @@ function setup_element_cache(
     return setup_quasistatic_element_cache(wrapper, wrapper.f.material_model, qr, sdh, cv)
 end
 
-# update_stage!(stage::BackwardEulerStageCache, kΔt) = update_stage!(stage, stage.nlsolver.local_solver_cache.op, kΔt)
 update_stage!(stage::BackwardEulerStageCache, kΔt) =
     update_stage!(stage, stage.nlsolver.global_solver_cache.op, kΔt)
-function update_stage!(stage::BackwardEulerStageCache, op::AssembledNonlinearOperator, kΔt)
-    op.integrator.volume_model.Δt = kΔt
-    op.integrator.facet_model.Δt = kΔt
+function update_stage!(stage::BackwardEulerStageCache, op::LinearizedFerriteOperator, kΔt)
+    for sdc in op.subdomain_caches
+        _update_stage!(sdc.domain.element.internal_cache, kΔt)
+    end
+end
+function _update_stage!(internal_cache, kΔt)
+    if hasfield(typeof(internal_cache), :Δt)
+        internal_cache.Δt = kΔt
+    end
 end
 
 function perform_backward_euler_step!(
@@ -476,7 +480,7 @@ end
     idx = 1
     @unroll for material_model ∈ material_models
         if first(domains[idx]) ∈ sdh.cellset
-            n_ivs_per_qp = local_function_size(material_model)
+            n_ivs_per_qp = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
             return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
                 # Pass the model
                 material_model,
@@ -512,7 +516,7 @@ function setup_internal_cache_backward_euler_unwrap(
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
-    n_ivs_per_qp = local_function_size(material_model)
+    n_ivs_per_qp = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         # Pass the model
         material_model,
@@ -550,3 +554,5 @@ function setup_boundary_cache(wrapper::BackwardEulerStageFunctionWrapper, fqr, s
     # TODO this technically unlocks differential boundary conditions, if done correctly.
     setup_boundary_cache(wrapper.f, fqr, sdh)
 end
+
+OrdinaryDiffEqCore.is_constant_cache(::BackwardEulerSolverCache) = false

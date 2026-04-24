@@ -1,5 +1,6 @@
 using Thunderbolt
 using OrdinaryDiffEqOperatorSplitting
+using DiffEqBase
 
 @testset "EP wave propagation" begin
     function simple_initializer!(u₀, f::GenericSplitFunction)

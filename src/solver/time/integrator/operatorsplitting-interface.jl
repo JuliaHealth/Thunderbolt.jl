@@ -1,23 +1,25 @@
 struct DummyODESolution <: SciMLBase.AbstractODESolution{Float64, 2, Vector{Float64}}
     retcode::SciMLBase.ReturnCode.T
+    prob::Any
 end
-DummyODESolution() = DummyODESolution(SciMLBase.ReturnCode.Default)
+DummyODESolution(prob) = DummyODESolution(SciMLBase.ReturnCode.Default, prob)
 function SciMLBase.solution_new_retcode(sol::DummyODESolution, retcode)
     return DiffEqBase.@set sol.retcode = retcode
 end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
-function OS.build_subintegrator_tree_with_cache(
+function OS._build_child(
     prob::OS.OperatorSplittingProblem,
     alg::AbstractSolver,
-    f,
-    p,
-    uprevouter::AbstractVector,
-    uouter::AbstractVector,
+    f::F,
+    p::P,
+    uprevouter::S,
+    uouter::S,
+    u_master::S,
     solution_indices,
-    t0,
-    dt,
-    tf,
+    t0::T,
+    dt::T,
+    tf::T,
     tstops,
     saveat,
     d_discontinuities,
@@ -26,7 +28,8 @@ function OS.build_subintegrator_tree_with_cache(
     verbose,
     save_end = false,
     controller = nothing,
-)
+) where {S, T, P, F}
+
     uprev = @view uprevouter[solution_indices]
     u = @view uouter[solution_indices]
 
@@ -91,7 +94,9 @@ function OS.build_subintegrator_tree_with_cache(
     #     # dense = dense, k = ks, saved_subsystem = saved_subsystem,
     #     calculate_error = false
     # )
-    sol = DummyODESolution()
+    sol = DummyODESolution(
+        OS.OperatorSplittingProblem(prob.f, view(prob.u0, solution_indices), prob.tspan),
+    )
 
     if controller === nothing && adaptive && SciMLBase.isadaptive(alg)
         controller = default_controller(alg, cache)
@@ -110,6 +115,8 @@ function OS.build_subintegrator_tree_with_cache(
         p,
         t0,
         t0,
+        dt,
+        dt,
         dt,
         tdir,
         cache,
@@ -154,5 +161,5 @@ function OS.build_subintegrator_tree_with_cache(
 
     OrdinaryDiffEqCore.handle_dt!(integrator)
 
-    return integrator, integrator.cache
+    return integrator
 end

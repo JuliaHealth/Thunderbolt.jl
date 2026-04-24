@@ -26,12 +26,6 @@ Adapt.@adapt_structure FieldCoefficientCache
 Adapt.@adapt_structure AnalyticalCoefficientElementCache
 Adapt.@adapt_structure SpatiallyHomogeneousDataField
 
-function Adapt.adapt_structure(::AbstractAssemblyStrategy, dh::DofHandler)
-    error(
-        "Device specific implementation for `adapt_structure(to,dh::DofHandler)` is not implemented yet",
-    )
-end
-
 function Adapt.adapt_structure(
     ::AbstractAssemblyStrategy,
     element_cache::AnalyticalCoefficientElementCache,
