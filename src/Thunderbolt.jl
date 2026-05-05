@@ -99,6 +99,8 @@ import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import LinearSolve
 using LinearSolve: LinearAliasSpecifier
 
+import ConcreteStructs: @concrete
+
 using Base: @kwdef
 import Base: *, +, -
 

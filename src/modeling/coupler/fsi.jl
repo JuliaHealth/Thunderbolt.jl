@@ -51,211 +51,191 @@ function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::Hirschvogel2
     return -val
 end
 
-function assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, facet, dh, fv, method)
-    reinit!(fv, facet)
+# RefPoint (refdim = 0)
+struct RefPoint <: AbstractRefShape{0} end
+Ferrite.reference_vertices(::Type{RefPoint}) = (1,)
+Ferrite.reference_edges(::Type{RefPoint}) = () # -
+Ferrite.reference_faces(::Type{RefPoint}) = () # -
 
-    coords = getcoordinates(facet)
-
-    for qp in QuadratureIterator(fv)
-        dΓ = getdetJdV(fv, qp)
-        N = getnormal(fv, qp)
-
-        ∇u = function_gradient(fv, qp, uₑ)
-        F = one(∇u) + ∇u
-
-        d = function_value(fv, qp, uₑ)
-
-        x = spatial_coordinate(fv, qp, coords)
-
-        rₑ[1] += volume_integral(x, d, F, N, method) * dΓ
-        # Via chain rule we obtain:
-        #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
-        ∂V∂u = Tensors.gradient(u_ -> volume_integral(x, u_, F, N, method), d)
-        ∂V∂F = Tensors.gradient(u_ -> volume_integral(x, d, u_, N, method), F)
-        for j ∈ 1:getnbasefunctions(fv)
-            δuⱼ = shape_value(fv, qp, j)
-            ∇δuⱼ = shape_gradient(fv, qp, j)
-            Jₑ[j] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuⱼ) * dΓ
-        end
-    end
+struct Point <: AbstractCell{RefPoint}
+    nodes::NTuple{1, Int}
 end
+Point(i::Int) = Point((i,))
+Ferrite.cell_to_vtkcell(::Type{Point}) = VTKCellTypes.VTK_VERTEX
+
+struct PointInterpolation <: Ferrite.ScalarInterpolation{RefPoint, 0}
+end
+Ferrite.getnbasefunctions(ip::PointInterpolation) = 1
+Ferrite.adjust_dofs_during_distribution(::PointInterpolation) = false
 
 """
 Chamber volume contribution for the 3D-0D constraint
-    ∫ V³ᴰ(u) ∂Ω = V⁰ᴰ(c)
+    ∫ V³ᴰ(u) ∂Ω - V⁰ᴰ(c)
 where u are the unkowns in the 3D problem and c the unkowns in the 0D problem.
+
+Pressure contribution (i.e. variation w.r.t. p) for the term
+    ∫ p n(u) δu ∂Ω
+ [= ∫ p J(u) F(u)^-T n₀ δu ∂Ω₀]
+where p is the unknown chamber pressure and u contains the unknown deformation field.
 """
-function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, method)
-    grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol) # TODO TYPE INSTABILITY - remove this as the interpolation query is instable
-    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_facet, ip, ip_geo)
-
-    ndofs = getnbasefunctions(ip)
-
-    uₑ = zeros(ndofs)
-    Jₑ = zeros(ndofs)
-    rₑ = zeros(1)
-
-    drange = dof_range(dh, method.displacement_symbol)
-
-    for facet ∈ FacetIterator(dh, method.facets)
-        ddofs = @view celldofs(facet)[drange]
-        uₑ .= u[ddofs]
-        fill!(Jₑ, 0.0)
-        fill!(rₑ, 0.0)
-        assemble_LFSI_coupling_contribution_row_inner!(
-            Jₑ,
-            rₑ,
-            uₑ,
-            p,
-            facet,
-            dh,
-            fv,
-            method.volume_method,
-        )
-        C[ddofs] .+= Jₑ
-        R[1] += rₑ[1]
-    end
-
-    # R = ∫ V³ᴰ(u) ∂Ω - V⁰ᴰ(c)
-    @info "Volume 3D $(R[1])"
-    R[1] -= V⁰ᴰ
+struct Pressure3D0DVolumeCouplerIntegrator <: AbstractNonlinearIntegrator
+    fqrc::FacetQuadratureRuleCollection
+    displacement_symbol::Symbol
+    pressure_symbol::Symbol
+    # boundary_name::String
+    facets::OrderedSet
+    volume_method
 end
 
-function assemble_LFSI_coupling_contribution_col_inner!(
-    C,
-    R,
-    u,
-    p,
-    facet,
-    dh,
-    fv::FacetValues,
-    symbol::Symbol,
+@concrete struct VolumeTimeParameters
+    V⁰ᴰs
+    time
+end
+
+@concrete struct Pressure3D0DVolumeCouplerCache <: AbstractSurfaceElementCache
+    fv
+    displacement_range
+    pressure_index
+    facets
+    volume_method
+end
+
+function FerriteOperators.setup_boundary_cache(model::Pressure3D0DVolumeCouplerIntegrator, sdh)
+    qr         = getquadraturerule(model.fqrc, sdh)
+    ip         = Ferrite.getfieldinterpolation(sdh, model.displacement_symbol)
+    ip_geo     = geometric_subdomain_interpolation(sdh)
+    fv         = FacetValues(qr, ip, ip_geo)
+
+    displacement_range = dof_range(sdh, model.displacement_symbol)
+
+    # This is the non-local coupling
+    # @assert lenght(sdh_chamber.cellset) == 1 "0D subdomain has more than one cell ($(lenght(sdh_chamber.cellset)))"
+    # pressure_symbol = model.pressure_symbol
+    # pressure_dofs = dof_range(sdh, pressure_symbol)
+    # @assert lenght(pressure_dofs) == 1 "Pressure ,,$(pressure_symbol)'' is associated with more than one dof ($(lenght(pressure_dofs)))"
+
+    all_facets = model.facets #getfacetset(get_grid(sdh.dh), model.boundary_name)
+    pressure_dof = ndofs_per_cell(sdh)+1 #first(pressure_dofs)
+    return Pressure3D0DVolumeCouplerCache(fv, displacement_range, pressure_dof, filter(facet -> facet[1] ∈ sdh.cellset, all_facets), model.volume_method)
+end
+
+@inline FerriteOperators.is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::Pressure3D0DVolumeCouplerCache) =
+    facet ∈ facet_cache.facets
+
+function FerriteOperators.assemble_facet!(
+    Kₑ::AbstractMatrix,
+    residualₑ::AbstractVector,
+    uₑ::AbstractVector,
+    geometry_cache::CellCache,
+    local_facet_index::Int,
+    element_cache::Pressure3D0DVolumeCouplerCache,
+    t,
 )
-    reinit!(fv, facet)
-    drange = dof_range(dh, symbol)
+    (; fv, displacement_range, pressure_index, volume_method) = element_cache
 
-    ddofs = @view celldofs(facet)[drange]
-    uₑ = @view u[ddofs]
+    reinit!(fv, geometry_cache, local_facet_index)
+
+    # Displacement
+    pdof  = pressure_index # celldofs(geometry_cache)[pressure_index]
+    dₑ = @view uₑ[displacement_range]
+    p = uₑ[pdof]
+    coords = getcoordinates(geometry_cache)
 
     for qp in QuadratureIterator(fv)
+        # Part 1: Surface pressure part
         ∂Ω₀ = getdetJdV(fv, qp)
-        n₀ = getnormal(fv, qp)
 
-        ∇u = function_gradient(fv, qp, uₑ)
-        F = one(∇u) + ∇u
+        ∇d = function_gradient(fv, qp, dₑ)
+        F = one(∇d) + ∇d
         J = det(F)
         invF = inv(F)
         cofF = transpose(invF)
 
-        for j ∈ 1:getnbasefunctions(fv)
-            δuⱼ = shape_value(fv, qp, j)
-            R[ddofs[j]] += p * J * cofF ⋅ n₀ ⋅ δuⱼ * ∂Ω₀
-            C[ddofs[j], 1] += J * cofF ⋅ n₀ ⋅ δuⱼ * ∂Ω₀
-        end
-    end
-end
-
-
-function assemble_LFSI_coupling_contribution_col_inner!(
-    C,
-    u,
-    p,
-    facet,
-    dh,
-    fv::FacetValues,
-    symbol::Symbol,
-)
-    reinit!(fv, facet)
-    drange = dof_range(dh, symbol)
-
-    ddofs = @view celldofs(facet)[drange]
-    uₑ = @view u[ddofs]
-
-    for qp in QuadratureIterator(fv)
-        ∂Ω₀ = getdetJdV(fv, qp)
         n₀ = getnormal(fv, qp)
+        n = cofF ⋅ n₀
 
-        ∇u = function_gradient(fv, qp, uₑ)
-        F = one(∇u) + ∇u
-        J = det(F)
-        invF = inv(F)
-        cofF = transpose(invF)
-
-        for j ∈ 1:getnbasefunctions(fv)
-            δuⱼ = shape_value(fv, qp, j)
-            C[ddofs[j], 1] += J * cofF ⋅ n₀ ⋅ δuⱼ * ∂Ω₀
-        end
-    end
-end
-
-function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, uₑ, p, fv, symbol)
-    reinit!(fv, facet[1], facet[2])
-
-    ndofs_facet = getnbasefunctions(fv)
-    for qp in QuadratureIterator(fv)
-        dΓ = getdetJdV(fv, qp)
-
-        n₀ = getnormal(fv, qp)
-
-        ∇u = function_gradient(fv, qp, uₑ)
-        F = one(∇u) + ∇u
-
-        # Add contribution to the residual from this test function
-        # TODO fix the "nothing" here
-        invF = inv(F)
-        cofF = transpose(invF)
-        J = det(F)
-        neumann_term = p * J * cofF
-        for i = 1:J
+        for i ∈ 1:getnbasefunctions(fv)
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
-
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
-            for j = 1:ndofs_facet
+            residualₑ[displacement_range[i]] += p * J *  n ⋅ δuᵢ * ∂Ω₀
+            for j ∈ 1:getnbasefunctions(fv)
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
-                # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
                 #   δF^-1 = -F^-1 δF F^-1
                 #   δJ = J tr(δF F^-1)
                 # Product rule
                 δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
                 δJ = J * tr(∇δuⱼ ⋅ invF)
                 δJcofF = δJ * cofF + J * δcofF
-                Kₑ[j, i] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+                Kₑ[displacement_range[i], displacement_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * ∂Ω₀
             end
+            Kₑ[displacement_range[i], pdof] += J * n ⋅ δuᵢ * ∂Ω₀
         end
+
+        # Part 2: Chamber volume constraint part
+        d = function_value(fv, qp, dₑ)
+        x = spatial_coordinate(fv, qp, coords)
+
+        residualₑ[pdof] += volume_integral(x, d, F, n₀, volume_method) * ∂Ω₀
+
+        # Via chain rule we obtain:
+        #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
+        ∂V∂u = Tensors.gradient(u_ -> volume_integral(x, u_, F, n₀, volume_method), d)
+        ∂V∂F = Tensors.gradient(u_ -> volume_integral(x, d, u_, n₀, volume_method), F)
+        for j ∈ 1:getnbasefunctions(fv)
+            δuⱼ = shape_value(fv, qp, j)
+            ∇δuⱼ = shape_gradient(fv, qp, j)
+            Kₑ[pdof, displacement_range[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuⱼ) * ∂Ω₀
+        end
+
+        # Kₑ[pdof, pdof] += 0
     end
 end
 
-function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, method)
-    grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_facet, ip, ip_geo)
+struct Volume0DResidualIntegrator <: AbstractNonlinearIntegrator
+    pressure_symbol::Symbol
+    chamber_index::Int
+    V⁰ᴰs::AbstractVector{Float64}
+end
 
-    drange = dof_range(dh, method.displacement_symbol)
+@concrete struct Volume0DResidualCache <: AbstractVolumetricElementCache
+    pressure_dof_index
+    chamber_index
+    V⁰ᴰs
+end
 
-    assembler = start_assemble(J, residual, false)
+function FerriteOperators.setup_element_cache(model::Volume0DResidualIntegrator, sdh)
+    pressure_dof_range = dof_range(sdh, model.pressure_symbol)
+    @assert lenght(pressure_dof_range) == 1 "Pressure ,,$(pressure_symbol)'' is associated with more than one dof ($(lenght(pressure_dof_range)))"
 
-    ndofs = ndofs_per_cell(dh)
-    Jₑ = zeros(ndofs, ndofs)
-    rₑ = zeros(ndofs)
-    uₑ = zeros(ndofs)
+    return Volume0DResidualCache(first(pressure_dof_range), model.chamber_index, model.V⁰ᴰs)
+end
 
-    for facet ∈ FacetIterator(dh, getfacetset(grid, setname))
-        dofs = celldofs(facet)
-        fill!(Jₑ, 0)
-        fill!(rₑ, 0)
-        uₑ .= @view u[dofs]
-        assemble_LFSI_volumetric_corrector_inner!(Jₑ, rₑ, uₑ, p, fv, method.displacement_symbol)
-        assemble!(assembler, dofs, Jₑ, rₑ)
-    end
+function FerriteOperators.assemble_element!(
+    Kₑ::AbstractMatrix,
+    residualₑ::AbstractVector,
+    uₑ::AbstractVector,
+    geometry_cache::CellCache,
+    element::Volume0DResidualCache,
+    t,
+)
+    R[element.pressure_dof_index] -= element.V⁰ᴰs[element.chamber_index]
+end
+
+function FerriteOperators.assemble_element!(
+    Kₑ::AbstractMatrix,
+    uₑ::AbstractVector,
+    geometry_cache::CellCache,
+    element::Volume0DResidualCache,
+    t,
+)
+end
+
+function FerriteOperators.assemble_element!(
+    residualₑ::AbstractVector,
+    uₑ::AbstractVector,
+    geometry_cache::CellCache,
+    element::Volume0DResidualCache,
+    t,
+)
+    R[element.pressure_dof_index] -= element.V⁰ᴰs[element.chamber_index]
 end

@@ -45,7 +45,6 @@ end
 
 include("test_elements.jl")
 include("test_sarcomere.jl")
-# include("test_operators.jl") # Tested in FerriteOperators
 
 include("test_solver.jl")
 include("test_preconditioners.jl")

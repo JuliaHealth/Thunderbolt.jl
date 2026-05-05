@@ -47,3 +47,5 @@ end
 function _needs_update(op::LinearFerriteOperator, protocol::NoStimulationProtocol, t)
     return false
 end
+
+needs_update(::LinearNullOperator, t) = false
