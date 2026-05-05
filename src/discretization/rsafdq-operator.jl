@@ -17,6 +17,22 @@ function FerriteOperators.update_linearization!(
 )
     error("Not implemented yet.")
 end
+function _update_tying_subdomain_Jr(assembler, sdh, u, p, tying_cache, chamber)
+    # FIXME allocator api
+    Kₑ = zeros(ndofs_per_cell(sdh)+1, ndofs_per_cell(sdh)+1)
+    rₑ = zeros(ndofs_per_cell(sdh)+1)
+    uₑ = zeros(ndofs_per_cell(sdh)+1)
+    for facet in FacetIterator(sdh, tying_cache.facets)
+        # FIXME loader function
+        dofs = [celldofs(facet); chamber.pressure_dof_index_local]
+        uₑ .= u[dofs]
+        fill!(Kₑ, 0.0)
+        fill!(rₑ, 0.0)
+        # FIXME use facet directly
+        assemble_facet!(Kₑ, rₑ, uₑ, facet.cc, facet.current_facet_id, tying_cache, p)
+        assemble!(assembler, dofs, Kₑ, rₑ)
+    end
+end
 function FerriteOperators.update_linearization!(
     op::AssembledRSAFDQ2022Operator,
     residual_::AbstractVector,
@@ -52,33 +68,15 @@ function FerriteOperators.update_linearization!(
 
     # Pass 2: Assemble forward and backward coupling contributions
     # TODO wrap into task system as boundary integration
-    for (chamber_index, chamber) ∈ enumerate(chambers)
+    @timeit_debug "assemble tying" for (chamber_index, chamber) ∈ enumerate(chambers)
         V⁰ᴰ = chamber.V⁰ᴰval
         chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
 
-        Jpd_current = @view Jpd[chamber_index, :]
-        Jdp_current = @view Jdp[:, chamber_index]
-
-        residualp_current = @view residualp[chamber_index]
-
         for (sdh, tying_cache) in tying_caches[chamber_index]
-            # FIXME allocator api
-            Kₑ = zeros(ndofs_per_cell(sdh)+1, ndofs_per_cell(sdh)+1)
-            rₑ = zeros(ndofs_per_cell(sdh)+1)
-            uₑ = zeros(ndofs_per_cell(sdh)+1)
-            for facet in FacetIterator(sdh, tying_cache.facets)
-                # FIXME loader function
-                dofs = [celldofs(facet); chamber.pressure_dof_index_local]
-                uₑ .= u[dofs]
-                fill!(Kₑ, 0.0)
-                fill!(rₑ, 0.0)
-                # FIXME use facet directly
-                assemble_facet!(Kₑ, rₑ, uₑ, facet.cc, facet.current_facet_id, tying_cache, p)
-                assemble!(assembler, dofs, Kₑ, rₑ)
-            end
+            _update_tying_subdomain_Jr(assembler, sdh, u, p, tying_cache, chamber)
         end
 
-        residualp_current[1] -= V⁰ᴰ
+        residualp[chamber_index] -= V⁰ᴰ
 
         @info "Chamber $chamber_index p=$chamber_pressure, V0=$V⁰ᴰ"
     end
