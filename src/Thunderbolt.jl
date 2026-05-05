@@ -45,8 +45,8 @@ import FerriteOperators:
     setup_operator,
     update_operator!
 
-# TODO remove these
-import FerriteOperators: CompositeSurfaceElementCache
+import FerriteOperators:
+    CompositeSurfaceElementCache
 
 import Unrolled: @unroll
 import FastBroadcast: @..
@@ -119,6 +119,7 @@ include("devices.jl")
 
 include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
+include("ferrite-addons/point.jl")
 
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
