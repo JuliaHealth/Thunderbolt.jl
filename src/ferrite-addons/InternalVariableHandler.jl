@@ -103,7 +103,7 @@ function construct_qvector(
     ::Type{IndexType},
     mesh::SimpleMesh,
     qrc::QuadratureRuleCollection,
-    subdomains::Vector{String} = [""],
+    subdomains::Vector{String} = [single_subdomain_or_error(mesh)],
 ) where {StorageType, IndexType}
     num_points = 0
     num_cells  = 0

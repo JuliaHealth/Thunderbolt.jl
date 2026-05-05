@@ -83,7 +83,6 @@ end
         apex_inner = scaling_factor * 1.3,
         apex_outer = scaling_factor*1.5,
     )
-    mesh = Thunderbolt.hexahedralize(mesh) # FIXME Subdomain support
 
     cs = compute_lv_coordinate_system(mesh)
     @test !any(isnan.(cs.u_apicobasal))
