@@ -10,10 +10,19 @@
 end
 
 # Interface
-function FerriteOperators.update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVector, p)
+function FerriteOperators.update_linearization!(
+    op::AssembledRSAFDQ2022Operator,
+    u_::AbstractVector,
+    p,
+)
     error("Not implemented yet.")
 end
-function FerriteOperators.update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::AbstractVector, u_::AbstractVector, p)
+function FerriteOperators.update_linearization!(
+    op::AssembledRSAFDQ2022Operator,
+    residual_::AbstractVector,
+    u_::AbstractVector,
+    p,
+)
     (; J, strategy, subdomain_caches, chambers, tying_caches, dh) = op
 
     bs = blocksizes(J)
@@ -76,7 +85,12 @@ function FerriteOperators.update_linearization!(op::AssembledRSAFDQ2022Operator,
 
     FerriteOperators.finalize_assembly!(assembler)
 end
-function FerriteOperators.residual!(op::AssembledRSAFDQ2022Operator, residual_::AbstractVector, u_::AbstractVector, p)
+function FerriteOperators.residual!(
+    op::AssembledRSAFDQ2022Operator,
+    residual_::AbstractVector,
+    u_::AbstractVector,
+    p,
+)
     error("Not implemented yet.")
 end
 
@@ -98,12 +112,13 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
     (; tying_info, structural_function) = f
     (; dh, integrator, assembly_strategy) = structural_function
 
-    operator_strategy = FerriteOperators.setup_operator_strategy_cache(assembly_strategy, integrator, dh)
+    operator_strategy =
+        FerriteOperators.setup_operator_strategy_cache(assembly_strategy, integrator, dh)
     # TODO we are missing a way to dynamically extend the sparsity pattern in FerriteOperators
-    J                 = FerriteOperators.create_system_matrix(operator_strategy, dh)
-    subdomain_caches  = FerriteOperators.setup_subdomain_caches(operator_strategy, integrator, dh)
+    J                = FerriteOperators.create_system_matrix(operator_strategy, dh)
+    subdomain_caches = FerriteOperators.setup_subdomain_caches(operator_strategy, integrator, dh)
     # TODO this is also not possible yet
-    tying_caches      = [
+    tying_caches = [
         [
             (
                 sdh,
@@ -115,8 +130,8 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
                         chamber.facets,
                         chamber.volume_method,
                     ),
-                    sdh
-                )
+                    sdh,
+                ),
             ) for sdh in _find_sdhs(dh, chamber.facets)
         ] for chamber in tying_info.chambers
     ]
@@ -128,9 +143,9 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
     Jblock = BlockArray(spzeros(total_size, total_size), block_sizes, block_sizes)
     Jblock[Block(1, 1)] = J
     # TODO optimize storage
-    Jblock[Block(1, 2)] = sparse(ones(ndofs(dh),num_chambers))
-    Jblock[Block(2, 1)] = sparse(ones(num_chambers,ndofs(dh)))
-    Jblock[Block(2, 2)] = sparse(ones(num_chambers,num_chambers))
+    Jblock[Block(1, 2)] = sparse(ones(ndofs(dh), num_chambers))
+    Jblock[Block(2, 1)] = sparse(ones(num_chambers, ndofs(dh)))
+    Jblock[Block(2, 2)] = sparse(ones(num_chambers, num_chambers))
     Ferrite.fillzero!(Jblock)
 
     return AssembledRSAFDQ2022Operator(

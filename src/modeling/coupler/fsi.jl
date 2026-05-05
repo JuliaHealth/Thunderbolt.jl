@@ -63,8 +63,7 @@ end
 Point(i::Int) = Point((i,))
 Ferrite.cell_to_vtkcell(::Type{Point}) = VTKCellTypes.VTK_VERTEX
 
-struct PointInterpolation <: Ferrite.ScalarInterpolation{RefPoint, 0}
-end
+struct PointInterpolation <: Ferrite.ScalarInterpolation{RefPoint, 0} end
 Ferrite.getnbasefunctions(ip::PointInterpolation) = 1
 Ferrite.adjust_dofs_during_distribution(::PointInterpolation) = false
 
@@ -101,10 +100,10 @@ end
 end
 
 function FerriteOperators.setup_boundary_cache(model::Pressure3D0DVolumeCouplerIntegrator, sdh)
-    qr         = getquadraturerule(model.fqrc, sdh)
-    ip         = Ferrite.getfieldinterpolation(sdh, model.displacement_symbol)
-    ip_geo     = geometric_subdomain_interpolation(sdh)
-    fv         = FacetValues(qr, ip, ip_geo)
+    qr     = getquadraturerule(model.fqrc, sdh)
+    ip     = Ferrite.getfieldinterpolation(sdh, model.displacement_symbol)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    fv     = FacetValues(qr, ip, ip_geo)
 
     displacement_range = dof_range(sdh, model.displacement_symbol)
 
@@ -116,11 +115,20 @@ function FerriteOperators.setup_boundary_cache(model::Pressure3D0DVolumeCouplerI
 
     all_facets = model.facets #getfacetset(get_grid(sdh.dh), model.boundary_name)
     pressure_dof = ndofs_per_cell(sdh)+1 #first(pressure_dofs)
-    return Pressure3D0DVolumeCouplerCache(fv, displacement_range, pressure_dof, filter(facet -> facet[1] ∈ sdh.cellset, all_facets), model.volume_method)
+    return Pressure3D0DVolumeCouplerCache(
+        fv,
+        displacement_range,
+        pressure_dof,
+        filter(facet -> facet[1] ∈ sdh.cellset, all_facets),
+        model.volume_method,
+    )
 end
 
-@inline FerriteOperators.is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::Pressure3D0DVolumeCouplerCache) =
-    facet ∈ facet_cache.facets
+@inline FerriteOperators.is_facet_in_cache(
+    facet::FacetIndex,
+    cell::CellCache,
+    facet_cache::Pressure3D0DVolumeCouplerCache,
+) = facet ∈ facet_cache.facets
 
 function FerriteOperators.assemble_facet!(
     Kₑ::AbstractMatrix,
@@ -136,7 +144,7 @@ function FerriteOperators.assemble_facet!(
     reinit!(fv, geometry_cache, local_facet_index)
 
     # Displacement
-    pdof  = pressure_index # celldofs(geometry_cache)[pressure_index]
+    pdof = pressure_index # celldofs(geometry_cache)[pressure_index]
     dₑ = @view uₑ[displacement_range]
     p = uₑ[pdof]
     coords = getcoordinates(geometry_cache)
@@ -156,7 +164,7 @@ function FerriteOperators.assemble_facet!(
 
         for i ∈ 1:getnbasefunctions(fv)
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[displacement_range[i]] += p * J *  n ⋅ δuᵢ * ∂Ω₀
+            residualₑ[displacement_range[i]] += p * J * n ⋅ δuᵢ * ∂Ω₀
             for j ∈ 1:getnbasefunctions(fv)
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
@@ -227,8 +235,7 @@ function FerriteOperators.assemble_element!(
     geometry_cache::CellCache,
     element::Volume0DResidualCache,
     t,
-)
-end
+) end
 
 function FerriteOperators.assemble_element!(
     residualₑ::AbstractVector,
