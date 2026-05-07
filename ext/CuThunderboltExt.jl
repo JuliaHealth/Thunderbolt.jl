@@ -26,8 +26,7 @@ import CUDA:
     cu,
     cudaconvert
 
-import FerriteOperators:
-    CudaDevice
+import FerriteOperators: CudaDevice
 
 import Thunderbolt:
     SimpleMesh,
