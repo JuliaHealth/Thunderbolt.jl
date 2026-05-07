@@ -72,11 +72,6 @@ struct Pressure3D0DVolumeCouplerIntegrator <: AbstractNonlinearIntegrator
     volume_method
 end
 
-@concrete struct VolumeTimeParameters
-    V⁰ᴰs
-    time
-end
-
 @concrete struct Pressure3D0DVolumeCouplerCache <: AbstractSurfaceElementCache
     fv
     displacement_range
@@ -94,10 +89,10 @@ function FerriteOperators.setup_boundary_cache(model::Pressure3D0DVolumeCouplerI
     displacement_range = dof_range(sdh, model.displacement_symbol)
 
     # This is the non-local coupling
-    # @assert lenght(sdh_chamber.cellset) == 1 "0D subdomain has more than one cell ($(lenght(sdh_chamber.cellset)))"
+    # @assert length(sdh_chamber.cellset) == 1 "0D subdomain has more than one cell ($(length(sdh_chamber.cellset)))"
     # pressure_symbol = model.pressure_symbol
     # pressure_dofs = dof_range(sdh, pressure_symbol)
-    # @assert lenght(pressure_dofs) == 1 "Pressure ,,$(pressure_symbol)'' is associated with more than one dof ($(lenght(pressure_dofs)))"
+    # @assert length(pressure_dofs) == 1 "Pressure ,,$(pressure_symbol)'' is associated with more than one dof ($(length(pressure_dofs)))"
 
     all_facets = model.facets #getfacetset(get_grid(sdh.dh), model.boundary_name)
     pressure_dof = ndofs_per_cell(sdh)+1 #first(pressure_dofs)
@@ -185,50 +180,50 @@ function FerriteOperators.assemble_facet!(
     end
 end
 
-struct Volume0DResidualIntegrator <: AbstractNonlinearIntegrator
-    pressure_symbol::Symbol
-    chamber_index::Int
-    V⁰ᴰs::AbstractVector{Float64}
-end
+# struct Volume0DResidualIntegrator <: AbstractNonlinearIntegrator
+#     pressure_symbol::Symbol
+#     chamber_index::Int
+#     V⁰ᴰs::AbstractVector{Float64}
+# end
 
-@concrete struct Volume0DResidualCache <: AbstractVolumetricElementCache
-    pressure_dof_index
-    chamber_index
-    V⁰ᴰs
-end
+# @concrete struct Volume0DResidualCache <: AbstractVolumetricElementCache
+#     pressure_dof_index
+#     chamber_index
+#     V⁰ᴰs
+# end
 
-function FerriteOperators.setup_element_cache(model::Volume0DResidualIntegrator, sdh)
-    pressure_dof_range = dof_range(sdh, model.pressure_symbol)
-    @assert lenght(pressure_dof_range) == 1 "Pressure ,,$(pressure_symbol)'' is associated with more than one dof ($(lenght(pressure_dof_range)))"
+# function FerriteOperators.setup_element_cache(model::Volume0DResidualIntegrator, sdh)
+#     pressure_dof_range = dof_range(sdh, model.pressure_symbol)
+#     @assert length(pressure_dof_range) == 1 "Pressure ,,$(pressure_symbol)'' is associated with more than one dof ($(length(pressure_dof_range)))"
 
-    return Volume0DResidualCache(first(pressure_dof_range), model.chamber_index, model.V⁰ᴰs)
-end
+#     return Volume0DResidualCache(first(pressure_dof_range), model.chamber_index, model.V⁰ᴰs)
+# end
 
-function FerriteOperators.assemble_element!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    element::Volume0DResidualCache,
-    t,
-)
-    R[element.pressure_dof_index] -= element.V⁰ᴰs[element.chamber_index]
-end
+# function FerriteOperators.assemble_element!(
+#     Kₑ::AbstractMatrix,
+#     residualₑ::AbstractVector,
+#     uₑ::AbstractVector,
+#     geometry_cache::CellCache,
+#     element::Volume0DResidualCache,
+#     t,
+# )
+#     residualₑ[element.pressure_dof_index] -= element.V⁰ᴰs[element.chamber_index]
+# end
 
-function FerriteOperators.assemble_element!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    element::Volume0DResidualCache,
-    t,
-) end
+# function FerriteOperators.assemble_element!(
+#     Kₑ::AbstractMatrix,
+#     uₑ::AbstractVector,
+#     geometry_cache::CellCache,
+#     element::Volume0DResidualCache,
+#     t,
+# ) end
 
-function FerriteOperators.assemble_element!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    element::Volume0DResidualCache,
-    t,
-)
-    R[element.pressure_dof_index] -= element.V⁰ᴰs[element.chamber_index]
-end
+# function FerriteOperators.assemble_element!(
+#     residualₑ::AbstractVector,
+#     uₑ::AbstractVector,
+#     geometry_cache::CellCache,
+#     element::Volume0DResidualCache,
+#     t,
+# )
+#     residualₑ[element.pressure_dof_index] -= element.V⁰ᴰs[element.chamber_index]
+# end

@@ -58,7 +58,7 @@ end
 
 function evaluate_coefficient(
     cache::FieldCoefficientCache{T},
-    geometry_cache::FerriteUtils.AnyCellCache,
+    geometry_cache::CellCache,
     qp::QuadraturePoint,
     t,
 ) where {T}
@@ -91,7 +91,7 @@ function setup_coefficient_cache(
     return coefficient
 end
 
-evaluate_coefficient(coeff::ConstantCoefficient, ::FerriteUtils.AnyCellCache, qp, t) = coeff.val
+evaluate_coefficient(coeff::ConstantCoefficient, ::CellCache, qp, t) = coeff.val
 
 
 """
@@ -125,7 +125,7 @@ end
 
 function evaluate_coefficient(
     coeff::ConductivityToDiffusivityCoefficientCache,
-    cell_cache::FerriteUtils.AnyCellCache,
+    cell_cache::CellCache,
     qp::QuadraturePoint,
     t,
 )
@@ -195,7 +195,7 @@ end
 
 function evaluate_coefficient(
     coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}},
-    geometry_cache::FerriteUtils.AnyCellCache,
+    geometry_cache::CellCache,
     qp::QuadraturePoint{<:Any, T},
     t,
 ) where {sdim, T}
@@ -233,7 +233,7 @@ end
 
 function evaluate_coefficient(
     coeff::LVCoordinateSystemCache,
-    geometry_cache::FerriteUtils.AnyCellCache,
+    geometry_cache::CellCache,
     qp::QuadraturePoint{ref_shape, T},
     t,
 ) where {ref_shape, T}
@@ -277,7 +277,7 @@ end
 
 function evaluate_coefficient(
     cc::BiVCoordinateSystemCache,
-    cell_cache::FerriteUtils.AnyCellCache,
+    cell_cache::CellCache,
     qp::QuadraturePoint{<:Any, T},
     t,
 ) where {T}
@@ -333,7 +333,7 @@ end
 
 function evaluate_coefficient(
     coeff::SpectralTensorCoefficientCache,
-    cell_cache::FerriteUtils.AnyCellCache,
+    cell_cache::CellCache,
     qp::QuadraturePoint,
     t,
 )
@@ -370,7 +370,7 @@ end
 
 evaluate_coefficient(
     coeff::SpatiallyHomogeneousDataField,
-    ::FerriteUtils.AnyCellCache,
+    ::CellCache,
     ::QuadraturePoint,
     t,
 ) = _evaluate_coefficient(coeff, t)

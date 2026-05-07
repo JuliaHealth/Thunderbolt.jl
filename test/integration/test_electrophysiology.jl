@@ -78,8 +78,8 @@ using DiffEqBase
 
     mesh = generate_ideal_lv_mesh(4, 1, 1)
     coeff = ConstantCoefficient(SymmetricTensor{2, 3, Float64}((4.5e-5, 0, 0, 2.0e-5, 0, 1.0e-5)))
-    u = solve_waveprop(mesh, coeff, [""], timestepper)
-    u_adaptive = solve_waveprop(mesh, coeff, [""], timestepper_adaptive)
+    u = solve_waveprop(mesh, coeff, ["myocardium"], timestepper)
+    u_adaptive = solve_waveprop(mesh, coeff, ["myocardium"], timestepper_adaptive)
     @test u ≈ u_adaptive rtol = 1e-4
 
     mesh = to_mesh(generate_mixed_grid_2D())

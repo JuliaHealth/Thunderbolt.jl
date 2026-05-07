@@ -228,7 +228,11 @@ function semidiscretize_register_subdomains!(
     model,
     material_models::MultiMaterialModel,
     discretization::FiniteElementDiscretization,
+    subdomains,
 )
+    if length(subdomains) > 1
+        @warn "Multimaterials ignore discretization subdomains for now."
+    end
     semidiscretize_register_subdomains_multi!(
         dh,
         lvh,
@@ -247,7 +251,6 @@ end
     domains,
     domain_names,
     discretization,
-    subdomains,
 )
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)

@@ -40,11 +40,7 @@ module FerriteUtils
 using Ferrite
 import Adapt
 
-include("ferrite-addons/gpu/device_dofhandler.jl")
-include("ferrite-addons/gpu/device_grid.jl")
 include("ferrite-addons/PR883.jl")
-include("ferrite-addons/gpu/device_memalloc.jl")
-include("ferrite-addons/gpu/device_iterator.jl")
 include("ferrite-addons/gpu/adapt.jl")
 
 end
@@ -493,6 +489,9 @@ end
 end
 
 function is_sdh_on_subdomain(sdh, name::String)
+    if name == "" # Default is everywhere
+        return true
+    end
     grid = get_grid(sdh.dh)
     cellset = getcellset(grid, name)
     return first(sdh.cellset) ∈ cellset
