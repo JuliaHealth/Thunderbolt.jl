@@ -85,7 +85,7 @@ bibtex_plugin = CitationBibliography(
         ],
         "Developer Documentation" => [
             "Overview" => "devdocs/index.md",
-            "devdocs/element_interface.md",
+            "devdocs/elements.md",
             "devdocs/domain_management.md",
         ],
         "vroom.md",
