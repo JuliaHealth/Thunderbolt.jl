@@ -21,7 +21,7 @@ u0 = zeros(Thunderbolt.num_states(fluid_model_init))
 Thunderbolt.default_initial_condition!(u0, fluid_model_init)
 prob = ODEProblem((du, u, p, t) -> Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 100*fluid_model_init.THB), fluid_model_init)
 sol = solve(prob, Tsit5())
-# plot(sol, idxs=[1,2,3,4], tspan=(99*fluid_model_init.THB, 100*fluid_model_init.THB))
+# #plot(sol, idxs=[1,2,3,4], tspan=(99*fluid_model_init.THB, 100*fluid_model_init.THB))
 
 ## Precomputed initial guess
 u₀fluid = sol.u[end]
@@ -31,22 +31,21 @@ u₀fluid = sol.u[end]
 scaling_factor = 3.7;
 # !!! warning
 #     Tuning parameter until all bugs are fixed in this tutorial :)
-mesh = generate_ideal_lv_mesh(8,2,5;
+mesh = generate_ideal_lv_mesh(16,4,19;
     inner_radius = scaling_factor*0.7,
     outer_radius = scaling_factor*1.0,
     longitudinal_upper = 0.4,
     apex_inner = scaling_factor* 1.3,
-    apex_outer = scaling_factor*1.5
+    apex_outer = scaling_factor*1.5,
+    with_control_point = true,
 )
-mesh = Thunderbolt.hexahedralize(mesh)
-# !!! todo
-#     The 3D0D coupling does not yet support multiple subdomains.
 
-coordinate_system = compute_lv_coordinate_system(mesh)
+coordinate_system = compute_lv_coordinate_system(mesh; subdomains = ["myocardium"])
 microstructure    = create_microstructure_model(
     coordinate_system,
     LagrangeCollection{1}()^3,
-    ODB25LTMicrostructureParameters(),
+    ODB25LTMicrostructureParameters();
+    subdomains = ["myocardium"],
 );
 passive_material_model = Guccione1991PassiveModel()
 active_material_model  = Guccione1993ActiveModel()
@@ -82,8 +81,10 @@ coupler = LumpedFluidSolidCoupler(
     [
         ChamberVolumeCoupling(
             "Endocardium",
+            "lv-volume-control",
             RSAFDQ2022SurrogateVolume(),
             :Vₗᵥ,
+            :pₗᵥ,
             :pₗᵥ,
         )
     ],
@@ -103,6 +104,7 @@ spatial_discretization_method = FiniteElementDiscretization(
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor4"), (x,t) -> (0.0,), [3])
     ],
+    ["myocardium"],
 )
 splitform = semidiscretize(
     RSAFDQ2022Split(coupled_model),
@@ -113,8 +115,8 @@ splitform = semidiscretize(
 dt₀ = 1.0
 dtvis = 10.0
 tspan = (0.0, 3*800.0)
-# This speeds up the CI # hide
-tspan = (0.0, 10.0)    # hide
+# This speeds up the CI #hide
+tspan = (0.0, 10.0);    #hide
 
 # The remaining code is very similar to how we use SciML solvers.
 chamber_solver = HomotopyPathSolver(
