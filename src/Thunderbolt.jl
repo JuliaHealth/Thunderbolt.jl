@@ -45,8 +45,7 @@ import FerriteOperators:
     setup_operator,
     update_operator!
 
-import FerriteOperators:
-    CompositeSurfaceElementCache
+import FerriteOperators: CompositeSurfaceElementCache
 
 import Unrolled: @unroll
 import FastBroadcast: @..

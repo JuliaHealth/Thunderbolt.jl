@@ -160,12 +160,8 @@ function create_chamber_tyings(
             chamber_volume_idx_lumped,
             num_unknowns_structure+num_unknown_pressures(circuit_model)+chamber_volume_idx_lumped,
         )
-        tying.V⁰ᴰval = compute_chamber_volume(
-                dh,
-                zeros(ndofs(dh)),
-                coupling.chamber_surface_setname,
-                tying,
-            )
+        tying.V⁰ᴰval =
+            compute_chamber_volume(dh, zeros(ndofs(dh)), coupling.chamber_surface_setname, tying)
         push!(chamber_tyings, tying)
     end
     return chamber_tyings

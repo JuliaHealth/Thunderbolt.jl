@@ -281,14 +281,14 @@ function create_microstructure_model(
     coordinate_system::CoordinateSystemCoefficient,
     ip_collection::VectorizedInterpolationCollection{3},
     parameters;
-    subdomains = [single_subdomain_or_error(get_grid(coordinate_system.dh))]
+    subdomains = [single_subdomain_or_error(get_grid(coordinate_system.dh))],
 )
     @unpack dh = coordinate_system
 
     # TODO this storage is redundant, can we reduce the memory footprint?
     offsets = copy(dh.cell_dofs_offset)
     sizes   = zero(offsets)
-    for i in 1:getncells(dh.grid)
+    for i = 1:getncells(dh.grid)
         sdhi = dh.cell_to_subdofhandler[i]
         if sdhi > 0
             sdh = dh.subdofhandlers[sdhi]

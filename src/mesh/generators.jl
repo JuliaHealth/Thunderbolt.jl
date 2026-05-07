@@ -476,7 +476,7 @@ function generate_ideal_lv_mesh(
     longitudinal_upper::T = Float64(0.2),
     apex_inner::T = Float64(1.3),
     apex_outer::T = Float64(1.5),
-    with_control_point::Bool = false
+    with_control_point::Bool = false,
 ) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
     ne_tot = num_elements_circumferential*num_elements_radial*num_elements_logintudinal;
@@ -603,16 +603,16 @@ function generate_ideal_lv_mesh(
         push!(nodes, Node(Vec((0.0, 0.0, 0.0))))
         push!(cells, Point(length(nodes)))
         cellsets = Dict([
-            "myocardium" => OrderedSet(1:length(cells)-1),
+            "myocardium" => OrderedSet(1:(length(cells)-1)),
             "lv-volume-control" => OrderedSet([length(cells)]),
         ])
     else
-        cellsets = Dict([
-            "myocardium" => OrderedSet(1:length(cells)),
-        ])
+        cellsets = Dict(["myocardium" => OrderedSet(1:length(cells))])
     end
 
-    return to_mesh(Grid(cells, nodes, nodesets = nodesets, facetsets = facetsets, cellsets = cellsets))
+    return to_mesh(
+        Grid(cells, nodes, nodesets = nodesets, facetsets = facetsets, cellsets = cellsets),
+    )
 end
 
 generate_mesh(args...) = to_mesh(generate_grid(args...))

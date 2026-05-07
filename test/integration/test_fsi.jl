@@ -122,8 +122,8 @@ end
                     RSAFDQ2022SurrogateVolume(),
                     :Vₗᵥ,
                     :pₗᵥ,
-                    :pₗᵥ
-                )
+                    :pₗᵥ,
+                ),
             ],
             :d,
         ),

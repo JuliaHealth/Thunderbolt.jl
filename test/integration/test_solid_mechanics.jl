@@ -234,7 +234,12 @@ Thunderbolt.evaluate_coefficient(
     t,
 ) = t/1000.0 < 0.5 ? (2.0*t/1000.0)^2 : 2.0-(2.0*t/1000.0)^2
 
-function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, subdomains = ["myocardium"])
+function test_solve_contractile_cuboid(
+    mesh,
+    constitutive_model,
+    timestepper,
+    subdomains = ["myocardium"],
+)
     tspan = timestepper isa BackwardEulerSolver ? (0.0, 10.0) : (0.0, 300.0)
     Δt = timestepper isa BackwardEulerSolver ? 2.0 : 100.0
 

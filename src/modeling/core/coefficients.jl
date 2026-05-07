@@ -368,12 +368,8 @@ function setup_coefficient_cache(
     return coefficient
 end
 
-evaluate_coefficient(
-    coeff::SpatiallyHomogeneousDataField,
-    ::CellCache,
-    ::QuadraturePoint,
-    t,
-) = _evaluate_coefficient(coeff, t)
+evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::CellCache, ::QuadraturePoint, t) =
+    _evaluate_coefficient(coeff, t)
 
 function _evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, t)
     @unpack timings, data = coeff

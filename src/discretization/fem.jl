@@ -188,7 +188,7 @@ function semidiscretize_register_subdomains!(
     lvh,
     model,
     discretization::FiniteElementDiscretization,
-    subdomains
+    subdomains,
 )
     semidiscretize_register_subdomains!(
         dh,
@@ -196,7 +196,7 @@ function semidiscretize_register_subdomains!(
         model,
         model.material_model,
         discretization,
-        subdomains
+        subdomains,
     )
 end
 function semidiscretize_register_subdomains!(
@@ -205,7 +205,7 @@ function semidiscretize_register_subdomains!(
     model,
     material_model::AbstractMaterialModel,
     discretization::FiniteElementDiscretization,
-    subdomains
+    subdomains,
 )
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
