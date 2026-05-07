@@ -182,7 +182,7 @@ struct ElementwiseData{
 } <: AbstractMatrix{DataType}
     data::StorageType
     offsets::IndexStorageType
-    # FIXME the cells must be ordered ascending for this to work, which is not true in general. Insert the unit ranges here instead.
+    sizes::IndexStorageType
 end
 
 Base.getindex(data::ElementwiseData, i::Int) = data.data[i]
@@ -204,13 +204,13 @@ function Base.setindex!(data::ElementwiseData{T}, v::T, i::Int) where {T}
 end
 
 function Base.getindex(data::ElementwiseData, j::Int, i::Int)
-    os = data.offsets[i]:(data.offsets[i+1]-1)
+    os = data.offsets[i]:(data.offsets[i]+data.sizes[i]-1)
     dv = @view data.data[os]
     return dv[j]
 end
 
 function Base.setindex!(data::ElementwiseData{T}, v::T, j::Int, i::Int) where {T}
-    os = data.offsets[i]:(data.offsets[i+1]-1)
+    os = data.offsets[i]:(data.offsets[i]+data.sizes[i]-1)
     dv = @view data.data[os]
     dv[j] = v
 end

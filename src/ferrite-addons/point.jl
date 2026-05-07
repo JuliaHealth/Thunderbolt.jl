@@ -10,6 +10,5 @@ end
 Point(i::Int) = Point((i,))
 Ferrite.cell_to_vtkcell(::Type{Point}) = VTKCellTypes.VTK_VERTEX
 
-struct PointInterpolation <: Ferrite.ScalarInterpolation{RefPoint, 0} end
-Ferrite.getnbasefunctions(ip::PointInterpolation) = 1
-Ferrite.adjust_dofs_during_distribution(::PointInterpolation) = false
+Ferrite.getnbasefunctions(ip::Lagrange{RefPoint, 0}) = 1
+Ferrite.adjust_dofs_during_distribution(::Lagrange{RefPoint, 0}) = false

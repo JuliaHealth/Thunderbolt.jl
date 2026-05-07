@@ -491,3 +491,16 @@ end
         @inbounds return Tensor{4, dim}($exps)
     end
 end
+
+function is_sdh_on_subdomain(sdh, name::String)
+    grid = get_grid(sdh.dh)
+    cellset = getcellset(grid, name)
+    return first(sdh.cellset) ∈ cellset
+end
+
+function is_sdh_on_any_subdomain(sdh, names::Vector{String})
+    for name in names
+        is_sdh_on_subdomain(sdh, name) && return true
+    end
+    return false
+end

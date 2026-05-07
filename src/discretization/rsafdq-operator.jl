@@ -78,7 +78,7 @@ function FerriteOperators.update_linearization!(
 
         residualp[chamber_index] -= V⁰ᴰ
 
-        @info "Chamber $chamber_index p=$chamber_pressure, V0=$V⁰ᴰ"
+        @debug "Chamber $chamber_index" chamber_pressure V⁰ᴰ
     end
 
     FerriteOperators.finalize_assembly!(assembler)
@@ -124,7 +124,7 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
                     Pressure3D0DVolumeCouplerIntegrator(
                         integrator.fqrc,
                         integrator.volume_model.displacement_symbol,
-                        :pₗᵥ, #chamber.pressure_symbol # FIXME
+                        chamber.pressure_symbol,
                         chamber.facets,
                         chamber.volume_method,
                     ),

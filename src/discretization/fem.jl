@@ -7,10 +7,10 @@ Descriptor for a finite element discretization of a part of a PDE over some subd
 struct FiniteElementDiscretization
     """
     """
-    interpolations::Dict{Symbol}#, Union{<:InterpolationCollection, Pair{<:InterpolationCollection, <:QuadratureRuleCollection}}}
+    interpolations::Dict{Symbol, Any}#, Union{<:InterpolationCollection, Pair{<:InterpolationCollection, <:QuadratureRuleCollection}}}
     """
     """
-    dbcs::Vector{Dirichlet}
+    dbcs::Vector{Dirichlet} # TODO descriptor instead of Dirichlet. This allows us to distinguish different cases.
     """
     """
     subdomains::Vector{String}
@@ -187,14 +187,31 @@ function semidiscretize_register_subdomains!(
     dh,
     lvh,
     model,
+    discretization::FiniteElementDiscretization,
+    subdomains
+)
+    semidiscretize_register_subdomains!(
+        dh,
+        lvh,
+        model,
+        model.material_model,
+        discretization,
+        subdomains
+    )
+end
+function semidiscretize_register_subdomains!(
+    dh,
+    lvh,
+    model,
     material_model::AbstractMaterialModel,
     discretization::FiniteElementDiscretization,
+    subdomains
 )
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
-    if !isempty(discretization.subdomains)
-        for name in discretization.subdomains
+    if !isempty(subdomains)
+        for name in subdomains
             add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
             add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
         end
@@ -230,6 +247,7 @@ end
     domains,
     domain_names,
     discretization,
+    subdomains,
 )
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
@@ -259,7 +277,7 @@ function semidiscretize(
     qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
     lvh = InternalVariableHandler(mesh)
-    semidiscretize_register_subdomains!(dh, lvh, model, model.material_model, discretization)
+    semidiscretize_register_subdomains!(dh, lvh, model, discretization, discretization.subdomains)
     close!(dh)
     close!(lvh)
 

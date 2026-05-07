@@ -2,14 +2,15 @@
 
 mutable struct RSAFDQ2022SingleChamberTying{CVM}
     const pressure_dof_index_local::Int
-    pressure_dof_index_global::Int
+    const pressure_dof_index_global::Int
+    const pressure_symbol::Symbol
     const pressure_parameter_index_local
     const facets::OrderedSet{FacetIndex}
     const volume_method::CVM
     const displacement_symbol::Symbol
     V⁰ᴰval::Float64
     const V⁰ᴰidx_local::Int
-    V⁰ᴰidx_global::Int
+    const V⁰ᴰidx_global::Int
 end
 
 struct RSAFDQ2022TyingInfo{CVM}
@@ -150,6 +151,7 @@ function create_chamber_tyings(
         tying = RSAFDQ2022SingleChamberTying(
             pressure_dof_index,
             pressure_dof_index,
+            coupling.pressure_symbol_3D,
             chamber_pressure_idx_lumped,
             chamber_facetset,
             coupling.chamber_volume_method,
@@ -158,8 +160,7 @@ function create_chamber_tyings(
             chamber_volume_idx_lumped,
             num_unknowns_structure+num_unknown_pressures(circuit_model)+chamber_volume_idx_lumped,
         )
-        tying.V⁰ᴰval =
-            initial_volume_lumped = compute_chamber_volume(
+        tying.V⁰ᴰval = compute_chamber_volume(
                 dh,
                 zeros(ndofs(dh)),
                 coupling.chamber_surface_setname,
@@ -192,7 +193,7 @@ function semidiscretize(
     chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
     @debug "Chamber tyings:"
     for chamber_tying in chamber_tyings
-        @debug "$(chamber_tying.pressure_dof_index_local), $(chamber_tying.pressure_dof_index_global), $(chamber_tying.volume_method), $(chamber_tying.displacement_symbol), $(chamber_tying.V⁰ᴰidx_local), $(chamber_tying.V⁰ᴰidx_global)"
+        @debug "Chamber:" chamber_tying.pressure_dof_index_local chamber_tying.pressure_dof_index_global chamber_tying.volume_method chamber_tying.displacement_symbol chamber_tying.V⁰ᴰidx_local chamber_tying.V⁰ᴰidx_global
     end
     @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
 
