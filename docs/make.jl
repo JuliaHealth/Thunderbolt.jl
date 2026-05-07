@@ -72,7 +72,6 @@ bibtex_plugin = CitationBibliography(
             "howto/custom-stimulation-protocols.md",
             "howto/custom-energies.md",
             "howto/custom-sarcomere.md",
-            "howto/custom-elements.md",
         ],
         "API Reference" => [
             "Overview" => "api-reference/index.md",
@@ -81,13 +80,12 @@ bibtex_plugin = CitationBibliography(
             "api-reference/functions.md",
             "api-reference/problems.md",
             "api-reference/discretization.md",
-            "api-reference/operators.md",
             "api-reference/solver.md",
             "api-reference/utility.md",
         ],
         "Developer Documentation" => [
             "Overview" => "devdocs/index.md",
-            "devdocs/element_interface.md",
+            "devdocs/elements.md",
             "devdocs/domain_management.md",
         ],
         "vroom.md",

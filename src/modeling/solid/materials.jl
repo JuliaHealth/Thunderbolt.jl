@@ -524,8 +524,9 @@ setup_internal_cache(
 ) = setup_contraction_model_cache(material_model.rhs.contraction_model, qr, sdh)
 
 # TODO this actually belongs to the multi-level newton file :)
+# TODO remove \delta t
 # Dual (global cache and element-level cache) use for now to make it non-allocating.
-struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{
+mutable struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{
     LocalModelType,
     LocalModelCacheType,
     LocalSolverType,
@@ -743,19 +744,20 @@ end
 LinearMaxwellMaterial(E₀::T, Eₗ::T, μ::T, η₁::T, ν::T) where {T} =
     LinearMaxwellMaterial{T, 3}(E₀, Eₗ, μ, η₁, ν)
 
-local_function_size(model::QuasiStaticModel) = local_function_size(model.material_model)
-function local_function_size(model::AbstractMaterialModel)
-    return _compute_local_function_size(0, gather_internal_variable_infos(model))
+internal_variable_size(model::QuasiStaticModel, cid, qp) =
+    internal_variable_size(model.material_model, cid, qp)
+function internal_variable_size(model::AbstractMaterialModel, cid, qp)
+    return _compute_internal_variable_size(0, gather_internal_variable_infos(model))
 end
 
-function _compute_local_function_size(total, lvis::Base.AbstractVecOrTuple)
+function _compute_internal_variable_size(total, lvis::Base.AbstractVecOrTuple)
     for lvi in lvis
-        total += _compute_local_function_size(total, lvi)
+        total += _compute_internal_variable_size(total, lvi)
     end
     return total
 end
 
-function _compute_local_function_size(total, lvi::InternalVariableInfo)
+function _compute_internal_variable_size(total, lvi::InternalVariableInfo)
     return lvi.size
 end
 
@@ -764,9 +766,7 @@ function _query_local_state(
     geometry_cache,
     qp,
 )
-    dh                                   = state_cache.lvh.dh
-    dofs                                 = celldofsview(dh, cellid(geometry_cache))
-    size                                 = local_function_size(state_cache.model)
+    size                                 = internal_variable_size(state_cache.model, cellid(geometry_cache), qp)
     range_begin                          = 1+(qp.i-1)*size
     range_end                            = qp.i*size
     Qv                                   = @view state_cache.Q[range_begin:range_end]
@@ -782,10 +782,7 @@ function _store_local_state!(
     geometry_cache,
     qp,
 )
-    dh = state_cache.lvh.dh
-    dofs = celldofsview(dh, cellid(geometry_cache))
-    # TODO properly via gather_internal_variable_infos :)
-    size = local_function_size(state_cache.model)
+    size = internal_variable_size(state_cache.model, cellid(geometry_cache), qp)
     range_begin = 1+(qp.i-1)*size
     range_end = qp.i*size
     Qv = @view state_cache.Q[range_begin:range_end]

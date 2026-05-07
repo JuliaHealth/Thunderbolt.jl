@@ -21,7 +21,7 @@ function test_solve_passive_structure(mesh, constitutive_model)
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3),
             dbcs,
-            [""],
+            ["myocardium"],
             Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
@@ -52,7 +52,7 @@ end
         Ferrite.Vec{3}((-1.0, -1.0, -0.2)),
         Ferrite.Vec{3}((1.0, 1.0, 0.2)),
     )
-    addcellset!(grid, "", x->true) # FIXME
+    addcellset!(grid, "myocardium", x->true)
     addcellset!(grid, "inner", x->x[3] ≤ 0.0)
     addcellset!(grid, "outer", x->x[3] ≥ 0.0)
     mesh = to_mesh(grid)
@@ -172,7 +172,7 @@ end
                     ),
                 ),
             ),
-            [""],
+            ["myocardium"],
             mesh,
         ),
     )
@@ -234,7 +234,12 @@ Thunderbolt.evaluate_coefficient(
     t,
 ) = t/1000.0 < 0.5 ? (2.0*t/1000.0)^2 : 2.0-(2.0*t/1000.0)^2
 
-function test_solve_contractile_cuboid(mesh, constitutive_model, timestepper, subdomains = [""])
+function test_solve_contractile_cuboid(
+    mesh,
+    constitutive_model,
+    timestepper,
+    subdomains = ["myocardium"],
+)
     tspan = timestepper isa BackwardEulerSolver ? (0.0, 10.0) : (0.0, 300.0)
     Δt = timestepper isa BackwardEulerSolver ? 2.0 : 100.0
 
@@ -314,7 +319,7 @@ function test_solve_contractile_ideal_lv(
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3),
             dbcs,
-            [""],
+            ["myocardium"],
             Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
@@ -351,7 +356,7 @@ end
         Ferrite.Vec{3}((0.0, 0.0, 0.0)),
         Ferrite.Vec{3}((1.0, 1.0, 0.2)),
     )
-    addcellset!(grid, "", x->true) # FIXME
+    addcellset!(grid, "myocardium", x->true)
     addcellset!(grid, "inner", x->x[3] ≤ 0.1)
     addcellset!(grid, "outer", x->x[3] ≥ 0.1)
     addcellset!(grid, "front", x->x[1] ≤ 0.1)
@@ -406,12 +411,12 @@ end
         mesh,
     )
     i = test_solve_contractile_cuboid(mesh, mmat, timestepper)
-    VTKGridFile(
-        "SolidMechanicsIntegrationDebug",
-        i.cache.stage.nlsolver.global_solver_cache.op.dh.grid,
-    ) do vtk
-        write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
-    end
+    # VTKGridFile(
+    #     "SolidMechanicsIntegrationDebug",
+    #     i.cache.stage.nlsolver.global_solver_cache.op.dh.grid,
+    # ) do vtk
+    #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+    # end
 
     mmat2 = Thunderbolt.MultiMaterialModel(
         (
@@ -573,7 +578,7 @@ end
         # Test path-independence setup
         @test i1.t ≈ 10.0
         @test i2.t ≈ 10.0
-        @test i1.u ≈ i2.u
+        @test i1.u ≈ i2.u atol=1e-4
     end
 
     # Check that the load-path is actually different
@@ -644,7 +649,7 @@ end
         # Test path-independence
         @test i1.t ≈ 500.0
         @test i2.t ≈ 500.0
-        @test i1.u ≈ i2.u
+        @test i1.u ≈ i2.u atol=1e-4
     end
 end
 

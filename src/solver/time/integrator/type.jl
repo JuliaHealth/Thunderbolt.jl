@@ -82,6 +82,8 @@ mutable struct ThunderboltTimeIntegrator{
     t::tType
     tprev::tType
     dt::tType
+    dtcache::tType
+    dtpropose::tType
     tdir::tType
     # cache of the time integration algorithm
     cache::cacheType
@@ -258,6 +260,8 @@ function SciMLBase.__init(
         p,
         t0,
         t0,
+        dt,
+        dt,
         dt,
         tdir,
         cache,

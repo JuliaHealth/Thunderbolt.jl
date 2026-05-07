@@ -50,11 +50,11 @@ function setup_solver_cache(
     Δu = Vector{T}(undef, solution_size(f))
 
     # Connect both solver caches
-    inner_prob = LinearSolve.LinearProblem(getJ(op), residual; u0 = Δu)
+    inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
     inner_cache =
         init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
     @assert inner_cache.b === residual
-    @assert inner_cache.A === getJ(op)
+    @assert inner_cache.A === op.J
 
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], 0)
 end
@@ -69,12 +69,12 @@ function setup_solver_cache(
     residual = Vector{T}(undef, sizeu)
     Δu = Vector{T}(undef, sizeu)
     # Connect both solver caches
-    inner_prob = LinearSolve.LinearProblem(getJ(op), residual; u0 = Δu)
+    inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
     inner_cache =
         init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
     @assert inner_cache.alg == inner_solver
     @assert inner_cache.b === residual
-    @assert inner_cache.A === getJ(op)
+    @assert inner_cache.A === op.J
 
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], 0)
 end
