@@ -416,7 +416,7 @@ function Thunderbolt._materialize_inner_solver(
     dhh = _build_pmg_dhh(f, field_name)
 
     pcoarse_solver = mg.pcoarse_solver === nothing ?
-        AlgebraicMultigrid.LinearSolveWrapper(UMFPACKFactorization()) : mg.pcoarse_solver
+        CachedLinearSolveCoarseSolverBuilder(UMFPACKFactorization()) : mg.pcoarse_solver
 
     # If the user supplied custom smoother callables, bake them into a fixed-smoother
     # PMultigridPreconBuilder (same pattern as GMGPrecon / ChainedMGPrecon).
@@ -435,20 +435,18 @@ function Thunderbolt._materialize_inner_solver(
         )
     else
         # Default: 2-iteration damped Jacobi with per-Newton adaptive ω.
-        # 2 sweeps (not 20) is the standard choice in p-MG theory; 20 over-smooths
-        # high-frequency modes and wastes work without improving coarse-grid accuracy.
-        (A, p = nothing) -> begin
-            smoother = DampedJacobi(5)
-            b = PMultigridPreconBuilder(
-                dhh, pgrid_config;
-                cycle          = cycle,
-                pcoarse_solver = pcoarse_solver,
-                presmoother    = smoother,
-                postsmoother   = smoother,
-                symmetry       = AMG.NoSymmetry(),
-            )
-            return b(A, p)
-        end
+        # The PMultigridPreconBuilder is created once (geometry cached); each call to
+        # builder(A, p) re-estimates λ_max(D⁻¹A) inside setup_smoother and rebuilds
+        # only the numeric phase (RAP + smoother).
+        smoother = DampedJacobi(5)
+        PMultigridPreconBuilder(
+            dhh, pgrid_config;
+            cycle          = cycle,
+            pcoarse_solver = pcoarse_solver,
+            presmoother    = smoother,
+            postsmoother   = smoother,
+            symmetry       = AMG.NoSymmetry(),
+        )
     end
 
     return _inject_precs(solver.krylov, _lazy_precs(builder))
@@ -468,13 +466,18 @@ function Thunderbolt._materialize_inner_solver(
     dhh     = _build_gmg_dhh(f.dh, field_name, mg.gh)
 
     pcoarse_solver = mg.pcoarse_solver === nothing ?
-        AlgebraicMultigrid.LinearSolveWrapper(UMFPACKFactorization()) : mg.pcoarse_solver
+        CachedLinearSolveCoarseSolverBuilder(UMFPACKFactorization()) : mg.pcoarse_solver
 
     pre  = mg.presmoother  === nothing ? DampedJacobi(5) : mg.presmoother
     post = mg.postsmoother === nothing ? DampedJacobi(5) : mg.postsmoother
 
+    geo_gmg_ref = Ref{Any}(nothing)
     builder = (A, p = nothing) -> begin
-        ml = gmultigrid(SparseMatrixCSC(A), mg.gh, dhh, nothing, gconfig, pcoarse_solver;
+        A_csc = SparseMatrixCSC(A)
+        if geo_gmg_ref[] === nothing
+            geo_gmg_ref[] = gmultigrid_symbolic(mg.gh, dhh, gconfig, A_csc)
+        end
+        ml = gmultigrid_numeric!(geo_gmg_ref[], A_csc, mg.gh, dhh, nothing, gconfig, pcoarse_solver;
                         presmoother = pre, postsmoother = post, symmetry = AMG.NoSymmetry())
         return (AlgebraicMultigrid.aspreconditioner(ml), I)
     end
@@ -508,15 +511,20 @@ function Thunderbolt._materialize_inner_solver(
     dhh_gmg = _build_gmg_dhh(dhh_pmg[1], field_name, gmg.gh)
 
     gmg_pcoarse = gmg.pcoarse_solver === nothing ?
-        AlgebraicMultigrid.LinearSolveWrapper(UMFPACKFactorization()) : gmg.pcoarse_solver
+        CachedLinearSolveCoarseSolverBuilder(UMFPACKFactorization()) : gmg.pcoarse_solver
 
     # G-MG smoothers used at the coarse correction levels.
     pre_gmg  = gmg.presmoother  === nothing ? DampedJacobi(5) : gmg.presmoother
     post_gmg = gmg.postsmoother === nothing ? pre_gmg         : gmg.postsmoother
 
-    # Build a closure instead of GMultigridCoarseSolverBuilder so we can pass the smoothers.
+    # For Galerkin g-MG: geometry (including RAP workspaces) is built on first call with A.
+    gmg_geo_ref = Ref{Any}(nothing)
+
     gmg_coarse_solver = (A::SparseMatrixCSC) -> begin
-        ml = gmultigrid(A, gmg.gh, dhh_gmg, nothing, gconfig, gmg_pcoarse;
+        if gmg_geo_ref[] === nothing
+            gmg_geo_ref[] = gmultigrid_symbolic(gmg.gh, dhh_gmg, gconfig, A)
+        end
+        ml = gmultigrid_numeric!(gmg_geo_ref[], A, gmg.gh, dhh_gmg, nothing, gconfig, gmg_pcoarse;
                         presmoother = pre_gmg, postsmoother = post_gmg,
                         symmetry = AMG.NoSymmetry())
         return GMultigridCoarseSolver(ml)
@@ -535,17 +543,14 @@ function Thunderbolt._materialize_inner_solver(
             postsmoother   = post_pmg,
         )
     else
-        (A, p = nothing) -> begin
-            smoother = DampedJacobi(5)
-            b = PMultigridPreconBuilder(
-                dhh_pmg, pgrid_config;
-                cycle          = cycle,
-                pcoarse_solver = gmg_coarse_solver,
-                presmoother    = smoother,
-                postsmoother   = smoother,
-            )
-            return b(A, p)
-        end
+        smoother = DampedJacobi(5)
+        PMultigridPreconBuilder(
+            dhh_pmg, pgrid_config;
+            cycle          = cycle,
+            pcoarse_solver = gmg_coarse_solver,
+            presmoother    = smoother,
+            postsmoother   = smoother,
+        )
     end
     return _inject_precs(solver.krylov, _lazy_precs(builder))
 end

@@ -9,17 +9,15 @@ using HybridSmoothers
 import KernelAbstractions as KA
 using FerriteOperators
 
-TimerOutputs.enable_debug_timings(AlgebraicMultigrid)
-TimerOutputs.enable_debug_timings(FerriteMultigrid)
-reset_timer!()
+TimerOutputs.enable_debug_timings(AlgebraicMultigrid)  #src
+TimerOutputs.enable_debug_timings(FerriteMultigrid)    #src
+reset_timer!()                                         #src
 
-tspan = (0.0, 300.0)
-Δt = 100.0
-
+# mesh = generate_ring_mesh(40, 6, 6) # 300000 dof example
 mesh = generate_ring_mesh(32, 4, 4)
+mesh = generate_ring_mesh(16, 1, 1) #src
 gh = GridHierarchy(mesh.grid, 1)
 fine_mesh = to_mesh(gh.grids[end])
-# fine_mesh = mesh
 coordinate_system = compute_midmyocardial_section_coordinate_system(fine_mesh)
 microstructure = create_microstructure_model(
     coordinate_system,
@@ -43,15 +41,14 @@ end
 calcium_field = AnalyticalCoefficient(
     calcium_profile_function,
     coordinate_system,
-);
-
+)
 sarcomere_model = CaDrivenInternalSarcomereModel(ConstantStretchModel(), calcium_field);
 active_stress_model = ActiveStressModel(
     passive_material_model,
     active_material_model,
     sarcomere_model,
     microstructure,
-);
+)
 mechanical_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions)
 spatial_discretization_method = FiniteElementDiscretization(
     Dict(:displacement => LagrangeCollection{2}()^3),
@@ -63,9 +60,9 @@ quasistaticform = semidiscretize(mechanical_model, spatial_discretization_method
 
 dt₀ = 1.0
 tspan = (0.0, 500.0)
-dtvis = 25.0;
+dtvis = 5.0;
 # This speeds up the CI # hide
-# tspan = (0.0, dtvis);   # hide
+tspan = (0.0, dtvis);   # hide
 
 # Then we setup the problem.
 # Since we have no time dependence in our active stress model the correct problem here is a quasistatic problem.
@@ -81,13 +78,8 @@ problem = QuasiStaticProblem(quasistaticform, tspan);
 timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
         max_iter     = 10,
-        # inner_solver = KrylovJL_GMRES(; gmres_restart = 150, verbose = 1),
         inner_solver = KrylovMGSolver(
-            # gmres_restart matches maxiters so GMRES never restarts and loses its Krylov
-            # subspace — important for a non-symmetric (Robin BC) system with a moderately
-            # strong preconditioner.  If memory is a concern, reduce restart and accept
-            # slightly more iterations.
-            KrylovJL_GMRES(; gmres_restart = 150, verbose = 1),
+            KrylovJL_GMRES(; verbose = 1),
             ChainedMGPrecon(
                 PMGPrecon(;
                     # Asymmetric V-cycle: forward SOR pre-smoother + backward SOR post-smoother.
@@ -113,7 +105,7 @@ timestepper = HomotopyPathSolver(
                     postsmoother = AlgebraicMultigrid.SOR(1.3, AlgebraicMultigrid.BackwardSweep(), 2),
                 ),
             );
-            maxiters = 150,
+            maxiters = 100,
         ),
         ## inner_solver = LinearSolve.UMFPACKFactorization()
         # Eisenstat-Walker adaptive linear solver tolerance (Algorithm 2, E&W 1996).
@@ -137,7 +129,7 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     end
 end;
 
-print_timer()
+print_timer() #src
 
 # !!! tip
 #     If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:
