@@ -290,6 +290,7 @@ export
     PMGPrecon,
     GMGPrecon,
     ChainedMGPrecon,
+    EisenstatWalkerForcing,
     NewtonRaphsonSolver,
     MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,
