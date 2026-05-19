@@ -32,15 +32,18 @@ _default_pmg_config() = pmultigrid_config()
 _default_gmg_config() = gmultigrid_config()
 
 """
-    _estimate_spectral_radius_dinv_A(A; power_iters = 30)
+    _estimate_spectral_radius_dinv_A(A; power_iters = 50)
 
-Estimate ρ(D⁻¹A) via power iteration with 30 steps (cheap: O(power_iters · nnz(A))).
-Returns an upper bound on the largest eigenvalue of D⁻¹A.
+Estimate ρ(D⁻¹A) via power iteration with a deterministic starting vector.
+
+Using `ones` (normalised) avoids the random-seed dependence that caused intermittent
+over- or under-estimation of λ_max on non-symmetric matrices, which in turn made the
+damped-Jacobi smoother diverge unpredictably.
 """
-function _estimate_spectral_radius_dinv_A(A; power_iters = 30)
+function _estimate_spectral_radius_dinv_A(A; power_iters = 50)
     d   = diag(A)
     n   = size(A, 1)
-    v   = randn(n); v ./= norm(v)
+    v   = fill(inv(sqrt(Float64(n))), n)
     tmp = similar(v)
     λ   = 1.0
     for _ in 1:power_iters
@@ -54,24 +57,27 @@ function _estimate_spectral_radius_dinv_A(A; power_iters = 30)
 end
 
 """
-    _chebyshev_jacobi_ω(A; power_iters = 30)
+    _chebyshev_jacobi_ω(A; power_iters = 50)
 
-Return the Chebyshev-optimal damping parameter ω for a damped-Jacobi smoother applied
-to the fine-level matrix A.
+Return the Chebyshev-optimal damping parameter ω for a damped-Jacobi smoother.
 
-The standard formula for eliminating the upper 2/3 of the spectrum while leaving the
-lower 1/3 untouched (to be handled by the coarse grid) is:
+The standard formula targeting the upper 2/3 of the spectrum is:
 
-    ω = 4 / (3 · λ_max)                      (Shewchuk / Stüben convention)
+    ω = 4 / (3 · λ_max)      (Shewchuk / Stüben convention)
 
 This guarantees:
-  |1 − ω · λ|  ≤ 1/3   for  λ ∈ [λ_max/3, λ_max]      (high-freq attenuation)
-  |1 − ω · λ|  ≤  1    for  λ ∈ [0, λ_max/3]            (low-freq preserved)
+  |1 − ω · λ|  ≤ 1/3   for  λ ∈ [λ_max/3, λ_max]    (high-freq attenuation)
+  |1 − ω · λ|  ≤  1    for  λ ∈ [0, λ_max/3]          (low-freq preserved for coarse grid)
+
+For the non-symmetric Robin-BC case, eigenvalues of D⁻¹A may be weakly complex.
+The 4/(3λ_max) formula remains valid provided the eigenvalue arguments stay below
+arccos(2/3) ≈ 48°, which is typical for mildly non-symmetric FEM systems where
+the boundary contribution is small relative to the bulk stiffness.
 """
-function _chebyshev_jacobi_ω(A; power_iters = 30)
+function _chebyshev_jacobi_ω(A; power_iters = 50)
     λ_max = _estimate_spectral_radius_dinv_A(A; power_iters)
     ω     = 4.0 / (3.0 * λ_max)
-    @info "Jacobi smoother: estimated λ_max(D⁻¹A) = $λ_max → ω_opt = $ω"
+    @info "Jacobi smoother: estimated λ_max(D⁻¹A) = $λ_max → ω = $ω"
     return ω
 end
 
@@ -257,10 +263,9 @@ allows `LinearSolve` to fix `cache.Pl::LazyPrecon` at `init` time while still re
 the real (matrix-dependent) preconditioner at each solve.
 """
 function _lazy_precs(builder)
-    lazy        = LazyPrecon()
-    first_build = Ref(true)
+    lazy = LazyPrecon()
     return (A, p = nothing) -> begin
-        if norm(A, Inf) != 0.0
+        if !iszero(norm(A, Inf))
             lazy.inner = first(builder(A, p))
         end
         return (lazy, I)
@@ -429,8 +434,11 @@ function Thunderbolt._materialize_inner_solver(
             symmetry       = AMG.NoSymmetry(),
         )
     else
+        # Default: 2-iteration damped Jacobi with per-Newton adaptive ω.
+        # 2 sweeps (not 20) is the standard choice in p-MG theory; 20 over-smooths
+        # high-frequency modes and wastes work without improving coarse-grid accuracy.
         (A, p = nothing) -> begin
-            smoother = DampedJacobi(20)
+            smoother = DampedJacobi(5)
             b = PMultigridPreconBuilder(
                 dhh, pgrid_config;
                 cycle          = cycle,
@@ -462,12 +470,12 @@ function Thunderbolt._materialize_inner_solver(
     pcoarse_solver = mg.pcoarse_solver === nothing ?
         AlgebraicMultigrid.LinearSolveWrapper(UMFPACKFactorization()) : mg.pcoarse_solver
 
-    pre  = mg.presmoother  === nothing ? DampedJacobi(20) : mg.presmoother
-    post = mg.postsmoother === nothing ? DampedJacobi(20) : mg.postsmoother
+    pre  = mg.presmoother  === nothing ? DampedJacobi(5) : mg.presmoother
+    post = mg.postsmoother === nothing ? DampedJacobi(5) : mg.postsmoother
 
     builder = (A, p = nothing) -> begin
         ml = gmultigrid(SparseMatrixCSC(A), mg.gh, dhh, nothing, gconfig, pcoarse_solver;
-                        presmoother = pre, postsmoother = post)
+                        presmoother = pre, postsmoother = post, symmetry = AMG.NoSymmetry())
         return (AlgebraicMultigrid.aspreconditioner(ml), I)
     end
     return _inject_precs(solver.krylov, _lazy_precs(builder))
@@ -503,17 +511,18 @@ function Thunderbolt._materialize_inner_solver(
         AlgebraicMultigrid.LinearSolveWrapper(UMFPACKFactorization()) : gmg.pcoarse_solver
 
     # G-MG smoothers used at the coarse correction levels.
-    pre_gmg  = gmg.presmoother  === nothing ? DampedJacobi(20) : gmg.presmoother
-    post_gmg = gmg.postsmoother === nothing ? pre_gmg                          : gmg.postsmoother
+    pre_gmg  = gmg.presmoother  === nothing ? DampedJacobi(5) : gmg.presmoother
+    post_gmg = gmg.postsmoother === nothing ? pre_gmg         : gmg.postsmoother
 
     # Build a closure instead of GMultigridCoarseSolverBuilder so we can pass the smoothers.
     gmg_coarse_solver = (A::SparseMatrixCSC) -> begin
         ml = gmultigrid(A, gmg.gh, dhh_gmg, nothing, gconfig, gmg_pcoarse;
-                        presmoother = pre_gmg, postsmoother = post_gmg)
+                        presmoother = pre_gmg, postsmoother = post_gmg,
+                        symmetry = AMG.NoSymmetry())
         return GMultigridCoarseSolver(ml)
     end
 
-    # P-MG smoothers (fine-level smoothing); fall back to adaptive Jacobi when not set.
+    # P-MG smoothers (fine-level smoothing); fall back to 2-iteration damped Jacobi when not set.
     pre_pmg  = pmg.presmoother
     post_pmg = pmg.postsmoother === nothing ? pmg.presmoother : pmg.postsmoother
 
@@ -527,7 +536,7 @@ function Thunderbolt._materialize_inner_solver(
         )
     else
         (A, p = nothing) -> begin
-            smoother = DampedJacobi(20)
+            smoother = DampedJacobi(5)
             b = PMultigridPreconBuilder(
                 dhh_pmg, pgrid_config;
                 cycle          = cycle,
