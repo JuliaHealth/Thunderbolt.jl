@@ -46,6 +46,11 @@ end
 Classical Newton-Raphson solver to solve nonlinear problems of the form `F(u) = 0`.
 To use the Newton-Raphson solver you have to dispatch on
 * [update_linearization!](@ref)
+
+If `simplified_newton = true`, the Jacobian (and preconditioner) assembled at the first
+Newton iteration is reused for all subsequent iterations. Only the residual is recomputed
+via [`residual!`](@ref) each step. This saves Jacobian assembly and factorization cost per
+step at the expense of slower outer convergence.
 """
 Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType, ForcingType} <: AbstractNonlinearSolver
     # Convergence tolerance
@@ -57,6 +62,8 @@ Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType, ForcingType} 
     enforce_monotonic_convergence::Bool = true
     # Adaptive linear solver tolerance (Eisenstat-Walker); only active for iterative solvers.
     forcing::ForcingType = nothing
+    # When true, reuse the Jacobian and preconditioner from the first Newton iteration.
+    simplified_newton::Bool = false
 end
 
 mutable struct NewtonRaphsonSolverCache{
@@ -173,6 +180,7 @@ function nlsolve!(
 ) where {T}
     @unpack op, residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
+    simplified = cache.parameters.simplified_newton
     cache.iter = -1
     Δu = linear_solver_cache.u
     residualnormprev = 0.0
@@ -181,10 +189,17 @@ function nlsolve!(
     while true
         cache.iter += 1
         fill!(residual, 0.0)
-        @timeit_debug "update operator" update_linearization!(op, residual, u, t)
-        @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
-        linear_solver_cache.isfresh = true        # Notify linear solver that both the matrix and the preconditioner need to be updated.
-        linear_solver_cache.precsisfresh = true
+        if simplified && cache.iter > 0
+            # Simplified Newton: reuse Jacobian and preconditioner from iter 0.
+            @timeit_debug "update residual" residual!(op, residual, u, t)
+            @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, f)
+            # Leave isfresh / precsisfresh false → reuse existing factorization.
+        else
+            @timeit_debug "update operator" update_linearization!(op, residual, u, t)
+            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
+            linear_solver_cache.isfresh = true        # Notify linear solver that both the matrix and the preconditioner need to be updated.
+            linear_solver_cache.precsisfresh = true
+        end
 
         residualnorm = residual_norm(cache, f)
         if residualnorm < cache.parameters.tol && cache.iter > 0

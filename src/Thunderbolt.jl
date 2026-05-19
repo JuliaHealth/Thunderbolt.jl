@@ -29,6 +29,7 @@ import FerriteOperators:
     EmptySurfaceElementCache,
     EmptyVolumetricElementCache,
     update_linearization!,
+    residual!,
     assemble_element!,
     internal_variable_offset,
     AbstractBilinearIntegrator,
