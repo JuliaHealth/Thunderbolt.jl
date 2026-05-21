@@ -21,7 +21,23 @@ import AlgebraicMultigrid as AMG
 import FerriteMultigrid: GridHierarchy
 
 import Thunderbolt: _materialize_inner_solver, KrylovMGSolver,
-                    PMGPrecon, GMGPrecon, ChainedMGPrecon
+                    PMGPrecon, GMGPrecon, ChainedMGPrecon, OrderedSet
+
+function GridHierarchy(coarse_grid::Thunderbolt.SimpleMesh, n_refinements::Int)
+    @assert n_refinements >= 1 "Need at least one refinement level"
+    grids            = [coarse_grid]
+    fine2coarse_maps = Vector{Int}[]
+    crc_maps         = Vector[]
+
+    for _ in 1:n_refinements
+        fine_grid, f2c, crc = uniform_refinement(grids[end].grid)
+        push!(grids, to_mesh(fine_grid))
+        push!(fine2coarse_maps, f2c)
+        push!(crc_maps, crc)
+    end
+
+    return GridHierarchy(grids, fine2coarse_maps, crc_maps)
+end
 
 # -----------------------------------------------------------------------
 # Helpers
@@ -300,9 +316,10 @@ end
 Build a `DofHandlerHierarchy` for geometric multigrid.
 
 `dh_fine` is reused verbatim as the finest g-MG level, preserving its exact grid object
-and DOF ordering.  Coarser levels are created on `to_mesh(gh.grids[k])` with the same
-field interpolation as `dh_fine`, using a sorted `1:N` range for the SubDofHandler cellset
-so that DOF numbering is deterministic and consistent across the hierarchy.
+and DOF ordering.  Coarser levels are created on `gh.grids[k]` mirroring the SubDofHandler
+structure of `dh_fine`: each SDH's cell set is mapped to coarser levels by composing the
+`gh.fine2coarse` maps from finest down to the target level.  This preserves the DOF
+numbering and field interpolation for each region exactly as in `dh_fine`.
 
 **Critical for `ChainedMGPrecon`**: pass the p-MG coarse DH (i.e. `dhh_pmg[1]`) as
 `dh_fine`.  The p-MG algorithm produces `A_pmg_coarse = P_p' * A_fine * P_p` indexed by
@@ -316,16 +333,29 @@ risk by construction.
 For standalone `GMGPrecon`, pass `f.dh` directly.
 """
 function _build_gmg_dhh(dh_fine::DofHandler, field_name::Symbol, gh::GridHierarchy)
-    ip_fine = Ferrite.getfieldinterpolation(dh_fine.subdofhandlers[1], field_name)
+    n_levels = length(gh)  # gh.grids[1] = coarsest, gh.grids[n_levels] = finest
 
-    coarse_handlers = map(gh.grids[1:end-1]) do grid
-        smesh = to_mesh(grid)
-        dh    = DofHandler(smesh)
-        # Use a sorted range (not `Set`) so DOF numbering is in cell order 1..N.
-        sdh = SubDofHandler(dh, 1:Ferrite.getncells(smesh))
-        Ferrite.add!(sdh, field_name, ip_fine)
+    # Collect per-SDH (interpolation, cell set on the finest grid).
+    # cell sets are converted to plain Set{Int} for efficient map application.
+    sdh_ips   = [Ferrite.getfieldinterpolation(sdh, field_name) for sdh in dh_fine.subdofhandlers]
+    sdh_cells = [sdh.cellset                          for sdh in dh_fine.subdofhandlers]
+
+    # Build coarse DH for levels 1..n_levels-1, working from finest-1 down to 1.
+    # gh.fine2coarse[k] maps cell ids on grids[k+1] → cell ids on grids[k].
+    coarse_handlers = Vector{DofHandler}(undef, n_levels - 1)
+    for k in (n_levels - 1):-1:1
+        f2c = gh.fine2coarse[k]
+        # Propagate each cell set one level coarser.
+        sdh_cells = [OrderedSet{Int}(f2c[c] for c in cells) for cells in sdh_cells]
+
+        dh = DofHandler(gh.grids[k])
+        for (ip, cells) in zip(sdh_ips, sdh_cells)
+            isempty(cells) && continue
+            sdh_c = SubDofHandler(dh, cells)
+            Ferrite.add!(sdh_c, field_name, ip)
+        end
         Ferrite.close!(dh)
-        return dh
+        coarse_handlers[k] = dh
     end
 
     return DofHandlerHierarchy([coarse_handlers..., dh_fine])

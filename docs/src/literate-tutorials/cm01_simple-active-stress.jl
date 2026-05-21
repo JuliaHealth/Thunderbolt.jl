@@ -48,17 +48,11 @@ mesh = generate_ideal_lv_mesh(6,2,3;
 #     We can also load realistic geometries with external formats. For this simply use either FerriteGmsh.jl
 #     or one of the loader functions stated in the [mesh API](@ref mesh-utility-api).
 
-# The ideal LV mesh contains both Hexahedron and Wedge cells at the apex, which is not compatible with
-# the uniform mesh refinement required for geometric multigrid.
-# We therefore hexahedralize the mesh first: each Wedge cell is split into 6 Hexahedra,
-# and each Hexahedron is split into 8, producing a pure-hexahedral mesh.
-hex_smesh = hexahedralize(mesh)
-
 # We now build a two-level grid hierarchy for geometric multigrid.
 # The hexahedralized mesh is the coarse level; one uniform refinement produces the fine level
 # on which the simulation will actually run.
-gh = GridHierarchy(hex_smesh.grid, 1)
-fine_mesh = to_mesh(gh.grids[end])
+gh = GridHierarchy(mesh, 1)
+fine_mesh = gh.grids[end]
 
 # Next we will define a coordinate system, which helps us to work with cardiac geometries.
 # This way we can reuse different methods, like for example fiber generators, across geometries.
@@ -155,20 +149,21 @@ timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
         max_iter     = 10,
         inner_solver = KrylovMGSolver(
-            KrylovJL_GMRES(; gmres_restart = 50, verbose = 1),
-            # ChainedMGPrecon(
+            KrylovJL_GMRES(; verbose = 1),
+            ChainedMGPrecon(
                 PMGPrecon(;
-                    # presmoother = HybridSmoothers.L1GSPrecBuilder(KA.CPU()),
-                    # postsmoother = HybridSmoothers.L1GSPrecBuilder(KA.CPU()),
+                    presmoother  = AlgebraicMultigrid.SOR(1.3, AlgebraicMultigrid.ForwardSweep(), 2),
+                    postsmoother = AlgebraicMultigrid.SOR(1.3, AlgebraicMultigrid.BackwardSweep(), 2),
                 ),
-            #     GMGPrecon(gh;
-            #         presmoother = HybridSmoothers.L1GSPrecBuilder(KA.CPU()),
-            #         postsmoother = HybridSmoothers.L1GSPrecBuilder(KA.CPU()),
-            #     ),
-            # );
-            maxiters = 150,
+                GMGPrecon(gh;
+                    presmoother  = AlgebraicMultigrid.SOR(1.3, AlgebraicMultigrid.ForwardSweep(), 2),
+                    postsmoother = AlgebraicMultigrid.SOR(1.3, AlgebraicMultigrid.BackwardSweep(), 2),
+                ),
+            );
+            maxiters = 100,
         ),
-        ## inner_solver = LinearSolve.UMFPACKFactorization()
+        ## inner_solver = LinearSolve.UMFPACKFactorization(),
+        forcing = EisenstatWalkerForcing(ηₘₐₓ = 0.1),
     )
 );
 
