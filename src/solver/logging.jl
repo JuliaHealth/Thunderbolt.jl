@@ -25,6 +25,23 @@ function integration_step_monitor(
     @logmsg LogLevel(-100) "Integrating on [$t, $(t+dt)]." iter=iter Δt=dt tprev=tprev _group=:timeintegration
 end
 
+function integration_step_footer_monitor(
+    integrator::SciMLBase.DEIntegrator,
+    t_start,
+    t_end,
+    accepted,
+    dt_step,
+    progress_monitor::DefaultProgressMonitor,
+)
+    (; dt, iter) = integrator
+    status = accepted ? "accepted" : "rejected"
+    if dt != dt_step
+        @logmsg LogLevel(-100) "Step $status on [$t_start, $t_end]." iter=iter Δt_used=dt_step Δt_next=dt _group=:timeintegration
+    else
+        @logmsg LogLevel(-100) "Step $status on [$t_start, $t_end]." iter=iter Δt_used=dt_step _group=:timeintegration
+    end
+end
+
 function integration_finalize_monitor(integrator, progress_monitor::DefaultProgressMonitor)
     # (; id)         = progress_monitor
     (; tprev, t, iter) = integrator
