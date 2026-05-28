@@ -77,7 +77,7 @@ problem = QuasiStaticProblem(quasistaticform, tspan);
 # For the theory behind homotopy path methods we refer to [the corresponding theory manual on homotopy path methods](@ref theory_homotopy-path-methods)
 timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
-        max_iter     = 10,
+        max_iter     = 25,
         inner_solver = KrylovMGSolver(
             KrylovJL_GMRES(; verbose = 1),
             ChainedMGPrecon(
@@ -111,7 +111,7 @@ timestepper = HomotopyPathSolver(
         # Eisenstat-Walker adaptive linear solver tolerance (Algorithm 2, E&W 1996).
         # The linear solve always starts from x₀=0 so that η is applied relative to ‖b‖.
         # ηₘₐₓ=0.5 ensures GMRES always does meaningful work even when Newton converges slowly.
-        forcing = EisenstatWalkerForcing(ηₘₐₓ = 0.1),
+        forcing = EisenstatWalkerForcing(ηₘₐₓ = 0.5),
     )
 );
 

@@ -241,11 +241,7 @@ function nlsolve!(
                 push!(Θks, Θk)
             end
             # Try to prevent oversolving when we really just wanted to force the solve to happen once.
-            if cache.iter == 1 &&
-               residualnormprev < eps(T) &&
-               residualnorm < eps(T) &&
-               incrementnorm < eps(T) &&
-               incrementnormprev < eps(T)
+            if residualnorm < eps(T) || incrementnorm < eps(T)
                 break
             end
             if cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0

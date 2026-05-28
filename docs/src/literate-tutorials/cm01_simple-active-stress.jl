@@ -163,7 +163,7 @@ timestepper = HomotopyPathSolver(
             maxiters = 100,
         ),
         ## inner_solver = LinearSolve.UMFPACKFactorization(),
-        forcing = EisenstatWalkerForcing(ηₘₐₓ = 0.1),
+        forcing = EisenstatWalkerForcing(ηₘₐₓ = 0.9),
     )
 );
 
