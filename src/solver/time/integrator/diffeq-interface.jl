@@ -208,6 +208,8 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
     OrdinaryDiffEqCore.fix_dt_at_bounds!(integrator)
     OrdinaryDiffEqCore.modify_dt_for_tstops!(integrator)
     integrator.force_stepfail = false
+
+    integration_monitor_step(integrator)
 end
 
 function update_uprev!(integrator::ThunderboltTimeIntegrator)
@@ -356,8 +358,6 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
         end
         integrator.last_step_failed = true
     end
-
-    integration_monitor_step(integrator)
 
     return nothing
 end
