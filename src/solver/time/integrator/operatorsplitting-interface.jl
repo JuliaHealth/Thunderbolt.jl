@@ -28,7 +28,13 @@ function OS._build_child(
     verbose,
     save_end = false,
     controller = nothing,
+    internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
 ) where {S, T, P, F}
+
+    (; tspan) = prob
+
+    # Since we do not have control over the adaptivity setting yet, this toggles adaptivity off for inner algs.
+    adaptive &= SciMLBase.isadaptive(alg)
 
     uprev = @view uprevouter[solution_indices]
     u = @view uouter[solution_indices]
@@ -37,6 +43,9 @@ function OS._build_child(
     _dt = dt
     tdir = tf > t0 ? one(dt) : -one(dt)
     tType = typeof(dt)
+    tTypeNoUnits = typeof(one(tType))
+
+    dtchangeable = OrdinaryDiffEqCore.isdtchangeable(alg)
 
     if tstops isa AbstractArray || tstops isa Tuple || tstops isa Number
         _tstops = nothing
@@ -95,11 +104,27 @@ function OS._build_child(
     #     calculate_error = false
     # )
     sol = DummyODESolution(
-        OS.OperatorSplittingProblem(prob.f, view(prob.u0, solution_indices), prob.tspan),
+        OS.OperatorSplittingProblem(prob.f, view(prob.u0, solution_indices), tspan),
     )
 
-    if controller === nothing && adaptive && SciMLBase.isadaptive(alg)
-        controller = default_controller(alg, cache)
+    QT = OrdinaryDiffEqCore.determine_controller_datatype(u, internalnorm, tspan)
+
+    if controller === nothing && adaptive
+        controller = OrdinaryDiffEqCore.default_controller(QT, alg)
+    end
+
+    EEstT = if tTypeNoUnits <: Integer
+        QT
+    elseif prob isa SciMLBase.AbstractDiscreteProblem
+        constvalue(tTypeNoUnits)
+    else
+        typeof(internalnorm(u, t0))
+    end
+
+    controller_cache = if controller !== nothing
+        OrdinaryDiffEqCore.setup_controller_cache(alg, cache, controller, EEstT)
+    else
+        nothing
     end
 
     save_end =
@@ -122,8 +147,8 @@ function OS._build_child(
         cache,
         callback_cache,
         sol,
-        true,
-        adaptive ? controller : nothing,
+        dtchangeable,
+        controller_cache,
         IntegratorStats(),
         IntegratorOptions(
             dtmin = zero(tType),

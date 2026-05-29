@@ -2,6 +2,7 @@ using Test, Thunderbolt, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 using LinearSolve
 using OrdinaryDiffEqNonlinearSolve
 using ModelingToolkit
+using DynamicQuantities
 
 function test_solve_contractile_ideal_lv_3D0D(
     mesh,

@@ -22,12 +22,13 @@ Base.@kwdef mutable struct IntegratorOptions{
     tcache,
     savecache,
     disccache,
+    VT,
 }
     force_dtmin::Bool = false
     dtmin::tType = eps(tType)
     dtmax::tType = Inf
     failfactor::fType = 4.0
-    verbose::Bool = false
+    verbose::VT = Standard()
     adaptive::Bool = false # Redundant with the dispatch on SciMLBase.isadaptive below (alg adaptive + controller not nothing)
     maxiters::Int = 1000000
     # Internal norms to measure matrix and vector sizes (in the sense of normed vector spaces)
@@ -92,13 +93,13 @@ mutable struct ThunderboltTimeIntegrator{
     callback_cache::callbackcacheType
     sol::solType
     const dtchangeable::Bool
-    controller::controllerType
+    controller_cache::controllerType
     stats::IntegratorStats
     const opts::IntegratorOptions{tType}
     # OrdinaryDiffEqCore compat
     force_stepfail::Bool # This is a flag for the inner solver to communicate that it failed
     iter::Int64 # TODO move into stats
-    u_modified::Bool
+    derivative_discontinuity::Bool
     isout::Bool
     reeval_fsal::Bool
     last_step_failed::Bool
@@ -154,7 +155,7 @@ function SciMLBase.__init(
     callback = nothing,
     advance_to_tstop = false,
     adaptive = SciMLBase.isadaptive(alg),
-    verbose = false,
+    verbose = Standard(),
     alias_u0 = true,
     # alias_du0 = false,
     controller = nothing,
@@ -162,17 +163,20 @@ function SciMLBase.__init(
     dense = save_everystep && !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem),
     dtmin = nothing,
     dtmax = nothing,
+    internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
     kwargs...,
 )
-    (; f, u0, p) = prob
-    t0, tf = prob.tspan
+    (; f, u0, p, tspan) = prob
+    t0, tf = tspan
+
+    tType = eltype(tspan)
+    tTypeNoUnits = typeof(one(tType))
 
     dt > zero(dt) || error("dt must be positive")
     _dt = dt
     tdir = tf > t0 ? 1.0 : -1.0
-    tType = typeof(dt)
 
-    dtchangeable = SciMLBase.isadaptive(alg)
+    dtchangeable = OrdinaryDiffEqCore.isdtchangeable(alg)
 
     dtmin = dtmin === nothing ? tType(0.0) : tType(dtmin)
     dtmax = dtmax === nothing ? tType(tf - t0) : tType(dtmax)
@@ -186,10 +190,10 @@ function SciMLBase.__init(
 
     # Setup tstop logic
     tstops_internal =
-        OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, prob.tspan)
-    saveat_internal = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, prob.tspan)
+        OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, tspan)
+    saveat_internal = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, tspan)
     d_discontinuities_internal =
-        OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, prob.tspan)
+        OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, tspan)
 
     save_end =
         save_end === nothing ?
@@ -246,9 +250,24 @@ function SciMLBase.__init(
     # Setup algorithm cache
     cache = init_cache(prob, alg; dt = dt, u = u)
 
-    # Setup controller
+    QT = OrdinaryDiffEqCore.determine_controller_datatype(u, internalnorm, tspan)
+
     if controller === nothing && adaptive
-        controller = default_controller(alg, cache)
+        controller = OrdinaryDiffEqCore.default_controller(QT, alg)
+    end
+
+    EEstT = if tTypeNoUnits <: Integer
+        QT
+    elseif prob isa SciMLBase.AbstractDiscreteProblem
+        constvalue(tTypeNoUnits)
+    else
+        typeof(internalnorm(u, t0))
+    end
+
+    controller_cache = if controller !== nothing
+        OrdinaryDiffEqCore.setup_controller_cache(alg, cache, controller, EEstT)
+    else
+        nothing
     end
 
     # Setup the actual integrator object
@@ -268,7 +287,7 @@ function SciMLBase.__init(
         callback_cache,
         sol,
         dtchangeable,
-        adaptive ? controller : nothing,
+        controller_cache,
         IntegratorStats(),
         IntegratorOptions(
             dtmin = dtmin,
@@ -284,6 +303,7 @@ function SciMLBase.__init(
             tstops_cache = tstops,
             saveat_cache = saveat,
             d_discontinuities_cache = d_discontinuities,
+            internalnorm = internalnorm,
         ),
         false,
         0,
@@ -348,23 +368,23 @@ end
 # Controller interface
 function reject_step!(integrator::ThunderboltTimeIntegrator)
     OrdinaryDiffEqCore.increment_reject!(integrator.stats)
-    reject_step!(integrator, integrator.cache, integrator.controller)
+    reject_step!(integrator, integrator.cache, integrator.controller_cache)
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
     integrator.u .= integrator.uprev
 end
-function reject_step!(integrator::ThunderboltTimeIntegrator, cache, ::Nothing)
+function reject_step!(integrator::ThunderboltTimeIntegrator, cache, ::Union{Nothing, DummyControllerCache})
     if length(integrator.uprev) == 0
         error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
     end
 end
 
 adapt_dt!(integrator::ThunderboltTimeIntegrator) =
-    adapt_dt!(integrator, integrator.cache, integrator.controller)
+    adapt_dt!(integrator, integrator.cache, integrator.controller_cache)
 function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, controller)
     error("Step size control not implemented for $(alg).")
 end
-adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, ::Nothing) = nothing
+adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, ::Union{Nothing, DummyControllerCache}) = nothing
 
 
 include("diffeq-interface.jl")
