@@ -118,7 +118,7 @@ function (integrator::ThunderboltTimeIntegrator)(tmp, t)
         t,
         integrator.uprev,
         integrator.u,
-        integrator.t - integrator.dt,
+        integrator.tprev,
         integrator.t,
     )
 end
