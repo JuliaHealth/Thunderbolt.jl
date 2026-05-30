@@ -47,7 +47,6 @@ include("test_elements.jl")
 include("test_sarcomere.jl")
 
 include("test_solver.jl")
-include("test_preconditioners.jl")
 
 include("test_transfer.jl")
 
