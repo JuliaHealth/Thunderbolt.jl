@@ -784,9 +784,7 @@ version = "1.3.0"
 
 [[deps.FerriteOperators]]
 deps = ["Adapt", "Atomix", "ConcreteStructs", "Ferrite", "LinearAlgebra", "Reexport", "SparseArrays", "StaticArrays", "TimerOutputs", "Unrolled"]
-git-tree-sha1 = "844df17b2b47532d69bc9ade35fab7e0062211c0"
-repo-rev = "main"
-repo-url = "../FerriteOperators.jl"
+git-tree-sha1 = "6043dfe86c0ee676aa5b7f33c60b450b7e3a1ebd"
 uuid = "27d9367a-5072-424e-9c5f-fe582399bac3"
 version = "0.3.3"
 weakdeps = ["Polyester"]
@@ -1908,7 +1906,7 @@ version = "2.0.0"
 
 [[deps.OrdinaryDiffEqOperatorSplitting]]
 deps = ["CommonSolve", "DataStructures", "DiffEqBase", "OrdinaryDiffEqCore", "OrdinaryDiffEqLowOrderRK", "PrecompileTools", "RecursiveArrayTools", "SciMLBase", "TimerOutputs", "Unrolled"]
-path = "../../OrdinaryDiffEqOperatorSplitting.jl"
+git-tree-sha1 = "c16049726e2d398b52224b8baef70b65cd1947ea"
 uuid = "760fc936-9fa0-4281-9c1a-468957eedc89"
 version = "0.3.1"
 
@@ -2676,9 +2674,9 @@ version = "1.0.0"
 
 [[deps.ThreadingUtilities]]
 deps = ["ManualMemory"]
-git-tree-sha1 = "d969183d3d244b6c33796b5ed01ab97328f2db85"
+git-tree-sha1 = "7c73336785b21f723f5b143f6e99cf6c43b37dc1"
 uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
-version = "0.5.5"
+version = "0.5.6"
 
 [[deps.Thunderbolt]]
 deps = ["Adapt", "BlockArrays", "ConcreteStructs", "DataStructures", "DiffEqBase", "DynamicQuantities", "FastBroadcast", "Ferrite", "FerriteOperators", "ForwardDiff", "JLD2", "KernelAbstractions", "LinearAlgebra", "LinearSolve", "Logging", "ModelingToolkit", "OrderedCollections", "OrdinaryDiffEqCore", "OrdinaryDiffEqOperatorSplitting", "Polyester", "Preferences", "ReadVTK", "Reexport", "SciCompDSL", "SciMLBase", "SciMLIterators", "SciMLLogging", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "SymbolicIndexingInterface", "Tensors", "TimerOutputs", "UnPack", "Unrolled", "WriteVTK"]
