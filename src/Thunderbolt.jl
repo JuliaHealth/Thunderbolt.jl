@@ -99,10 +99,7 @@ using SciMLBase: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import OrdinaryDiffEqCore:
-    DummyController,
-    DummyControllerCache,
-    default_controller,
-    setup_controller_cache
+    DummyController, DummyControllerCache, default_controller, setup_controller_cache
 import LinearSolve
 using LinearSolve: LinearAliasSpecifier
 import DynamicQuantities

@@ -35,7 +35,10 @@ end
 
 @inline SciMLBase.get_proposed_dt(integrator::ThunderboltTimeIntegrator) = integrator.dt
 
-@inline function SciMLBase.derivative_discontinuity!(integrator::ThunderboltTimeIntegrator, bool::Bool)
+@inline function SciMLBase.derivative_discontinuity!(
+    integrator::ThunderboltTimeIntegrator,
+    bool::Bool,
+)
     integrator.derivative_discontinuity = bool
 end
 
@@ -172,7 +175,11 @@ function should_accept_step(integrator::ThunderboltTimeIntegrator)
     end
     return should_accept_step(integrator, integrator.cache, integrator.controller_cache)
 end
-function should_accept_step(integrator::ThunderboltTimeIntegrator, cache, ::Union{Nothing, DummyControllerCache})
+function should_accept_step(
+    integrator::ThunderboltTimeIntegrator,
+    cache,
+    ::Union{Nothing, DummyControllerCache},
+)
     return !(integrator.force_stepfail)
 end
 

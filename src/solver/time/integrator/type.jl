@@ -114,14 +114,7 @@ end
 
 # Interpolation
 function (integrator::ThunderboltTimeIntegrator)(tmp, t)
-    OS.linear_interpolation!(
-        tmp,
-        t,
-        integrator.uprev,
-        integrator.u,
-        integrator.tprev,
-        integrator.t,
-    )
+    OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
 end
 
 # CommonSolve interface
@@ -189,8 +182,7 @@ function SciMLBase.__init(
     end
 
     # Setup tstop logic
-    tstops_internal =
-        OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, tspan)
+    tstops_internal = OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, tspan)
     saveat_internal = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, tspan)
     d_discontinuities_internal =
         OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, tspan)
@@ -373,7 +365,11 @@ end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
     integrator.u .= integrator.uprev
 end
-function reject_step!(integrator::ThunderboltTimeIntegrator, cache, ::Union{Nothing, DummyControllerCache})
+function reject_step!(
+    integrator::ThunderboltTimeIntegrator,
+    cache,
+    ::Union{Nothing, DummyControllerCache},
+)
     if length(integrator.uprev) == 0
         error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
     end
@@ -384,7 +380,8 @@ adapt_dt!(integrator::ThunderboltTimeIntegrator) =
 function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, controller)
     error("Step size control not implemented for $(alg).")
 end
-adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, ::Union{Nothing, DummyControllerCache}) = nothing
+adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, ::Union{Nothing, DummyControllerCache}) =
+    nothing
 
 
 include("diffeq-interface.jl")

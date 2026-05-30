@@ -323,4 +323,13 @@ OrdinaryDiffEqCore.default_controller(QT, ::HomotopyPathSolver) =
     Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin = QT(1/8), p = 1)
 SciMLBase.isadaptive(::HomotopyPathSolver) = true
 
-OrdinaryDiffEqCore.setup_controller_cache(_alg, cache, controller::Union{Deuflhard2004DiscreteContinuationController, Deuflhard2004_B_DiscreteContinuationControllerVariant, ExperimentalDiscreteContinuationController}, EEstT) = controller
+OrdinaryDiffEqCore.setup_controller_cache(
+    _alg,
+    cache,
+    controller::Union{
+        Deuflhard2004DiscreteContinuationController,
+        Deuflhard2004_B_DiscreteContinuationControllerVariant,
+        ExperimentalDiscreteContinuationController,
+    },
+    EEstT,
+) = controller
