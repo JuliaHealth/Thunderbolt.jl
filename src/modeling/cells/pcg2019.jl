@@ -3,12 +3,12 @@ The canine ventricular cardiomyocyte electrophysiology model by [PatCorGra:2019:
 """
 Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     # ------ I_Na -------
-    g_Na::T  = 12.0    # [mS/µF]
-    E_m::T   = -52.244 # [mV]
-    k_m::T   = 6.5472  # [mV]
+    g_Na::T = 12.0    # [mS/µF]
+    E_m::T  = -52.244 # [mV]
+    k_m::T  = 6.5472  # [mV]
     τ_m::T  = 0.12    # [ms]
-    E_h::T   = -78.7   # [mV]
-    k_h::T   = 5.93    # [mV]
+    E_h::T  = -78.7   # [mV]
+    k_h::T  = 5.93    # [mV]
     δ_h::T  = 0.799163 # dimensionless
     τ_h0::T = 6.80738  # [ms]
     # ------ I_K1 -------
@@ -21,14 +21,14 @@ Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     k_r::T  = 11.462   # [mV]
     E_s::T  = -47.9286 # [mV]
     k_s::T  = 4.9314   # [mV]
-    τ_s::T = 9.90669  # [ms]
+    τ_s::T  = 9.90669  # [ms]
     # ------ I_CaL -------
     g_CaL::T = 0.11503 # [mS/µF]
     E_d::T   = 0.7     # [mV]
     k_d::T   = 4.3     # [mV]
     E_f::T   = -15.7   # [mV]
     k_f::T   = 4.6     # [mV]
-    τ_f::T  = 30.0    # [ms]
+    τ_f::T   = 30.0    # [ms]
     # ------ I_Kr -------
     g_Kr::T = 0.056 # [mS/µF]
     E_xr::T = -26.6 # [mV]

@@ -41,9 +41,17 @@ function material_routine(
     qp::QuadraturePoint,
     time,
 )
-    coefficients    = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
-    Q, ∂P∂QdQdF = solve_local_constraint(F, coefficients, material_model, state_cache, geometry_cache, qp, time)
-    P, ∂P∂F     = stress_and_tangent(material_model, F, coefficients, Q)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    Q, ∂P∂QdQdF = solve_local_constraint(
+        F,
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+    )
+    P, ∂P∂F = stress_and_tangent(material_model, F, coefficients, Q)
     return P, ∂P∂F + ∂P∂QdQdF
 end
 

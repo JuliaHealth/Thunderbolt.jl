@@ -224,7 +224,7 @@ function setup_coefficient_cache(
     ip     = getcoordinateinterpolation(cs, cell)
     ip_geo = ip^3
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
-    Nξs   = size(fv.Nξ)
+    Nξs    = size(fv.Nξ)
     return LVCoordinateSystemCache(
         cs,
         FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
@@ -268,7 +268,7 @@ function setup_coefficient_cache(
     ip     = getcoordinateinterpolation(cs, cell)
     ip_geo = ip^3
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
-    Nξs   = size(fv.Nξ)
+    Nξs    = size(fv.Nξ)
     return BiVCoordinateSystemCache(
         cs,
         FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
