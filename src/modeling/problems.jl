@@ -78,6 +78,7 @@ function SciMLBase.build_solution(
         retcode,
         resid,
         original,
+        nothing,
     )
 
     # xref https://github.com/xtalax/MethodOfLines.jl/blob/bc0bf8c4fcd2376dc5c3df9642806749bc0c1cdd/src/interface/solution/timedep.jl#L11

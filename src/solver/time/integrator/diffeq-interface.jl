@@ -35,8 +35,11 @@ end
 
 @inline SciMLBase.get_proposed_dt(integrator::ThunderboltTimeIntegrator) = integrator.dt
 
-@inline function SciMLBase.u_modified!(integrator::ThunderboltTimeIntegrator, bool::Bool)
-    integrator.u_modified = bool
+@inline function SciMLBase.derivative_discontinuity!(
+    integrator::ThunderboltTimeIntegrator,
+    bool::Bool,
+)
+    integrator.derivative_discontinuity = bool
 end
 
 SciMLBase.get_sol(integrator::ThunderboltTimeIntegrator) = integrator.sol
@@ -50,7 +53,7 @@ function SciMLBase.set_proposed_dt!(integrator::ThunderboltTimeIntegrator, dt)
 end
 
 function SciMLBase.isadaptive(integrator::ThunderboltTimeIntegrator)
-    integrator.controller === nothing && return false
+    integrator.controller_cache === nothing && return false
     if !SciMLBase.isadaptive(integrator.alg)
         error(
             "Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.",
@@ -100,7 +103,7 @@ function DiffEqBase.reinit!(
     integrator.tprev = t0
 
     integrator.iter = 0
-    integrator.u_modified = false
+    integrator.derivative_discontinuity = false
 
     integrator.stats.naccept = 0
     integrator.stats.nreject = 0
@@ -170,15 +173,19 @@ function should_accept_step(integrator::ThunderboltTimeIntegrator)
     if integrator.force_stepfail || integrator.isout
         return false
     end
-    return should_accept_step(integrator, integrator.cache, integrator.controller)
+    return should_accept_step(integrator, integrator.cache, integrator.controller_cache)
 end
-function should_accept_step(integrator::ThunderboltTimeIntegrator, cache, ::Nothing)
+function should_accept_step(
+    integrator::ThunderboltTimeIntegrator,
+    cache,
+    ::Union{Nothing, DummyControllerCache},
+)
     return !(integrator.force_stepfail)
 end
 
 function accept_step!(integrator::ThunderboltTimeIntegrator)
     OrdinaryDiffEqCore.increment_accept!(integrator.stats)
-    accept_step!(integrator, integrator.cache, integrator.controller)
+    accept_step!(integrator, integrator.cache, integrator.controller_cache)
 end
 function accept_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
     store_previous_info!(integrator)
@@ -198,7 +205,7 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
         else # Step should be rejected and hence repeated
             reject_step!(integrator)
         end
-    elseif integrator.u_modified # && integrator.iter == 0
+    elseif integrator.derivative_discontinuity # && integrator.iter == 0
         update_uprev!(integrator)
     end
 
@@ -321,7 +328,7 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
 end
 
 function footer_reset_flags!(integrator)
-    integrator.u_modified = false
+    integrator.derivative_discontinuity = false
 end
 
 function fix_solution_buffer_sizes!(integrator, sol)

@@ -1,5 +1,7 @@
 using Thunderbolt
 import DiffEqBase
+import SciMLBase
+import SciMLIterators: intervals
 
 function test_solve_passive_structure(mesh, constitutive_model)
     tspan = (0.0, 1.0)
@@ -683,13 +685,13 @@ end
     ))
     integrator = init(problem, timestepper, dt = Δt, verbose = true)
     # This setup is essentially a creep test in x direction, so we check for the invariants in there
-    for (uprev, tprev, u, t) in Thunderbolt.SciMLBase.intervals(integrator)
+    for (uprev, tprev, u, t) in intervals(integrator)
         # Monotonicity of the solution in x direction
         @test uprev[3*8+1] ≤ u[3*8+1]
         # Linear problem => check that Newton converges in 1 step.
         @test length(integrator.cache.stage.nlsolver.global_solver_cache.Θks) == 1
     end
-    @test integrator.sol.retcode == Thunderbolt.SciMLBase.ReturnCode.Success
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
     @test integrator.u[3*8+1] ≈ 0.05 atol=1e-5
     @test integrator.u[(3*8+2):end] ≈ zeros(5) atol=1e-5
 end

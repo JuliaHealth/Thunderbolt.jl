@@ -4,6 +4,8 @@ import KernelAbstractions as KA
 
 using TimerOutputs: @timeit_debug
 
+import SciMLLogging: Standard
+
 import FerriteOperators:
     FerriteOperators,
     SequentialCPUDevice,
@@ -91,12 +93,16 @@ import Logging: Logging, LogLevel, @info, @logmsg
 
 import SymbolicIndexingInterface
 import SciMLBase
-@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
+@reexport import SciMLBase: init, solve, solve!, step!
+@reexport import SciMLIterators: TimeChoiceIterator
 using SciMLBase: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
+import OrdinaryDiffEqCore:
+    DummyController, DummyControllerCache, default_controller, setup_controller_cache
 import LinearSolve
 using LinearSolve: LinearAliasSpecifier
+import DynamicQuantities
 
 import ConcreteStructs: @concrete
 

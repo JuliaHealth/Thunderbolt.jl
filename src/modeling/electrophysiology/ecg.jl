@@ -561,10 +561,10 @@ function Geselowitz1989ECGLeadCache(
     length(Ferrite.getfieldnames(lead_dh)) == 1 ||
         @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)
-    φₘ_t     = create_system_vector(solution_vector_type, lead_fun) # Solution vector
-    ∇φₘ_t  = create_system_vector(solution_vector_type, lead_fun)  # Solution vector
+    φₘ_t        = create_system_vector(solution_vector_type, lead_fun) # Solution vector
+    ∇φₘ_t       = create_system_vector(solution_vector_type, lead_fun)  # Solution vector
     Z           = zeros(eltype(∇φₘ_t), nelectrodes, length(∇φₘ_t))
-    ϕₑ       = zeros(nelectrodes)
+    ϕₑ          = zeros(nelectrodes)
 
     lead_rhs = zeros(eltype(∇φₘ_t), nelectrodes, length(∇φₘ_t))
 

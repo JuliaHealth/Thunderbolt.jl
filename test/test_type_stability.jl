@@ -1,11 +1,11 @@
 @testset "Type Stability" begin
-    f₀     = Tensors.Vec{3, Float64}((1.0, 0.0, 0.0))
-    s₀     = Tensors.Vec{3, Float64}((0.0, 1.0, 0.0))
-    n₀     = Tensors.Vec{3, Float64}((0.0, 0.0, 1.0))
+    f₀       = Tensors.Vec{3, Float64}((1.0, 0.0, 0.0))
+    s₀       = Tensors.Vec{3, Float64}((0.0, 1.0, 0.0))
+    n₀       = Tensors.Vec{3, Float64}((0.0, 0.0, 1.0))
     fsncoeff = ConstantCoefficient(OrthotropicMicrostructure(f₀, s₀, n₀))
     fsneval  = Thunderbolt.OrthotropicMicrostructure(f₀, s₀, n₀)
     F        = one(Tensors.Tensor{2, 3})
-    Caᵢ    = 0.0
+    Caᵢ      = 0.0
 
     material_model_set = [
         NullEnergyModel(),

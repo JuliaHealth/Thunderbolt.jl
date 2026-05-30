@@ -2,6 +2,8 @@ abstract type AbstractPointwiseSolver <: AbstractSolver end
 abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
 SciMLBase.isadaptive(::AbstractPointwiseSolver) = false
+OrdinaryDiffEqCore.default_controller(QT, ::AbstractPointwiseSolver) =
+    OrdinaryDiffEqCore.DummyController()
 
 # Auxilliary functions to query the coordinate
 @inline getcoordinate(f::F, i::I) where {F <: AbstractPointwiseSolverCache, I}                           = getcoordinate(f, i, f.xs)

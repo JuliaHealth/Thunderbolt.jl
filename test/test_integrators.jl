@@ -4,6 +4,7 @@ using OrdinaryDiffEqLowOrderRK
 # using BenchmarkTools
 using UnPack
 using Test
+import SciMLIterators: TimeChoiceIterator, intervals
 
 # For testing purposes
 struct DummyForwardEuler <: Thunderbolt.AbstractSolver end
@@ -189,7 +190,7 @@ end
                 # integrator.dt = dt
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 lastu = copy(integrator.u)
-                for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+                for (u, t) in TimeChoiceIterator(integrator, 0.0:5.0:100.0)
                     lastu .= u
                 end
                 @test lastu ≈ integrator.u
@@ -201,7 +202,7 @@ end
                 DiffEqBase.reinit!(integrator)
                 # integrator.dt = dt
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
-                for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
+                for (uprev, tprev, u, t) in intervals(integrator)
                 end
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 @test isapprox(ufinal, integrator.u, atol = 1e-6)
@@ -233,7 +234,7 @@ end
 
             integrator =
                 DiffEqBase.init(prob1, timestepper1, dt = dt, verbose = true, alias_u0 = false)
-            for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+            for (u, t) in TimeChoiceIterator(integrator, 0.0:5.0:100.0)
             end
             @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
 
@@ -244,7 +245,7 @@ end
             #     verbose = true,
             #     alias_u0 = false,
             # )
-            # for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0)
+            # for (u, t) in TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0)
             # end
             # @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
 
@@ -303,7 +304,7 @@ end
 
                 DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
-                for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+                for (u, t) in TimeChoiceIterator(integrator, 0.0:5.0:100.0)
                 end
                 @test isapprox(ufinal, integrator.u, atol = 1e-8)
                 @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
@@ -311,7 +312,7 @@ end
 
                 DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
-                for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
+                for (uprev, tprev, u, t) in intervals(integrator)
                 end
                 @test isapprox(ufinal, integrator.u, atol = 1e-8)
                 @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
@@ -336,7 +337,7 @@ end
 
                 DiffEqBase.reinit!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
-                for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
+                for (u, t) in TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
                 end
                 @test isapprox(ufinal2, integrator2.u, atol = 1e-8)
                 @test integrator.iter == ceil(Int, (tspan[2]-tspan[1])/dt)
@@ -365,7 +366,7 @@ end
             end
             integrator =
                 DiffEqBase.init(probb, timestepper, dt = dt, verbose = true, alias_u0 = false)
-            for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+            for (u, t) in TimeChoiceIterator(integrator, 0.0:5.0:100.0)
             end
             @test integrator.u ≉ u0 # Make sure the solve did something
         end

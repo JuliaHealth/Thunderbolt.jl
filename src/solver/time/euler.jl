@@ -15,6 +15,8 @@ Base.@kwdef struct BackwardEulerSolver{
 end
 
 SciMLBase.isadaptive(::BackwardEulerSolver) = false
+OrdinaryDiffEqCore.default_controller(QT, ::BackwardEulerSolver) =
+    OrdinaryDiffEqCore.DummyController()
 
 mutable struct BackwardEulerSolverCache{
     T,

@@ -220,27 +220,7 @@ function mul(A::ThreadedSparseMatrixCSR, x::AbstractVector)
     y = similar(x, promote_type(eltype(A), eltype(x)), size(A, 1))
     return mul!(y, A, x)
 end
-*(A::ThreadedSparseMatrixCSR, v::AbstractVector) = mul(A, v)
-*(A::ThreadedSparseMatrixCSR, v::BlockArrays.FillArrays.AbstractZeros{<:Any, 1}) = mul(A, v)
-*(A::ThreadedSparseMatrixCSR, v::BlockArrays.ArrayLayouts.LayoutVector) = mul(A, v)
-*(
-    A::ThreadedSparseMatrixCSR,
-    v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 1, D, Q, V},
-) where {
-    T,
-    D <: ModelingToolkit.DynamicQuantities.AbstractDimensions,
-    Q <: ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D},
-    V <: AbstractVector{T},
-} = mul(A, v)
-*(
-    A::ThreadedSparseMatrixCSR,
-    v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 2, D, Q, V},
-) where {
-    T,
-    D <: ModelingToolkit.DynamicQuantities.AbstractDimensions,
-    Q <: ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D},
-    V <: AbstractMatrix{T},
-} = mul(A, v)
+*(A::ThreadedSparseMatrixCSR, v::VT) where {VT <: AbstractVector} = mul(A, v)
 
 Base.eltype(A::ThreadedSparseMatrixCSR)            = Base.eltype(A.A)
 Base.size(A::ThreadedSparseMatrixCSR)              = Base.size(A.A)
