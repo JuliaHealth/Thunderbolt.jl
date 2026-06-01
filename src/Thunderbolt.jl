@@ -196,6 +196,9 @@ export
     generate_quadratic_ring_mesh,
     generate_quadratic_open_ring_mesh,
     generate_ideal_lv_mesh,
+    # Mesh utilities
+    hexahedralize,
+    to_mesh,
     # Generic models
     TransientDiffusionModel,
     AffineODEFunction,
@@ -282,6 +285,11 @@ export
     FiniteElementDiscretization,
     # Solver
     SchurComplementLinearSolver,
+    KrylovMGSolver,
+    AbstractMGPrecon,
+    PMGPrecon,
+    GMGPrecon,
+    ChainedMGPrecon,
     NewtonRaphsonSolver,
     MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,

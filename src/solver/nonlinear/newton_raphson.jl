@@ -51,8 +51,11 @@ function setup_solver_cache(
 
     # Connect both solver caches
     inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    maxiters    = _linear_maxiters(inner_solver)
+    init_kw    = maxiters === nothing ? (;) : (; maxiters = maxiters)
     inner_cache =
-        init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
+        init(inner_prob, _materialize_inner_solver(f, inner_solver);
+             alias = LinearAliasSpecifier(alias_A = true, alias_b = true), init_kw...)
     @assert inner_cache.b === residual
     @assert inner_cache.A === op.J
 
@@ -70,8 +73,11 @@ function setup_solver_cache(
     Δu = Vector{T}(undef, sizeu)
     # Connect both solver caches
     inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    maxiters    = _linear_maxiters(inner_solver)
+    init_kw    = maxiters === nothing ? (;) : (; maxiters = maxiters)
     inner_cache =
-        init(inner_prob, inner_solver; alias = LinearAliasSpecifier(alias_A = true, alias_b = true))
+        init(inner_prob, _materialize_inner_solver(f, inner_solver);
+             alias = LinearAliasSpecifier(alias_A = true, alias_b = true), init_kw...)
     @assert inner_cache.alg == inner_solver
     @assert inner_cache.b === residual
     @assert inner_cache.A === op.J
@@ -97,7 +103,8 @@ function nlsolve!(
         fill!(residual, 0.0)
         @timeit_debug "update operator" update_linearization!(op, residual, u, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
-        linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
+        linear_solver_cache.isfresh = true        # Notify linear solver that both the matrix and the preconditioner need to be updated.
+        linear_solver_cache.precsisfresh = true
 
         residualnorm = residual_norm(cache, f)
         if residualnorm < cache.parameters.tol && cache.iter > 0
