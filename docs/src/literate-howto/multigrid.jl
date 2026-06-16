@@ -82,23 +82,23 @@ timestepper = HomotopyPathSolver(
             KrylovJL_GMRES(; verbose = 0),
             ChainedMGPrecon(
                 PMGPrecon(;
-                    # Asymmetric V-cycle: forward SOR pre-smoother + backward SOR post-smoother.
-                    # This is the canonical optimal V-cycle structure and is 3x cheaper per
-                    # V-cycle than symmetric SSOR (4 triangular solves vs 12 for GaussSeidel
-                    # with iter=3 on both sides).
+                    ## Asymmetric V-cycle: forward SOR pre-smoother + backward SOR post-smoother.
+                    ## This is the canonical optimal V-cycle structure and is 3x cheaper per
+                    ## V-cycle than symmetric SSOR (4 triangular solves vs 12 for GaussSeidel
+                    ## with iter=3 on both sides).
                     #
-                    # SOR with ω=1.3 gives a better per-sweep smoothing factor than GS (ω=1),
-                    # so 2 forward + 2 backward sweeps is roughly equivalent in smoothing
-                    # quality to 3 symmetric GS sweeps at 1/3 the cost.
+                    ## SOR with ω=1.3 gives a better per-sweep smoothing factor than GS (ω=1),
+                    ## so 2 forward + 2 backward sweeps is roughly equivalent in smoothing
+                    ## quality to 3 symmetric GS sweeps at 1/3 the cost.
                     #
-                    # Sequential sweep ordering (not parallel L1-GS) is essential here:
-                    # the Guccione material has 10-100x fiber/cross-fiber anisotropy whose
-                    # coupled modes can only be attenuated by propagating information along
-                    # the DOF ordering in each sweep.
+                    ## Sequential sweep ordering (not parallel L1-GS) is essential here:
+                    ## the Guccione material has 10-100x fiber/cross-fiber anisotropy whose
+                    ## coupled modes can only be attenuated by propagating information along
+                    ## the DOF ordering in each sweep.
                     presmoother  = AlgebraicMultigrid.SOR(1.3, AlgebraicMultigrid.ForwardSweep(), 2),
                     postsmoother = AlgebraicMultigrid.SOR(1.3, AlgebraicMultigrid.BackwardSweep(), 2),
-                    # presmoother  = HybridSmoothers.ChebyshevFirst(),
-                    # postsmoother = HybridSmoothers.ChebyshevFirst(),
+                    ## presmoother  = HybridSmoothers.ChebyshevFirst(),
+                    ## postsmoother = HybridSmoothers.ChebyshevFirst(),
                 ),
                 GMGPrecon(gh;
                     presmoother  = AlgebraicMultigrid.SOR(1.3, AlgebraicMultigrid.ForwardSweep(), 2),
@@ -107,10 +107,9 @@ timestepper = HomotopyPathSolver(
             );
             maxiters = 100,
         ),
-        ## inner_solver = LinearSolve.UMFPACKFactorization()
-        # Eisenstat-Walker adaptive linear solver tolerance (Algorithm 2, E&W 1996).
-        # The linear solve always starts from x₀=0 so that η is applied relative to ‖b‖.
-        # ηₘₐₓ=0.5 ensures GMRES always does meaningful work even when Newton converges slowly.
+        ## Eisenstat-Walker adaptive linear solver tolerance (Algorithm 2, E&W 1996).
+        ## The linear solve always starts from x₀=0 so that η is applied relative to ‖b‖.
+        ## ηₘₐₓ=0.5 ensures GMRES always does meaningful work even when Newton converges slowly.
         forcing = EisenstatWalkerForcing(ηₘₐₓ = 0.5),
     )
 );
