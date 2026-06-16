@@ -291,7 +291,7 @@ end
     @assert inner_cache.b === residual
     @assert inner_cache.A === op.J
 
-    newton_cache = NewtonRaphsonSolverCache(op, residual, newton, inner_cache, T[], 0)
+    newton_cache = NewtonRaphsonSolverCache(op, residual, newton, inner_cache, _build_forcing_cache(newton.forcing, inner_cache, T), T[], 0)
 
     cache = MultiLevelNewtonRaphsonSolverCache(
         newton_cache, # setup_solver_cache(G, solver.newton),
