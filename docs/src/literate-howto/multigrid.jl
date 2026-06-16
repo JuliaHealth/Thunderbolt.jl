@@ -130,22 +130,16 @@ end;
 
 print_timer() #src
 
-# !!! tip
-#     If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:
-#     ```
-#     JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl
-#     ```
-
 #md # ## References
 #md # ```@bibliography
-#md # Pages = ["cm01_simple-active-stress.md"]
+#md # Pages = ["multigrid.md"]
 #md # Canonical = false
 #md # ```
 
 #md # ## [Plain program](@id mechanics-tutorial_simple-active-stress-plain-program)
 #md #
 #md # Here follows a version of the program without any comments.
-#md # The file is also available here: [`cm01_simple-active-stress.jl`](cm01_simple-active-stress.jl).
+#md # The file is also available here: [`multigrid.jl`](multigrid.jl).
 #md #
 #md # ```julia
 #md # @__CODE__
