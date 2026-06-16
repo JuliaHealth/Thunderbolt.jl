@@ -86,11 +86,11 @@ timestepper = HomotopyPathSolver(
                     ## This is the canonical optimal V-cycle structure and is 3x cheaper per
                     ## V-cycle than symmetric SSOR (4 triangular solves vs 12 for GaussSeidel
                     ## with iter=3 on both sides).
-                    #
+                    ##
                     ## SOR with ω=1.3 gives a better per-sweep smoothing factor than GS (ω=1),
                     ## so 2 forward + 2 backward sweeps is roughly equivalent in smoothing
                     ## quality to 3 symmetric GS sweeps at 1/3 the cost.
-                    #
+                    ##
                     ## Sequential sweep ordering (not parallel L1-GS) is essential here:
                     ## the Guccione material has 10-100x fiber/cross-fiber anisotropy whose
                     ## coupled modes can only be attenuated by propagating information along
