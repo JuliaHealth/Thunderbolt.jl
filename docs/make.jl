@@ -72,6 +72,7 @@ bibtex_plugin = CitationBibliography(
             "howto/custom-stimulation-protocols.md",
             "howto/custom-energies.md",
             "howto/custom-sarcomere.md",
+            "howto/multigrid.md",
         ],
         "API Reference" => [
             "Overview" => "api-reference/index.md",

@@ -48,95 +48,6 @@ _default_pmg_config() = pmultigrid_config()
 _default_gmg_config() = gmultigrid_config()
 
 """
-    _estimate_spectral_radius_dinv_A(A; power_iters = 50)
-
-Estimate ρ(D⁻¹A) via power iteration with a deterministic starting vector.
-
-Using `ones` (normalised) avoids the random-seed dependence that caused intermittent
-over- or under-estimation of λ_max on non-symmetric matrices, which in turn made the
-damped-Jacobi smoother diverge unpredictably.
-"""
-function _estimate_spectral_radius_dinv_A(A; power_iters = 50)
-    d   = diag(A)
-    n   = size(A, 1)
-    v   = fill(inv(sqrt(Float64(n))), n)
-    tmp = similar(v)
-    λ   = 1.0
-    for _ in 1:power_iters
-        mul!(tmp, A, v)   # tmp = A·v
-        tmp ./= d          # tmp = D⁻¹A·v
-        λ    = norm(tmp)
-        tmp ./= λ
-        copyto!(v, tmp)
-    end
-    return λ
-end
-
-"""
-    _chebyshev_jacobi_ω(A; power_iters = 50)
-
-Return the Chebyshev-optimal damping parameter ω for a damped-Jacobi smoother.
-
-The standard formula targeting the upper 2/3 of the spectrum is:
-
-    ω = 4 / (3 · λ_max)      (Shewchuk / Stüben convention)
-
-This guarantees:
-  |1 − ω · λ|  ≤ 1/3   for  λ ∈ [λ_max/3, λ_max]    (high-freq attenuation)
-  |1 − ω · λ|  ≤  1    for  λ ∈ [0, λ_max/3]          (low-freq preserved for coarse grid)
-
-For the non-symmetric Robin-BC case, eigenvalues of D⁻¹A may be weakly complex.
-The 4/(3λ_max) formula remains valid provided the eigenvalue arguments stay below
-arccos(2/3) ≈ 48°, which is typical for mildly non-symmetric FEM systems where
-the boundary contribution is small relative to the bulk stiffness.
-"""
-function _chebyshev_jacobi_ω(A; power_iters = 50)
-    λ_max = _estimate_spectral_radius_dinv_A(A; power_iters)
-    ω     = 4.0 / (3.0 * λ_max)
-    @info "Jacobi smoother: estimated λ_max(D⁻¹A) = $λ_max → ω = $ω"
-    return ω
-end
-
-"""
-    DampedJacobi(iter)
-
-Damped-Jacobi smoother: x ← x + ω·D⁻¹·(b − A·x), applied `iter` times.
-Uses `mul!(tmp, A, x)` for correct `A·x` on any (non-symmetric) sparsity pattern.
-"""
-struct DampedJacobi
-    iter::Int
-end
-struct DampedJacobiSmoother{At, Dt}
-    iter::Int
-    ω::Float64
-    A::At
-    d::Dt
-    tmp::Dt
-end
-
-function AMG.setup_smoother(config::DampedJacobi, A, symmetry)
-    d = collect(diag(A))
-    return DampedJacobiSmoother(
-        config.iter,
-        _chebyshev_jacobi_ω(A),
-        A,
-        d,
-        similar(d),
-    )
-end
-
-function AMG.smooth!(x::AbstractVector, s::DampedJacobiSmoother, b::AbstractVector)
-    (; A, iter, ω, d, tmp) = s
-    for _ in 1:iter
-        mul!(tmp, A, x)
-        @batch for i in 1:length(x)
-            x[i] += s.ω * (b[i] - tmp[i]) / d[i]
-        end
-    end
-    return nothing
-end
-
-"""
     LazyPrecon
 
 A mutable, type-stable preconditioner wrapper.
@@ -162,96 +73,7 @@ function LinearAlgebra.ldiv!(P::LazyPrecon, b::AbstractVector)
     P.inner === nothing || ldiv!(P.inner, b)
     return b
 end
-LinearAlgebra.adjoint(P::LazyPrecon) = P  # symmetric smoother, adjoint ≈ self
-
-"""
-    _vcycle_diagnostic(prec, A)
-
-Print a one-shot V-cycle quality report in both Euclidean and A-norm:
-- Step-by-step residual (Euclidean) through the V-cycle
-- A-norm error reduction (using a direct solve for the exact solution)
-- Prolongator partition-of-unity check
-- 20-step stationary V-cycle iteration to confirm per-iteration convergence rate
-"""
-function _vcycle_diagnostic(prec, A)
-    n        = size(A, 1)
-    tmp      = zeros(n)
-
-    smoother = prec.ml.presmoother
-    P        = prec.ml.levels[1].P
-    R        = prec.ml.levels[1].R
-    A_c      = prec.ml.final_A
-
-    b_test   = randn(n)
-    norm_b   = norm(b_test)
-
-    # Exact solution via UMFPACK for A-norm error measurement
-    x_exact  = lu(A) \ b_test
-    a_norm(e) = sqrt(max(dot(e, A * e), 0.0))
-    e0_A     = a_norm(x_exact)   # A-norm of initial error (x=0 → e=x_exact)
-
-    # 1. Pre-smooth
-    x_s = zeros(n)
-    smoother(A, x_s, b_test)
-    mul!(tmp, A, x_s)
-    r_s  = b_test - tmp
-    es_A = a_norm(x_exact - x_s)
-    @info "V-cycle step 1 – pre-smooth" ratio_2norm=(norm(r_s)/norm_b) ratio_Anorm=(es_A/e0_A)
-
-    # 2. Restrict residual
-    r_c = Vector(R * r_s)
-    @info "V-cycle step 2 – restrict" norm_r_c=norm(r_c) norm_r_s=norm(r_s)
-
-    # 3. Coarse solve
-    e_c = zeros(size(A_c, 1))
-    prec.ml.coarse_solver(e_c, r_c)
-    coarse_res = norm(A_c * e_c - r_c) / (norm(r_c) + eps())
-    # A-norm improvement from coarse correction: should be r_c^T e_c (= ‖P^T r_s‖²_{A_c⁻¹})
-    coarse_gain_Anorm = dot(r_c, e_c)
-    @info "V-cycle step 3 – coarse solve" coarse_res_ratio=coarse_res e_c_norm=norm(e_c) A_norm_gain_sq=coarse_gain_Anorm
-
-    # 4. Prolongate and add correction
-    correction = Vector(P * e_c)
-    x_c        = x_s + correction
-    mul!(tmp, A, x_c)
-    r_c2 = b_test - tmp
-    ec_A = a_norm(x_exact - x_c)
-    @info "V-cycle step 4 – coarse correction" ratio_2norm=(norm(r_c2)/norm_b) ratio_Anorm=(ec_A/e0_A) correction_norm=norm(correction)
-
-    # 5. Post-smooth
-    smoother(A, x_c, b_test)
-    mul!(tmp, A, x_c)
-    r_f  = b_test - tmp
-    ef_A = a_norm(x_exact - x_c)
-    @info "V-cycle step 5 – post-smooth" ratio_2norm=(norm(r_f)/norm_b) ratio_Anorm=(ef_A/e0_A)
-
-    # Full V-cycle via ldiv!
-    x_v = zeros(n)
-    ldiv!(x_v, prec, b_test)
-    mul!(tmp, A, x_v)
-    ev_A = a_norm(x_exact - x_v)
-    @info "Full V-cycle (ldiv!)" ratio_2norm=(norm(b_test-tmp)/norm_b) ratio_Anorm=(ev_A/e0_A)
-
-    # Prolongator partition-of-unity check
-    nc  = size(P, 2)
-    err = norm(P * ones(nc) .- 1.0, Inf)
-    @info "p-MG prolongator" size_P=size(P) constant_preservation_err=err
-
-    # Standalone stationary V-cycle iteration: x_{k+1} = x_k + M^{-1}(b - Ax_k)
-    @info "Standalone stationary V-cycle convergence (20 iterations):"
-    x_si = zeros(n)
-    Δx   = zeros(n)
-    for k = 1:20
-        mul!(tmp, A, x_si)
-        r_k    = b_test .- tmp
-        r_norm = norm(r_k)
-        e_k_A  = a_norm(x_exact - x_si)
-        @info "  iter" k rel_res=(r_norm/norm_b) rel_Anorm=(e_k_A/e0_A)
-        fill!(Δx, 0.0)
-        ldiv!(Δx, prec, r_k)
-        x_si .+= Δx
-    end
-end
+AMG.adjoint(P::LazyPrecon) = P  # symmetric smoother, adjoint ≈ self
 
 """
     _inject_precs(krylov, precs_fn)
@@ -468,7 +290,7 @@ function Thunderbolt._materialize_inner_solver(
         # The PMultigridPreconBuilder is created once (geometry cached); each call to
         # builder(A, p) re-estimates λ_max(D⁻¹A) inside setup_smoother and rebuilds
         # only the numeric phase (RAP + smoother).
-        smoother = DampedJacobi(5)
+        smoother = AMG.Jacobi(0.5, iter=5)
         PMultigridPreconBuilder(
             dhh, pgrid_config;
             cycle          = cycle,
@@ -498,8 +320,8 @@ function Thunderbolt._materialize_inner_solver(
     pcoarse_solver = mg.pcoarse_solver === nothing ?
         CachedLinearSolveCoarseSolverBuilder(UMFPACKFactorization()) : mg.pcoarse_solver
 
-    pre  = mg.presmoother  === nothing ? DampedJacobi(5) : mg.presmoother
-    post = mg.postsmoother === nothing ? DampedJacobi(5) : mg.postsmoother
+    pre  = mg.presmoother  === nothing ? AMG.Jacobi(0.5, iter=5) : mg.presmoother
+    post = mg.postsmoother === nothing ? AMG.Jacobi(0.5, iter=5) : mg.postsmoother
 
     geo_gmg_ref = Ref{Any}(nothing)
     builder = (A, p = nothing) -> begin
@@ -544,7 +366,7 @@ function Thunderbolt._materialize_inner_solver(
         CachedLinearSolveCoarseSolverBuilder(UMFPACKFactorization()) : gmg.pcoarse_solver
 
     # G-MG smoothers used at the coarse correction levels.
-    pre_gmg  = gmg.presmoother  === nothing ? DampedJacobi(5) : gmg.presmoother
+    pre_gmg  = gmg.presmoother  === nothing ? AMG.Jacobi(0.5, iter=5) : gmg.presmoother
     post_gmg = gmg.postsmoother === nothing ? pre_gmg         : gmg.postsmoother
 
     # For Galerkin g-MG: geometry (including RAP workspaces) is built on first call with A.
@@ -573,7 +395,7 @@ function Thunderbolt._materialize_inner_solver(
             postsmoother   = post_pmg,
         )
     else
-        smoother = DampedJacobi(5)
+        smoother = AMG.Jacobi(0.5, iter=5)
         PMultigridPreconBuilder(
             dhh_pmg, pgrid_config;
             cycle          = cycle,

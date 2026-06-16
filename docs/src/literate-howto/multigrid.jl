@@ -79,7 +79,7 @@ timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
         max_iter     = 25,
         inner_solver = KrylovMGSolver(
-            KrylovJL_GMRES(; verbose = 1),
+            KrylovJL_GMRES(; verbose = 0),
             ChainedMGPrecon(
                 PMGPrecon(;
                     # Asymmetric V-cycle: forward SOR pre-smoother + backward SOR post-smoother.
