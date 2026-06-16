@@ -1,11 +1,10 @@
 
 using Thunderbolt, LinearSolve
-using FerriteMultigrid: FerriteMultigrid, GridHierarchy, GaussSeidel
-using IterativeSolvers: gauss_seidel!
+using FerriteMultigrid: FerriteMultigrid, GridHierarchy
 using AlgebraicMultigrid
 using TimerOutputs
 import LinearAlgebra: diag, mul!
-using HybridSmoothers
+# using HybridSmoothers
 import KernelAbstractions as KA
 using FerriteOperators
 
