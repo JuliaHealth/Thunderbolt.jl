@@ -102,4 +102,4 @@ Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "DelimitedFiles", "FerriteGmsh", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot"]
+test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot"]

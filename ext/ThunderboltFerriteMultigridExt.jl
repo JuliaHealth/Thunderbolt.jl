@@ -23,6 +23,9 @@ import FerriteMultigrid: GridHierarchy
 import Thunderbolt: _materialize_inner_solver, KrylovMGSolver,
                     PMGPrecon, GMGPrecon, ChainedMGPrecon, OrderedSet
 
+# FIXME we can remove this in Ferrite >1.4.0
+Ferrite.getlowerorder(ip::Ferrite.VectorizedInterpolation{vdim}) where {vdim} = Ferrite.VectorizedInterpolation{vdim}(Ferrite.getlowerorder(ip.ip))
+
 function GridHierarchy(coarse_grid::Thunderbolt.SimpleMesh, n_refinements::Int)
     @assert n_refinements >= 1 "Need at least one refinement level"
     grids            = [coarse_grid]
