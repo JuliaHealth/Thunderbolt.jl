@@ -1,3 +1,4 @@
+#md # ## Multigrid
 
 using Thunderbolt, LinearSolve
 using FerriteMultigrid: FerriteMultigrid, GridHierarchy
