@@ -139,7 +139,6 @@ $T^{\rm{a}} = T^{\rm{max}} \, [Ca_{\rm{i}}] (F \cdot f_0) \otimes f_0$
 
 """
 Base.@kwdef struct Guccione1993ActiveModel
-    # Default values from Marina Kampers PhD thesis
     Tmax::Float64   = 135.0 #kPa
     l₀::Float64     = 1.45  #µm
     lR::Float64     = 1.8   #µm

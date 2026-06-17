@@ -216,6 +216,7 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
     OrdinaryDiffEqCore.modify_dt_for_tstops!(integrator)
     integrator.force_stepfail = false
 
+    # Log here so that t, dt, and iter all describe the step about to be taken.
     integration_monitor_step(integrator)
 end
 
@@ -344,14 +345,17 @@ function setup_validity_flags!(integrator, t_next)
 end
 
 function step_footer!(integrator::ThunderboltTimeIntegrator)
-    ttmp = integrator.t + integrator.tdir * integrator.dt
+    t_start = integrator.t
+    dt_step = integrator.dt
+    ttmp = t_start + integrator.tdir * dt_step
 
     footer_reset_flags!(integrator)
     setup_validity_flags!(integrator, ttmp)
 
-    if should_accept_step(integrator)
+    accepted = should_accept_step(integrator)
+    if accepted
         integrator.last_step_failed = false
-        integrator.tprev = integrator.t
+        integrator.tprev = t_start
         integrator.t = OrdinaryDiffEqCore.fixed_t_for_tstop_error!(integrator, ttmp)
         OrdinaryDiffEqCore.handle_callbacks!(integrator)
         adapt_dt!(integrator) # Noop for non-adaptive algorithms
@@ -361,10 +365,14 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
             # elseif integrator.dtchangeable # Non-adaptive but can change dt
             #     integrator.dt *= integrator.opts.failfactor
         elseif integrator.last_step_failed
+            integration_monitor_step_footer(integrator, t_start, ttmp, accepted, dt_step)
             return
         end
         integrator.last_step_failed = true
     end
+
+    t_end = accepted ? integrator.t : ttmp
+    integration_monitor_step_footer(integrator, t_start, t_end, accepted, dt_step)
 
     return nothing
 end
@@ -377,6 +385,19 @@ increment_iteration(integrator) = integrator.iter += 1
 function integration_monitor_step(integrator)
     if integrator.opts.progress && integrator.iter % integrator.opts.progress_steps == 0
         integration_step_monitor(integrator, integrator.opts.progress_monitor)
+    end
+end
+
+function integration_monitor_step_footer(integrator, t_start, t_end, accepted, dt_step)
+    if integrator.opts.progress && integrator.iter % integrator.opts.progress_steps == 0
+        integration_step_footer_monitor(
+            integrator,
+            t_start,
+            t_end,
+            accepted,
+            dt_step,
+            integrator.opts.progress_monitor,
+        )
     end
 end
 
