@@ -1,3 +1,5 @@
+# The formatter messes up for this file.
+#! format: off
 """
     ThunderboltFerriteMultigridExt
 
@@ -408,3 +410,4 @@ function Thunderbolt._materialize_inner_solver(
 end
 
 end # module ThunderboltFerriteMultigridExt
+#! format: on
