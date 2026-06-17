@@ -40,9 +40,13 @@ struct PMGPrecon{CY, CS, PC, PRE, POST} <: AbstractMGPrecon
 end
 
 # Bare constructor with `nothing` placeholders — real defaults set by the extension.
-PMGPrecon(; cycle = nothing, pcoarse_solver = nothing, pgrid_config = nothing,
-            presmoother = nothing, postsmoother = nothing) =
-    PMGPrecon(cycle, pcoarse_solver, pgrid_config, presmoother, postsmoother)
+PMGPrecon(;
+    cycle = nothing,
+    pcoarse_solver = nothing,
+    pgrid_config = nothing,
+    presmoother = nothing,
+    postsmoother = nothing,
+) = PMGPrecon(cycle, pcoarse_solver, pgrid_config, presmoother, postsmoother)
 
 """
     GMGPrecon(gh; gconfig, pcoarse_solver, presmoother, postsmoother)
@@ -73,9 +77,13 @@ struct GMGPrecon{GH, GC, CS, PRE, POST} <: AbstractMGPrecon
     postsmoother::POST
 end
 
-GMGPrecon(gh; gconfig = nothing, pcoarse_solver = nothing,
-          presmoother = nothing, postsmoother = nothing) =
-    GMGPrecon(gh, gconfig, pcoarse_solver, presmoother, postsmoother)
+GMGPrecon(
+    gh;
+    gconfig = nothing,
+    pcoarse_solver = nothing,
+    presmoother = nothing,
+    postsmoother = nothing,
+) = GMGPrecon(gh, gconfig, pcoarse_solver, presmoother, postsmoother)
 
 """
     ChainedMGPrecon(pmg::PMGPrecon, gmg::GMGPrecon)

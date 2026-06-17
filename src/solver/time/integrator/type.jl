@@ -114,14 +114,7 @@ end
 
 # Interpolation
 function (integrator::ThunderboltTimeIntegrator)(tmp, t)
-    OS.linear_interpolation!(
-        tmp,
-        t,
-        integrator.uprev,
-        integrator.u,
-        integrator.tprev,
-        integrator.t,
-    )
+    OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
 end
 
 # CommonSolve interface

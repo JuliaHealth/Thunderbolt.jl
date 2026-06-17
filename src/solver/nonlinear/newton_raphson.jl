@@ -23,11 +23,11 @@ struct EisenstatWalkerForcing{T <: AbstractFloat}
 end
 
 function EisenstatWalkerForcing(;
-    η₀               = 0.5,
-    ηₘₐₓ             = 0.9,
-    γ                = 0.9,
-    α                = 2.0,
-    safeguard        = true,
+    η₀                  = 0.5,
+    ηₘₐₓ                = 0.9,
+    γ                   = 0.9,
+    α                   = 2.0,
+    safeguard           = true,
     safeguard_threshold = 0.1,
 )
     T = promote_type(typeof(η₀), typeof(ηₘₐₓ), typeof(γ), typeof(α), typeof(safeguard_threshold))
@@ -52,7 +52,8 @@ Newton iteration is reused for all subsequent iterations. Only the residual is r
 via [`residual!`](@ref) each step. This saves Jacobian assembly and factorization cost per
 step at the expense of slower outer convergence.
 """
-Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType, ForcingType} <: AbstractNonlinearSolver
+Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType, ForcingType} <:
+                   AbstractNonlinearSolver
     # Convergence tolerance
     tol::T = 1e-4
     # Maximum number of iterations
@@ -103,16 +104,22 @@ function setup_solver_cache(
     Δu = Vector{T}(undef, solution_size(f))
 
     # Connect both solver caches
-    inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    inner_prob  = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
     maxiters    = _linear_maxiters(inner_solver)
-    init_kw    = maxiters === nothing ? (;) : (; maxiters = maxiters)
-    inner_cache =
-        init(inner_prob, _materialize_inner_solver(f, inner_solver);
-             alias = LinearAliasSpecifier(alias_A = true, alias_b = true), init_kw...)
+    init_kw     = maxiters === nothing ? (;) : (; maxiters = maxiters)
+    inner_cache = init(inner_prob, _materialize_inner_solver(f, inner_solver); alias = LinearAliasSpecifier(alias_A = true, alias_b = true), init_kw...)
     @assert inner_cache.b === residual
     @assert inner_cache.A === op.J
 
-    NewtonRaphsonSolverCache(op, residual, solver, inner_cache, _build_forcing_cache(solver.forcing, inner_cache, T), T[], 0)
+    NewtonRaphsonSolverCache(
+        op,
+        residual,
+        solver,
+        inner_cache,
+        _build_forcing_cache(solver.forcing, inner_cache, T),
+        T[],
+        0,
+    )
 end
 
 function setup_solver_cache(
@@ -125,28 +132,38 @@ function setup_solver_cache(
     residual = Vector{T}(undef, sizeu)
     Δu = Vector{T}(undef, sizeu)
     # Connect both solver caches
-    inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    inner_prob  = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
     maxiters    = _linear_maxiters(inner_solver)
-    init_kw    = maxiters === nothing ? (;) : (; maxiters = maxiters)
-    inner_cache =
-        init(inner_prob, _materialize_inner_solver(f, inner_solver);
-             alias = LinearAliasSpecifier(alias_A = true, alias_b = true), init_kw...)
+    init_kw     = maxiters === nothing ? (;) : (; maxiters = maxiters)
+    inner_cache = init(inner_prob, _materialize_inner_solver(f, inner_solver); alias = LinearAliasSpecifier(alias_A = true, alias_b = true), init_kw...)
     @assert inner_cache.alg == inner_solver
     @assert inner_cache.b === residual
     @assert inner_cache.A === op.J
 
-    NewtonRaphsonSolverCache(op, residual, solver, inner_cache, _build_forcing_cache(solver.forcing, inner_cache, T), T[], 0)
+    NewtonRaphsonSolverCache(
+        op,
+        residual,
+        solver,
+        inner_cache,
+        _build_forcing_cache(solver.forcing, inner_cache, T),
+        T[],
+        0,
+    )
 end
 
 # Build the Eisenstat-Walker forcing cache only when the linear solver is a Krylov
 # (iterative) method — direct factorizations have no tolerance to adapt.
 _build_forcing_cache(::Nothing, inner_cache, ::Type) = nothing
-function _build_forcing_cache(f::EisenstatWalkerForcing, inner_cache, ::Type{T}) where T
+function _build_forcing_cache(f::EisenstatWalkerForcing, inner_cache, ::Type{T}) where {T}
     if !(inner_cache.alg isa LinearSolve.AbstractKrylovSubspaceMethod)
         @warn "EisenstatWalkerForcing requires a Krylov linear solver; adaptive tolerance disabled." maxlog=1
         return nothing
     end
-    return EisenstatWalkerForcingCache(T(f.η₀), typemax(T), EisenstatWalkerForcing{T}(f.η₀, f.ηₘₐₓ, f.γ, f.α, f.safeguard, f.safeguard_threshold))
+    return EisenstatWalkerForcingCache(
+        T(f.η₀),
+        typemax(T),
+        EisenstatWalkerForcing{T}(f.η₀, f.ηₘₐₓ, f.γ, f.α, f.safeguard, f.safeguard_threshold),
+    )
 end
 
 # No-op for direct solvers or when forcing is disabled.

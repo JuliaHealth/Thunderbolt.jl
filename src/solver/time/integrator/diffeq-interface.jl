@@ -346,7 +346,7 @@ end
 
 function step_footer!(integrator::ThunderboltTimeIntegrator)
     t_start = integrator.t
-    dt_step  = integrator.dt
+    dt_step = integrator.dt
     ttmp = t_start + integrator.tdir * dt_step
 
     footer_reset_flags!(integrator)
@@ -390,7 +390,14 @@ end
 
 function integration_monitor_step_footer(integrator, t_start, t_end, accepted, dt_step)
     if integrator.opts.progress && integrator.iter % integrator.opts.progress_steps == 0
-        integration_step_footer_monitor(integrator, t_start, t_end, accepted, dt_step, integrator.opts.progress_monitor)
+        integration_step_footer_monitor(
+            integrator,
+            t_start,
+            t_end,
+            accepted,
+            dt_step,
+            integrator.opts.progress_monitor,
+        )
     end
 end
 
