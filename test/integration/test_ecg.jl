@@ -37,7 +37,7 @@ import Thunderbolt: to_mesh, OrderedSet
         )
         heart_fun = semidiscretize(
             heart_model,
-            FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()), Dirichlet[]),
+            FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
             heart_grid,
         )
 

@@ -21,10 +21,10 @@ function test_solve_passive_structure(mesh, constitutive_model)
     quasistaticform = semidiscretize(
         QuasiStaticModel(:d, constitutive_model, ()),
         FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3),
+            Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
-            ["myocardium"],
-            Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+            subdomains = ["myocardium"],
+            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
     )
@@ -264,10 +264,10 @@ function test_solve_contractile_cuboid(
             ),
         ),
         FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3),
+            Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
             subdomains,
-            Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
     )
@@ -319,10 +319,10 @@ function test_solve_contractile_ideal_lv(
             ),
         ),
         FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3),
+            Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
-            ["myocardium"],
-            Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
+            subdomains = ["myocardium"],
+            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
     )
@@ -670,7 +670,7 @@ end
     quasistaticform = semidiscretize(
         QuasiStaticModel(:d, material, ()),
         FiniteElementDiscretization(
-            Dict(:d => (LagrangeCollection{1}()^3 => QuadratureRuleCollection(1))),
+            Dict(:d => (LagrangeCollection{1}()^3 => QuadratureRuleCollection(1)));
             dbcs,
         ),
         mesh,

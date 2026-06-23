@@ -45,8 +45,7 @@ using DiffEqBase
         odeform = semidiscretize(
             ReactionDiffusionSplit(model),
             FiniteElementDiscretization(
-                Dict(:φₘ => LagrangeCollection{1}()),
-                Dirichlet[],
+                Dict(:φₘ => LagrangeCollection{1}());
                 subdomains,
             ),
             mesh,

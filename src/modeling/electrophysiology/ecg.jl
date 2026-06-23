@@ -239,9 +239,9 @@ function PoissonECGReconstructionCache(
     torso_fun = semidiscretize(
         torso_model,
         FiniteElementDiscretization(
-            Dict(extracellular_potential_symbol => ipc),
-            [Dirichlet(extracellular_potential_symbol, ground, (x, t) -> 0.0)],
-            subdomain_names(torso_grid),
+            Dict(extracellular_potential_symbol => ipc);
+            dbcs=[Dirichlet(extracellular_potential_symbol, ground, (x, t) -> 0.0)],
+            subdomains=subdomain_names(torso_grid),
         ),
         torso_grid,
     )
@@ -493,16 +493,16 @@ function Geselowitz1989ECGLeadCache(
     lead_field_fun = semidiscretize(
         lead_field_model,
         FiniteElementDiscretization(
-            Dict(lead_field_sym => ipc),
-            [Dirichlet(lead_field_sym, ground, (x, t) -> 0.0)],
-            subdomain_names(torso_grid),
+            Dict(lead_field_sym => ipc);
+            dbcs = [Dirichlet(lead_field_sym, ground, (x, t) -> 0.0)],
+            subdomains = subdomain_names(torso_grid),
         ),
         torso_grid,
     )
 
     sourcefun = semidiscretize(
         source_model,
-        FiniteElementDiscretization(Dict(tmpsym => ipc), Dirichlet[], subdomain_names(torso_grid)),
+        FiniteElementDiscretization(Dict(tmpsym => ipc); subdomains = subdomain_names(torso_grid)),
         torso_grid,
     )
 

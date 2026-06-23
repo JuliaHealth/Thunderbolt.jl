@@ -34,8 +34,8 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
         # passive_material_model = HolzapfelOgden2009Model()
 
         spatial_discretization_method = FiniteElementDiscretization(
-            Dict(:displacement => LagrangeCollection{order}()^3),
-            [
+            Dict(:displacement => LagrangeCollection{order}()^3);
+            dbcs=[
                 Dirichlet(
                     :displacement,
                     getfacetset(mesh, "left"),

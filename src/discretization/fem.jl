@@ -7,7 +7,7 @@ Descriptor for a finite element discretization of a part of a PDE over some subd
 struct FiniteElementDiscretization
     """
     """
-    interpolations::Dict{Symbol, Any}#, Union{<:InterpolationCollection, Pair{<:InterpolationCollection, <:QuadratureRuleCollection}}}
+    interpolations::Dict{Symbol}
     """
     """
     dbcs::Vector{Dirichlet} # TODO descriptor instead of Dirichlet. This allows us to distinguish different cases.
@@ -15,9 +15,11 @@ struct FiniteElementDiscretization
     """
     subdomains::Vector{String}
     """
-    This field might be removed in future updates.
+    Each model comes with a set of symbols identifying the weak forms.
+    These fields map user-provided quadrature rules.
     """
-    mass_qrc::Union{<:QuadratureRuleCollection, Nothing} # TODO maybe an "extras" field should be used instead :)
+    qrcs::Dict{Symbol}
+    fqrcs::Dict{Symbol}
     """
     This field might be removed in future updates.
     """
@@ -25,13 +27,14 @@ struct FiniteElementDiscretization
     """
     """
     function FiniteElementDiscretization(
-        ips::Dict{Symbol},
+        ips::Dict{Symbol};
         dbcs::Vector{Dirichlet} = Dirichlet[],
         subdomains::Vector{String} = String[],
+        qrcs::Dict{Symbol} = Dict{Symbol,Any}(),
+        fqrcs::Dict{Symbol} = Dict{Symbol,Any}(),
         assembly_strategy = SequentialAssemblyStrategy(SequentialCPUDevice()),
-        mass_qrc = nothing,
     )
-        new(ips, dbcs, subdomains, mass_qrc, assembly_strategy)
+        new(ips, dbcs, subdomains, qrcs, fqrcs, assembly_strategy)
     end
 end
 
@@ -54,21 +57,31 @@ function _get_interpolation_from_discretization(disc::FiniteElementDiscretizatio
     return _extract_ipc(disc.interpolations[sym])
 end
 function _get_quadrature_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
-    if !haskey(disc.interpolations, sym)
-        error(
-            "Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).",
-        )
+    # Step 1: Try to query from qrcs discretization table
+    if haskey(disc.qrcs, sym)
+        return disc.qrcs[sym]
     end
-    return _extract_qrc(disc.interpolations[sym])
+    # Step 2: Deduce from interpolation order
+    if haskey(disc.interpolations, sym)
+        return _extract_qrc(disc.interpolations[sym])
+    end
+    error(
+        "Finite element discretization does not have an interpolation or quadrature rule for $sym. Available symbols: $(collect(keys(disc.interpolations))) and $(collect(keys(disc.qrcs))).",
+    )
 end
 function _get_facet_quadrature_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
-    if !haskey(disc.interpolations, sym)
-        error(
-            "Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).",
-        )
+    # Step 1: Try to query from qrcs discretization table
+    if haskey(disc.fqrcs, sym)
+        return disc.fqrcs[sym]
     end
-    intorder = getorder(_extract_ipc(disc.interpolations[sym]))
-    return FacetQuadratureRuleCollection(intorder)
+    # Step 2: Deduce from interpolation order
+    if haskey(disc.interpolations, sym)
+        intorder = getorder(_extract_ipc(disc.interpolations[sym]))
+        return FacetQuadratureRuleCollection(intorder)
+    end
+    error(
+        "Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))) and $(collect(keys(disc.qrcs))).",
+    )
 end
 
 semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) =
@@ -99,7 +112,7 @@ function semidiscretize(
     return AffineODEFunction(
         BilinearMassIntegrator(
             ConstantCoefficient(T(1.0)),
-            discretization.mass_qrc === nothing ? qrc : mass_qrc, # Allow e.g. mass lumping for explicit integrators.
+            haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass]  : qrc, # Allow e.g. mass lumping for explicit integrators.
             sym,
         ),
         BilinearDiffusionIntegrator(model.κ, qrc, sym),
@@ -278,6 +291,7 @@ function semidiscretize(
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
+    fqrc = _get_facet_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
     lvh = InternalVariableHandler(mesh)
     semidiscretize_register_subdomains!(dh, lvh, model, discretization, discretization.subdomains)
@@ -299,7 +313,7 @@ function semidiscretize(
             model.facet_models,
             [sym],
             qrc,
-            _get_facet_quadrature_from_discretization(discretization, sym),
+            fqrc,
         ),
         discretization.assembly_strategy,
     )

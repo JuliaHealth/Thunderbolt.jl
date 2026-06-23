@@ -32,7 +32,7 @@ function test_solve_contractile_ideal_lv_3D0D(
     coupled_model = RSAFDQ2022Model(solid_model, fluid_model, coupler)
     splitform = semidiscretize(
         RSAFDQ2022Split(coupled_model),
-        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3), dbcs, ["myocardium"]),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs, subdomains=["myocardium"]),
         mesh,
     )
 
