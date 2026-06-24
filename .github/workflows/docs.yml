@@ -4,6 +4,13 @@ on:
     branches:  main
     tags: '*'
   pull_request:
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
 jobs:
   docs:
     name: Julia 1.12 - ubuntu-latest
@@ -11,10 +18,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: '1.12'
-      - uses: julia-actions/cache@v2
+      - run: julia -e 'using Pkg; Pkg.Registry.add(); Pkg.Registry.add(RegistrySpec(url = "https://github.com/termi-official/termis-backyard"))'
+        shell: bash
+      - uses: julia-actions/cache@v3
       - name: Install dependencies
         run: julia --project=docs -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
       - name: Build and deploy

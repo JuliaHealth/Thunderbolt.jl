@@ -4,6 +4,52 @@ import KernelAbstractions as KA
 
 using TimerOutputs: @timeit_debug
 
+import SciMLLogging: Standard
+
+import FerriteOperators:
+    FerriteOperators,
+    SequentialCPUDevice,
+    PolyesterDevice,
+    duplicate_for_device,
+    EAVector,
+    InternalVariableHandler,
+    AbstractAssemblyStrategy,
+    AbstractCPUDevice,
+    SequentialAssemblyStrategy,
+    PerColorAssemblyStrategy,
+    ElementAssemblyStrategy,
+    AbstractGPUDevice,
+    AbstractNonlinearIntegrator,
+    QuadratureRuleCollection,
+    getquadraturerule,
+    setup_boundary_cache,
+    setup_element_cache,
+    AbstractVolumetricElementCache,
+    AbstractSurfaceElementCache,
+    EmptySurfaceElementCache,
+    EmptyVolumetricElementCache,
+    update_linearization!,
+    residual!,
+    assemble_element!,
+    internal_variable_offset,
+    AbstractBilinearIntegrator,
+    AbstractLinearIntegrator,
+    is_facet_in_cache,
+    assemble_facet!,
+    value_type
+
+import FerriteOperators:
+    LinearizedFerriteOperator,
+    BilinearFerriteOperator,
+    LinearFerriteOperator,
+    AbstractBlockOperator,
+    AbstractLinearOperator,
+    LinearNullOperator,
+    setup_operator,
+    update_operator!
+
+import FerriteOperators: CompositeSurfaceElementCache
+
 import Unrolled: @unroll
 import FastBroadcast: @..
 
@@ -52,12 +98,18 @@ import Logging: Logging, LogLevel, @info, @logmsg
 
 import SymbolicIndexingInterface
 import SciMLBase
-@reexport import SciMLBase: init, solve, solve!, step!, TimeChoiceIterator
+@reexport import SciMLBase: init, solve, solve!, step!
+@reexport import SciMLIterators: TimeChoiceIterator
 using SciMLBase: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
+import OrdinaryDiffEqCore:
+    DummyController, DummyControllerCache, default_controller, setup_controller_cache
 import LinearSolve
 using LinearSolve: LinearAliasSpecifier
+import DynamicQuantities
+
+import ConcreteStructs: @concrete
 
 using Base: @kwdef
 import Base: *, +, -
@@ -74,11 +126,10 @@ include("mesh/meshes.jl")
 include("utils.jl")
 
 include("devices.jl")
-include("strategy.jl")
 
-include("ferrite-addons/parallel_duplication_api.jl")
 include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
+include("ferrite-addons/point.jl")
 
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
@@ -107,9 +158,6 @@ include("solver/interface.jl")
 include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
-include("solver/linear/preconditioners/Preconditioners.jl")
-@reexport using .Preconditioners
-
 
 include("modeling/electrophysiology/ecg.jl")
 
@@ -153,6 +201,9 @@ export
     generate_quadratic_ring_mesh,
     generate_quadratic_open_ring_mesh,
     generate_ideal_lv_mesh,
+    # Mesh utilities
+    hexahedralize,
+    to_mesh,
     # Generic models
     TransientDiffusionModel,
     AffineODEFunction,
@@ -239,6 +290,12 @@ export
     FiniteElementDiscretization,
     # Solver
     SchurComplementLinearSolver,
+    KrylovMGSolver,
+    AbstractMGPrecon,
+    PMGPrecon,
+    GMGPrecon,
+    ChainedMGPrecon,
+    EisenstatWalkerForcing,
     NewtonRaphsonSolver,
     MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,

@@ -35,8 +35,11 @@ end
 
 @inline SciMLBase.get_proposed_dt(integrator::ThunderboltTimeIntegrator) = integrator.dt
 
-@inline function SciMLBase.u_modified!(integrator::ThunderboltTimeIntegrator, bool::Bool)
-    integrator.u_modified = bool
+@inline function SciMLBase.derivative_discontinuity!(
+    integrator::ThunderboltTimeIntegrator,
+    bool::Bool,
+)
+    integrator.derivative_discontinuity = bool
 end
 
 SciMLBase.get_sol(integrator::ThunderboltTimeIntegrator) = integrator.sol
@@ -50,7 +53,7 @@ function SciMLBase.set_proposed_dt!(integrator::ThunderboltTimeIntegrator, dt)
 end
 
 function SciMLBase.isadaptive(integrator::ThunderboltTimeIntegrator)
-    integrator.controller === nothing && return false
+    integrator.controller_cache === nothing && return false
     if !SciMLBase.isadaptive(integrator.alg)
         error(
             "Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.",
@@ -100,7 +103,7 @@ function DiffEqBase.reinit!(
     integrator.tprev = t0
 
     integrator.iter = 0
-    integrator.u_modified = false
+    integrator.derivative_discontinuity = false
 
     integrator.stats.naccept = 0
     integrator.stats.nreject = 0
@@ -170,15 +173,19 @@ function should_accept_step(integrator::ThunderboltTimeIntegrator)
     if integrator.force_stepfail || integrator.isout
         return false
     end
-    return should_accept_step(integrator, integrator.cache, integrator.controller)
+    return should_accept_step(integrator, integrator.cache, integrator.controller_cache)
 end
-function should_accept_step(integrator::ThunderboltTimeIntegrator, cache, ::Nothing)
+function should_accept_step(
+    integrator::ThunderboltTimeIntegrator,
+    cache,
+    ::Union{Nothing, DummyControllerCache},
+)
     return !(integrator.force_stepfail)
 end
 
 function accept_step!(integrator::ThunderboltTimeIntegrator)
     OrdinaryDiffEqCore.increment_accept!(integrator.stats)
-    accept_step!(integrator, integrator.cache, integrator.controller)
+    accept_step!(integrator, integrator.cache, integrator.controller_cache)
 end
 function accept_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
     store_previous_info!(integrator)
@@ -198,7 +205,7 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
         else # Step should be rejected and hence repeated
             reject_step!(integrator)
         end
-    elseif integrator.u_modified # && integrator.iter == 0
+    elseif integrator.derivative_discontinuity # && integrator.iter == 0
         update_uprev!(integrator)
     end
 
@@ -208,6 +215,9 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
     OrdinaryDiffEqCore.fix_dt_at_bounds!(integrator)
     OrdinaryDiffEqCore.modify_dt_for_tstops!(integrator)
     integrator.force_stepfail = false
+
+    # Log here so that t, dt, and iter all describe the step about to be taken.
+    integration_monitor_step(integrator)
 end
 
 function update_uprev!(integrator::ThunderboltTimeIntegrator)
@@ -319,7 +329,7 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
 end
 
 function footer_reset_flags!(integrator)
-    integrator.u_modified = false
+    integrator.derivative_discontinuity = false
 end
 
 function fix_solution_buffer_sizes!(integrator, sol)
@@ -335,15 +345,18 @@ function setup_validity_flags!(integrator, t_next)
 end
 
 function step_footer!(integrator::ThunderboltTimeIntegrator)
-    ttmp = integrator.t + integrator.tdir * integrator.dt
+    t_start = integrator.t
+    dt_step = integrator.dt
+    ttmp = t_start + integrator.tdir * dt_step
 
     footer_reset_flags!(integrator)
     setup_validity_flags!(integrator, ttmp)
 
-    if should_accept_step(integrator)
+    accepted = should_accept_step(integrator)
+    if accepted
         integrator.last_step_failed = false
-        integrator.tprev = integrator.t
-        integrator.t = OrdinaryDiffEqCore.fixed_t_for_floatingpoint_error!(integrator, ttmp)
+        integrator.tprev = t_start
+        integrator.t = OrdinaryDiffEqCore.fixed_t_for_tstop_error!(integrator, ttmp)
         OrdinaryDiffEqCore.handle_callbacks!(integrator)
         adapt_dt!(integrator) # Noop for non-adaptive algorithms
     elseif integrator.force_stepfail
@@ -352,12 +365,14 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
             # elseif integrator.dtchangeable # Non-adaptive but can change dt
             #     integrator.dt *= integrator.opts.failfactor
         elseif integrator.last_step_failed
+            integration_monitor_step_footer(integrator, t_start, ttmp, accepted, dt_step)
             return
         end
         integrator.last_step_failed = true
     end
 
-    integration_monitor_step(integrator)
+    t_end = accepted ? integrator.t : ttmp
+    integration_monitor_step_footer(integrator, t_start, t_end, accepted, dt_step)
 
     return nothing
 end
@@ -370,6 +385,19 @@ increment_iteration(integrator) = integrator.iter += 1
 function integration_monitor_step(integrator)
     if integrator.opts.progress && integrator.iter % integrator.opts.progress_steps == 0
         integration_step_monitor(integrator, integrator.opts.progress_monitor)
+    end
+end
+
+function integration_monitor_step_footer(integrator, t_start, t_end, accepted, dt_step)
+    if integrator.opts.progress && integrator.iter % integrator.opts.progress_steps == 0
+        integration_step_footer_monitor(
+            integrator,
+            t_start,
+            t_end,
+            accepted,
+            dt_step,
+            integrator.opts.progress_monitor,
+        )
     end
 end
 
@@ -428,26 +456,6 @@ function compute_rate_prototype(prob::AbstractSemidiscreteProblem)
     _compute_rate_prototype_mass_matrix_form(prob)
 end
 
-# Slightly modified functions are here
-function OrdinaryDiffEqCore.modify_dt_for_tstops!(integrator::ThunderboltTimeIntegrator)
-    if SciMLBase.has_tstop(integrator)
-        tdir_t = integrator.tdir * integrator.t
-        tdir_tstop = SciMLBase.first_tstop(integrator)
-        if integrator.opts.adaptive
-            integrator.dt = integrator.tdir * min(abs(integrator.dt), abs(tdir_tstop - tdir_t)) # step! to the end
-        elseif integrator.dtchangeable
-            dtpropose = SciMLBase.get_proposed_dt(integrator)
-            if iszero(dtpropose)
-                integrator.dt = integrator.tdir * abs(tdir_tstop - tdir_t)
-            elseif !integrator.force_stepfail
-                # always try to step! with dtcache, but lower if a tstop
-                # however, if force_stepfail then don't set to dtcache, and no tstop worry
-                integrator.dt = integrator.tdir * min(abs(dtpropose), abs(tdir_tstop - tdir_t)) # step! to the end
-            end
-        end
-    end
-end
-
 function OrdinaryDiffEqCore.handle_tstop!(integrator::ThunderboltTimeIntegrator)
     if SciMLBase.has_tstop(integrator)
         tdir_t = integrator.tdir * integrator.t
@@ -475,4 +483,29 @@ function OrdinaryDiffEqCore.handle_tstop!(integrator::ThunderboltTimeIntegrator)
         end
     end
     return nothing
+end
+
+OrdinaryDiffEqCore.isfsal(::AbstractSolver) = false
+OrdinaryDiffEqCore._get_W(::ThunderboltTimeIntegrator) = nothing
+
+function SciMLBase.change_t_via_interpolation!(
+    integrator::ThunderboltTimeIntegrator,
+    t,
+    modify_save_endpoint::Type{Val{T}} = Val{false},
+    reinitialize_alg = nothing,
+) where {T}
+    OrdinaryDiffEqCore._change_t_via_interpolation!(
+        integrator,
+        t,
+        modify_save_endpoint,
+        reinitialize_alg,
+    )
+    return nothing
+end
+
+function OrdinaryDiffEqCore.post_newton_controller!(
+    integrator::ThunderboltTimeIntegrator,
+    alg::AbstractSolver,
+)
+    integrator.dt = integrator.dt / 4
 end

@@ -27,7 +27,7 @@ jobs:
         #
         # julia  -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="0.13.0"))'
         run: |
-          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter")); Pkg.Apps.add(PackageSpec(name="JuliaFormatter"))'
+          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.5.1")); Pkg.Apps.add(PackageSpec(name="JuliaFormatter", version="2.5.1"))'
           $HOME/.julia/bin/jlfmt --inplace -v .
       - name: Format check
         run: |

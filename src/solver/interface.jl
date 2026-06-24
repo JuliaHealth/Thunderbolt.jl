@@ -5,6 +5,9 @@ abstract type AbstractNonlinearSolverCache end
 
 abstract type AbstractTimeSolverCache end
 
+# TODO remove
+getJ(op) = op.J
+
 # Nonlinear
 function setup_operator(f::NullFunction, solver::AbstractSolver)
     return NullOperator{Float64, solution_size(f), solution_size(f)}()
@@ -62,46 +65,12 @@ function setup_operator(
 end
 
 function setup_operator(
-    strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice},
+    strategy,
     integrator::LinearIntegrator,
     solver::AbstractSolver,
     dh::AbstractDofHandler,
 )
-    return LinearOperator(
-        zeros(value_type(strategy.device), ndofs(dh)),
-        integrator,
-        dh,
-        SequentialAssemblyStrategyCache(strategy.device),
-    )
-end
-function setup_operator(
-    strategy::PerColorAssemblyStrategy{<:AbstractCPUDevice},
-    integrator::LinearIntegrator,
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    return LinearOperator(
-        zeros(value_type(strategy.device), ndofs(dh)),
-        integrator,
-        dh,
-        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(dh)),
-    )
-end
-function setup_operator(
-    strategy::ElementAssemblyStrategy{<:AbstractCPUDevice},
-    integrator::LinearIntegrator,
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    return LinearOperator(
-        zeros(value_type(strategy.device), ndofs(dh)),
-        integrator,
-        dh,
-        ElementAssemblyStrategyCache(
-            strategy.device,
-            EAVector(value_type(strategy.device), index_type(strategy.device), dh),
-        ),
-    )
+    return setup_operator(strategy, integrator, dh)
 end
 
 # Bilinear
@@ -122,70 +91,12 @@ function setup_assembled_operator(
     system_matrix_type::Type,
     dh::AbstractDofHandler,
 )
-    A  = create_system_matrix(system_matrix_type, dh)
-    A_ = if strategy.device isa AbstractCPUDevice
-        A
-    else
-        allocate_matrix(dh)
-    end
-
-    return AssembledBilinearOperator(
-        A,
-        A_,
-        integrator,
-        dh,
-        SequentialAssemblyStrategyCache(strategy.device),
-    )
-end
-function setup_assembled_operator(
-    strategy::PerColorAssemblyStrategy,
-    integrator::AbstractBilinearIntegrator,
-    system_matrix_type::Type,
-    dh::AbstractDofHandler,
-)
-    A  = create_system_matrix(system_matrix_type, dh)
-    A_ = if strategy.device isa AbstractCPUDevice
-        A
-    else
-        allocate_matrix(dh)
-    end
-
-    return AssembledBilinearOperator(
-        A,
-        A_,
-        integrator,
-        dh,
-        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(dh)),
-    )
+    setup_operator(strategy, integrator, dh) # FIXME
 end
 
 # Nonlinear
 function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
-    return setup_assembled_nonlinear_operator(get_strategy(f), f, solver)
-end
-function setup_assembled_nonlinear_operator(
-    strategy::SequentialAssemblyStrategy,
-    f::AbstractQuasiStaticFunction,
-    solver::AbstractNonlinearSolver,
-)
-    return AssembledNonlinearOperator(
-        allocate_matrix(f.dh),
-        f.integrator,
-        f.dh,
-        SequentialAssemblyStrategyCache(strategy.device),
-    )
-end
-function setup_assembled_nonlinear_operator(
-    strategy::PerColorAssemblyStrategy,
-    f::AbstractQuasiStaticFunction,
-    solver::AbstractNonlinearSolver,
-)
-    return AssembledNonlinearOperator(
-        allocate_matrix(f.dh),
-        f.integrator,
-        f.dh,
-        PerColorAssemblyStrategyCache(strategy.device, create_dh_coloring(f.dh)),
-    )
+    return setup_operator(get_strategy(f), f.integrator, f.dh)
 end
 
 # # TODO correct dispatches

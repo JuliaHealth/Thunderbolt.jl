@@ -45,10 +45,8 @@ end
 
 include("test_elements.jl")
 include("test_sarcomere.jl")
-include("test_operators.jl")
 
 include("test_solver.jl")
-include("test_preconditioners.jl")
 
 include("test_transfer.jl")
 
@@ -65,6 +63,7 @@ include("integration/test_solid_mechanics.jl")
 include("integration/test_electrophysiology.jl")
 include("integration/test_ecg.jl")
 include("integration/test_fsi.jl")
+include("integration/test_multigrid.jl")
 
 include("test_aqua.jl")
 

@@ -28,7 +28,8 @@ Installing Thunderbolt can then be done from the Pkg REPL; press `]` at the `jul
 enter `pkg>` mode:
 
 ```
-pkg> add https://github.com/JuliaHealth/Thunderbolt.jl#main
+pkg> registry add github.com/termi-official/termis-backyard
+pkg> add Thunderbolt
 ```
 
 This will install Thunderbolt and all necessary dependencies. Press backspace to get back to the

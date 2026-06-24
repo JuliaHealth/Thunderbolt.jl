@@ -5,7 +5,7 @@ function solution_size(model::AbstractLumpedCirculatoryModel)
 end
 
 # TODO SciMLParameter interface
-struct LumpedCirculatoryModelFunction{M, T}
+struct LumpedCirculatoryModelFunction{M, T} <: SciMLBase.AbstractDiffEqFunction{true}
     m::M
     p::Vector{T}
 end

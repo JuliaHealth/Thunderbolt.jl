@@ -119,7 +119,7 @@ function nlsolve!(
 
         eliminate_constraints_from_increment!(Δu, f, cache)
 
-        u[1:ndofs(op.dh)] .-= Δu # Current guess
+        u[1:length(Δu)] .-= Δu # Current guess
 
         if cache.iter > 0
             # In this case we might be unablet to estimate the convergence rate, because we are too close to the solution

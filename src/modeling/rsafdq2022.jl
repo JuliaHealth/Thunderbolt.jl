@@ -2,19 +2,15 @@
 
 mutable struct RSAFDQ2022SingleChamberTying{CVM}
     const pressure_dof_index_local::Int
-    pressure_dof_index_global::Int
+    const pressure_dof_index_global::Int
+    const pressure_symbol::Symbol
     const pressure_parameter_index_local
     const facets::OrderedSet{FacetIndex}
     const volume_method::CVM
     const displacement_symbol::Symbol
     V⁰ᴰval::Float64
     const V⁰ᴰidx_local::Int
-    V⁰ᴰidx_global::Int
-end
-
-struct RSAFDQ2022TyingCache{FV <: FacetValues, CVM}
-    fv::FV
-    chambers::Vector{RSAFDQ2022SingleChamberTying{CVM}}
+    const V⁰ᴰidx_global::Int
 end
 
 struct RSAFDQ2022TyingInfo{CVM}
@@ -22,84 +18,6 @@ struct RSAFDQ2022TyingInfo{CVM}
 end
 
 solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
-
-function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, sdh::SubDofHandler)
-    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
-    field_name = first(sdh.dh.field_names)
-    ip = Ferrite.getfieldinterpolation(sdh, field_name)
-    ip_geo = geometric_subdomain_interpolation(sdh)
-    RSAFDQ2022TyingCache(FacetValues(qr, ip, ip_geo), tying_info.chambers)
-end
-
-function get_tying_dofs(tying_cache::RSAFDQ2022TyingCache, u)
-    return [u[chamber.pressure_dof_index_local] for chamber in tying_cache.chambers]
-end
-
-"""
-Pressure contribution (i.e. variation w.r.t. p) for the term
-    ∫ p n(u) δu ∂Ω
- [= ∫ p J(u) F(u)^-T n₀ δu ∂Ω₀]
-where p is the unknown chamber pressure and u contains the unknown deformation field.
-"""
-# Residual and Jacobian
-function assemble_LFSI_coupling_contribution_col!(
-    C,
-    R,
-    dh::AbstractDofHandler,
-    u::AbstractVector,
-    pressure,
-    method::RSAFDQ2022SingleChamberTying,
-)
-    grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_facet, ip, ip_geo)
-
-    for facet ∈ FacetIterator(dh, method.facets)
-        assemble_LFSI_coupling_contribution_col_inner!(
-            C,
-            R,
-            u,
-            pressure,
-            facet,
-            dh,
-            fv,
-            method.displacement_symbol,
-        )
-    end
-end
-# Residual only
-function assemble_LFSI_coupling_contribution_col!(
-    C,
-    dh::AbstractDofHandler,
-    u::AbstractVector,
-    pressure,
-    method::RSAFDQ2022SingleChamberTying,
-)
-    grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr_facet = FacetQuadratureRule{ref_shape}(intorder)
-    fv = FacetValues(qr_facet, ip, ip_geo)
-
-    for facet ∈ FacetIterator(dh, method.facets)
-        assemble_LFSI_coupling_contribution_col_inner!(
-            C,
-            u,
-            pressure,
-            facet,
-            dh,
-            fv,
-            method.displacement_symbol,
-        )
-    end
-end
-
 
 # TODO use an operator for this
 function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberTying)
@@ -187,10 +105,7 @@ getch(f::AbstractSemidiscreteBlockedFunction) =
     error("Overlaod getch to get the constraint handler for a blocked function")
 getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 
-# struct RSAFDQ2022VolumeFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
-#     structural_function::MT
-#     tying_info::TP
-# end
+BlockArrays.blocks(f::RSAFDQ20223DFunction) = (f.structural_function, f.tying_info)
 
 ##########################################################################
 
@@ -212,59 +127,6 @@ Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
 struct RSAFDQ2022Split{MODEL <: Union{CoupledModel, RSAFDQ2022Model}}
     model::MODEL
-end
-
-function assemble_tying_facet_rsadfq!(Jₑ, residualₑ, uₑ, p, cell, local_facet_index, fv, time)
-    reinit!(fv, cell, local_facet_index)
-
-    for qp in QuadratureIterator(fv)
-        assemble_facet_pressure_qp!(Jₑ, residualₑ, uₑ, p, qp, fv)
-    end
-end
-
-function assemble_tying_facet_rsadfq!(Jₑ, uₑ, p, cell, local_facet_index, fv, time)
-    reinit!(fv, cell, local_facet_index)
-
-    for qp in QuadratureIterator(fv)
-        assemble_facet_pressure_qp!(Jₑ, uₑ, p, qp, fv)
-    end
-end
-
-function assemble_tying!(Jₑ, residualₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
-    for local_facet_index ∈ 1:nfacets(cell)
-        for (chamber_index, chamber) in pairs(tying_cache.chambers)
-            if (cellid(cell), local_facet_index) ∈ chamber.facets
-                assemble_tying_facet_rsadfq!(
-                    Jₑ,
-                    residualₑ,
-                    uₑ,
-                    uₜ[chamber_index],
-                    cell,
-                    local_facet_index,
-                    tying_cache.fv,
-                    time,
-                )
-            end
-        end
-    end
-end
-
-function assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
-    for local_facet_index ∈ 1:nfacets(cell)
-        for (chamber_index, chamber) in pairs(tying_cache.chambers)
-            if (cellid(cell), local_facet_index) ∈ chamber.facets
-                assemble_tying_facet_rsadfq!(
-                    Jₑ,
-                    uₑ,
-                    uₜ[chamber_index],
-                    cell,
-                    local_facet_index,
-                    tying_cache.fv,
-                    time,
-                )
-            end
-        end
-    end
 end
 
 #################################################################################
@@ -289,6 +151,7 @@ function create_chamber_tyings(
         tying = RSAFDQ2022SingleChamberTying(
             pressure_dof_index,
             pressure_dof_index,
+            coupling.pressure_symbol_3D,
             chamber_pressure_idx_lumped,
             chamber_facetset,
             coupling.chamber_volume_method,
@@ -298,12 +161,7 @@ function create_chamber_tyings(
             num_unknowns_structure+num_unknown_pressures(circuit_model)+chamber_volume_idx_lumped,
         )
         tying.V⁰ᴰval =
-            initial_volume_lumped = compute_chamber_volume(
-                dh,
-                zeros(ndofs(dh)),
-                coupling.chamber_surface_setname,
-                tying,
-            )
+            compute_chamber_volume(dh, zeros(ndofs(dh)), coupling.chamber_surface_setname, tying)
         push!(chamber_tyings, tying)
     end
     return chamber_tyings
@@ -331,7 +189,7 @@ function semidiscretize(
     chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
     @debug "Chamber tyings:"
     for chamber_tying in chamber_tyings
-        @debug "$(chamber_tying.pressure_dof_index_local), $(chamber_tying.pressure_dof_index_global), $(chamber_tying.volume_method), $(chamber_tying.displacement_symbol), $(chamber_tying.V⁰ᴰidx_local), $(chamber_tying.V⁰ᴰidx_global)"
+        @debug "Chamber:" chamber_tying.pressure_dof_index_local chamber_tying.pressure_dof_index_global chamber_tying.volume_method chamber_tying.displacement_symbol chamber_tying.V⁰ᴰidx_local chamber_tying.V⁰ᴰidx_global
     end
     @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
 
