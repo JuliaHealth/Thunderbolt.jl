@@ -268,6 +268,9 @@ function _create_field_transfer_eval_cache(
     linsolve,
 )
     γg = zeros(length(γf))
+    linsolve.b .= 1.0
+    sol = LinearSolve.solve!(linsolve)
+    γg .= sol.u
     return RescaledRadialBasisFunctionEvaluationCache(
         distance_measure_cache,
         source_influence_matrix,
@@ -631,9 +634,6 @@ function transfer!(
         (@view u_from[operator.mapping.node_to_dof_map_from])
     sol = LinearSolve.solve!(operator.evaluation_cache.source_linsolve_cache)
     operator.evaluation_cache.γf .= sol.u
-    operator.evaluation_cache.source_linsolve_cache.b .= 1.0
-    sol = LinearSolve.solve!(operator.evaluation_cache.source_linsolve_cache)
-    operator.evaluation_cache.γg .= sol.u
     u_to[operator.mapping.node_to_dof_map_to] .=
         (operator.evaluation_cache.destination_influence_matrix * operator.evaluation_cache.γf) ./
         (operator.evaluation_cache.destination_influence_matrix * operator.evaluation_cache.γg)
