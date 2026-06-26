@@ -495,7 +495,7 @@ function construct_RBF_dist_kdtree(
 
     # First pass: count exact number of nonzeros
     nnz = 0
-    @inbounds for j in 1:N_src
+    @inbounds for j = 1:N_src
         radius = distances[j] * α
         idxs = inrange(tree, coords_src[j], radius)
         nnz += length(idxs)
@@ -505,10 +505,10 @@ function construct_RBF_dist_kdtree(
     rows = Vector{Int}(undef, nnz)
     cols = Vector{Int}(undef, nnz)
     vals = Vector{Float64}(undef, nnz)
-    
+
     # Second pass: fill arrays
     idx = 1
-    @inbounds for j in 1:N_src
+    @inbounds for j = 1:N_src
         radius = distances[j] * α
         idxs = inrange(tree, coords_src[j], radius)
         for i in idxs
@@ -529,12 +529,12 @@ function construct_RBF_dist_kdtree(
 
     # Build CSR row pointers
     rowptr = ones(Int, N_dst + 1)
-    @inbounds for k in 1:nnz
-        rowptr[rows_sorted[k] + 1] = k + 1
+    @inbounds for k = 1:nnz
+        rowptr[rows_sorted[k]+1] = k + 1
     end
-    
+
     # Cumulative max to fill gaps (rows with no entries)
-    @inbounds for r in 2:N_dst+1
+    @inbounds for r = 2:(N_dst+1)
         rowptr[r] = max(rowptr[r], rowptr[r-1])
     end
 
