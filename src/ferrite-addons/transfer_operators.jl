@@ -230,11 +230,11 @@ function create_field_transfer_eval_cache(
         mapping,
         dh_from,
     )
-    source_influence_matrix = build_sparse_matrix_kdtree(
+    source_influence_matrix = construct_RBF_dist_kdtree(
+        mapping.nodes_from,
+        support_radii,
         mapping.nodes_from,
         rbf_value,
-        source_kdtree,
-        support_radii,
         distance_measure_cache,
         α,
     )
@@ -477,44 +477,6 @@ end
     (max((1 - d / r), zero(r))^4) * (1 + 4d / r)
 end
 
-function build_sparse_matrix_kdtree(coords_vec, rbf_func, tree, distances, distance_func, α = 2.0)
-    N = length(coords_vec)
-
-    # First pass: estimate number of nonzeros to pre-size arrays
-    nnz_est = 0
-    for j = 1:N
-        radius = distances[j] * α
-        idxs = inrange(tree, coords_vec[j], radius)
-        nnz_est += length(idxs)
-    end
-
-    rows = zeros(Int, nnz_est)
-    cols = zeros(Int, nnz_est)
-    vals = zeros(Float64, nnz_est)
-    i__ = 1
-    # Second pass: fill arrays
-    @views for j = 1:N
-        radius = distances[j] * α
-        # Query all points within radius around point j (including j itself)
-        idxs = inrange(tree, coords_vec[j], radius)
-        for i in idxs
-            d = distance_func(coords_vec, j, coords_vec, i)
-            # No need to check d < radius – guaranteed by inrange
-            val = rbf_func(d, radius)
-            rows[i__] = i
-            cols[i__] = j
-            vals[i__] = val
-            i__ += 1
-        end
-    end
-    # resize!(rows, length(rows))
-    # resize!(cols, length(cols))
-    # resize!(vals, length(vals))
-    # Build CSC matrix; duplicate entries (if any) will be summed automatically
-    A = SparseArrays.sparse!(rows, cols, vals)
-    return A
-end
-
 function construct_RBF_dist_kdtree(
     coords_src,
     distances,
@@ -557,6 +519,7 @@ function construct_RBF_dist_kdtree(
     A = SparseArrays.sparse!(rows, cols, vals, length(coords_dist), length(coords_src))
     return A
 end
+
 """
     RadialBasisFunctionTransferOperator(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
     RadialBasisFunctionTransferOperator(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
