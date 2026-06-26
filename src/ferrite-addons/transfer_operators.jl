@@ -488,39 +488,57 @@ function construct_RBF_dist_kdtree(
     distance_func,
     α = 2.0,
 )
-    N_src = length(coords_src)   # number of columns in A
+    N_src = length(coords_src)
+    N_dst = length(coords_dist)
 
-    # Build KD‑tree on destination points (used to query points within radius)
     tree = KDTree(coords_dist)
 
-    # First pass: estimate number of nonzeros
-    nnz_est = 0
-    for j = 1:N_src
+    # First pass: count exact number of nonzeros
+    nnz = 0
+    @inbounds for j in 1:N_src
         radius = distances[j] * α
         idxs = inrange(tree, coords_src[j], radius)
-        nnz_est += length(idxs)
+        nnz += length(idxs)
     end
 
-    rows = zeros(Int, nnz_est)
-    cols = zeros(Int, nnz_est)
-    vals = zeros(Float64, nnz_est)
-    i__ = 1
+    # Exact pre-allocation
+    rows = Vector{Int}(undef, nnz)
+    cols = Vector{Int}(undef, nnz)
+    vals = Vector{Float64}(undef, nnz)
+    
     # Second pass: fill arrays
-    @views @inbounds for j = 1:N_src
+    idx = 1
+    @inbounds for j in 1:N_src
         radius = distances[j] * α
         idxs = inrange(tree, coords_src[j], radius)
         for i in idxs
             d = distance_func(coords_src, j, coords_dist, i)
             val = rbf_func(d, radius)
-            rows[i__] = i
-            cols[i__] = j
-            vals[i__] = val
-            i__ += 1
+            rows[idx] = i
+            cols[idx] = j
+            vals[idx] = val
+            idx += 1
         end
     end
-    # Build CSC matrix of size N_dst × N_src
-    A = SparseArrays.sparse!(rows, cols, vals, length(coords_dist), length(coords_src))
-    return A
+
+    # Sort by row index
+    p = sortperm(rows)
+    rows_sorted = rows[p]
+    cols_sorted = cols[p]
+    vals_sorted = vals[p]
+
+    # Build CSR row pointers
+    rowptr = ones(Int, N_dst + 1)
+    @inbounds for k in 1:nnz
+        rowptr[rows_sorted[k] + 1] = k + 1
+    end
+    
+    # Cumulative max to fill gaps (rows with no entries)
+    @inbounds for r in 2:N_dst+1
+        rowptr[r] = max(rowptr[r], rowptr[r-1])
+    end
+
+    return ThreadedSparseMatrixCSR(N_dst, N_src, rowptr, cols_sorted, vals_sorted)
 end
 
 """
