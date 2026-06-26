@@ -61,7 +61,7 @@ using SparseMatricesCSR, LinearAlgebra
 using OrderedCollections: OrderedDict, OrderedSet
 using BlockArrays, SparseArrays, StaticArrays
 using NearestNeighbors
-import Graphs: SimpleGraph, dijkstra_shortest_paths, add_edge!
+import Graphs: SimpleGraph, dijkstra_shortest_paths, add_edge!, neighborhood_dists, a_star, nv
 import Graphs.Parallel
 import Graphs.vertices as GraphsVertices
 

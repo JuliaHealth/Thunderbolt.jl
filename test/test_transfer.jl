@@ -24,12 +24,7 @@
 
             target_u = [NaN for i = 1:ndofs(target_dh)]
             Thunderbolt.transfer!(target_u, op, source_u)
-            VTKGridFile("sthsth.vtu", target_mesh) do vtk
-                write_solution(vtk, target_dh, target_u)
-            end
-            VTKGridFile("sthsthsrc.vtu", source_mesh) do vtk
-                write_solution(vtk, source_dh, source_u)
-            end
+
             cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 2}())
             for cc in CellIterator(target_dh.subdofhandlers[1])
                 Ferrite.reinit!(cvv, cc)
@@ -154,37 +149,45 @@
         ("NodalIntergridInterpolation", Thunderbolt.NodalIntergridInterpolation),
         (
             "RL-RBF",
-            (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
-                varargs...;
-                rescale = Val(true),
-                geodesic = Val(false),
+            (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
+                varargs...,
+                Thunderbolt.RescaledRadialBasisFunctionEvaluation(
+                    Thunderbolt.EuclideanDistanceMeasure(5, 2.0),
+                    LinearSolve.KrylovJL_GMRES(),
+                );
                 kwargs...,
             ),
         ),
         (
             "RBF",
-            (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
-                varargs...;
-                rescale = Val(false),
-                geodesic = Val(false),
+            (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
+                varargs...,
+                Thunderbolt.RadialBasisFunctionEvaluation(
+                    Thunderbolt.EuclideanDistanceMeasure(5, 2.0),
+                    LinearSolve.KrylovJL_GMRES(),
+                );
                 kwargs...,
             ),
         ),
         (
             "RL-RBF-G",
-            (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
-                varargs...;
-                rescale = Val(true),
-                geodesic = Val(true),
+            (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
+                varargs...,
+                Thunderbolt.RescaledRadialBasisFunctionEvaluation(
+                    Thunderbolt.GeodesicDistanceMeasure(5, 2.0, 2.0),
+                    LinearSolve.KrylovJL_GMRES(),
+                );
                 kwargs...,
             ),
         ),
         (
             "RBF-G",
-            (varargs...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(
-                varargs...;
-                rescale = Val(false),
-                geodesic = Val(true),
+            (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
+                varargs...,
+                Thunderbolt.RadialBasisFunctionEvaluation(
+                    Thunderbolt.GeodesicDistanceMeasure(5, 2.0, 2.0),
+                    LinearSolve.KrylovJL_GMRES(),
+                );
                 kwargs...,
             ),
         ),
