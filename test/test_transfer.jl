@@ -152,6 +152,7 @@
             (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
                 varargs...,
                 Thunderbolt.RescaledRadialBasisFunctionEvaluation(
+                    Thunderbolt.WendlandRadialBasisFunction{3, 1}(),
                     Thunderbolt.EuclideanDistanceMeasure(5, 2.0),
                     LinearSolve.KrylovJL_GMRES(),
                 );
@@ -163,6 +164,7 @@
             (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
                 varargs...,
                 Thunderbolt.RadialBasisFunctionEvaluation(
+                    Thunderbolt.WendlandRadialBasisFunction{3, 1}(),
                     Thunderbolt.EuclideanDistanceMeasure(5, 2.0),
                     LinearSolve.KrylovJL_GMRES(),
                 );
@@ -174,6 +176,7 @@
             (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
                 varargs...,
                 Thunderbolt.RescaledRadialBasisFunctionEvaluation(
+                    Thunderbolt.WendlandRadialBasisFunction{3, 1}(),
                     Thunderbolt.GeodesicDistanceMeasure(5, 2.0, 2.0),
                     LinearSolve.KrylovJL_GMRES(),
                 );
@@ -185,6 +188,7 @@
             (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
                 varargs...,
                 Thunderbolt.RadialBasisFunctionEvaluation(
+                    Thunderbolt.WendlandRadialBasisFunction{3, 1}(),
                     Thunderbolt.GeodesicDistanceMeasure(5, 2.0, 2.0),
                     LinearSolve.KrylovJL_GMRES(),
                 );

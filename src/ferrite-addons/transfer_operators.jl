@@ -12,6 +12,24 @@ abstract type AbstractFieldTransferEvaluationCache end
 
 abstract type AbstractRadialBasisFunctionTransferEvaluation <: AbstractFieldTransferEvaluation end
 
+abstract type AbstractRadialBasisFunction end
+
+abstract type AbstractLoocalizedRadialBasisFuncttion <: AbstractRadialBasisFunction end
+
+struct WendlandRadialBasisFunction{Dim, k} <: AbstractLoocalizedRadialBasisFuncttion end
+
+@inline function (::WendlandRadialBasisFunction{3, 0})(r)
+    (max((1 - r), zero(r))^2)
+end
+
+@inline function (::WendlandRadialBasisFunction{3, 1})(r)
+    (max((1 - r), zero(r))^4) * (1 + 4r)
+end
+
+@inline function (::WendlandRadialBasisFunction{3, 2})(r)
+    (max((1 - r), zero(r))^6) * (35*r^2 + 18r + 3)
+end
+
 struct IntergridDofMapping{VecT <: AbstractVector{<:Real}, IntT <: Integer}
     nodes_from::Vector{VecT}
     nodes_to::Vector{VecT}
@@ -152,8 +170,9 @@ function (measure::GeodesicDistanceMeasureCache)(x, xi, y, yi)
     return ret
 end
 
-struct RadialBasisFunctionEvaluation{DistanceMeasureT <: AbstractDistanceMeasure, SLinsolveCT} <:
+struct RadialBasisFunctionEvaluation{DistanceMeasureT <: AbstractDistanceMeasure, SLinsolveCT, RBF<:AbstractRadialBasisFunction} <:
        AbstractRadialBasisFunctionTransferEvaluation
+    rbf::RBF
     distance_measure::DistanceMeasureT
     source_linsolve::SLinsolveCT
 end
@@ -161,7 +180,9 @@ end
 struct RescaledRadialBasisFunctionEvaluation{
     DistanceMeasureT <: AbstractDistanceMeasure,
     SLinsolveCT,
+    RBF<:AbstractRadialBasisFunction
 } <: AbstractRadialBasisFunctionTransferEvaluation
+    rbf::RBF
     distance_measure::DistanceMeasureT
     source_linsolve::SLinsolveCT
 end
@@ -201,6 +222,7 @@ function create_field_transfer_eval_cache(
     dh_from::DofHandler,
     dh_to::DofHandler,
 )
+    rbf_value = evaluator_type.rbf
     M = evaluator_type.distance_measure.M
     α = evaluator_type.distance_measure.α
     source_linsolve = evaluator_type.source_linsolve
@@ -456,7 +478,6 @@ function IntergridDofMapping(
     )
 end
 
-
 """
     NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
     NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
@@ -470,14 +491,8 @@ interpolation values, as this operator does not have extrapolation functionality
 !!! note
     We assume a continuous coordinate field, if the interpolation of the named field is continuous.
 """
-
-
 function NodalIntergridInterpolation(args...; kwargs...)
     FieldTransferOperator(args..., NodalIntergridEvaluation(); kwargs...)
-end
-
-@inline function rbf_value(d, r)
-    (max((1 - d / r), zero(r))^4) * (1 + 4d / r)
 end
 
 function construct_RBF_dist_kdtree(
@@ -486,7 +501,7 @@ function construct_RBF_dist_kdtree(
     coords_dist,
     rbf_func,
     distance_func,
-    α = 2.0,
+    α,
 )
     N_src = length(coords_src)
     N_dst = length(coords_dist)
@@ -513,7 +528,7 @@ function construct_RBF_dist_kdtree(
         idxs = inrange(tree, coords_src[j], radius)
         for i in idxs
             d = distance_func(coords_src, j, coords_dist, i)
-            val = rbf_func(d, radius)
+            val = rbf_func(d/radius)
             rows[idx] = i
             cols[idx] = j
             vals[idx] = val
