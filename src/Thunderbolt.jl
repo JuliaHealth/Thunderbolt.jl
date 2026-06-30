@@ -310,6 +310,12 @@ export
     load_voom2_grid,
     load_mfem_grid,
     solution_size,
+    NodalIntergridInterpolation,
+    transfer!,
+    RL_RBF,
+    L_RBF,
+    RL_RBF_G,
+    L_RBF_G,
     # IO
     ParaViewWriter,
     JLD2Writer,

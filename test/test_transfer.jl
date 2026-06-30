@@ -154,11 +154,7 @@
                     "RL-RBF α = $α, M = $M, k = $k",
                     (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
                         varargs...,
-                        Thunderbolt.RescaledRadialBasisFunctionEvaluation(
-                            Thunderbolt.WendlandRadialBasisFunction{3, k}(),
-                            Thunderbolt.EuclideanDistanceMeasure(M, α),
-                            LinearSolve.KrylovJL_GMRES(),
-                        );
+                        Thunderbolt.RL_RBF(k, M, α);
                         kwargs...,
                     ),
                 ),
@@ -166,11 +162,7 @@
                     "L-RBF α = $α, M = $M, k = $k",
                     (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
                         varargs...,
-                        Thunderbolt.RadialBasisFunctionEvaluation(
-                            Thunderbolt.WendlandRadialBasisFunction{3, k}(),
-                            Thunderbolt.EuclideanDistanceMeasure(M, α),
-                            LinearSolve.KrylovJL_GMRES(),
-                        );
+                        Thunderbolt.L_RBF(k, M, α);
                         kwargs...,
                     ),
                 ),
@@ -178,11 +170,7 @@
                     "RL-RBF-G α = $α, M = $M, k = $k",
                     (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
                         varargs...,
-                        Thunderbolt.RescaledRadialBasisFunctionEvaluation(
-                            Thunderbolt.WendlandRadialBasisFunction{3, k}(),
-                            Thunderbolt.GeodesicDistanceMeasure(M, α, α),
-                            LinearSolve.KrylovJL_GMRES(),
-                        );
+                        Thunderbolt.RL_RBF_G(k, M, α);
                         kwargs...,
                     ),
                 ),
@@ -190,11 +178,7 @@
                     "L-RBF-G α = $α, M = $M, k = $k",
                     (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
                         varargs...,
-                        Thunderbolt.RadialBasisFunctionEvaluation(
-                            Thunderbolt.WendlandRadialBasisFunction{3, k}(),
-                            Thunderbolt.GeodesicDistanceMeasure(M, α, α),
-                            LinearSolve.KrylovJL_GMRES(),
-                        );
+                        Thunderbolt.L_RBF_G(k, M, α);
                         kwargs...,
                     ),
                 ),

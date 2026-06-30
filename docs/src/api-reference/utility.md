@@ -42,9 +42,20 @@ finalize!
 
 ## Transfer Operators
 
+Field transfer operators move solution values between compatible Ferrite dof handlers.
+The public API currently exposes nodal intergrid interpolation together with the generic
+`transfer!` method for applying the constructed transfer operator.
+
+Additionally, a set of convenience RBF evaluator constructors are provided for building
+radial basis function transfer operators with Euclidean or geodesic distance metrics.
+
 ```@docs
 Thunderbolt.NodalIntergridInterpolation
 Thunderbolt.transfer!
+Thunderbolt.RL_RBF
+Thunderbolt.L_RBF
+Thunderbolt.RL_RBF_G
+Thunderbolt.L_RBF_G
 ```
 
 ## Postprocessing

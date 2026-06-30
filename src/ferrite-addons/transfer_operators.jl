@@ -1,21 +1,67 @@
 include("graphs_utiils.jl")
 
+"""
+    AbstractTransferOperator
+
+Base type for operators that move field data between discretizations.
+"""
 abstract type AbstractTransferOperator end
 
+"""
+    AbstractDistanceMeasure
+
+Base type for distance metrics used by radial basis function evaluations.
+"""
 abstract type AbstractDistanceMeasure end
 
+"""
+    AbstractDistanceMeasureCache
+
+Base cache type for repeated RBF distance queries.
+"""
 abstract type AbstractDistanceMeasureCache end
 
+"""
+    AbstractFieldTransferEvaluation
+
+Base type for field transfer evaluation strategies.
+"""
 abstract type AbstractFieldTransferEvaluation end
 
+"""
+    AbstractFieldTransferEvaluationCache
+
+Base cache type for field transfer, storing strategy-specific data.
+"""
 abstract type AbstractFieldTransferEvaluationCache end
 
+"""
+    AbstractRadialBasisFunctionTransferEvaluation
+
+Base type for radial basis function transfer evaluator configurations.
+"""
 abstract type AbstractRadialBasisFunctionTransferEvaluation <: AbstractFieldTransferEvaluation end
 
+"""
+    AbstractRadialBasisFunction
+
+Base type for radial basis functions used in transfer.
+"""
 abstract type AbstractRadialBasisFunction end
 
+"""
+    AbstractLoocalizedRadialBasisFuncttion
+
+Base type for compactly supported radial basis functions.
+"""
 abstract type AbstractLoocalizedRadialBasisFuncttion <: AbstractRadialBasisFunction end
 
+"""
+    WendlandRadialBasisFunction{Dim, k}
+
+A compactly supported Wendland radial basis function with spatial dimension `Dim`
+and smoothness degree `2k`.
+"""
 struct WendlandRadialBasisFunction{Dim, k} <: AbstractLoocalizedRadialBasisFuncttion end
 
 @inline function (::WendlandRadialBasisFunction{3, 0})(r)
@@ -30,6 +76,14 @@ end
     (max((1 - r), zero(r))^6) * (35*r^2 + 18r + 3)
 end
 
+"""
+    IntergridDofMapping{VecT, IntT}
+
+A mapping between nodes and degrees of freedom used for field transfer.
+
+The mapping stores the coordinates of the selected source and destination dofs and
+provides fast translations between dof indices and node indices for transfer evaluation.
+"""
 struct IntergridDofMapping{VecT <: AbstractVector{<:Real}, IntT <: Integer}
     nodes_from::Vector{VecT}
     nodes_to::Vector{VecT}
@@ -39,11 +93,27 @@ struct IntergridDofMapping{VecT <: AbstractVector{<:Real}, IntT <: Integer}
     dof_to_node_map_to::Dict{IntT, IntT}
 end
 
+"""
+    EuclideanDistanceMeasure(M, α)
+
+A Euclidean distance measure for radial basis function transfer operators.
+
+`M` and `α` are the number of connected neighbors used for support radius calculation
+and the scaling factor for support radii.
+"""
 struct EuclideanDistanceMeasure <: AbstractDistanceMeasure
     M::Int
     α::Float64
 end
 
+"""
+    EuclideanDistanceMeasureCache(M, α)
+
+Cache for Euclidean distance computations used in RBF transfer evaluation.
+
+`M` and `α` are the number of connected neighbors used for support radius calculation
+and the scaling factor for support radii.
+"""
 struct EuclideanDistanceMeasureCache <: AbstractDistanceMeasureCache
     M::Int
     α::Float64
@@ -57,12 +127,28 @@ function (::EuclideanDistanceMeasureCache)(x, xi, y, yi)
     return norm(x[xi] - y[yi])
 end
 
+"""
+    GeodesicDistanceMeasure(M, α, β)
+
+A geodesic distance measure that combines mesh connectivity and Euclidean distance
+for radial basis function interpolation.
+
+`M` and `α` are the number of connected neighbors used for support radius calculation
+and the scaling factor for support radii.
+
+`β` is the scaling factor used to decide on whether to use geodesic or Euclidean distance for said node.
+"""
 struct GeodesicDistanceMeasure <: AbstractDistanceMeasure
     M::Int
     α::Float64
     β::Float64
 end
 
+"""
+    GeodesicDistanceMeasureCache(source_kdtree, source_graph, support_radii, edge_lengths_matrix, M, α, β)
+
+Cache for fast geodesic distance evaluation using a precomputed graph and per-node support radii.
+"""
 struct GeodesicDistanceMeasureCache{
     KDTreeT,
     GraphT,
@@ -161,6 +247,11 @@ function (measure::GeodesicDistanceMeasureCache)(x, xi, y, yi)
     return ret
 end
 
+"""
+    RadialBasisFunctionEvaluation(rbf, distance_measure, source_linsolve)
+
+A compactly supported RBF transfer evaluator.
+"""
 struct RadialBasisFunctionEvaluation{
     DistanceMeasureT <: AbstractDistanceMeasure,
     SLinsolveCT,
@@ -171,6 +262,11 @@ struct RadialBasisFunctionEvaluation{
     source_linsolve::SLinsolveCT
 end
 
+"""
+    RescaledRadialBasisFunctionEvaluation(rbf, distance_measure, source_linsolve)
+
+A compactly supported RBF transfer evaluator that rescales the destination output to preserve normalization.
+"""
 struct RescaledRadialBasisFunctionEvaluation{
     DistanceMeasureT <: AbstractDistanceMeasure,
     SLinsolveCT,
@@ -181,6 +277,56 @@ struct RescaledRadialBasisFunctionEvaluation{
     source_linsolve::SLinsolveCT
 end
 
+"""
+    RL_RBF(k, M, α; linsolve = LinearSolve.KrylovJL_GMRES())
+
+Convenience constructor for a rescaled RBF evaluator with Euclidean distance.
+"""
+RL_RBF(k, M, α; linsolve = LinearSolve.KrylovJL_GMRES()) = RescaledRadialBasisFunctionEvaluation(
+    WendlandRadialBasisFunction{3, k}(),
+    EuclideanDistanceMeasure(M, α),
+    linsolve,
+)
+
+"""
+    L_RBF(k, M, α; linsolve = LinearSolve.KrylovJL_GMRES())
+
+Convenience constructor for a plain RBF evaluator with Euclidean distance.
+"""
+L_RBF(k, M, α; linsolve = LinearSolve.KrylovJL_GMRES()) = RadialBasisFunctionEvaluation(
+    WendlandRadialBasisFunction{3, k}(),
+    EuclideanDistanceMeasure(M, α),
+    linsolve,
+)
+
+"""
+    RL_RBF_G(k, M, α, β=α; linsolve = LinearSolve.KrylovJL_GMRES())
+
+Convenience constructor for a rescaled RBF evaluator with geodesic distance.
+"""
+RL_RBF_G(k, M, α, β = α; linsolve = LinearSolve.KrylovJL_GMRES()) =
+    RescaledRadialBasisFunctionEvaluation(
+        WendlandRadialBasisFunction{3, k}(),
+        GeodesicDistanceMeasure(M, α, β),
+        linsolve,
+    )
+
+"""
+    L_RBF_G(k, M, α, β=α; linsolve = LinearSolve.KrylovJL_GMRES())
+
+Convenience constructor for a plain RBF evaluator with geodesic distance.
+"""
+L_RBF_G(k, M, α, β = α; linsolve = LinearSolve.KrylovJL_GMRES()) = RadialBasisFunctionEvaluation(
+    WendlandRadialBasisFunction{3, k}(),
+    GeodesicDistanceMeasure(M, α, β),
+    linsolve,
+)
+
+"""
+    RadialBasisFunctionEvaluationCache
+
+Cache storing precomputed influence matrices and solver state for RBF field transfer.
+"""
 struct RadialBasisFunctionEvaluationCache{
     DistanceMeasureT <: AbstractDistanceMeasureCache,
     SIMT <: AbstractMatrix,
@@ -195,6 +341,12 @@ struct RadialBasisFunctionEvaluationCache{
     source_linsolve_cache::SLinsolveCT
 end
 
+"""
+    RescaledRadialBasisFunctionEvaluationCache
+
+Cache storing precomputed influence matrices, normalization weights, and solver state
+for rescaled RBF transfer.
+"""
 struct RescaledRadialBasisFunctionEvaluationCache{
     DistanceMeasureT <: AbstractDistanceMeasureCache,
     SIMT <: AbstractMatrix,
@@ -315,8 +467,18 @@ function _create_field_transfer_eval_cache(
     )
 end
 
+"""
+    NodalIntergridEvaluation
+
+A transfer evaluation strategy that evaluates source field values at target nodal using `PointEvalHandler`.
+"""
 struct NodalIntergridEvaluation <: AbstractFieldTransferEvaluation end
 
+"""
+    NodalIntergridEvaluationCache(ph)
+
+Cache containing a prepared point evaluation handler for nodal intergrid transfer.
+"""
 struct NodalIntergridEvaluationCache{PointEvalHandlerT <: PointEvalHandler} <:
        AbstractFieldTransferEvaluationCache
     ph::PointEvalHandlerT
@@ -544,17 +706,14 @@ function construct_RBF_dist_kdtree(coords_src, distances, coords_dist, rbf_func,
 end
 
 """
-    RadialBasisFunctionTransferOperator(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
-    RadialBasisFunctionTransferOperator(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
-    RadialBasisFunctionTransferOperator(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
+    FieldTransferOperator(dh_from, dh_to, field_name_from, field_name_to, evaluation_cache_type; subdomains_from, subdomains_to)
+    FieldTransferOperator(dh_from, dh_to, evaluation_cache_type)
+    FieldTransferOperator(dh_from, dh_to, field_name, evaluation_cache_type)
 
-Construct a transfer operator to move a field `field_name` from dof handler `dh_from` to another
-dof handler `dh_to`, assuming that all spatial coordinates of the dofs for `dh_to` are in the
-interior or boundary of the mesh contained within dh_from. This is necessary to have valid
-interpolation values, as this operator does not have extrapolation functionality.
+Generic transfer operator for moving a field from one Ferrite DofHandler to another.
 
-!!! note
-    We assume a continuous coordinate field, if the interpolation of the named field is continuous.
+The operator builds an `IntergridDofMapping` and an evaluation cache to support the
+requested transfer strategy, such as nodal interpolation or radial basis function transfer.
 """
 struct FieldTransferOperator{
     EvaluationCacheT <: AbstractFieldTransferEvaluationCache,
@@ -626,7 +785,9 @@ function FieldTransferOperator(
 end
 
 """
-    This is basically a fancy matrix-vector product to transfer the solution from one problem to another one.
+    transfer!(u_to, operator::FieldTransferOperator{<:NodalIntergridEvaluationCache}, u_from)
+
+Transfer source values using nodal intergrid evaluation.
 """
 function transfer!(
     u_to::AbstractArray,
@@ -643,7 +804,9 @@ function transfer!(
 end
 
 """
-    This is basically a fancy matrix-vector product to transfer the solution from one problem to another one.
+    transfer!(u_to, operator::FieldTransferOperator{<:RescaledRadialBasisFunctionEvaluationCache}, u_from)
+
+Transfer source values using a rescaled radial basis function transfer operator.
 """
 function transfer!(
     u_to::AbstractArray,
@@ -660,7 +823,9 @@ function transfer!(
 end
 
 """
-    This is basically a fancy matrix-vector product to transfer the solution from one problem to another one.
+    transfer!(u_to, operator::FieldTransferOperator{<:RadialBasisFunctionEvaluationCache}, u_from)
+
+Transfer source values using a plain radial basis function transfer operator.
 """
 function transfer!(
     u_to::AbstractArray,
