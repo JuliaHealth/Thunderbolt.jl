@@ -57,14 +57,6 @@ function (::EuclideanDistanceMeasureCache)(x, xi, y, yi)
     return norm(x[xi] - y[yi])
 end
 
-struct NullDistanceMeasure <: AbstractDistanceMeasure end
-
-struct NullDistanceMeasureCache <: AbstractDistanceMeasureCache end
-
-function create_distance_measure_cache(::NullDistanceMeasure, argv...)
-    return NullDistanceMeasureCache()
-end
-
 struct GeodesicDistanceMeasure <: AbstractDistanceMeasure
     M::Int
     α::Float64
@@ -108,7 +100,6 @@ function create_distance_measure_cache(
         support_radii,
         α,
         edge_lengths_matrix;
-        parallel = true,
     )
 
     return GeodesicDistanceMeasureCache(
@@ -170,8 +161,11 @@ function (measure::GeodesicDistanceMeasureCache)(x, xi, y, yi)
     return ret
 end
 
-struct RadialBasisFunctionEvaluation{DistanceMeasureT <: AbstractDistanceMeasure, SLinsolveCT, RBF<:AbstractRadialBasisFunction} <:
-       AbstractRadialBasisFunctionTransferEvaluation
+struct RadialBasisFunctionEvaluation{
+    DistanceMeasureT <: AbstractDistanceMeasure,
+    SLinsolveCT,
+    RBF <: AbstractRadialBasisFunction,
+} <: AbstractRadialBasisFunctionTransferEvaluation
     rbf::RBF
     distance_measure::DistanceMeasureT
     source_linsolve::SLinsolveCT
@@ -180,7 +174,7 @@ end
 struct RescaledRadialBasisFunctionEvaluation{
     DistanceMeasureT <: AbstractDistanceMeasure,
     SLinsolveCT,
-    RBF<:AbstractRadialBasisFunction
+    RBF <: AbstractRadialBasisFunction,
 } <: AbstractRadialBasisFunctionTransferEvaluation
     rbf::RBF
     distance_measure::DistanceMeasureT
@@ -239,9 +233,9 @@ function create_field_transfer_eval_cache(
         SimpleGraph(distances_source[mapping.node_to_dof_map_from, mapping.node_to_dof_map_from])
     Nsrc = length(mapping.nodes_from)
     support_radii = zeros(Float64, Nsrc)
-    for src = 1:Nsrc
+    @inbounds for src = 1:Nsrc
         hop_dists = neighborhood_dists(source_graph, src, M)
-        dist = maximum(x->last(x), hop_dists)
+        dist = maximum(norm.(Ref(mapping.nodes_from[src]) .- mapping.nodes_from[first.(hop_dists)]))
         support_radii[src] = dist
     end
     distance_measure_cache = create_distance_measure_cache(
@@ -495,14 +489,7 @@ function NodalIntergridInterpolation(args...; kwargs...)
     FieldTransferOperator(args..., NodalIntergridEvaluation(); kwargs...)
 end
 
-function construct_RBF_dist_kdtree(
-    coords_src,
-    distances,
-    coords_dist,
-    rbf_func,
-    distance_func,
-    α,
-)
+function construct_RBF_dist_kdtree(coords_src, distances, coords_dist, rbf_func, distance_func, α)
     N_src = length(coords_src)
     N_dst = length(coords_dist)
 

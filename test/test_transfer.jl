@@ -145,56 +145,65 @@
             push!(cells_remaining, cellid(cc))
         end
     end
+
+    rbf_test_cases = reduce(
+        vcat,
+        [
+            [
+                (
+                    "RL-RBF α = $α, M = $M, k = $k",
+                    (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
+                        varargs...,
+                        Thunderbolt.RescaledRadialBasisFunctionEvaluation(
+                            Thunderbolt.WendlandRadialBasisFunction{3, k}(),
+                            Thunderbolt.EuclideanDistanceMeasure(M, α),
+                            LinearSolve.KrylovJL_GMRES(),
+                        );
+                        kwargs...,
+                    ),
+                ),
+                (
+                    "L-RBF α = $α, M = $M, k = $k",
+                    (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
+                        varargs...,
+                        Thunderbolt.RadialBasisFunctionEvaluation(
+                            Thunderbolt.WendlandRadialBasisFunction{3, k}(),
+                            Thunderbolt.EuclideanDistanceMeasure(M, α),
+                            LinearSolve.KrylovJL_GMRES(),
+                        );
+                        kwargs...,
+                    ),
+                ),
+                (
+                    "RL-RBF-G α = $α, M = $M, k = $k",
+                    (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
+                        varargs...,
+                        Thunderbolt.RescaledRadialBasisFunctionEvaluation(
+                            Thunderbolt.WendlandRadialBasisFunction{3, k}(),
+                            Thunderbolt.GeodesicDistanceMeasure(M, α, α),
+                            LinearSolve.KrylovJL_GMRES(),
+                        );
+                        kwargs...,
+                    ),
+                ),
+                (
+                    "L-RBF-G α = $α, M = $M, k = $k",
+                    (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
+                        varargs...,
+                        Thunderbolt.RadialBasisFunctionEvaluation(
+                            Thunderbolt.WendlandRadialBasisFunction{3, k}(),
+                            Thunderbolt.GeodesicDistanceMeasure(M, α, α),
+                            LinearSolve.KrylovJL_GMRES(),
+                        );
+                        kwargs...,
+                    ),
+                ),
+            ] for α ∈ 1.5:1.5:3.0, M ∈ 1:2, k ∈ 0:2 # Due to how the circle connectivity the tests for lower alphas fail
+        ],
+    )
     @testset "Transfer Operator: $name" for (name, transfer_operator) in (
         ("NodalIntergridInterpolation", Thunderbolt.NodalIntergridInterpolation),
-        (
-            "RL-RBF",
-            (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
-                varargs...,
-                Thunderbolt.RescaledRadialBasisFunctionEvaluation(
-                    Thunderbolt.WendlandRadialBasisFunction{3, 1}(),
-                    Thunderbolt.EuclideanDistanceMeasure(5, 2.0),
-                    LinearSolve.KrylovJL_GMRES(),
-                );
-                kwargs...,
-            ),
-        ),
-        (
-            "RBF",
-            (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
-                varargs...,
-                Thunderbolt.RadialBasisFunctionEvaluation(
-                    Thunderbolt.WendlandRadialBasisFunction{3, 1}(),
-                    Thunderbolt.EuclideanDistanceMeasure(5, 2.0),
-                    LinearSolve.KrylovJL_GMRES(),
-                );
-                kwargs...,
-            ),
-        ),
-        (
-            "RL-RBF-G",
-            (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
-                varargs...,
-                Thunderbolt.RescaledRadialBasisFunctionEvaluation(
-                    Thunderbolt.WendlandRadialBasisFunction{3, 1}(),
-                    Thunderbolt.GeodesicDistanceMeasure(5, 2.0, 2.0),
-                    LinearSolve.KrylovJL_GMRES(),
-                );
-                kwargs...,
-            ),
-        ),
-        (
-            "RBF-G",
-            (varargs...; kwargs...) -> Thunderbolt.FieldTransferOperator(
-                varargs...,
-                Thunderbolt.RadialBasisFunctionEvaluation(
-                    Thunderbolt.WendlandRadialBasisFunction{3, 1}(),
-                    Thunderbolt.GeodesicDistanceMeasure(5, 2.0, 2.0),
-                    LinearSolve.KrylovJL_GMRES(),
-                );
-                kwargs...,
-            ),
-        ),
+        rbf_test_cases...,
     )
         test_transfer(source_mesh, target_mesh, transfer_operator)
     end

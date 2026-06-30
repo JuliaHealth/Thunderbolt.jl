@@ -15,30 +15,17 @@ function precompute_dijkstra_with_cutoffs(
     support_radii::Vector{T},
     α::T,
     edge_lengths_matrix::AbstractMatrix{T};
-    parallel::Bool = true,
 ) where {T <: Number}
 
     n_nodes = length(all_nodes)
     results = Vector{Vector{T}}(undef, n_nodes)
 
-    if parallel
-        Threads.@threads for i = 1:n_nodes
-            node = all_nodes[i]
-            maxdist = support_radii[i] * α
+    Threads.@threads for i = 1:n_nodes
+        node = all_nodes[i]
+        maxdist = support_radii[i] * α
 
-            state =
-                dijkstra_shortest_paths(source_graph, node, edge_lengths_matrix; maxdist = maxdist)
-            results[i] = state.dists
-        end
-    else
-        for i = 1:n_nodes
-            node = all_nodes[i]
-            maxdist = support_radii[i] * α
-
-            state =
-                dijkstra_shortest_paths(source_graph, node, edge_lengths_matrix; maxdist = maxdist)
-            results[i] = state.dists
-        end
+        state = dijkstra_shortest_paths(source_graph, node, edge_lengths_matrix; maxdist = maxdist)
+        results[i] = state.dists
     end
 
     # Convert to dictionary after all threads complete
