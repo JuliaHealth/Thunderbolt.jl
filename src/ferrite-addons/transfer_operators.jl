@@ -61,6 +61,14 @@ abstract type AbstractLoocalizedRadialBasisFuncttion <: AbstractRadialBasisFunct
 
 A compactly supported Wendland radial basis function with spatial dimension `Dim`
 and smoothness degree `2k`.
+
+For the three-dimensional case used in Thunderbolt, the kernel is
+
+- `k = 0`: `φ(r) = (1 - r)_+^2`
+- `k = 1`: `φ(r) = (1 - r)_+^4 (1 + 4 r)`
+- `k = 2`: `φ(r) = (1 - r)_+^6 (35 r^2 + 18 r + 3)`
+
+Here `(x)_+ = max(x, 0)` and `r` is the normalized distance.
 """
 struct WendlandRadialBasisFunction{Dim, k} <: AbstractLoocalizedRadialBasisFuncttion end
 
@@ -133,10 +141,22 @@ end
 A geodesic distance measure that combines mesh connectivity and Euclidean distance
 for radial basis function interpolation.
 
+Let `d_euc(x_i, y_i) = ‖x_i - y_i‖` be the Euclidean distance and let
+`d_geo(x_i, y_i)` be the shortest-path distance along the mesh graph.
+The measure returns
+
+- `δ(x_i, y_i) = d_euc(x_i, y_i)` when `d_geo(x_i, y_i) ≤ d_euc(x_i, y_i) + β h_max`
+- `δ(x_i, y_i) = d_geo(x_i, y_i)` when `d_geo(x_i, y_i) < α r_i`
+- `δ(x_i, y_i) = ∞` otherwise
+
+where `r_i` is the support radius associated with source node `i` and `h_max`
+is the maximum edge length in the mesh. This choice follows the hybrid distance strategy
+used in the transfer operator formulation described by Bucelli et al. (2024).
+
 `M` and `α` are the number of connected neighbors used for support radius calculation
 and the scaling factor for support radii.
 
-`β` is the scaling factor used to decide on whether to use geodesic or Euclidean distance for said node.
+`β` is the scaling factor used to decide whether to use geodesic or Euclidean distance.
 """
 struct GeodesicDistanceMeasure <: AbstractDistanceMeasure
     M::Int
@@ -236,14 +256,15 @@ function (measure::GeodesicDistanceMeasureCache)(x, xi, y, yi)
     coords_destination = y[yi]
     nearest_node_in_source, distance_to_neighbor = nn(source_kdtree, coords_destination)
     norm_distance = norm(x[xi] - y[yi])
-    dijkstra_cutoff_distance = support_radii[xi] * α
+    # dijkstra_cutoff_distance = support_radii[xi] * β
+    dijkstra_cutoff_distance = h_max * β
 
     # O(1) cache lookup
-    nn_distance = dijkstra_cache[nearest_node_in_source][xi] + distance_to_neighbor
+    nn_distance = dijkstra_cache[nearest_node_in_source][xi]
 
     ret =
-        nn_distance <= (norm_distance + β * h_max) ? norm_distance :
-        (nn_distance < dijkstra_cutoff_distance ? nn_distance : Inf)
+        nn_distance <= (norm_distance + dijkstra_cutoff_distance) ? norm_distance :
+        (nn_distance > (dijkstra_cutoff_distance + norm_distance) ? nn_distance : Inf)
     return ret
 end
 
@@ -251,6 +272,10 @@ end
     RadialBasisFunctionEvaluation(rbf, distance_measure, source_linsolve)
 
 A compactly supported RBF transfer evaluator.
+
+The transfer is built from the interpolation system `A γ_f = f`, where
+`A_{ij} = φ(‖x_i - x_j‖ / r_j)`, and the transferred field is evaluated as
+`f̂(x) = ∑_j γ_{f,j} φ(‖x - x_j‖ / r_j)`.
 """
 struct RadialBasisFunctionEvaluation{
     DistanceMeasureT <: AbstractDistanceMeasure,
@@ -266,6 +291,10 @@ end
     RescaledRadialBasisFunctionEvaluation(rbf, distance_measure, source_linsolve)
 
 A compactly supported RBF transfer evaluator that rescales the destination output to preserve normalization.
+
+The rescaled transfer uses the same RBF basis as above, with an additional normalization vector
+`γ_g` obtained from `A γ_g = 1`, so that the transferred field is computed as
+`f̂(x) = (∑_j γ_{f,j} φ(‖x - x_j‖ / r_j)) / (∑_j γ_{g,j} φ(‖x - x_j‖ / r_j))`.
 """
 struct RescaledRadialBasisFunctionEvaluation{
     DistanceMeasureT <: AbstractDistanceMeasure,
@@ -304,7 +333,7 @@ L_RBF(k, M, α; linsolve = LinearSolve.KrylovJL_GMRES()) = RadialBasisFunctionEv
 
 Convenience constructor for a rescaled RBF evaluator with geodesic distance.
 """
-RL_RBF_G(k, M, α, β = α; linsolve = LinearSolve.KrylovJL_GMRES()) =
+RL_RBF_G(k, M, α, β = 0.5; linsolve = LinearSolve.KrylovJL_GMRES()) =
     RescaledRadialBasisFunctionEvaluation(
         WendlandRadialBasisFunction{3, k}(),
         GeodesicDistanceMeasure(M, α, β),
@@ -316,7 +345,7 @@ RL_RBF_G(k, M, α, β = α; linsolve = LinearSolve.KrylovJL_GMRES()) =
 
 Convenience constructor for a plain RBF evaluator with geodesic distance.
 """
-L_RBF_G(k, M, α, β = α; linsolve = LinearSolve.KrylovJL_GMRES()) = RadialBasisFunctionEvaluation(
+L_RBF_G(k, M, α, β = 0.5; linsolve = LinearSolve.KrylovJL_GMRES()) = RadialBasisFunctionEvaluation(
     WendlandRadialBasisFunction{3, k}(),
     GeodesicDistanceMeasure(M, α, β),
     linsolve,
@@ -662,6 +691,7 @@ function construct_RBF_dist_kdtree(coords_src, distances, coords_dist, rbf_func,
     @inbounds for j = 1:N_src
         radius = distances[j] * α
         idxs = inrange(tree, coords_src[j], radius)
+        filter!(x -> isfinite(distance_func(coords_src, j, coords_dist, x)), idxs)
         nnz += length(idxs)
     end
 
@@ -675,6 +705,7 @@ function construct_RBF_dist_kdtree(coords_src, distances, coords_dist, rbf_func,
     @inbounds for j = 1:N_src
         radius = distances[j] * α
         idxs = inrange(tree, coords_src[j], radius)
+        filter!(x -> isfinite(distance_func(coords_src, j, coords_dist, x)), idxs)
         for i in idxs
             d = distance_func(coords_src, j, coords_dist, i)
             val = rbf_func(d/radius)

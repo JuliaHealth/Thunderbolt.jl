@@ -159,7 +159,7 @@
                         qp.ξ,
                         getcoordinates(cc),
                     )
-                norm(x) > 0.9 && continue
+                any(norm.(getcoordinates(cc)) .> 1.0) && continue
                 @test function_value(cvv, qp, target_u[dofs_v]) ≈ norm(x) atol=3e-1                end
             end
         end
