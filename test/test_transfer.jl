@@ -37,8 +37,8 @@
                         getcoordinates(cc),
                     )
                     @test function_value(cvv, qp, target_u[dofs_v]) ≈ -norm(x) atol=3e-1
-                    @test all(isnan.(target_u[dofs_w]))
                 end
+                @test all(isnan.(target_u[dofs_w]))
             end
 
             op = transfer_operator(source_dh, target_dh, :z, :w)
@@ -55,9 +55,9 @@
                         qp.ξ,
                         getcoordinates(cc),
                     )
-                    @test all(isnan.(target_u[dofs_v]))
                     @test function_value(cvw, qp, target_u[dofs_w]) ≈ norm(x) atol=3e-1
                 end
+                @test all(isnan.(target_u[dofs_v]))
             end
         end
 
@@ -108,8 +108,8 @@
                         getcoordinates(cc),
                     )
                     @test function_value(cvv, qp, target_u[dofs_v]) ≈ -norm(x) atol=3e-1
-                    @test all(isnan.(target_u[dofs_w]))
                 end
+                @test all(isnan.(target_u[dofs_w]))
             end
 
             op = transfer_operator(source_dh, target_dh, :z, :w; subdomains_to = target_sdhids)
@@ -126,9 +126,41 @@
                         qp.ξ,
                         getcoordinates(cc),
                     )
-                    @test all(isnan.(target_u[dofs_v]))
                     @test function_value(cvw, qp, target_u[dofs_w]) ≈ norm(x) atol=3e-1
                 end
+                @test all(isnan.(target_u[dofs_v]))
+            end
+        end
+
+        @testset "Convenience Constructor" begin
+            source_dh = DofHandler(source_mesh)
+            add!(source_dh, :v, Lagrange{RefQuadrilateral, 1}())
+            close!(source_dh)
+
+            source_u = ones(ndofs(source_dh))
+            apply_analytical!(source_u, source_dh, :v, x -> norm(x))
+
+            target_dh = DofHandler(target_mesh_nonmatching)
+            add!(target_dh, :v, Lagrange{RefTriangle, 2}())
+            close!(target_dh)
+
+            v_range = dof_range(target_dh.subdofhandlers[1], :v)
+
+            op = transfer_operator(source_dh, target_dh)
+            target_u = [NaN for i = 1:ndofs(target_dh)]
+            Thunderbolt.transfer!(target_u, op, source_u)
+            cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 2}())
+            for cc in CellIterator(target_dh.subdofhandlers[1])
+                Ferrite.reinit!(cvv, cc)
+                dofs_v = @view celldofs(cc)[v_range]
+                for qp in QuadratureIterator(cvv)
+                    x = Thunderbolt.spatial_coordinate(
+                        Lagrange{RefTriangle, 1}(),
+                        qp.ξ,
+                        getcoordinates(cc),
+                    )
+                norm(x) > 0.9 && continue
+                @test function_value(cvv, qp, target_u[dofs_v]) ≈ norm(x) atol=3e-1                end
             end
         end
     end
