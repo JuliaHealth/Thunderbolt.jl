@@ -60,6 +60,10 @@ import Polyester: @batch
 using SparseMatricesCSR, LinearAlgebra
 using OrderedCollections: OrderedDict, OrderedSet
 using BlockArrays, SparseArrays, StaticArrays
+using NearestNeighbors
+import Graphs: SimpleGraph, dijkstra_shortest_paths, add_edge!, neighborhood_dists, a_star, nv
+import Graphs.Parallel
+import Graphs.vertices as GraphsVertices
 
 using JLD2: jldopen
 import WriteVTK
@@ -306,6 +310,12 @@ export
     load_voom2_grid,
     load_mfem_grid,
     solution_size,
+    NodalIntergridInterpolation,
+    transfer!,
+    RL_RBF,
+    L_RBF,
+    RL_RBF_G,
+    L_RBF_G,
     # IO
     ParaViewWriter,
     JLD2Writer,

@@ -2831,10 +2831,10 @@ uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
 version = "0.5.6"
 
 [[deps.Thunderbolt]]
-deps = ["Adapt", "BlockArrays", "ConcreteStructs", "DataStructures", "DiffEqBase", "DynamicQuantities", "FastBroadcast", "Ferrite", "FerriteOperators", "ForwardDiff", "JLD2", "KernelAbstractions", "LinearAlgebra", "LinearSolve", "Logging", "ModelingToolkit", "OrderedCollections", "OrdinaryDiffEqCore", "OrdinaryDiffEqOperatorSplitting", "Polyester", "Preferences", "ReadVTK", "Reexport", "SciCompDSL", "SciMLBase", "SciMLIterators", "SciMLLogging", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "SymbolicIndexingInterface", "Tensors", "TimerOutputs", "UnPack", "Unrolled", "WriteVTK"]
+deps = ["Adapt", "BlockArrays", "ConcreteStructs", "DataStructures", "DiffEqBase", "DynamicQuantities", "FastBroadcast", "Ferrite", "FerriteOperators", "ForwardDiff", "Graphs", "JLD2", "KernelAbstractions", "LinearAlgebra", "LinearSolve", "Logging", "ModelingToolkit", "NearestNeighbors", "OrderedCollections", "OrdinaryDiffEqCore", "OrdinaryDiffEqOperatorSplitting", "Polyester", "Preferences", "ReadVTK", "Reexport", "SciCompDSL", "SciMLBase", "SciMLIterators", "SciMLLogging", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "SymbolicIndexingInterface", "Tensors", "TimerOutputs", "UnPack", "Unrolled", "WriteVTK"]
 path = ".."
 uuid = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
-version = "0.0.2"
+version = "0.0.3"
 
     [deps.Thunderbolt.extensions]
     CuThunderboltExt = ["CUDA", "GPUArrays"]
