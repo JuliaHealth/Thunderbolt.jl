@@ -48,6 +48,7 @@ The public API currently exposes nodal intergrid interpolation together with the
 
 Additionally, a set of convenience RBF evaluator constructors are provided for building
 radial basis function transfer operators with Euclidean or geodesic distance metrics.
+The geodesic-distance variant follows the hybrid-distance formulation described in [BucRegDedQua:2024:rrb](@cite).
 
 ```@docs
 Thunderbolt.NodalIntergridInterpolation

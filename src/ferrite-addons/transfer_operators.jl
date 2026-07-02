@@ -56,19 +56,21 @@ Base type for compactly supported radial basis functions.
 """
 abstract type AbstractLoocalizedRadialBasisFuncttion <: AbstractRadialBasisFunction end
 
-"""
+@doc raw"""
     WendlandRadialBasisFunction{Dim, k}
 
 A compactly supported Wendland radial basis function with spatial dimension `Dim`
 and smoothness degree `2k`.
 
-For the three-dimensional case used in Thunderbolt, the kernel is
+For the three-dimensional case used in Thunderbolt, the kernel is defined by
 
-- `k = 0`: `φ(r) = (1 - r)_+^2`
-- `k = 1`: `φ(r) = (1 - r)_+^4 (1 + 4 r)`
-- `k = 2`: `φ(r) = (1 - r)_+^6 (35 r^2 + 18 r + 3)`
+$$\phi(r) = \begin{cases}
+  (1 - r)_+^2, & k = 0, \\
+  (1 - r)_+^4 (1 + 4 r), & k = 1, \\
+  (1 - r)_+^6 (35 r^2 + 18 r + 3), & k = 2.
+\end{cases}$$
 
-Here `(x)_+ = max(x, 0)` and `r` is the normalized distance.
+Here $(x)_+ = \max(x, 0)$ and $r$ is the normalized distance.
 """
 struct WendlandRadialBasisFunction{Dim, k} <: AbstractLoocalizedRadialBasisFuncttion end
 
@@ -135,21 +137,22 @@ function (::EuclideanDistanceMeasureCache)(x, xi, y, yi)
     return norm(x[xi] - y[yi])
 end
 
-"""
+@doc raw"""
     GeodesicDistanceMeasure(M, α, β)
 
 A geodesic distance measure that combines mesh connectivity and Euclidean distance
 for radial basis function interpolation.
 
-Let `d_euc(x_i, y_i) = ‖x_i - y_i‖` be the Euclidean distance and let
+Let $d_euc(x_i, y_i) = \lVert x_i - y_i \rVert$ be the Euclidean distance and let
 `d_geo(x_i, y_i)` be the shortest-path distance along the mesh graph.
 The measure returns
 
-- `δ(x_i, y_i) = d_euc(x_i, y_i)` when `d_geo(x_i, y_i) ≤ d_euc(x_i, y_i) + β h_max`
-- `δ(x_i, y_i) = d_geo(x_i, y_i)` when `d_geo(x_i, y_i) < α r_i`
-- `δ(x_i, y_i) = ∞` otherwise
+$$\delta(x_i, y_i) = \begin{cases}
+  d_{\mathrm{euc}}(x_i, y_i), & d_{\mathrm{geo}}(x_i, y_i) \le d_{\mathrm{euc}}(x_i, y_i) + \beta h_{\max}, \\
+  d_{\mathrm{geo}}(x_i, y_i), & d_{\mathrm{geo}}(x_i, y_i) < \alpha r_i.
+\end{cases}$$
 
-where `r_i` is the support radius associated with source node `i` and `h_max`
+where $r_i$ is the support radius associated with source node `i` and `h_max`
 is the maximum edge length in the mesh. This choice follows the hybrid distance strategy
 used in the transfer operator formulation described by Bucelli et al. (2024).
 
@@ -268,14 +271,22 @@ function (measure::GeodesicDistanceMeasureCache)(x, xi, y, yi)
     return ret
 end
 
-"""
+@doc raw"""
     RadialBasisFunctionEvaluation(rbf, distance_measure, source_linsolve)
 
 A compactly supported RBF transfer evaluator.
 
-The transfer is built from the interpolation system `A γ_f = f`, where
-`A_{ij} = φ(‖x_i - x_j‖ / r_j)`, and the transferred field is evaluated as
-`f̂(x) = ∑_j γ_{f,j} φ(‖x - x_j‖ / r_j)`.
+The transfer is built from the interpolation system
+
+$$A \, \gamma_f = f,$$
+
+where the influence matrix entry is
+
+$$A_{ij} = \phi\left(\frac{\lVert x_i - x_j \rVert}{r_j}\right).$$
+
+The transferred field is evaluated as
+
+$$\hat f(x) = \sum_j \gamma_{f,j} \phi\left(\frac{\lVert x - x_j \rVert}{r_j}\right).$$
 """
 struct RadialBasisFunctionEvaluation{
     DistanceMeasureT <: AbstractDistanceMeasure,
@@ -287,14 +298,20 @@ struct RadialBasisFunctionEvaluation{
     source_linsolve::SLinsolveCT
 end
 
-"""
+@doc raw"""
     RescaledRadialBasisFunctionEvaluation(rbf, distance_measure, source_linsolve)
 
 A compactly supported RBF transfer evaluator that rescales the destination output to preserve normalization.
 
 The rescaled transfer uses the same RBF basis as above, with an additional normalization vector
-`γ_g` obtained from `A γ_g = 1`, so that the transferred field is computed as
-`f̂(x) = (∑_j γ_{f,j} φ(‖x - x_j‖ / r_j)) / (∑_j γ_{g,j} φ(‖x - x_j‖ / r_j))`.
+$γ_g$ obtained from solving
+
+$$A \, \gamma_g = \mathbf{1},$$
+
+so that the transferred field is computed as
+
+$$\hat f(x) = \frac{\sum_j \gamma_{f,j} \phi\left(\frac{\lVert x - x_j \rVert}{r_j}\right)}{
+  \sum_j \gamma_{g,j} \phi\left(\frac{\lVert x - x_j \rVert}{r_j}\right)}.$$
 """
 struct RescaledRadialBasisFunctionEvaluation{
     DistanceMeasureT <: AbstractDistanceMeasure,
