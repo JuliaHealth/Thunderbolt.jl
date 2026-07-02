@@ -185,19 +185,57 @@
             [
                 (
                     "RL-RBF α = $α, M = $M, k = $k",
-                    (dh_from, dh_to, args...; kwargs...) -> Thunderbolt.RescaledRadialBasisFunctionTransferOperator(k, M, α, dh_from, dh_to, args...; kwargs...),
+                    (dh_from, dh_to, args...; kwargs...) ->
+                        Thunderbolt.RescaledRadialBasisFunctionTransferOperator(
+                            k,
+                            M,
+                            α,
+                            dh_from,
+                            dh_to,
+                            args...;
+                            kwargs...,
+                        ),
                 ),
                 (
                     "L-RBF α = $α, M = $M, k = $k",
-                    (dh_from, dh_to, args...; kwargs...) -> Thunderbolt.RadialBasisFunctionTransferOperator(k, M, α, dh_from, dh_to, args...; kwargs...),
+                    (dh_from, dh_to, args...; kwargs...) ->
+                        Thunderbolt.RadialBasisFunctionTransferOperator(
+                            k,
+                            M,
+                            α,
+                            dh_from,
+                            dh_to,
+                            args...;
+                            kwargs...,
+                        ),
                 ),
                 (
                     "RL-RBF-G α = $α, M = $M, k = $k",
-                    (dh_from, dh_to, args...; kwargs...) -> Thunderbolt.RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, 0.5, dh_from, dh_to, args...; kwargs...),
+                    (dh_from, dh_to, args...; kwargs...) ->
+                        Thunderbolt.RescaledRadialBasisFunctionGeodesicTransferOperator(
+                            k,
+                            M,
+                            α,
+                            0.5,
+                            dh_from,
+                            dh_to,
+                            args...;
+                            kwargs...,
+                        ),
                 ),
                 (
                     "L-RBF-G α = $α, M = $M, k = $k",
-                    (dh_from, dh_to, args...; kwargs...) -> Thunderbolt.RadialBasisFunctionGeodesicTransferOperator(k, M, α, 0.5, dh_from, dh_to, args...; kwargs...),
+                    (dh_from, dh_to, args...; kwargs...) ->
+                        Thunderbolt.RadialBasisFunctionGeodesicTransferOperator(
+                            k,
+                            M,
+                            α,
+                            0.5,
+                            dh_from,
+                            dh_to,
+                            args...;
+                            kwargs...,
+                        ),
                 ),
             ] for α ∈ 1.5:1.5:3.0, M ∈ 1:2, k ∈ 0:2 # Due to how the circle connectivity the tests for lower alphas fail
         ],

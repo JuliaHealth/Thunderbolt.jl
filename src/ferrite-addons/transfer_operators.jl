@@ -343,7 +343,16 @@ Parameters
 Returns
 - `FieldTransferOperator` configured with an RBF transfer strategy.
 """
-function RadialBasisFunctionTransferOperator(k, M, α, dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, args...; linsolve = LinearSolve.KrylovJL_GMRES(), kwargs...) where {sdim}
+function RadialBasisFunctionTransferOperator(
+    k,
+    M,
+    α,
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    args...;
+    linsolve = LinearSolve.KrylovJL_GMRES(),
+    kwargs...,
+) where {sdim}
     FieldTransferOperator(
         dh_from,
         dh_to,
@@ -353,7 +362,7 @@ function RadialBasisFunctionTransferOperator(k, M, α, dh_from::DofHandler{sdim}
             EuclideanDistanceMeasure(M, α),
             linsolve,
         );
-        kwargs...
+        kwargs...,
     )
 end
 
@@ -379,7 +388,17 @@ Parameters
 Returns
 - `FieldTransferOperator` configured with a rescaled RBF transfer strategy.
 """
-function RescaledRadialBasisFunctionTransferOperator(k, M, α, dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, args...; β = 0.5, linsolve = LinearSolve.KrylovJL_GMRES(), kwargs...) where {sdim}
+function RescaledRadialBasisFunctionTransferOperator(
+    k,
+    M,
+    α,
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    args...;
+    β = 0.5,
+    linsolve = LinearSolve.KrylovJL_GMRES(),
+    kwargs...,
+) where {sdim}
     FieldTransferOperator(
         dh_from,
         dh_to,
@@ -389,7 +408,7 @@ function RescaledRadialBasisFunctionTransferOperator(k, M, α, dh_from::DofHandl
             GeodesicDistanceMeasure(M, α, β),
             linsolve,
         );
-        kwargs...
+        kwargs...,
     )
 end
 
@@ -415,7 +434,17 @@ Parameters
 Returns
 - `FieldTransferOperator` configured with an RBF transfer strategy using geodesic distances.
 """
-function RadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, args...; linsolve = LinearSolve.KrylovJL_GMRES(), kwargs...) where {sdim}
+function RadialBasisFunctionGeodesicTransferOperator(
+    k,
+    M,
+    α,
+    β,
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    args...;
+    linsolve = LinearSolve.KrylovJL_GMRES(),
+    kwargs...,
+) where {sdim}
     FieldTransferOperator(
         dh_from,
         dh_to,
@@ -425,7 +454,7 @@ function RadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from::DofH
             GeodesicDistanceMeasure(M, α, β),
             linsolve,
         );
-        kwargs...
+        kwargs...,
     )
 end
 
@@ -450,7 +479,17 @@ Parameters
 Returns
 - `FieldTransferOperator` configured with a rescaled RBF transfer strategy using geodesic distances.
 """
-function RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, args...; linsolve = LinearSolve.KrylovJL_GMRES(), kwargs...) where {sdim}
+function RescaledRadialBasisFunctionGeodesicTransferOperator(
+    k,
+    M,
+    α,
+    β,
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    args...;
+    linsolve = LinearSolve.KrylovJL_GMRES(),
+    kwargs...,
+) where {sdim}
     FieldTransferOperator(
         dh_from,
         dh_to,
@@ -460,7 +499,7 @@ function RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_fr
             GeodesicDistanceMeasure(M, α, β),
             linsolve,
         );
-        kwargs...
+        kwargs...,
     )
 end
 """
@@ -894,7 +933,12 @@ function FieldTransferOperator(
     transfer_strategy_cache =
         create_field_transfer_strategy_cache(transfer_strategy_type, mapping, dh_from, dh_to)
 
-    FieldTransferOperator{typeof(transfer_strategy_cache), typeof(dh_from), typeof(dh_to), typeof(mapping)}(
+    FieldTransferOperator{
+        typeof(transfer_strategy_cache),
+        typeof(dh_from),
+        typeof(dh_to),
+        typeof(mapping),
+    }(
         dh_from,
         dh_to,
         mapping,
@@ -961,8 +1005,13 @@ function transfer!(
     sol = LinearSolve.solve!(operator.transfer_strategy_cache.source_linsolve_cache)
     operator.transfer_strategy_cache.γf .= sol.u
     u_to[operator.mapping.node_to_dof_map_to] .=
-        (operator.transfer_strategy_cache.destination_influence_matrix * operator.transfer_strategy_cache.γf) ./
-        (operator.transfer_strategy_cache.destination_influence_matrix * operator.transfer_strategy_cache.γg)
+        (
+            operator.transfer_strategy_cache.destination_influence_matrix *
+            operator.transfer_strategy_cache.γf
+        ) ./ (
+            operator.transfer_strategy_cache.destination_influence_matrix *
+            operator.transfer_strategy_cache.γg
+        )
 end
 
 """
@@ -979,8 +1028,10 @@ function transfer!(
         (@view u_from[operator.mapping.node_to_dof_map_from])
     sol = LinearSolve.solve!(operator.transfer_strategy_cache.source_linsolve_cache)
     operator.transfer_strategy_cache.γf .= sol.u
-    u_to[operator.mapping.node_to_dof_map_to] .=
-        (operator.transfer_strategy_cache.destination_influence_matrix * operator.transfer_strategy_cache.γf)
+    u_to[operator.mapping.node_to_dof_map_to] .= (
+        operator.transfer_strategy_cache.destination_influence_matrix *
+        operator.transfer_strategy_cache.γf
+    )
 end
 
 
