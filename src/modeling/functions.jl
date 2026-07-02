@@ -45,14 +45,27 @@ solution_size(f::NullFunction) = f.ndofs
 
 This acts as as a launch-pad for batches of ODE steps.
 """
-struct PointwiseODEFunction{PDH, SDH, ODEType, xType} <: AbstractPointwiseFunction
-    potential_dh::PDH
-    state_dh::SDH
+struct PointwiseODEFunction{ODEType, xType, IndexVectorType} <: AbstractPointwiseFunction
     ode::ODEType
     x::xType
+    # Indices of the potentials associated with this
+    associated_φs::IndexVectorType
+    # Offset for the state in the solution vector
+    state_offset::Int
 end
 
-solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
+solution_size(f::PointwiseODEFunction) = length(f.associated_φs)*num_states(f.ode)
+
+"""
+    PointwiseMultiODEFunction
+
+This acts as as a launch-pad for batches of ODE steps.
+"""
+struct PointwiseMultiODEFunction <: AbstractPointwiseFunction
+    functions::Vector{<:PointwiseODEFunction}
+end
+
+solution_size(f::PointwiseMultiODEFunction) = sum(solution_size.(f.functions))
 
 struct AffineODEFunction{MI, BI, ST, DH, AS} <: AbstractSemidiscreteFunction
     mass_term::MI

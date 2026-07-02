@@ -483,3 +483,28 @@ function is_sdh_on_any_subdomain(sdh, names::Vector{String})
     end
     return false
 end
+
+function narrow_dict_types(d::Dict)
+    # 1. Gather all unique types of the actual values in the dictionary
+    val_types = Tuple(unique(typeof(v) for v in values(d)))
+    
+    # 2. Create a Union of those specific types
+    NarrowUnion = Union{val_types...}
+    
+    # 3. Construct a new dictionary with the exact Key type and the new Union type
+    return Dict{keytype(d), NarrowUnion}(d)
+end
+
+function collect_dofs_on_subdomain(dh, mesh, name)
+    dofs = Set{Int}()
+    for sdh in dh.subdofhandlers
+        if any([CellIndex(first(sdh.cellset)) ∈ subset for subset in values(mesh.volumetric_subdomains[name].data)])
+            for cellid in sdh.cellset
+                for dof in celldofs(sdh, cellid)
+                    push!(dofs, dof)
+                end
+            end
+        end
+    end
+    return sort(collect(dofs))
+end

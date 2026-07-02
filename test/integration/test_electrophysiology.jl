@@ -1,31 +1,10 @@
 using Thunderbolt
 using OrdinaryDiffEqOperatorSplitting
 using DiffEqBase
+using FerriteInterfaceElements, OrderedCollections, StaticArrays
 
-models = Dict(
-    "Purkinje" => MonodomainModel(
-        ConstantCoefficient(1.0),
-        ConstantCoefficient(1.0),
-        coeff,
-        Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
-            # Stimulate at apex
-            AnalyticalCoefficient((x, t) -> norm(x) < 0.25 && t < 2.0 ? 0.5 : 0.0, cs),
-            [SVector((0.0, 2.1))],
-        ),
-        Thunderbolt.FHNModel(),
-        :φₘ,
-        :s1,
-    ),
-    "Myocardium" => MonodomainModel(
-        ConstantCoefficient(1.0),
-        ConstantCoefficient(1.0),
-        coeff,
-        NoStimulationProtocol(),
-        Thunderbolt.FHNModel(),
-        :φₘ,
-        :s2,
-    ),
-)
+# TODO before remove before merge
+Ferrite.cell_to_vtkcell(cell::InterfaceCell{RefQuadrilateral, Line, 4}) = VTKCellTypes.VTK_QUAD
 
 @testset "EP wave propagation" begin
     function simple_initializer!(u₀, f::GenericSplitFunction)
@@ -105,6 +84,47 @@ models = Dict(
     u = solve_waveprop(mesh, coeff, ["myocardium"], timestepper)
     u_adaptive = solve_waveprop(mesh, coeff, ["myocardium"], timestepper_adaptive)
     @test u ≈ u_adaptive rtol = 1e-4
+
+    grid = generate_grid(Quadrilateral, (10,10))
+    addcellset!(grid, "Pacemaker", x->norm(x,Inf) ≤ 0.5)
+    addcellset!(grid, "Myocardium", setdiff(OrderedSet(1:getncells(grid)), getcellset(grid, "Pacemaker")))
+    grid2 = insert_interfaces(grid, ["Pacemaker", "Myocardium"]) # FIXME allow to add multiple interfaces
+
+    cs = CartesianCoordinateSystem(grid2)
+
+    coeff = ConstantCoefficient(SymmetricTensor{2, 2, Float64}((4.5e-5, 0, 2.0e-5)))
+    models = Dict(
+        "Pacemaker" => MonodomainModel(
+            ConstantCoefficient(1.0),
+            ConstantCoefficient(1.0),
+            coeff,
+            Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
+                # Stimulate at apex
+                AnalyticalCoefficient((x, t) -> norm(x) < 0.25 && t < 2.0 ? 0.5 : 0.0, cs),
+                [SVector((0.0, 2.1))],
+            ),
+            Thunderbolt.FHNModel(),
+            :φₘ,
+            :s1,
+        ),
+        # FIXME 
+        "interfaces" => InterfaceDiffusionModel(
+            ConstantCoefficient(1.0),
+            :φₘ,
+            :φₘ,
+        ),
+        "Myocardium" => MonodomainModel(
+            ConstantCoefficient(1.0),
+            ConstantCoefficient(1.0),
+            coeff,
+            NoStimulationProtocol(),
+            Thunderbolt.FHNModel(),
+            :φₘ,
+            :s2,
+        ),
+    )
+
+    discretization = FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()))
 
     mesh = to_mesh(generate_mixed_grid_2D())
     coeff = ConstantCoefficient(SymmetricTensor{2, 2, Float64}((4.5e-5, 0, 2.0e-5)))

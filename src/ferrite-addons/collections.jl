@@ -19,6 +19,15 @@ A collection of compatible vector-valued interpolations over some (possilby diff
 """
 abstract type VectorInterpolationCollection <: InterpolationCollection end
 
+struct InterfaceCollection{IPC} <: InterpolationCollection
+    ipc::IPC
+end
+
+getorder(ic::InterfaceCollection) = getorder(ic.ipc)
+
+getinterpolation(ic::InterfaceCollection, sdh_or_cell) =
+    InterfaceCellInterpolation(getinterpolation(ic.ipc, sdh_or_cell))
+
 # Wildcard
 getinterpolation(ipc::InterpolationCollection, sdh::SubDofHandler) =
     getinterpolation(ipc, get_first_cell(sdh))

@@ -50,10 +50,8 @@ function assemble_element!(
 end
 
 function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::SubDofHandler)
-    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     qr         = getquadraturerule(element_model.qrc, sdh)
-    field_name = first(sdh.dh.field_names)
-    ip         = Ferrite.getfieldinterpolation(sdh, field_name)
+    ip         = Ferrite.getfieldinterpolation(sdh, element_model.sym)
     ip_geo     = geometric_subdomain_interpolation(sdh)
     BilinearDiffusionElementCache(
         setup_coefficient_cache(element_model.D, qr, sdh),
@@ -73,6 +71,83 @@ struct TransientDiffusionModel{ConductivityCoefficientType, SourceType <: Abstra
 end
 
 get_volumetric_weak_form_names(model::TransientDiffusionModel) = [model.solution_variable_symbol] # FIXME
+
+@doc raw"""
+    BilinearDiffusionIntegrator{CoefficientType}
+
+Represents the integrand of the bilinear form ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
+"""
+struct BilinearInterfaceDiffusionIntegrator{CoefficientType, QRC <: QuadratureRuleCollection} <:
+       AbstractBilinearIntegrator
+    D::CoefficientType
+    qrc::QRC
+    sym1::Symbol
+    sym2::Symbol
+end
+
+"""
+The cache associated with [`BilinearDiffusionIntegrator`](@ref) to assemble element diffusion matrices.
+"""
+struct BilinearInterfaceDiffusionElementCache{CoefficientCacheType, CV} <: AbstractVolumetricElementCache
+    Dcache::CoefficientCacheType
+    cellvalues::CV
+end
+
+function duplicate_for_device(device, cache::BilinearInterfaceDiffusionElementCache)
+    return BilinearInterfaceDiffusionElementCache(
+        duplicate_for_device(device, cache.Dcache),
+        duplicate_for_device(device, cache.cellvalues),
+    )
+end
+
+function assemble_element!(
+    Kₑ::AbstractMatrix,
+    cell,
+    element_cache::BilinearInterfaceDiffusionElementCache,
+    time,
+)
+    (; cellvalues, Dcache) = element_cache
+    n_basefuncs = getnbasefunctions(cellvalues)
+
+    reinit!(cellvalues, cell)
+
+    for qp in 1:getnquadpoints(cv)
+        D_loc = evaluate_coefficient(Dcache, cell, qp, time)
+        dΩ = getdetJdV_average(cv, qp)
+        for i in 1:getnbasefunctions(cv)
+            jump_δu = shape_value_jump(cv, qp, i)
+            for j in 1:getnbasefunctions(cv)
+                jump_u = shape_value_jump(cv, qp, j)
+                Ke[i, j] += (jump_δu * D_loc * jump_u) * dΩ
+            end
+        end
+    end
+end
+
+function setup_element_cache(element_model::BilinearInterfaceDiffusionIntegrator, sdh::SubDofHandler)
+    qr         = getquadraturerule(element_model.qrc, sdh)
+    ip         = Ferrite.getfieldinterpolation(sdh, element_model.sym1)
+    ip_geo     = geometric_subdomain_interpolation(sdh)
+
+    return BilinearInterfaceDiffusionElementCache(
+        setup_coefficient_cache(element_model.D, qr, sdh),
+        InterfaceCellValues(qr, ip, ip_geo),
+    )
+end
+
+
+@doc raw"""
+    TransientDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
+
+Model formulated as ``\int_{\Gamma^{\text{P}/\text{M}}} [\![ \delta u ]\!] G [\![ u ]\!] \mathrm{d}\Gamma``.
+"""
+@concrete struct InterfaceDiffusionModel
+    G
+    solution_variable_symbol_1::Symbol
+    solution_variable_symbol_2::Symbol
+end
+
+get_volumetric_weak_form_names(model::InterfaceDiffusionModel) = [model.solution_variable_symbol_1] # FIXME
 
 @doc raw"""
     SteadyDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)

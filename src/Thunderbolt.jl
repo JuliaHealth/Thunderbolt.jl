@@ -38,6 +38,10 @@ import FerriteOperators:
     assemble_facet!,
     value_type
 
+import FerriteInterfaceElements:
+    InterfaceCellInterpolation,
+    InterfaceCellValues
+
 import FerriteOperators:
     LinearizedFerriteOperator,
     BilinearFerriteOperator,
@@ -202,6 +206,7 @@ export
     to_mesh,
     # Generic models
     TransientDiffusionModel,
+    InterfaceDiffusionModel,
     AffineODEFunction,
     default_initial_condition!,
     # Local API

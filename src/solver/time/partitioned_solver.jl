@@ -20,6 +20,17 @@ function perform_step!(
     @timeit_debug "reaction solve" _pointwise_step_outer_kernel!(f, t, Δt, cache, cache.uₙ)
 end
 
+function perform_step!(
+    fs::PointwiseMultiODEFunction,
+    cache::AbstractPointwiseSolverCache,
+    t::Real,
+    Δt::Real,
+)
+    @timeit_debug "reaction solve" for f in fs.functions
+        _pointwise_step_outer_kernel!(f, t, Δt, cache, cache.uₙ)
+    end
+end
+
 # This controls the outer loop over the ODEs
 function _pointwise_step_outer_kernel!(
     f::PointwiseODEFunction,

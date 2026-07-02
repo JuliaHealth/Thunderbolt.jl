@@ -38,12 +38,11 @@ struct FiniteElementDiscretization
     function FiniteElementDiscretization(
         ips::Dict{Symbol};
         dbcs::Vector{Dirichlet} = Dirichlet[],
-        subdomains::Vector{String} = String[],
         qrcs::Dict{Symbol} = Dict{Symbol,Any}(),
         fqrcs::Dict{Symbol} = Dict{Symbol,Any}(),
         assembly_strategy = SequentialAssemblyStrategy(SequentialCPUDevice()),
     )
-        new(ips, dbcs, subdomains, qrcs, fqrcs, assembly_strategy)
+        new(ips, dbcs, qrcs, fqrcs, assembly_strategy)
     end
 end
 
@@ -131,14 +130,48 @@ function semidiscretize(
     )
 end
 
+function register_affine_ode_integrators!(mass_integrators, rhs_integrators, linear_integrators, dh, name, discretization::FiniteElementDiscretization, model::TransientDiffusionModel)
+    sym = model.solution_variable_symbol
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+
+    T = get_coordinate_eltype(get_grid(dh))
+
+    qrc  = _get_quadrature_from_discretization(discretization, sym)
+    # TODO allow e.g. mass lumping for explicit integrators.
+    mass_integrators[name] = BilinearMassIntegrator(
+        ConstantCoefficient(T(1.0)),
+        haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass]  : qrc,
+        sym,
+    )
+    rhs_integrators[name]  = BilinearDiffusionIntegrator(model.κ, qrc, sym)
+    linear_integrators[name] = LinearIntegrator(model.source, qrc)
+end
+
+function register_affine_ode_integrators!(mass_integrators, rhs_integrators, linear_integrators, dh, name, discretization::FiniteElementDiscretization, model::InterfaceDiffusionModel)
+    sym = model.solution_variable_symbol_1
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+
+    T = get_coordinate_eltype(get_grid(dh))
+
+    qrc  = _get_quadrature_from_discretization(discretization, sym)
+    # TODO allow e.g. mass lumping for explicit integrators.
+    mass_integrators[name] = BilinearMassIntegrator(
+        ConstantCoefficient(T(1.0)),
+        haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass]  : qrc,
+        sym,
+    )
+    rhs_integrators[name]  = BilinearInterfaceDiffusionIntegrator(model.G, qrc, sym,  model.solution_variable_symbol_2)
+end
+
 function semidiscretize(
-    models::Dict{String, TransientDiffusionModel},
+    models::Dict{String, <:Union{<:TransientDiffusionModel, <:InterfaceDiffusionModel}},
     discretization::FiniteElementDiscretization,
     mesh::AbstractGrid,
 )
     @assert length(discretization.dbcs) == 0 "Dirichlet conditions not supported yet for transient diffusion models"
 
-    sym = model.solution_variable_symbol
     dh = DofHandler(mesh)
 
     # 3 weak forms
@@ -147,31 +180,11 @@ function semidiscretize(
     linear_integrators = Dict{String, AbstractLinearIntegrator}()
 
     for (name, model) in models
-        field_names = get_field_variable_names(model)
-        @assert length(field_names) == 1
-        # FIXME
-        # for sym in field_names
-        #     ipc = _get_interpolation_from_discretization(discretization, sym)
-        #     add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        # end
-        sym = first(field_names)
-        ipc = _get_interpolation_from_discretization(discretization, sym)
-        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-
-        qrc  = _get_quadrature_from_discretization(discretization, sym)
-        # TODO allow e.g. mass lumping for explicit integrators.
-        mass_integrators[name] = BilinearMassIntegrator(
-            ConstantCoefficient(T(1.0)),
-            haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass]  : qrc,
-            sym,
-        )
-        rhs_integrators[name]  = BilinearDiffusionIntegrator(model.κ, qrc, sym)
-        linear_integrators[name] = LinearIntegrator(model.source, qrc)
+        register_affine_ode_integrators!(mass_integrators, rhs_integrators, linear_integrators, dh, name, discretization, model)
     end
 
     close!(dh)
 
-    T = get_coordinate_eltype(get_grid(dh))
     return AffineODEFunction(
         mass_integrators,
         rhs_integrators,
@@ -236,9 +249,10 @@ function semidiscretize(
     # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
     odefun = PointwiseODEFunction(
         # TODO epmodel.Cₘ(x)
-        ndofsφ,
         epmodel.ion,
         split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym),
+        1:ndofsφ,
+        0,
     )
     nstates_per_point = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
@@ -254,44 +268,66 @@ function semidiscretize(
     return semidiscrete_ode
 end
 
+function semidiscretize_map_diffusion_part(epmodel::MonodomainModel)
+    return TransientDiffusionModel(
+        ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
+        epmodel.stim,
+        epmodel.transmembrane_solution_symbol,
+    )
+end
+
+function semidiscretize_map_diffusion_part(model::InterfaceDiffusionModel)
+    return model
+end
+
 function semidiscretize(
-    split::ReactionDiffusionSplit{Dict{String, <:MonodomainModel}},
+    split::ReactionDiffusionSplit{Dict{String, Any}},
+    discretization::FiniteElementDiscretization,
+    mesh::AbstractGrid,
+)
+    models = narrow_dict_types(split.model)
+    semidiscretize(ReactionDiffusionSplit(models), discretization, mesh)
+end
+
+function semidiscretize(
+    split::ReactionDiffusionSplit{<:Dict{String, <: Union{<:AbstractEPModel, <:InterfaceDiffusionModel}}},
     discretization::FiniteElementDiscretization,
     mesh::AbstractGrid,
 )
     epmodels = split.model
 
-    heat_models = map((name, epmodel)-> name => TransientDiffusionModel(
-        ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
-        epmodel.stim,
-        epmodel.transmembrane_solution_symbol,
-    ), epmodels)
+    heat_models = Dict(name => semidiscretize_map_diffusion_part(epmodel) for (name, epmodel) in epmodels)
 
-    heatfun = semidiscretize(heat_model, discretization, mesh)
+    heatfun = semidiscretize(heat_models, discretization, mesh)
 
     dh = heatfun.dh
     ndofsφ = ndofs(dh)
 
     # TODO we need some information about the discretization of this one, e.g. dofs a nodes vs dofs at quadrature points
     # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
-    statedh = DofHandler(mesh)
+    inner_functions = PointwiseODEFunction[]
+    offset = 0
+    xφ = (split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, epmodel.transmembrane_solution_symbol))
     for (name, model) in epmodels
-        sym = model.internal_state_symbol
-        ipc = _get_interpolation_from_discretization(discretization, sym)
-        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+        if typeof(model) <: AbstractEPModel # Only handle the EP models
+            subdofs = collect_dofs_on_subdomain(dh, mesh, name)
+            push!(inner_functions,
+                PointwiseODEFunction(
+                    model.ion,
+                    xφ,
+                    subdofs,
+                    offset,
+                )
+            )
+            offset += length(subdofs)*(num_states(model.ion)-1)
+        end
     end
-    close!(statedh)
-    odefun = PointwiseODEFunction(
-        # TODO epmodel.Cₘ(x)
-        dh,
-        statedh,
-        epmodel.ion,
-        split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym),
+    odefun = PointwiseMultiODEFunction(
+        inner_functions,
     )
-    nstates_per_point = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
     heat_dofrange = 1:ndofsφ
-    ode_dofrange = 1:(nstates_per_point*ndofsφ)
+    ode_dofrange = 1:offset
     #
     semidiscrete_ode = GenericSplitFunction(
         (heatfun, odefun),
