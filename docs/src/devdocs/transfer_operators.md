@@ -2,7 +2,7 @@
 DocTestSetup = :(using Thunderbolt)
 ```
 
-# Transfer operators 
+# Transfer operators
 
 Thunderbolt implements the following field transfer methods:
 
@@ -30,7 +30,7 @@ $$A_{ij} = φ(‖x_i, x_j‖ / r_j)$$
 with $‖\circ, \dotsb‖$ being the distance measure used to calculate the distance between the two nodes,
 $x_i$ being the coordinate of the $i$th node in the target mesh, $x_j$ being the
 coordinate of the $j$th node in the source mesh, $r_j$ being the support radius for the $j$th
-node in the source mesh, and $φ$ being the radial basis function of choice. 
+node in the source mesh, and $φ$ being the radial basis function of choice.
 
 
 ### Distance measures
