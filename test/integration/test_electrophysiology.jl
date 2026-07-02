@@ -2,6 +2,31 @@ using Thunderbolt
 using OrdinaryDiffEqOperatorSplitting
 using DiffEqBase
 
+models = Dict(
+    "Purkinje" => MonodomainModel(
+        ConstantCoefficient(1.0),
+        ConstantCoefficient(1.0),
+        coeff,
+        Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
+            # Stimulate at apex
+            AnalyticalCoefficient((x, t) -> norm(x) < 0.25 && t < 2.0 ? 0.5 : 0.0, cs),
+            [SVector((0.0, 2.1))],
+        ),
+        Thunderbolt.FHNModel(),
+        :φₘ,
+        :s1,
+    ),
+    "Myocardium" => MonodomainModel(
+        ConstantCoefficient(1.0),
+        ConstantCoefficient(1.0),
+        coeff,
+        NoStimulationProtocol(),
+        Thunderbolt.FHNModel(),
+        :φₘ,
+        :s2,
+    ),
+)
+
 @testset "EP wave propagation" begin
     function simple_initializer!(u₀, f::GenericSplitFunction)
         # TODO cleaner implementation. We need to extract this from the types or via dispatch.

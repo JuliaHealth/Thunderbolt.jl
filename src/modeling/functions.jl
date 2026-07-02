@@ -40,13 +40,17 @@ end
 
 solution_size(f::NullFunction) = f.ndofs
 
-# See https://github.com/JuliaGPU/Adapt.jl/issues/84 for the reason why hardcoding Int does not work
-struct PointwiseODEFunction{IndexType <: Integer, ODEType, xType} <: AbstractPointwiseFunction
-    npoints::IndexType
+"""
+    PointwiseODEFunction
+
+This acts as as a launch-pad for batches of ODE steps.
+"""
+struct PointwiseODEFunction{PDH, SDH, ODEType, xType} <: AbstractPointwiseFunction
+    potential_dh::PDH
+    state_dh::SDH
     ode::ODEType
     x::xType
 end
-Adapt.@adapt_structure PointwiseODEFunction
 
 solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
 

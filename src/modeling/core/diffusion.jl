@@ -72,6 +72,8 @@ struct TransientDiffusionModel{ConductivityCoefficientType, SourceType <: Abstra
     solution_variable_symbol::Symbol
 end
 
+get_volumetric_weak_form_names(model::TransientDiffusionModel) = [model.solution_variable_symbol] # FIXME
+
 @doc raw"""
     SteadyDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
 
@@ -82,3 +84,5 @@ struct SteadyDiffusionModel{ConductivityCoefficientType, SourceType <: AbstractS
     source::SourceType
     solution_variable_symbol::Symbol
 end
+
+get_volumetric_weak_form_names(model::SteadyDiffusionModel) = [model.solution_variable_symbol] # FIXME
