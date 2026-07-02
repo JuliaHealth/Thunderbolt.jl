@@ -15,7 +15,7 @@ This works by evaluating the field value at the target mesh's nodes utilizing `F
     are assigned `NaN`.
 
 This method is consturcted either using the provided convinience constructor [`NodalIntergridTransfer`](@ref) or by
-using `NodalIntergridEvaluation()` as a transfer strategy for the construction of [`FieldTransferOperator`](@ref).
+using `NodalIntergridTransferStrategy()` as a transfer strategy for the construction of [`FieldTransferOperator`](@ref).
 
 ## Compactly-supported Radial Basis Function transfer
 
@@ -98,8 +98,14 @@ Thunderbolt.EuclideanDistanceMeasure
 Thunderbolt.EuclideanDistanceMeasureCache
 Thunderbolt.GeodesicDistanceMeasure
 Thunderbolt.GeodesicDistanceMeasureCache
-Thunderbolt.RadialBasisFunctionEvaluation
-Thunderbolt.RescaledRadialBasisFunctionEvaluation
-Thunderbolt.RadialBasisFunctionEvaluationCache
-Thunderbolt.RescaledRadialBasisFunctionEvaluationCache
+Thunderbolt.RadialBasisFunctionTransferStrategy
+Thunderbolt.RescaledRadialBasisFunctionTransferStrategy
+Thunderbolt.RadialBasisFunctionTransferOperator
+Thunderbolt.RadialBasisFunctionGeodesicTransferOperator
+Thunderbolt.RescaledRadialBasisFunctionTransferOperator
+Thunderbolt.RescaledRadialBasisFunctionGeodesicTransferOperator
+Thunderbolt.RadialBasisFunctionTransferStrategyCache
+Thunderbolt.RescaledRadialBasisFunctionTransferStrategyCache
+Thunderbolt.NodalIntergridTransferStrategy
+Thunderbolt.NodalIntergridTransferStrategyCache
 ```
