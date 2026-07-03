@@ -208,6 +208,7 @@ end
     addcellset!(heart_mesh.grid, "Left", x -> (x[1] < -1e-6 && x[3] < 0.35); all = false)
     addcellset!(heart_mesh.grid, "Right", x -> (x[1] > 1e-6 && x[3] < 0.35); all = false)
     addcellset!(heart_mesh.grid, "Bot", x -> x[3] >= 0.35)
+    delete!(heart_mesh.grid.cellsets, "myocardium")
     heart_mesh = Thunderbolt.to_mesh(heart_mesh.grid)
     microstructure = OrthotropicMicrostructureModel(
         ConstantCoefficient((Vec(0.0, 0.0, 1.0))),
@@ -230,7 +231,7 @@ end
     results = Vector{Float64}[]
     @testset "Uniform Activation" begin
         @testset "LV-CS" begin
-            cs = compute_lv_coordinate_system(heart_mesh, ["Left", "Right", "Bot"])
+            cs = compute_lv_coordinate_system(heart_mesh; subdomains = ["Left", "Right", "Bot"])
             activation_protocol = Thunderbolt.UniformEndocardialActivationProtocol(
                 Dict("Left" => 1.0, "Right" => -1.0),
                 cs,
@@ -241,7 +242,7 @@ end
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
                     Thunderbolt.SimplicialEikonalDiscretization(;
                         activation_protocol,
-                        subdomains = String["Left", "Right", "Bot"],
+                        subdomains = String["Left", "Right"],
                     ),
                 ),
                 heart_mesh,
@@ -273,7 +274,7 @@ end
     end
     @testset "Analytical Activation" begin
         @testset "LV-CS" begin
-            cs = compute_lv_coordinate_system(heart_mesh, ["Left", "Right", "Bot"])
+            cs = compute_lv_coordinate_system(heart_mesh; subdomains = ["Left", "Right", "Bot"])
             activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
                 AnalyticalCoefficient(
                     (x, t) ->
@@ -333,7 +334,6 @@ end
             FastIterativeMethod.solve!(heart_odeform, heart_mesh)
             nodal_timings = heart_odeform.ode_function.activation_timings
             nodal_timings = heart_odeform.ode_function.activation_timings
-
             push!(results, nodal_timings)
         end
     end
