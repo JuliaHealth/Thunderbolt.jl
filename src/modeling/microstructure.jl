@@ -280,23 +280,34 @@ Create a rotating fiber field by deducing the circumferential direction from api
 function create_microstructure_model(
     coordinate_system::CoordinateSystemCoefficient,
     ip_collection::VectorizedInterpolationCollection{3},
-    parameters,
+    parameters;
+    subdomains = [single_subdomain_or_error(get_grid(coordinate_system.dh))],
 )
     @unpack dh = coordinate_system
 
     # TODO this storage is redundant, can we reduce the memory footprint?
     offsets = copy(dh.cell_dofs_offset)
-    push!(offsets, length(dh.cell_dofs)+1)
+    sizes   = zero(offsets)
+    for i = 1:getncells(dh.grid)
+        sdhi = dh.cell_to_subdofhandler[i]
+        if sdhi > 0
+            sdh = dh.subdofhandlers[sdhi]
+            is_sdh_on_any_subdomain(sdh, subdomains)
+            sizes[i] = ndofs_per_cell(sdh)
+        end
+    end
 
     # The vectors follow the spatial dimension and precision of the grid
     Tv = get_coordinate_type(get_grid(dh))
-    f_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets)
-    s_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets)
-    n_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets)
+    f_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets, sizes)
+    s_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets, sizes)
+    n_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets, sizes)
 
     qrs = NodalQuadratureRuleCollection(ip_collection.base)
     cvs = CellValueCollection(qrs, ip_collection.base)
     for sdh in dh.subdofhandlers
+        is_sdh_on_any_subdomain(sdh, subdomains) || continue
+
         first_cell = getcells(Ferrite.get_grid(dh), first(sdh.cellset))
         cv = getcellvalues(cvs, first_cell)
         for cell in CellIterator(sdh)

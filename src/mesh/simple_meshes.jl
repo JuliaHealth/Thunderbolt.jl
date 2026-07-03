@@ -69,7 +69,7 @@ function Base.show(io::IO, ::MIME"text/plain", mesh::SimpleMesh)
     end
     join(io, typestrs, '/')
     println(io, " cells and $(getnnodes(mesh.grid)) nodes")
-    if length(mesh.volumetric_subdomains) > 1 && keys(mesh.volumetric_subdomains)[1] != ""
+    if length(mesh.volumetric_subdomains) > 1
         println(io, "  Volumetric subdomains:")
         for (name, descriptor) in mesh.volumetric_subdomains
             print(io, "    $name ")
@@ -123,6 +123,12 @@ elementtypes(::SimpleMesh{3, Tetrahedron}) = @SVector [Tetrahedron]
 elementtypes(::SimpleMesh{3, Hexahedron}) = @SVector [Hexahedron]
 
 subdomain_names(mesh::SimpleMesh) = collect(keys(mesh.volumetric_subdomains))
+
+function single_subdomain_or_error(mesh::SimpleMesh)
+    names = subdomain_names(mesh)
+    @assert length(names) == 1 "The mesh has multiple subdomains. Please specify the used subdomains."
+    return first(names)
+end
 
 function materialize_edges!(mesh::SimpleMesh)
     !isempty(mesh.medges) && return nothing

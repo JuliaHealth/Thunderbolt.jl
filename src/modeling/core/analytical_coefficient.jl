@@ -30,7 +30,7 @@ duplicate_for_device(device, cache::AnalyticalCoefficientCache) =
 
 @inline function evaluate_coefficient(
     coeff::F,
-    cell_cache::FerriteUtils.AnyCellCache,
+    cell_cache::CellCache,
     qp::QuadraturePoint{<:Any, T},
     t,
 ) where {F <: AnalyticalCoefficientCache, T}
@@ -63,7 +63,7 @@ duplicate_for_device(device, ec::AnalyticalCoefficientElementCache) =
 
 @inline function assemble_element!(
     bₑ::AbstractVector,
-    geometry_cache::FerriteUtils.AnyCellCache,
+    geometry_cache::CellCache,
     element_cache::AnalyticalCoefficientElementCache,
     time,
 )
@@ -100,23 +100,23 @@ end
     end
 end
 
-@inline function _assemble_element!(
-    bₑ,
-    geometry_cache::FerriteUtils.DeviceCellCache,
-    coords,
-    element_cache::AnalyticalCoefficientElementCache,
-    time,
-)
-    @unpack cc, cv = element_cache
-    for qv in FerriteUtils.QuadratureValuesIterator(cv, coords)
-        dΩ = FerriteUtils.getdetJdV(qv)
-        idx = qv.idx
-        ξ = qv.ξ
-        qp = QuadraturePoint(idx, ξ)
-        @inbounds for j ∈ 1:getnbasefunctions(cv)
-            fx = evaluate_coefficient(cc, geometry_cache, qp, time)
-            δu = FerriteUtils.shape_value(qv, j)
-            bₑ[j] += fx * δu * dΩ
-        end
-    end
-end
+# @inline function _assemble_element!(
+#     bₑ,
+#     geometry_cache::DeviceCellCache,
+#     coords,
+#     element_cache::AnalyticalCoefficientElementCache,
+#     time,
+# )
+#     @unpack cc, cv = element_cache
+#     for qv in FerriteUtils.QuadratureValuesIterator(cv, coords)
+#         dΩ = FerriteUtils.getdetJdV(qv)
+#         idx = qv.idx
+#         ξ = qv.ξ
+#         qp = QuadraturePoint(idx, ξ)
+#         @inbounds for j ∈ 1:getnbasefunctions(cv)
+#             fx = evaluate_coefficient(cc, geometry_cache, qp, time)
+#             δu = FerriteUtils.shape_value(qv, j)
+#             bₑ[j] += fx * δu * dΩ
+#         end
+#     end
+# end

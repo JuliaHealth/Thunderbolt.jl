@@ -44,7 +44,7 @@ bibtex_plugin = CitationBibliography(
             "Continuum Mechanics" => [
                 "CM01: Simple Active Stress" => "tutorials/cm01_simple-active-stress.md",
                 "CM02: Prestressing (WIP)" => "tutorials/cm02_prestress.md",
-                "CM03: 0D Blood Circuit" => "tutorials/cm03_3d0d-coupling.md",
+                # "CM03: 0D Blood Circuit" => "tutorials/cm03_3d0d-coupling.md", # FIXME blocked again by https://github.com/TS-CUBED/CirculatorySystemModels.jl/pull/38 ...
                 "CM04: Pericadium (TODO)" => "tutorials/cm04_pericardium.md",
                 "CM05: Four Chamber (TODO)" => "tutorials/cm05_fourchambers.md",
                 "CM06: Heart Valves (TODO)" => "tutorials/cm06_heartvalves.md",
@@ -72,7 +72,7 @@ bibtex_plugin = CitationBibliography(
             "howto/custom-stimulation-protocols.md",
             "howto/custom-energies.md",
             "howto/custom-sarcomere.md",
-            "howto/custom-elements.md",
+            "howto/multigrid.md",
         ],
         "API Reference" => [
             "Overview" => "api-reference/index.md",
@@ -81,13 +81,12 @@ bibtex_plugin = CitationBibliography(
             "api-reference/functions.md",
             "api-reference/problems.md",
             "api-reference/discretization.md",
-            "api-reference/operators.md",
             "api-reference/solver.md",
             "api-reference/utility.md",
         ],
         "Developer Documentation" => [
             "Overview" => "devdocs/index.md",
-            "devdocs/element_interface.md",
+            "devdocs/elements.md",
             "devdocs/domain_management.md",
         ],
         "vroom.md",

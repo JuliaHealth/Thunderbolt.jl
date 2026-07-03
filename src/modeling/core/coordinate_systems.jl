@@ -80,8 +80,8 @@ and a nodeset
     * Apex
 """
 function compute_lv_coordinate_system(
-    mesh::SimpleMesh{3, <:Any, T},
-    subdomains::Vector{String} = [""];
+    mesh::SimpleMesh{3, <:Any, T};
+    subdomains::Vector{String} = [single_subdomain_or_error(mesh)],
     up = Vec((T(0.0), T(0.0), T(-1.0))),
 ) where {T}
     @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
@@ -208,7 +208,7 @@ Requires a mesh with facetsets
 """
 function compute_midmyocardial_section_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T},
-    subdomains::Vector{String} = [""];
+    subdomains::Vector{String} = [single_subdomain_or_error(mesh)];
     up = Vec((T(0.0), T(0.0), T(1.0))),
 ) where {T}
     @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."

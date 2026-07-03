@@ -2,6 +2,7 @@ using Test, Thunderbolt, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 using LinearSolve
 using OrdinaryDiffEqNonlinearSolve
 using ModelingToolkit
+using DynamicQuantities
 
 function test_solve_contractile_ideal_lv_3D0D(
     mesh,
@@ -31,7 +32,7 @@ function test_solve_contractile_ideal_lv_3D0D(
     coupled_model = RSAFDQ2022Model(solid_model, fluid_model, coupler)
     splitform = semidiscretize(
         RSAFDQ2022Split(coupled_model),
-        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3), dbcs),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3), dbcs, ["myocardium"]),
         mesh,
     )
 
@@ -82,15 +83,15 @@ end
         longitudinal_upper = 0.4,
         apex_inner = scaling_factor * 1.3,
         apex_outer = scaling_factor*1.5,
+        with_control_point = true,
     )
-    mesh = Thunderbolt.hexahedralize(mesh) # FIXME Subdomain support
 
-    cs = compute_lv_coordinate_system(mesh)
+    cs = compute_lv_coordinate_system(mesh; subdomains = ["myocardium"])
     @test !any(isnan.(cs.u_apicobasal))
     @test !any(isnan.(cs.u_transmural))
     @test !any(isnan.(cs.u_rotational))
     microstructure_parameters = ODB25LTMicrostructureParameters(αendo = deg2rad(80.0), αepi = deg2rad(-65.0))
-    microstructure_model      = create_microstructure_model(cs, LagrangeCollection{1}()^3, microstructure_parameters)
+    microstructure_model      = create_microstructure_model(cs, LagrangeCollection{1}()^3, microstructure_parameters; subdomains = ["myocardium"])
     function calcium_profile_function(x::LVCoordinate, t_global)
         linear_interpolation(t, y1, y2, t1, t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
         ca_peak(x)                              = 1.0
@@ -115,7 +116,16 @@ end
         sol.u[end],
         RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false),
         LumpedFluidSolidCoupler(
-            [ChamberVolumeCoupling("Endocardium", RSAFDQ2022SurrogateVolume(), :Vₗᵥ, :pₗᵥ)],
+            [
+                ChamberVolumeCoupling(
+                    "Endocardium",
+                    "lv-volume-control",
+                    RSAFDQ2022SurrogateVolume(),
+                    :Vₗᵥ,
+                    :pₗᵥ,
+                    :pₗᵥ,
+                ),
+            ],
             :d,
         ),
         1.0,
@@ -147,9 +157,11 @@ end
             [
                 ChamberVolumeCoupling(
                     "Endocardium",
+                    "lv-volume-control",
                     RSAFDQ2022SurrogateVolume(),
                     rsafdq2022mtk.Vₗᵥ,
                     rsafdq2022mtk.external_input_lv_p,
+                    :pₗᵥ,
                 ),
             ],
             :d,

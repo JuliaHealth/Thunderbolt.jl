@@ -1,23 +1,25 @@
 struct DummyODESolution <: SciMLBase.AbstractODESolution{Float64, 2, Vector{Float64}}
     retcode::SciMLBase.ReturnCode.T
+    prob::Any
 end
-DummyODESolution() = DummyODESolution(SciMLBase.ReturnCode.Default)
+DummyODESolution(prob) = DummyODESolution(SciMLBase.ReturnCode.Default, prob)
 function SciMLBase.solution_new_retcode(sol::DummyODESolution, retcode)
     return DiffEqBase.@set sol.retcode = retcode
 end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
-function OS.build_subintegrator_tree_with_cache(
+function OS._build_child(
     prob::OS.OperatorSplittingProblem,
     alg::AbstractSolver,
-    f,
-    p,
-    uprevouter::AbstractVector,
-    uouter::AbstractVector,
+    f::F,
+    p::P,
+    uprevouter::S,
+    uouter::S,
+    u_master::S,
     solution_indices,
-    t0,
-    dt,
-    tf,
+    t0::T,
+    dt::T,
+    tf::T,
     tstops,
     saveat,
     d_discontinuities,
@@ -26,7 +28,14 @@ function OS.build_subintegrator_tree_with_cache(
     verbose,
     save_end = false,
     controller = nothing,
-)
+    internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
+) where {S, T, P, F}
+
+    (; tspan) = prob
+
+    # Since we do not have control over the adaptivity setting yet, this toggles adaptivity off for inner algs.
+    adaptive &= SciMLBase.isadaptive(alg)
+
     uprev = @view uprevouter[solution_indices]
     u = @view uouter[solution_indices]
 
@@ -34,6 +43,9 @@ function OS.build_subintegrator_tree_with_cache(
     _dt = dt
     tdir = tf > t0 ? one(dt) : -one(dt)
     tType = typeof(dt)
+    tTypeNoUnits = typeof(one(tType))
+
+    dtchangeable = OrdinaryDiffEqCore.isdtchangeable(alg)
 
     if tstops isa AbstractArray || tstops isa Tuple || tstops isa Number
         _tstops = nothing
@@ -91,10 +103,28 @@ function OS.build_subintegrator_tree_with_cache(
     #     # dense = dense, k = ks, saved_subsystem = saved_subsystem,
     #     calculate_error = false
     # )
-    sol = DummyODESolution()
+    sol = DummyODESolution(
+        OS.OperatorSplittingProblem(prob.f, view(prob.u0, solution_indices), tspan),
+    )
 
-    if controller === nothing && adaptive && SciMLBase.isadaptive(alg)
-        controller = default_controller(alg, cache)
+    QT = OrdinaryDiffEqCore.determine_controller_datatype(u, internalnorm, tspan)
+
+    if controller === nothing && adaptive
+        controller = OrdinaryDiffEqCore.default_controller(QT, alg)
+    end
+
+    EEstT = if tTypeNoUnits <: Integer
+        QT
+    elseif prob isa SciMLBase.AbstractDiscreteProblem
+        constvalue(tTypeNoUnits)
+    else
+        typeof(internalnorm(u, t0))
+    end
+
+    controller_cache = if controller !== nothing
+        OrdinaryDiffEqCore.setup_controller_cache(alg, cache, controller, EEstT)
+    else
+        nothing
     end
 
     save_end =
@@ -111,12 +141,14 @@ function OS.build_subintegrator_tree_with_cache(
         t0,
         t0,
         dt,
+        dt,
+        dt,
         tdir,
         cache,
         callback_cache,
         sol,
-        true,
-        adaptive ? controller : nothing,
+        dtchangeable,
+        controller_cache,
         IntegratorStats(),
         IntegratorOptions(
             dtmin = zero(tType),
@@ -154,5 +186,5 @@ function OS.build_subintegrator_tree_with_cache(
 
     OrdinaryDiffEqCore.handle_dt!(integrator)
 
-    return integrator, integrator.cache
+    return integrator
 end

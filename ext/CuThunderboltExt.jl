@@ -26,6 +26,8 @@ import CUDA:
     cu,
     cudaconvert
 
+import FerriteOperators: CudaDevice
+
 import Thunderbolt:
     SimpleMesh,
     SparseMatrixCSR,
@@ -42,7 +44,6 @@ import Thunderbolt:
     setup_element_cache,
     update_operator!,
     FieldCoefficientCache,
-    CudaDevice,
     ElementAssemblyStrategy,
     value_type,
     index_type,
@@ -80,7 +81,6 @@ import Thunderbolt.FerriteUtils:
 
 import Thunderbolt.Preconditioners: sparsemat_format_type, CSCFormat, CSRFormat
 
-
 import Ferrite:
     AbstractDofHandler,
     get_grid,
@@ -96,7 +96,6 @@ import Ferrite:
 import StaticArrays: SVector, MVector
 
 import Adapt: Adapt, adapt_structure, adapt, @adapt_structure
-
 
 # ---------------------- Generic part ------------------------
 
@@ -124,9 +123,6 @@ function Thunderbolt._pointwise_step_outer_kernel!(
     return true
 end
 
-_allocate_matrix(dh::DeviceDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
-_allocate_matrix(dh::DeviceDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
-
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where {T} = CUDA.zeros(T, solution_size(f))
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where {T}                  = CUDA.zeros(T, ndofs(dh))
 
@@ -149,16 +145,28 @@ function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: V
     return CuVector(v)
 end
 
-function Thunderbolt.default_backend(device::Thunderbolt.CudaDevice)
-    # nblocks = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT) # no. SMs
-    # # CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR
-    # nthreads = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR) # no. threads per SM
-    return CUDABackend()
+########################
+## adapt Coefficients ##
+########################
+function Adapt.adapt_structure(
+    ::CudaDevice,
+    element_cache::Thunderbolt.AnalyticalCoefficientElementCache,
+)
+    cc = adapt(CuArray, element_cache.cc)
+    nz_intervals = adapt(CuArray, element_cache.nonzero_intervals)
+    sv = adapt(CuArray, element_cache.cv)
+    return Thunderbolt.AnalyticalCoefficientElementCache(cc, nz_intervals, sv)
 end
 
-include("cuda/cuda_operator.jl")
-include("cuda/cuda_memalloc.jl")
-include("cuda/cuda_adapt.jl")
-include("cuda/cuda_iterator.jl")
+function Adapt.adapt_structure(::CudaDevice, cysc::Thunderbolt.FieldCoefficientCache)
+    elementwise_data = adapt(CuArray, cysc.elementwise_data)
+    cv = adapt(CuArray, cysc.cv)
+    return Thunderbolt.FieldCoefficientCache(elementwise_data, cv)
+end
+function Adapt.adapt_structure(::CudaDevice, sphdf::Thunderbolt.SpatiallyHomogeneousDataField)
+    timings = adapt(CuArray, sphdf.timings)
+    data = adapt(CuArray, sphdf.data)
+    return Thunderbolt.SpatiallyHomogeneousDataField(timings, data)
+end
 
 end

@@ -1,4 +1,5 @@
 import LinearSolve: KrylovJL_GMRES, LinearProblem
+using BlockArrays
 
 @testset "Linear Solver" begin
     alg = Thunderbolt.SchurComplementLinearSolver(KrylovJL_GMRES())

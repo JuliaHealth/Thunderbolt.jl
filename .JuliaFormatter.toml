@@ -5,3 +5,4 @@ remove_extra_newlines = false
 whitespace_in_kwargs = true
 whitespace_typedefs = true
 ignore = ["bak/*", "benchmarks/*", "data/*", "docs/*"]
+annotate_untyped_fields_with_any = false

@@ -1,5 +1,3 @@
-abstract type AbstractNonlinearIntegrator end
-
 @doc raw"""
     NonlinearIntegrator
 

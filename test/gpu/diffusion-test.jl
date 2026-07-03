@@ -32,7 +32,7 @@ end
 @assert u₀ ≉ cpuintegrator.u
 
 
-u₀gpu        = CuVector(u₀)
+u₀gpu          = CuVector(u₀)
 gputimestepper = BackwardEulerSolver(solution_vector_type = CuVector{Float32}, system_matrix_type = CUDA.CUSPARSE.CuSparseMatrixCSC{Float32, Int32})
 gpuproblem     = Thunderbolt.ODEProblem(odefun, u₀gpu, tspan)
 gpuintegrator  = init(gpuproblem, gputimestepper, dt = dt₀)

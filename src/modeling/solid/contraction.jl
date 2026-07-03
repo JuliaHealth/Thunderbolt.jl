@@ -90,7 +90,7 @@ end
 function (model_wrapper::StandaloneSarcomereModel)(du, u, p, t)
     λ    = model_wrapper.fiber_stretch(t)
     dλdt = model_wrapper.fiber_velocity(t)
-    Ca    = model_wrapper.calcium(t)
+    Ca   = model_wrapper.calcium(t)
     sarcomere_rhs!(du, u, λ, dλdt, Ca, t, model_wrapper.model)
 end
 num_states(wrapper::StandaloneSarcomereModel) = num_states(wrapper.model)

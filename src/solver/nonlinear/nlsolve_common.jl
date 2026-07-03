@@ -9,6 +9,11 @@ eliminate_constraints_from_linearization!(
     cache::AbstractNonlinearSolverCache,
     f::AbstractSemidiscreteFunction,
 ) = apply_zero!(cache.op.J, cache.residual, getch(f))
+
+eliminate_constraints_from_residual!(
+    cache::AbstractNonlinearSolverCache,
+    f::AbstractSemidiscreteFunction,
+) = apply_zero!(cache.residual, getch(f))
 eliminate_constraints_from_increment!(
     Δu::AbstractVector,
     f::AbstractSemidiscreteFunction,
