@@ -125,13 +125,12 @@ function assemble_element!(
 end
 
 function setup_element_cache(element_model::BilinearInterfaceDiffusionIntegrator, sdh::SubDofHandler)
-    qr         = getquadraturerule(element_model.qrc, sdh)
-    ip         = Ferrite.getfieldinterpolation(sdh, element_model.sym1)
-    ip_geo     = geometric_subdomain_interpolation(sdh)
-
+    qr = getquadraturerule(element_model.qrc, sdh)
+    ip = Ferrite.getfieldinterpolation(sdh, element_model.sym1)
+    cv = InterfaceCellValues(qr, ip)
     return BilinearInterfaceDiffusionElementCache(
         setup_coefficient_cache(element_model.D, qr, sdh),
-        InterfaceCellValues(qr, ip, ip_geo),
+        cv,
     )
 end
 

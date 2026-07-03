@@ -11,8 +11,6 @@ Ferrite.cell_to_vtkcell(cell::InterfaceCell{RefQuadrilateral, Line, 4}) = VTKCel
         # TODO cleaner implementation. We need to extract this from the types or via dispatch.
         heatfun = f.functions[1]
         heat_dofrange = f.solution_indices[1]
-        odefun = f.functions[2]
-        ionic_model = odefun.ode
 
         ϕ₀ = @view u₀[heat_dofrange];
         # TODO extraction these via utility functions
@@ -107,12 +105,6 @@ Ferrite.cell_to_vtkcell(cell::InterfaceCell{RefQuadrilateral, Line, 4}) = VTKCel
             :φₘ,
             :s1,
         ),
-        # FIXME 
-        "interfaces" => InterfaceDiffusionModel(
-            ConstantCoefficient(1.0),
-            :φₘ,
-            :φₘ,
-        ),
         "Myocardium" => MonodomainModel(
             ConstantCoefficient(1.0),
             ConstantCoefficient(1.0),
@@ -122,9 +114,17 @@ Ferrite.cell_to_vtkcell(cell::InterfaceCell{RefQuadrilateral, Line, 4}) = VTKCel
             :φₘ,
             :s2,
         ),
+        # FIXME 
+        "interfaces" => InterfaceDiffusionModel(
+            ConstantCoefficient(1.0),
+            :φₘ,
+            :φₘ,
+        ),
     )
 
-    discretization = FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()))
+    discretization = FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()), :φₘi => InterfaceCollection(LagrangeCollection{}))
+
+    odeform = semidiscretize(ReactionDiffusionSplit(models), discretization, to_mesh(grid2))
 
     mesh = to_mesh(generate_mixed_grid_2D())
     coeff = ConstantCoefficient(SymmetricTensor{2, 2, Float64}((4.5e-5, 0, 2.0e-5)))

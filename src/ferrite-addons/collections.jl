@@ -25,8 +25,10 @@ end
 
 getorder(ic::InterfaceCollection) = getorder(ic.ipc)
 
-getinterpolation(ic::InterfaceCollection, sdh_or_cell) =
-    InterfaceCellInterpolation(getinterpolation(ic.ipc, sdh_or_cell))
+function getinterpolation(ic::InterfaceCollection, sdh::SubDofHandler)
+    error("FIXME interface collection returns the wrong interpolation!")
+    InterfaceCellInterpolation(getinterpolation(ic.ipc, sdh))
+end
 
 # Wildcard
 getinterpolation(ipc::InterpolationCollection, sdh::SubDofHandler) =

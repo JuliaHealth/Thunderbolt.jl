@@ -139,6 +139,14 @@ A dummy protocol describing the absence of stimuli for a simulation.
 """
 struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 
+function setup_element_cache(
+    protocol::NoStimulationProtocol,
+    qr,
+    sdh::SubDofHandler,
+)
+    return EmptyVolumetricElementCache()
+end
+
 """
 Describe the transmembrane stimulation by some analytical function on a given set of time intervals.
 """

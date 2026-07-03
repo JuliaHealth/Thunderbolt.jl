@@ -26,8 +26,8 @@ function perform_step!(
     t::Real,
     Δt::Real,
 )
-    @timeit_debug "reaction solve" for f in fs.functions
-        _pointwise_step_outer_kernel!(f, t, Δt, cache, cache.uₙ)
+    @timeit_debug "reaction solve" for (i, f) in enumerate(fs.functions)
+        _pointwise_step_outer_kernel!(f, t, Δt, repack_subdomain(cache, i), cache.uₙ)
     end
 end
 
@@ -211,5 +211,59 @@ function setup_solver_cache(
         solver.reaction_threshold,
         solver.batch_size_hint,
         xs,
+    )
+end
+
+function setup_solver_cache(
+    fs::PointwiseMultiODEFunction,
+    solver::AdaptiveForwardEulerSubstepper,
+    t₀;
+    u = nothing,
+    uprev = nothing,
+)
+    @unpack npoints, ode = f
+    ndofs_local = num_states(ode)
+
+    du    = create_system_vector(solver.solution_vector_type, f)
+    uₙ    = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
+    uₙ₋₁  = uprev === nothing ? uₙ : uprev
+
+    dumat = [
+        reshape(view(du, f.ode.associated_states), (npoints, ndofs_local)) for f in fs.functions
+    ]
+    uₙmat = [
+        reshape(view(uₙ, f.ode.associated_states), (npoints, ndofs_local)) for f in fs.functions
+    ]
+
+    xs = if f.x === nothing
+        nothing
+    else
+        adapt_vector_type(solver.solution_vector_type, f.x)
+    end
+
+    return AdaptiveForwardEulerSubstepperCache(
+        du,
+        uₙ,
+        uₙ₋₁,
+        dumat,
+        uₙmat,
+        solver.substeps,
+        solver.reaction_threshold,
+        solver.batch_size_hint,
+        xs,
+    )
+end
+
+function repack_subdomain(cache::AdaptiveForwardEulerSubstepperCache, i)
+    AdaptiveForwardEulerSubstepperCache(
+        cache.du,
+        cache.uₙ,
+        cache.uₙ₋₁,
+        cache.dumat[i],
+        cache.uₙmat[i],
+        cache.substeps,
+        cache.reaction_threshold,
+        cache.batch_size_hint,
+        cache.xs,
     )
 end

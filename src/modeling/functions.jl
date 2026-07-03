@@ -48,10 +48,8 @@ This acts as as a launch-pad for batches of ODE steps.
 struct PointwiseODEFunction{ODEType, xType, IndexVectorType} <: AbstractPointwiseFunction
     ode::ODEType
     x::xType
-    # Indices of the potentials associated with this
-    associated_φs::IndexVectorType
-    # Offset for the state in the solution vector
-    state_offset::Int
+    # Indices of the states associated with this
+    associated_states::IndexVectorType
 end
 
 solution_size(f::PointwiseODEFunction) = length(f.associated_φs)*num_states(f.ode)

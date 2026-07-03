@@ -151,17 +151,11 @@ end
 function register_affine_ode_integrators!(mass_integrators, rhs_integrators, linear_integrators, dh, name, discretization::FiniteElementDiscretization, model::InterfaceDiffusionModel)
     sym = model.solution_variable_symbol_1
     ipc = _get_interpolation_from_discretization(discretization, sym)
-    add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+    add_subdomain!(dh, name, [ApproximationDescriptor(sym, InterfaceCollection(ipc))])
 
     T = get_coordinate_eltype(get_grid(dh))
 
     qrc  = _get_quadrature_from_discretization(discretization, sym)
-    # TODO allow e.g. mass lumping for explicit integrators.
-    mass_integrators[name] = BilinearMassIntegrator(
-        ConstantCoefficient(T(1.0)),
-        haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass]  : qrc,
-        sym,
-    )
     rhs_integrators[name]  = BilinearInterfaceDiffusionIntegrator(model.G, qrc, sym,  model.solution_variable_symbol_2)
 end
 
@@ -180,15 +174,23 @@ function semidiscretize(
     linear_integrators = Dict{String, AbstractLinearIntegrator}()
 
     for (name, model) in models
-        register_affine_ode_integrators!(mass_integrators, rhs_integrators, linear_integrators, dh, name, discretization, model)
+        if typeof(model) <: TransientDiffusionModel
+            register_affine_ode_integrators!(mass_integrators, rhs_integrators, linear_integrators, dh, name, discretization, model)
+        end
+    end
+    # We register the interfaces in a separate step, so they do not interfere with the dof distribution
+    for (name, model) in models
+        if typeof(model) <: InterfaceDiffusionModel
+            register_affine_ode_integrators!(mass_integrators, rhs_integrators, linear_integrators, dh, name, discretization, model)
+        end
     end
 
     close!(dh)
 
     return AffineODEFunction(
-        mass_integrators,
-        rhs_integrators,
-        linear_integrators,
+        BilinearMultiIntegrator(mass_integrators),
+        BilinearMultiIntegrator(rhs_integrators),
+        LinearMultiIntegrator(linear_integrators),
         dh,
         discretization.assembly_strategy,
     )
@@ -308,30 +310,45 @@ function semidiscretize(
     inner_functions = PointwiseODEFunction[]
     offset = 0
     xφ = (split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, epmodel.transmembrane_solution_symbol))
+    heat_dofrange = Int[]
     for (name, model) in epmodels
         if typeof(model) <: AbstractEPModel # Only handle the EP models
+            # Extract dofs associated with subdomain
             subdofs = collect_dofs_on_subdomain(dh, mesh, name)
+            # Compute range for states
+            mindof, maxdof = extrema(subdofs)
+            @assert length(mindof:maxdof) == length(subdofs) "$(mindof:maxdof) does not match length(subdofs)=$(length(subdofs)) => Subdomain is not isolated. "
+            nstates = num_states(model.ion)
+            state_min_dof = nstates*(mindof-1)+1
+            state_max_dof = nstates*(maxdof-1)+nstates
+            state_range = state_min_dof:state_max_dof
+            @info "Mapping state range on $name to $state_range from $(mindof:maxdof)"
+
+            # Create ode function for subdomain
             push!(inner_functions,
                 PointwiseODEFunction(
                     model.ion,
                     xφ,
-                    subdofs,
-                    offset,
+                    state_range,
                 )
             )
-            offset += length(subdofs)*(num_states(model.ion)-1)
+
+            # Map heat dofs
+            heat_dofs_submodel = ((subdofs .- minimum(subdofs)) .* nstates) .+ transmembranepotential_index(model.ion) .+ offset
+            append!(heat_dofrange, heat_dofs_submodel)
+
+            # Update total number of dofs in split
+            offset += length(subdofs)*num_states(model.ion)
         end
     end
-    odefun = PointwiseMultiODEFunction(
+    ionicfun = PointwiseMultiODEFunction(
         inner_functions,
     )
-    # TODO this assumes that the transmembrane potential is the first field. Relax this.
-    heat_dofrange = 1:ndofsφ
-    ode_dofrange = 1:offset
+    ionic_dofrange = 1:offset
     #
     semidiscrete_ode = GenericSplitFunction(
-        (heatfun, odefun),
-        (heat_dofrange, ode_dofrange),
+        (heatfun, ionicfun),
+        (heat_dofrange, ionic_dofrange),
         # No transfer operators needed, because the the solutions variables overlap with the subproblems perfectly
     )
 

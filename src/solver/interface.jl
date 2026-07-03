@@ -66,7 +66,7 @@ end
 
 function setup_operator(
     strategy,
-    integrator::LinearIntegrator,
+    integrator::AbstractLinearIntegrator,
     solver::AbstractSolver,
     dh::AbstractDofHandler,
 )
