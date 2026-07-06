@@ -74,7 +74,7 @@ Adapt.@adapt_structure ForwardEulerCellSolverCache
     x        = getcoordinate(cache, i)
 
     # TODO get Cₘ
-    cell_rhs!(du_local, u_local, i, x, t, cell_model)
+    cell_rhs!(du_local, u_local, x, t, cell_model)
 
     @inbounds for j = 1:length(u_local)
         u_local[j] += Δt*du_local[j]
@@ -143,7 +143,7 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
     φₘidx = transmembranepotential_index(cell_model)
 
     # TODO get Cₘ
-    cell_rhs!(du_local, u_local, i, x, t, cell_model)
+    cell_rhs!(du_local, u_local, x, t, cell_model)
 
     if abs(du_local[φₘidx]) < cache.reaction_threshold
         for j = 1:length(u_local)
@@ -158,7 +158,7 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
         for substep ∈ 2:cache.substeps
             tₛ = t + substep*Δtₛ
             #TODO Cₘ
-            cell_rhs!(du_local, u_local, i, x, t, cell_model)
+            cell_rhs!(du_local, u_local, x, t, cell_model)
 
             for j = 1:length(u_local)
                 u_local[j] += Δtₛ*du_local[j]

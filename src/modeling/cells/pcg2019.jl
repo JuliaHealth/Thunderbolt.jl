@@ -121,7 +121,6 @@ end
 function cell_rhs!(
     du::TD,
     u::TU,
-    i,
     x::TX,
     t::TT,
     cell_parameters::TP,

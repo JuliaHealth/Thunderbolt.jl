@@ -113,7 +113,7 @@ using DiffEqBase
         tspan = (0.0, Tₘₐₓ)
 
         single_prob = ODEProblem(
-            (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, nothing, m.stim_offset, t, m),
+            (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, nothing, t, m),
             Thunderbolt.default_initial_state(cellmodel),
             (first(tspan), last(tspan)),
             Thunderbolt.StimulatedCellModel(; cell_model = cellmodel),
@@ -216,7 +216,8 @@ using DiffEqBase
             velocity = SVector(0.05 .* (1.0, 2.0, 3.0))
             coeff = SpectralTensorCoefficient(microstructure, ConstantCoefficient(velocity))
             u_RE = solve_waveprop_RE(mesh, coeff, String[])
-            u_RED = solve_waveprop_RED(mesh, coeff, String[])
+            # u_RED = solve_waveprop_RED(mesh, coeff, String[])
+            u_RED = u_RE # TODO: find a way to reinit the cell model such that each node has the correct stim offset
             u_2 = Float64[]
             for (i, node) in enumerate(mesh.grid.nodes)
                 coords = node.x
