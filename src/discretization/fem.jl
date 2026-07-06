@@ -149,14 +149,14 @@ function register_affine_ode_integrators!(mass_integrators, rhs_integrators, lin
 end
 
 function register_affine_ode_integrators!(mass_integrators, rhs_integrators, linear_integrators, dh, name, discretization::FiniteElementDiscretization, model::InterfaceDiffusionModel)
-    sym = model.solution_variable_symbol_1
-    ipc = _get_interpolation_from_discretization(discretization, sym)
-    add_subdomain!(dh, name, [ApproximationDescriptor(sym, InterfaceCollection(ipc))])
+    sym = model.solution_variable_symbol
+    ipc = _get_interpolation_from_discretization(discretization, model.interface_interpolation_symbol)
+    add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
 
     T = get_coordinate_eltype(get_grid(dh))
 
     qrc  = _get_quadrature_from_discretization(discretization, sym)
-    rhs_integrators[name]  = BilinearInterfaceDiffusionIntegrator(model.G, qrc, sym,  model.solution_variable_symbol_2)
+    rhs_integrators[name]  = BilinearInterfaceDiffusionIntegrator(model.G, qrc, sym,  model.solution_variable_symbol)
 end
 
 function semidiscretize(

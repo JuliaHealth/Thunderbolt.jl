@@ -111,14 +111,14 @@ function assemble_element!(
 
     reinit!(cellvalues, cell)
 
-    for qp in 1:getnquadpoints(cv)
+    for qp in 1:getnquadpoints(cellvalues)
         D_loc = evaluate_coefficient(Dcache, cell, qp, time)
-        dΩ = getdetJdV_average(cv, qp)
-        for i in 1:getnbasefunctions(cv)
-            jump_δu = shape_value_jump(cv, qp, i)
-            for j in 1:getnbasefunctions(cv)
-                jump_u = shape_value_jump(cv, qp, j)
-                Ke[i, j] += (jump_δu * D_loc * jump_u) * dΩ
+        dΩ = getdetJdV_average(cellvalues, qp)
+        for i in 1:getnbasefunctions(cellvalues)
+            jump_δu = shape_value_jump(cellvalues, qp, i)
+            for j in 1:getnbasefunctions(cellvalues)
+                jump_u = shape_value_jump(cellvalues, qp, j)
+                Kₑ[i, j] += (jump_δu * D_loc * jump_u) * dΩ
             end
         end
     end
@@ -142,11 +142,11 @@ Model formulated as ``\int_{\Gamma^{\text{P}/\text{M}}} [\![ \delta u ]\!] G [\!
 """
 @concrete struct InterfaceDiffusionModel
     G
-    solution_variable_symbol_1::Symbol
-    solution_variable_symbol_2::Symbol
+    solution_variable_symbol::Symbol
+    interface_interpolation_symbol::Symbol
 end
 
-get_volumetric_weak_form_names(model::InterfaceDiffusionModel) = [model.solution_variable_symbol_1] # FIXME
+get_volumetric_weak_form_names(model::InterfaceDiffusionModel) = [model.solution_variable_symbol] # FIXME
 
 @doc raw"""
     SteadyDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)

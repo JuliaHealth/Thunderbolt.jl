@@ -52,7 +52,7 @@ struct PointwiseODEFunction{ODEType, xType, IndexVectorType} <: AbstractPointwis
     associated_states::IndexVectorType
 end
 
-solution_size(f::PointwiseODEFunction) = length(f.associated_φs)*num_states(f.ode)
+solution_size(f::PointwiseODEFunction) = length(f.associated_states)
 
 """
     PointwiseMultiODEFunction

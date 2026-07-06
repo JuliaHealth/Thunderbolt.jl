@@ -27,8 +27,10 @@ function perform_step!(
     Δt::Real,
 )
     @timeit_debug "reaction solve" for (i, f) in enumerate(fs.functions)
-        _pointwise_step_outer_kernel!(f, t, Δt, repack_subdomain(cache, i), cache.uₙ)
+       ! _pointwise_step_outer_kernel!(f, t, Δt, repack_subdomain(cache, i), cache.uₙ) && return false
     end
+
+    return true
 end
 
 # This controls the outer loop over the ODEs
@@ -39,7 +41,7 @@ function _pointwise_step_outer_kernel!(
     cache::AbstractPointwiseSolverCache,
     ::Union{Vector, SubArray{<:Any, 1, <:Vector}},
 )
-    @unpack npoints = f
+    npoints = length(f.associated_states) ÷ num_states(f.ode)
 
     @batch minbatch=cache.batch_size_hint for i ∈ 1:npoints
         _pointwise_step_inner_kernel!(f.ode, i, t, Δt, cache) || return false
@@ -221,25 +223,24 @@ function setup_solver_cache(
     u = nothing,
     uprev = nothing,
 )
-    @unpack npoints, ode = f
-    ndofs_local = num_states(ode)
-
-    du    = create_system_vector(solver.solution_vector_type, f)
-    uₙ    = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
+    du    = create_system_vector(solver.solution_vector_type, fs)
+    uₙ    = u === nothing ? create_system_vector(solver.solution_vector_type, fs) : u
     uₙ₋₁  = uprev === nothing ? uₙ : uprev
 
     dumat = [
-        reshape(view(du, f.ode.associated_states), (npoints, ndofs_local)) for f in fs.functions
+        reshape(view(du, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
     ]
     uₙmat = [
-        reshape(view(uₙ, f.ode.associated_states), (npoints, ndofs_local)) for f in fs.functions
+        reshape(view(uₙ, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
     ]
 
-    xs = if f.x === nothing
-        nothing
-    else
-        adapt_vector_type(solver.solution_vector_type, f.x)
-    end
+    # xs = if fs.x === nothing
+    #     nothing
+    # else
+    #     adapt_vector_type(solver.solution_vector_type, fs.x)
+    # end
+    # FIXME recover
+    xs = nothing
 
     return AdaptiveForwardEulerSubstepperCache(
         du,

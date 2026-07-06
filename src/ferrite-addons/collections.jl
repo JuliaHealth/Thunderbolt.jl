@@ -1,3 +1,7 @@
+function FerriteOperators.getquadraturerule(qrc::FerriteOperators.QuadratureRuleCollection, cell::InterfaceCell)
+    return getquadraturerule(qrc, cell.here)
+end
+
 """
     InterpolationCollection
 
@@ -25,9 +29,8 @@ end
 
 getorder(ic::InterfaceCollection) = getorder(ic.ipc)
 
-function getinterpolation(ic::InterfaceCollection, sdh::SubDofHandler)
-    error("FIXME interface collection returns the wrong interpolation!")
-    InterfaceCellInterpolation(getinterpolation(ic.ipc, sdh))
+function getinterpolation(ic::InterfaceCollection, cell::InterfaceCell)
+    return InterfaceCellInterpolation(getinterpolation(ic.ipc, cell.here))
 end
 
 # Wildcard
