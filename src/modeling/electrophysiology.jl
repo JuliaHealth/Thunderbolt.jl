@@ -299,11 +299,17 @@ Wrapper around ionic cell models that adds foot current according to [NeicCampos
 end
 num_states(m::StimulatedCellModel) = num_states(m.cell_model)
 default_initial_state(m::StimulatedCellModel) = default_initial_state(m.cell_model)
-function cell_rhs!(du, u, x, t, m::StimulatedCellModel)
+
+function cell_rhs!(du, u, x::Nothing, t, m::StimulatedCellModel)
+    return nothing
+end
+
+function cell_rhs!(du, u, x::NodeIndexCoordinateWrapper, t, m::StimulatedCellModel)
     cell_rhs!(du, u, nothing, t, m.cell_model)
-    if m.stim_offset ≤ t ≤ m.stim_offset + m.stim_length
+    i = x.i
+    if m.stim_offset[i] ≤ t ≤ m.stim_offset[i] + m.stim_length
         idx = transmembranepotential_index(m.cell_model)
-        du[idx] += m.stim_strength / m.τᶠ * exp((t - m.stim_offset) / m.τᶠ)
+        du[idx] += m.stim_strength / m.τᶠ * exp((t - m.stim_offset[i]) / m.τᶠ)
     end
     return nothing
 end

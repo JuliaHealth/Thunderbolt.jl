@@ -77,7 +77,7 @@ using DiffEqBase
         return dh
     end
     function solve_waveprop_RE(mesh, diffusion_tensor_field, subdomains)
-        cs = CartesianCoordinateSystem(mesh)
+        cs = Thunderbolt.NodeIndexCoordinateSystemWrapper(CartesianCoordinateSystem(mesh))
 
         activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
             AnalyticalCoefficient((x, t) -> norm(x) ≈ 0.0 ? 0.0 : NaN, cs),
@@ -143,7 +143,7 @@ using DiffEqBase
     end
 
     function solve_waveprop_RED(mesh, diffusion_tensor_field, subdomains)
-        cs = CartesianCoordinateSystem(mesh)
+        cs = Thunderbolt.NodeIndexCoordinateSystemWrapper(CartesianCoordinateSystem(mesh))
 
         activation_protocol = Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
             AnalyticalCoefficient((x, t) -> norm(x) ≈ 0.0 ? 0.0 : NaN, cs),
@@ -216,8 +216,7 @@ using DiffEqBase
             velocity = SVector(0.05 .* (1.0, 2.0, 3.0))
             coeff = SpectralTensorCoefficient(microstructure, ConstantCoefficient(velocity))
             u_RE = solve_waveprop_RE(mesh, coeff, String[])
-            # u_RED = solve_waveprop_RED(mesh, coeff, String[])
-            u_RED = u_RE # TODO: find a way to reinit the cell model such that each node has the correct stim offset
+            u_RED = solve_waveprop_RED(mesh, coeff, String[])
             u_2 = Float64[]
             for (i, node) in enumerate(mesh.grid.nodes)
                 coords = node.x

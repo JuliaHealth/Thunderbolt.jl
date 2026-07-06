@@ -34,11 +34,37 @@ function get_nodes(protocol::UniformEndocardialActivationProtocol, mesh)
     return nodes
 end
 
-function get_nodes(
-    protocol::AnalyticalTransmembraneStimulationProtocol{
-        <:AnalyticalCoefficient{<:Function, <:CartesianCoordinateSystem},
-    },
-    mesh,
+function get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh)
+    cs = protocol.f.coordinate_system_coefficient
+    return _get_nodes(protocol, mesh, cs)
+end
+
+function _get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh, cs::NodeIndexCoordinateSystemWrapper)
+    return _get_nodes(protocol, mesh, cs.cs)
+end
+
+function _get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh, cs)
+    qrc = NodalQuadratureRuleCollection{}(LagrangeCollection{1}())
+    f = protocol.f.f
+    nodes = Int[]
+    for sdh in cs.dh.subdofhandlers
+        qr = getquadraturerule(qrc, sdh)
+        csc = setup_coefficient_cache(cs, qr, sdh)
+        for cell in CellIterator(sdh)
+            for qp in QuadratureIterator(qr)
+                coord = evaluate_coefficient(csc, cell, qp, 0.0)
+                stim_val = f(coord, 0.0)
+                isnan(stim_val) && continue
+                push!(nodes, cell.nodes[qp.i])
+            end
+        end
+    end
+    return nodes
+end
+
+function _get_nodes(
+    protocol::AnalyticalTransmembraneStimulationProtocol,
+    mesh, cs::CartesianCoordinateSystem,
 )
 
     f = protocol.f.f
@@ -67,36 +93,32 @@ function get_nodes(
     return nodes
 end
 
-function get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh)
-    cs = protocol.f.coordinate_system_coefficient
-    qrc = NodalQuadratureRuleCollection{}(LagrangeCollection{1}())
-    f = protocol.f.f
-    nodes = Int[]
-    for sdh in cs.dh.subdofhandlers
-        qr = getquadraturerule(qrc, sdh)
-        csc = setup_coefficient_cache(cs, qr, sdh)
-        for cell in CellIterator(sdh)
-            for qp in QuadratureIterator(qr)
-                coord = evaluate_coefficient(csc, cell, qp, 0.0)
-                stim_val = f(coord, 0.0)
-                isnan(stim_val) && continue
-                push!(nodes, cell.nodes[qp.i])
-            end
-        end
-    end
-    return nodes
-end
-
 function get_nodes(::UniformEndocardialActivationProtocol{<:CartesianCoordinateSystem}, mesh)
     throw(error("Uniformally activating the endocardium requires using either
     LV or BiV coordinate system. usage with Cartesian Coordinate System is
     restricted to AnalyticalTransmembraneStimulationProtocol"))
 end
 
-function semidiscretize(
+function semidiscretize(model, discretization::SimplicialEikonalDiscretization, mesh)
+    cs = discretization.activation_protocol.f.coordinate_system_coefficient
+    return _semidiscretize(model, discretization, mesh, cs)
+end
+
+function semidiscretize(model, discretization::SimplicialEikonalDiscretization{<:UniformEndocardialActivationProtocol}, mesh)
+    cs = CartesianCoordinateSystem(mesh)
+    return _semidiscretize(model, discretization, mesh, cs)
+end
+
+function _semidiscretize(model::EikonalModel, discretization::SimplicialEikonalDiscretization{<:AnalyticalTransmembraneStimulationProtocol}, mesh, cs::NodeIndexCoordinateSystemWrapper)
+    cs = cs.cs
+    return _semidiscretize(model, discretization, mesh, cs)
+end
+
+function _semidiscretize(
     model::EikonalModel,
     discretization::SimplicialEikonalDiscretization{<:UniformEndocardialActivationProtocol},
     mesh::SimpleMesh,
+    cs
 )
     activation_points = get_nodes(discretization.activation_protocol, mesh)
     vertices = getproperty.(mesh.grid.nodes, :x)
@@ -149,14 +171,13 @@ function semidiscretize(
 end
 
 
-function semidiscretize(
+function _semidiscretize(
     model::EikonalModel,
     discretization::SimplicialEikonalDiscretization{
-        <:AnalyticalTransmembraneStimulationProtocol{
-            <:AnalyticalCoefficient{<:Function, <:CartesianCoordinateSystem},
-        },
+        <:AnalyticalTransmembraneStimulationProtocol,
     },
     mesh::SimpleMesh,
+    cs::CartesianCoordinateSystem
 )
     activation_points = get_nodes(discretization.activation_protocol, mesh)
     vertices = getproperty.(mesh.grid.nodes, :x)
@@ -189,10 +210,11 @@ function semidiscretize(
     )
 end
 
-function semidiscretize(
+function _semidiscretize(
     model::EikonalModel,
     discretization::SimplicialEikonalDiscretization{<:AnalyticalTransmembraneStimulationProtocol},
-    mesh::SimpleMesh,
+    mesh,
+    cs
 )
     activation_points = get_nodes(discretization.activation_protocol, mesh)
     vertices = getproperty.(mesh.grid.nodes, :x)
