@@ -559,6 +559,20 @@ mutable struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{
     localQprev::QType2
 end
 
+function duplicate_for_device(device, cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache)
+    GenericFirstOrderRateIndependentCondensationMaterialStateCache(
+        cache.model,
+        duplicate_for_device(device, cache.model_cache),
+        cache.Q,
+        cache.Qprev,
+        cache.Δt,
+        duplicate_for_device(device, cache.local_solver_cache),
+        cache.lvh,
+        duplicate_for_device(device, cache.localQ),
+        duplicate_for_device(device, cache.localQprev),
+    )
+end
+
 function _solve_local_sarcomere_dQdF(
     dQdλ,
     dλdF,

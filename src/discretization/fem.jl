@@ -343,93 +343,92 @@ function semidiscretize(
 end
 
 # Solid mechanics semidiscretize interface
-function semidiscretize_register_subdomains!(
-    dh,
-    lvh,
-    model,
-    discretization::FiniteElementDiscretization,
-    subdomains,
-)
-    semidiscretize_register_subdomains!(
-        dh,
-        lvh,
-        model,
-        model.material_model,
-        discretization,
-        subdomains,
-    )
-end
-function semidiscretize_register_subdomains!(
-    dh,
-    lvh,
-    model,
-    material_model::AbstractMaterialModel,
-    discretization::FiniteElementDiscretization,
-    subdomains,
-)
-    sym = model.displacement_symbol
-    ipc = _get_interpolation_from_discretization(discretization, sym)
-    qrc = _get_quadrature_from_discretization(discretization, sym)
-    if !isempty(subdomains)
-        for name in subdomains
-            add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-            add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
-        end
-    else
-        name = single_subdomain_or_error(get_grid(dh))
-        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
-    end
-end
+# function semidiscretize_register_subdomains!(
+#     dh,
+#     lvh,
+#     model,
+#     discretization::FiniteElementDiscretization,
+#     subdomains,
+# )
+#     semidiscretize_register_subdomains!(
+#         dh,
+#         lvh,
+#         model,
+#         model.material_model,
+#         discretization,
+#         subdomains,
+#     )
+# end
+# function semidiscretize_register_subdomains!(
+#     dh,
+#     lvh,
+#     model,
+#     material_model::AbstractMaterialModel,
+#     discretization::FiniteElementDiscretization,
+#     subdomains,
+# )
+#     sym = model.displacement_symbol
+#     ipc = _get_interpolation_from_discretization(discretization, sym)
+#     qrc = _get_quadrature_from_discretization(discretization, sym)
+#     if !isempty(subdomains)
+#         for name in subdomains
+#             add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+#             add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
+#         end
+#     else
+#         name = single_subdomain_or_error(get_grid(dh))
+#         add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+#         add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
+#     end
+# end
 
-function semidiscretize_register_subdomains!(
-    dh,
-    lvh,
-    model,
-    material_models::MultiMaterialModel,
-    discretization::FiniteElementDiscretization,
-    subdomains,
-)
-    if length(subdomains) > 1
-        @warn "Multimaterials ignore discretization subdomains for now."
-    end
-    semidiscretize_register_subdomains_multi!(
-        dh,
-        lvh,
-        model,
-        material_models.materials,
-        material_models.domains,
-        material_models.domain_names,
-        discretization,
-    )
-end
-@unroll function semidiscretize_register_subdomains_multi!(
-    dh,
-    lvh,
-    model,
-    material_models,
-    domains,
-    domain_names,
-    discretization,
-)
-    sym = model.displacement_symbol
-    ipc = _get_interpolation_from_discretization(discretization, sym)
-    qrc = _get_quadrature_from_discretization(discretization, sym)
-    idx = 1
-    @unroll for material_model in material_models
-        add_subdomain!(dh, domain_names[idx], [ApproximationDescriptor(sym, ipc)])
-        add_subdomain!(
-            lvh,
-            domain_names[idx],
-            gather_internal_variable_infos(material_model),
-            qrc,
-            dh,
-        )
-        idx += 1
-    end
-end
+# function semidiscretize_register_subdomains!(
+#     dh,
+#     lvh,
+#     model,
+#     material_models::MultiMaterialModel,
+#     discretization::FiniteElementDiscretization,
+#     subdomains,
+# )
+#     if length(subdomains) > 1
+#         @warn "Multimaterials ignore discretization subdomains for now."
+#     end
+#     semidiscretize_register_subdomains_multi!(
+#         dh,
+#         lvh,
+#         model,
+#         material_models.materials,
+#         material_models.domains,
+#         material_models.domain_names,
+#         discretization,
+#     )
+# end
+# @unroll function semidiscretize_register_subdomains_multi!(
+#     dh,
+#     lvh,
+#     model,
+#     material_models,
+#     domains,
+#     domain_names,
+#     discretization,
+# )
+#     sym = model.displacement_symbol
+#     ipc = _get_interpolation_from_discretization(discretization, sym)
+#     qrc = _get_quadrature_from_discretization(discretization, sym)
+#     idx = 1
+#     @unroll for material_model in material_models
+#         add_subdomain!(dh, domain_names[idx], [ApproximationDescriptor(sym, ipc)])
+#         add_subdomain!(
+#             lvh,
+#             domain_names[idx],
+#             gather_internal_variable_infos(material_model),
+#             qrc,
+#             dh,
+#         )
+#         idx += 1
+#     end
+# end
 
-# FIXME redirect to multi-domain version
 function semidiscretize(
     model::QuasiStaticModel,
     discretization::FiniteElementDiscretization,
@@ -440,7 +439,12 @@ function semidiscretize(
     fqrc = _get_facet_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
     lvh = InternalVariableHandler(mesh)
-    semidiscretize_register_subdomains!(dh, lvh, model, discretization, discretization.subdomains)
+    name = single_subdomain_or_error(get_grid(dh))
+    for sym in get_field_variable_names(model)
+        ipc = _get_interpolation_from_discretization(discretization, sym)
+        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+    end
+    add_subdomain!(lvh, name, gather_internal_variable_infos(model), qrc, dh)
     close!(dh)
     close!(lvh)
 
@@ -468,7 +472,7 @@ function semidiscretize(
 end
 
 function semidiscretize(
-    models::Dict{String, QuasiStaticModel},
+    models::Dict{String, <: QuasiStaticModel},
     discretization::FiniteElementDiscretization,
     mesh::AbstractGrid,
 )

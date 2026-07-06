@@ -120,20 +120,66 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     ndofs(f.lvh) == 0 && return # no internal variable
     uq = @view u[(ndofs(f.dh)+1):end]
     for sdh in f.dh.subdofhandlers
-        qr = getquadraturerule(f.integrator.qrc, sdh)
-        for cell in CellIterator(sdh)
-            cid = cellid(cell)
-            offset = internal_variable_offset(f.lvh, cid)
-            offset == 0 && continue
-            for qp in QuadratureIterator(qr)
-                material_model = get_material_model(f, cid, qp)
-                ivsize_per_qp = internal_variable_size(material_model, cid, qp)
-                ivsize_per_qp == 0 && continue
-                q = @view uq[offset:(offset+ivsize_per_qp-1)]
-                default_initial_state!(q, material_model)
-                offset += ivsize_per_qp
-            end
+        default_initial_condition_quasistatic_subdomain!(
+            u,
+            uq,
+            f,
+            f.integrator,
+            sdh
+        )
+    end
+end
+
+function default_initial_condition_quasistatic_subdomain!(
+    u,
+    uq,
+    f::QuasiStaticFunction,
+    integrator::NonlinearIntegrator,
+    sdh,
+)
+    default_initial_condition_quasistatic_subdomain!(u, uq, f, integrator, integrator.volume_model, sdh)
+end
+
+function default_initial_condition_quasistatic_subdomain!(
+    u,
+    uq,
+    f::QuasiStaticFunction,
+    integrator::NonlinearIntegrator,
+    volume_model::QuasiStaticModel,
+    sdh,
+)
+    (; material_model) = volume_model
+
+    qr = getquadraturerule(integrator.qrc, sdh)
+    for cell in CellIterator(sdh)
+        cid = cellid(cell)
+        offset = internal_variable_offset(f.lvh, cid)
+        offset == 0 && continue
+        for qp in QuadratureIterator(qr)
+            ivsize_per_qp = internal_variable_size(material_model, cid, qp)
+            ivsize_per_qp == 0 && continue
+            q = @view uq[offset:(offset+ivsize_per_qp-1)]
+            default_initial_state!(q, material_model)
+            offset += ivsize_per_qp
         end
+    end
+end
+
+function default_initial_condition_quasistatic_subdomain!(
+    u,
+    uq,
+    f::QuasiStaticFunction,
+    integrator::NonlinearMultiDomainIntegrator2,
+    sdh,
+)
+    for (name, set) in sdh.dh.grid.volumetric_subdomains
+        # First, check if the subdomain at hand is used byt he integrator
+        haskey(integrator.subintegrators, name) || continue
+        # Then check if the subdofhandler is part of the subdomain
+        first(sdh.cellset) ∈ getcellset(sdh.dh.grid, name) || continue
+        @debug "Setting default initial condition for subdomain $name"
+        subintegrator = integrator.subintegrators[name]
+        default_initial_condition_quasistatic_subdomain!(u, uq, f, subintegrator, sdh)
     end
 end
 

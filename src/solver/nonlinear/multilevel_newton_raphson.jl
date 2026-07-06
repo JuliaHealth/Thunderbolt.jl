@@ -16,6 +16,18 @@ Base.@kwdef mutable struct GenericLocalNonlinearSolverCache{
     retcode::SciMLBase.ReturnCode.T = SciMLBase.ReturnCode.Default
 end
 
+function duplicate_for_device(device, cache::GenericLocalNonlinearSolverCache)
+    GenericLocalNonlinearSolverCache(
+        cache.params,
+        duplicate_for_device(device, cache.J),
+        duplicate_for_device(device, cache.residual),
+        duplicate_for_device(device, cache.rhs_corrector),
+        cache.outer_tol,
+        cache.retcode,
+    )
+end
+
+
 function Base.show(io::IO, cache::GenericLocalNonlinearSolverCache)
     println(io, "NewtonRaphsonSolverCache:")
     Base.show(io, cache.params)
@@ -32,11 +44,17 @@ end
 function check_local_solve_covergence(local_solver_cache::Tuple)
     return any(check_local_solve_covergence.(local_solver_cache))
 end
+function check_local_solve_covergence(local_solver_cache::AbstractVector)
+    return any(check_local_solve_covergence.(local_solver_cache))
+end
 
 function set_local_solver_tol(local_solver_cache::GenericLocalNonlinearSolverCache, tol)
     local_solver_cache.outer_tol = tol
 end
 function set_local_solver_tol(local_solver_cache::Tuple, tol)
+    set_local_solver_tol.(local_solver_cache, tol)
+end
+function set_local_solver_tol(local_solver_cache::AbstractVector, tol)
     set_local_solver_tol.(local_solver_cache, tol)
 end
 

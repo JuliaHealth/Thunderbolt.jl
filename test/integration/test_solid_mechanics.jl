@@ -2,8 +2,11 @@ using Thunderbolt
 import DiffEqBase
 import SciMLBase
 import SciMLIterators: intervals
+using Test
+using LinearSolve
+using OrderedCollections
 
-function test_solve_passive_structure(mesh, constitutive_model)
+function test_solve_passive_structure(mesh, models)
     tspan = (0.0, 1.0)
     Δt = 1.0
 
@@ -19,11 +22,10 @@ function test_solve_passive_structure(mesh, constitutive_model)
     ]
 
     quasistaticform = semidiscretize(
-        QuasiStaticModel(:d, constitutive_model, ()),
+        models,
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
-            subdomains = ["myocardium"],
             assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
@@ -55,174 +57,123 @@ end
         Ferrite.Vec{3}((1.0, 1.0, 0.2)),
     )
     addcellset!(grid, "myocardium", x->true)
-    addcellset!(grid, "inner", x->x[3] ≤ 0.0)
-    addcellset!(grid, "outer", x->x[3] ≥ 0.0)
+    # addcellset!(grid, "inner", x->x[3] ≤ 0.0)
+    # addcellset!(grid, "outer", x->x[3] ≥ 0.0)
     mesh = to_mesh(grid)
 
+    ortho_ms = ConstantCoefficient(
+        OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        ),
+    )
     u₁ = test_solve_passive_structure(
         mesh,
-        PK1Model(
-            HolzapfelOgden2009Model(),
-            ConstantCoefficient(
-                OrthotropicMicrostructure(
-                    Vec((1.0, 0.0, 0.0)),
-                    Vec((0.0, 1.0, 0.0)),
-                    Vec((0.0, 0.0, 1.0)),
-                ),
-            ),
+        QuasiStaticModel(:d,
+            PK1Model(
+                HolzapfelOgden2009Model(),
+                ortho_ms,
+            )
         ),
     )
     @test !iszero(u₁)
 
     u₂ = test_solve_passive_structure(
         mesh,
-        PrestressedMechanicalModel(
-            PK1Model(
-                HolzapfelOgden2009Model(),
-                ConstantCoefficient(
-                    OrthotropicMicrostructure(
-                        Vec((1.0, 0.0, 0.0)),
-                        Vec((0.0, 1.0, 0.0)),
-                        Vec((0.0, 0.0, 1.0)),
-                    ),
+        QuasiStaticModel(:d,
+            PrestressedMechanicalModel(
+                PK1Model(
+                    HolzapfelOgden2009Model(),
+                    ortho_ms,
                 ),
+                ConstantCoefficient(Tensor{2, 3}((1.1, 0.1, 0.0, 0.2, 0.9, 0.1, -0.1, 0.0, 1.0))),
             ),
-            ConstantCoefficient(Tensor{2, 3}((1.1, 0.1, 0.0, 0.2, 0.9, 0.1, -0.1, 0.0, 1.0))),
-        ),
+        )
     )
 
+    grid2 = generate_grid(
+        Hexahedron,
+        (10, 10, 2),
+        Ferrite.Vec{3}((-1.0, -1.0, -0.2)),
+        Ferrite.Vec{3}((1.0, 1.0, 0.2)),
+    )
+    addcellset!(grid2, "myocardium", x->true)
+    addcellset!(grid2, "inner", x->x[3] ≤ 0.0)
+    addcellset!(grid2, "outer", x->x[3] ≥ 0.0)
+    mesh2 = to_mesh(grid2)
+    
     # The prestress should force a different solution
     @test u₁ ≉ u₂
 
     u₃ = test_solve_passive_structure(
-        mesh,
-        Thunderbolt.MultiMaterialModel(
-            (
+        mesh2,
+        Dict(
+            "inner" => QuasiStaticModel(:d,
                 PK1Model(
                     HolzapfelOgden2009Model(),
-                    ConstantCoefficient(
-                        OrthotropicMicrostructure(
-                            Vec((1.0, 0.0, 0.0)),
-                            Vec((0.0, 1.0, 0.0)),
-                            Vec((0.0, 0.0, 1.0)),
-                        ),
-                    ),
-                ),
-                PK1Model(
-                    Guccione1991PassiveModel(),
-                    ConstantCoefficient(
-                        OrthotropicMicrostructure(
-                            Vec((1.0, 0.0, 0.0)),
-                            Vec((0.0, 1.0, 0.0)),
-                            Vec((0.0, 0.0, 1.0)),
-                        ),
-                    ),
+                    ortho_ms,
                 ),
             ),
-            ["inner", "outer"],
-            mesh,
-        ),
+            "outer" => QuasiStaticModel(:d,
+                PK1Model(
+                    Guccione1991PassiveModel(),
+                    ortho_ms,
+                )
+            )
+        )
     )
 
     @test u₃ ≉ u₁
 
     u₄ = test_solve_passive_structure(
-        mesh,
-        Thunderbolt.MultiMaterialModel(
-            (
+        mesh2,
+        Dict(
+            "inner" => QuasiStaticModel(:d,
                 PK1Model(
                     HolzapfelOgden2009Model(),
-                    ConstantCoefficient(
-                        OrthotropicMicrostructure(
-                            Vec((1.0, 0.0, 0.0)),
-                            Vec((0.0, 1.0, 0.0)),
-                            Vec((0.0, 0.0, 1.0)),
-                        ),
-                    ),
-                ),
-                PK1Model(
-                    HolzapfelOgden2009Model(),
-                    ConstantCoefficient(
-                        OrthotropicMicrostructure(
-                            Vec((1.0, 0.0, 0.0)),
-                            Vec((0.0, 1.0, 0.0)),
-                            Vec((0.0, 0.0, 1.0)),
-                        ),
-                    ),
+                    ortho_ms,
                 ),
             ),
-            ["inner", "outer"],
-            mesh,
-        ),
+            "outer" => QuasiStaticModel(:d,
+                PK1Model(
+                    HolzapfelOgden2009Model(),
+                    ortho_ms,
+                )
+            )
+        )
     )
 
     @test u₄ ≉ u₃
-    @test u₄ ≈ u₁
+    @test sort(u₄) ≈ sort(u₁)
 
     u₅ = test_solve_passive_structure(
-        mesh,
-        Thunderbolt.MultiMaterialModel(
-            (
+        mesh2,
+        Dict(
+            "myocardium" => QuasiStaticModel(:d,
                 PK1Model(
                     HolzapfelOgden2009Model(),
-                    ConstantCoefficient(
-                        OrthotropicMicrostructure(
-                            Vec((1.0, 0.0, 0.0)),
-                            Vec((0.0, 1.0, 0.0)),
-                            Vec((0.0, 0.0, 1.0)),
-                        ),
-                    ),
+                    ortho_ms,
                 ),
             ),
-            ["myocardium"],
-            mesh,
-        ),
+        )
     )
 
-    @test u₅ ≈ u₁
-
-    u₆ = test_solve_passive_structure(
-        mesh,
-        Thunderbolt.MultiMaterialModel(
-            (
-                PK1Model(
-                    HolzapfelOgden2009Model(),
-                    ConstantCoefficient(
-                        OrthotropicMicrostructure(
-                            Vec((1.0, 0.0, 0.0)),
-                            Vec((0.0, 1.0, 0.0)),
-                            Vec((0.0, 0.0, 1.0)),
-                        ),
-                    ),
-                ),
-                PK1Model(
-                    HolzapfelOgden2009Model(),
-                    ConstantCoefficient(
-                        OrthotropicMicrostructure(
-                            Vec((1.0, 0.0, 0.0)),
-                            Vec((0.0, 1.0, 0.0)),
-                            Vec((0.0, 0.0, 1.0)),
-                        ),
-                    ),
-                ),
-            ),
-            ["inner", "outer"],
-            mesh,
-        ),
-    )
-
+    @test sort(u₅) ≈ sort(u₁)
 end
 
 struct TestCalciumHatField end
 Thunderbolt.setup_coefficient_cache(coeff::TestCalciumHatField, ::QuadratureRule, ::SubDofHandler) =
     coeff
-Thunderbolt.evaluate_coefficient(
+function Thunderbolt.evaluate_coefficient(
     coeff::TestCalciumHatField,
     cell_cache::CellCache,
     qp::QuadraturePoint,
     t,
-) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
-
+) 
+    Ca = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
+    return Ca
+end
 struct TestCalciumQuadraticHatField end
 Thunderbolt.setup_coefficient_cache(
     coeff::TestCalciumQuadraticHatField,
@@ -238,12 +189,11 @@ Thunderbolt.evaluate_coefficient(
 
 function test_solve_contractile_cuboid(
     mesh,
-    constitutive_model,
+    model,
     timestepper,
-    subdomains = ["myocardium"],
 )
-    tspan = timestepper isa BackwardEulerSolver ? (0.0, 10.0) : (0.0, 300.0)
-    Δt = timestepper isa BackwardEulerSolver ? 2.0 : 100.0
+    tspan = timestepper isa BackwardEulerSolver ? (0.0, 2.0) : (0.0, 300.0)
+    Δt = timestepper isa BackwardEulerSolver ? 0.25 : 100.0
 
     # Clamp three sides
     dbcs = [
@@ -254,19 +204,10 @@ function test_solve_contractile_cuboid(
     ]
 
     quasistaticform = semidiscretize(
-        QuasiStaticModel(
-            :d,
-            constitutive_model,
-            (
-                NormalSpringBC(0.0, "right"),
-                ConstantPressureBC(0.0, "back"),
-                PressureFieldBC(ConstantCoefficient(0.0), "top"),
-            ),
-        ),
+        model,
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
-            subdomains,
             assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
@@ -321,7 +262,6 @@ function test_solve_contractile_ideal_lv(
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
-            subdomains = ["myocardium"],
             assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
@@ -332,7 +272,7 @@ function test_solve_contractile_ideal_lv(
     # Create sparse matrix and residual vector
     timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(
-            inner_solver = Thunderbolt.LinearSolve.UMFPACKFactorization(),
+            inner_solver = UMFPACKFactorization(),
             max_iter = 10,
             tol = 1e-10,
         ),
@@ -352,19 +292,6 @@ end
     # mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
     # mesh = generate_mesh(Hexahedron, (1, 1, 1), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
-    grid = generate_grid(
-        Hexahedron,
-        (10, 10, 2),
-        Ferrite.Vec{3}((0.0, 0.0, 0.0)),
-        Ferrite.Vec{3}((1.0, 1.0, 0.2)),
-    )
-    addcellset!(grid, "myocardium", x->true)
-    addcellset!(grid, "inner", x->x[3] ≤ 0.1)
-    addcellset!(grid, "outer", x->x[3] ≥ 0.1)
-    addcellset!(grid, "front", x->x[1] ≤ 0.1)
-    addcellset!(grid, "back", x->x[1] ≥ 0.1)
-    mesh = to_mesh(grid)
-
     microstructure_model = OrthotropicMicrostructureModel(
         ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
         ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
@@ -372,136 +299,186 @@ end
     )
 
     newton = NewtonRaphsonSolver(
-        inner_solver = Thunderbolt.LinearSolve.UMFPACKFactorization(),
+        inner_solver = UMFPACKFactorization(),
         max_iter = 10,
         tol = 1e-10,
     )
-    timestepper = BackwardEulerSolver(;
-        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(; newton = newton),
-    )
-    i = test_solve_contractile_cuboid(
-        mesh,
-        ActiveStressModel(
-            HolzapfelOgden2009Model(),
-            SimpleActiveStress(; Tmax = 2200.0),
-            Thunderbolt.CaDrivenInternalSarcomereModel(
-                Thunderbolt.RDQ20MFModel(),
-                TestCalciumHatField(),
-            ),
-            microstructure_model,
-        ),
-        timestepper,
-    )
-    # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.stage.nlsolver.global_solver_cache.op.dh.grid) do vtk
-    #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
-    # end
 
-    mmat = Thunderbolt.MultiMaterialModel(
-        (
-            ActiveStressModel(
-                Guccione1991PassiveModel(),
-                SimpleActiveStress(; Tmax = 220e3),
-                Thunderbolt.CaDrivenInternalSarcomereModel(
-                    Thunderbolt.RDQ20MFModel(),
-                    TestCalciumHatField(),
+    facemodels = (
+        NormalSpringBC(0.0, "right"),
+        ConstantPressureBC(0.0, "back"),
+        PressureFieldBC(ConstantCoefficient(0.0), "top"),
+    )
+
+    @testset "Single Subdomain" begin
+        grid = generate_grid(
+            Hexahedron,
+            (10, 10, 2),
+            Ferrite.Vec{3}((0.0, 0.0, 0.0)),
+            Ferrite.Vec{3}((1.0, 1.0, 0.2)),
+        )
+        addcellset!(grid, "myocardium", x->true)
+        mesh = to_mesh(grid)
+
+        timestepper = HomotopyPathSolver(newton)
+        test_solve_contractile_cuboid(
+            mesh,
+            QuasiStaticModel(
+                :d,
+                ExtendedHillModel(
+                    HolzapfelOgden2009Model(),
+                    ActiveMaterialAdapter(LinearSpringModel()),
+                    GMKActiveDeformationGradientModel(),
+                    Thunderbolt.CaDrivenInternalSarcomereModel(
+                        PelceSunLangeveld1995Model(),
+                        TestCalciumHatField(),
+                    ),
+                    microstructure_model,
                 ),
-                microstructure_model,
+                facemodels,
             ),
-            PK1Model(Guccione1991PassiveModel(), microstructure_model),
-        ),
-        ["front", "back"],
-        mesh,
-    )
-    i = test_solve_contractile_cuboid(mesh, mmat, timestepper)
-    # VTKGridFile(
-    #     "SolidMechanicsIntegrationDebug",
-    #     i.cache.stage.nlsolver.global_solver_cache.op.dh.grid,
-    # ) do vtk
-    #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
-    # end
+            timestepper,
+        )
 
-    mmat2 = Thunderbolt.MultiMaterialModel(
-        (
-            PK1Model(Guccione1991PassiveModel(), microstructure_model),
-            ActiveStressModel(
-                Guccione1991PassiveModel(),
-                SimpleActiveStress(; Tmax = 220e3),
-                Thunderbolt.CaDrivenInternalSarcomereModel(
-                    Thunderbolt.RDQ20MFModel(),
-                    TestCalciumHatField(),
+        test_solve_contractile_cuboid(
+            mesh,
+            QuasiStaticModel(
+                :d,
+                GeneralizedHillModel(
+                    LinYinPassiveModel(),
+                    ActiveMaterialAdapter(LinYinActiveModel()),
+                    GMKIncompressibleActiveDeformationGradientModel(),
+                    Thunderbolt.CaDrivenInternalSarcomereModel(
+                        PelceSunLangeveld1995Model(),
+                        TestCalciumHatField(),
+                    ),
+                    microstructure_model,
                 ),
-                microstructure_model,
+                facemodels,
             ),
-        ),
-        ["back", "front"],
-        mesh,
-    )
-    i = test_solve_contractile_cuboid(mesh, mmat2, timestepper)
+            timestepper,
+        )
 
-    timestepper = HomotopyPathSolver(newton)
-    test_solve_contractile_cuboid(
-        mesh,
-        ExtendedHillModel(
-            HolzapfelOgden2009Model(),
-            ActiveMaterialAdapter(LinearSpringModel()),
-            GMKActiveDeformationGradientModel(),
-            Thunderbolt.CaDrivenInternalSarcomereModel(
-                PelceSunLangeveld1995Model(),
-                TestCalciumHatField(),
+        i = test_solve_contractile_cuboid(
+            mesh,
+            QuasiStaticModel(
+                :d,
+                ActiveStressModel(
+                    HumphreyStrumpfYinModel(),
+                    SimpleActiveStress(),
+                    Thunderbolt.CaDrivenInternalSarcomereModel(
+                        PelceSunLangeveld1995Model(),
+                        TestCalciumHatField(),
+                    ),
+                    microstructure_model,
+                ),
+                facemodels,
             ),
-            microstructure_model,
-        ),
-        timestepper,
-    )
+            timestepper,
+        )
+        # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
+        #     write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
+        # end
+    end
 
-    test_solve_contractile_cuboid(
-        mesh,
-        GeneralizedHillModel(
-            LinYinPassiveModel(),
-            ActiveMaterialAdapter(LinYinActiveModel()),
-            GMKIncompressibleActiveDeformationGradientModel(),
-            Thunderbolt.CaDrivenInternalSarcomereModel(
-                PelceSunLangeveld1995Model(),
-                TestCalciumHatField(),
+    @testset "Multiple subdomains" begin
+        grid = generate_grid(
+            Hexahedron,
+            (10, 10, 2),
+            Ferrite.Vec{3}((0.0, 0.0, 0.0)),
+            Ferrite.Vec{3}((1.0, 1.0, 0.2)),
+        )
+        addcellset!(grid, "myocardium", x->true)
+        addcellset!(grid, "inner", x->x[3] ≤ 0.1)
+        addcellset!(grid, "outer", x->x[3] ≥ 0.1)
+        addcellset!(grid, "front", x->x[1] ≤ 0.1)
+        addcellset!(grid, "back", x->x[1] ≥ 0.1)
+        mesh = to_mesh(grid)
+
+        timestepper = BackwardEulerSolver(;
+            inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(; newton = newton),
+        )
+
+        i = test_solve_contractile_cuboid(
+            mesh,
+            Dict(
+                "front" => QuasiStaticModel(
+                    :d,
+                    ActiveStressModel(
+                        Guccione1991PassiveModel(),
+                        SimpleActiveStress(; Tmax = 220e3),
+                        Thunderbolt.CaDrivenInternalSarcomereModel(
+                            Thunderbolt.RDQ20MFModel(),
+                            TestCalciumHatField(),
+                        ),
+                        microstructure_model,
+                    ),
+                    facemodels,
+                ),
+                "back" => QuasiStaticModel(
+                    :d,
+                    PK1Model(Guccione1991PassiveModel(), microstructure_model),
+                    facemodels,
+                ),
             ),
-            microstructure_model,
-        ),
-        timestepper,
-    )
+            timestepper
+        )
+        # VTKGridFile(
+        #     "SolidMechanicsIntegrationDebug",
+        #     i.cache.stage.nlsolver.global_solver_cache.op.dh.grid,
+        # ) do vtk
+        #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+        # end
 
-    i = test_solve_contractile_cuboid(
-        mesh,
-        ActiveStressModel(
-            HumphreyStrumpfYinModel(),
-            SimpleActiveStress(),
-            Thunderbolt.CaDrivenInternalSarcomereModel(
-                PelceSunLangeveld1995Model(),
-                TestCalciumHatField(),
+        test_solve_contractile_cuboid(
+            mesh,
+            Dict(
+                "front" => QuasiStaticModel(
+                    :d,
+                    PK1Model(Guccione1991PassiveModel(), microstructure_model),
+                    facemodels,
+                ),
+                "back" => QuasiStaticModel(
+                    :d,
+                    ActiveStressModel(
+                        Guccione1991PassiveModel(),
+                        SimpleActiveStress(; Tmax = 220e3),
+                        Thunderbolt.CaDrivenInternalSarcomereModel(
+                            Thunderbolt.RDQ20MFModel(),
+                            TestCalciumHatField(),
+                        ),
+                        microstructure_model,
+                    ),
+                    facemodels,
+                ),
             ),
-            microstructure_model,
-        ),
-        timestepper,
-    )
-    # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
-    #     write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
-    # end
+            timestepper
+        )
 
-    mesh = to_mesh(generate_mixed_dimensional_grid_3D())
+        mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 
-    test_solve_contractile_cuboid(
-        mesh,
-        ActiveStressModel(
-            HumphreyStrumpfYinModel(),
-            SimpleActiveStress(),
-            Thunderbolt.CaDrivenInternalSarcomereModel(
-                PelceSunLangeveld1995Model(),
-                TestCalciumHatField(),
+        timestepper = HomotopyPathSolver(newton)
+
+        test_solve_contractile_cuboid(
+            mesh,
+            Dict(
+                "Ventricle" => QuasiStaticModel(
+                    :d,
+                    ActiveStressModel(
+                        HumphreyStrumpfYinModel(),
+                        SimpleActiveStress(),
+                        Thunderbolt.CaDrivenInternalSarcomereModel(
+                            PelceSunLangeveld1995Model(),
+                            TestCalciumHatField(),
+                        ),
+                        microstructure_model,
+                    ),
+                    facemodels,
+                ),
             ),
-            microstructure_model,
-        ),
-        timestepper,
-        ["Ventricle"],
-    )
+            timestepper,
+        )
+    end
 end
 
 @testset "Idealized LV" begin

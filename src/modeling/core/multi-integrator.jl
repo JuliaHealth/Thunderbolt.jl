@@ -22,9 +22,13 @@ function FerriteOperators.setup_boundary_cache(
 )
     grid = get_grid(sdh.dh)
     for (name, subintegrator) in integrator.subintegrators
-        cellset = first.(getfacetset(grid, name))
-        if first(sdh.cellset) ∈ cellset
-            return setup_boundary_cache(subintegrator, sdh)
+        has_surface_subdomain(grid, name) || continue
+        surface_subdomain = grid.surface_subdomains[name]
+        for facetset in values(surface_subdomain.data)
+            cellset = first.(facetset)
+            if first(sdh.cellset) ∈ cellset
+                return setup_boundary_cache(subintegrator, sdh)
+            end
         end
     end
     return FerriteOperators.EmptySurfaceElementCache()
@@ -53,12 +57,16 @@ function FerriteOperators.setup_boundary_cache(
     sdh::SubDofHandler,
 )
     grid = get_grid(sdh.dh)
-    # for (name, subintegrator) in integrator.subintegrators
-    #     cellset = first.(getfacetset(grid, name))
-    #     if first(sdh.cellset) ∈ cellset
-    #         return setup_boundary_cache(subintegrator, sdh)
-    #     end
-    # end
+    for (name, subintegrator) in integrator.subintegrators
+        has_surface_subdomain(grid, name) || continue
+        surface_subdomain = grid.surface_subdomains[name]
+        for facetset in values(surface_subdomain.data)
+            cellset = first.(facetset)
+            if first(sdh.cellset) ∈ cellset
+                return setup_boundary_cache(subintegrator, sdh)
+            end
+        end
+    end
     return FerriteOperators.EmptySurfaceElementCache()
 end
 
@@ -86,11 +94,15 @@ function FerriteOperators.setup_boundary_cache(
     sdh::SubDofHandler,
 )
     grid = get_grid(sdh.dh)
-    # for (name, subintegrator) in integrator.subintegrators
-    #     cellset = first.(getfacetset(grid, name))
-    #     if first(sdh.cellset) ∈ cellset
-    #         return setup_boundary_cache(subintegrator, sdh)
-    #     end
-    # end
+    for (name, subintegrator) in integrator.subintegrators
+        has_surface_subdomain(grid, name) || continue
+        surface_subdomain = grid.surface_subdomains[name]
+        for facetset in values(surface_subdomain.data)
+            cellset = first.(facetset)
+            if first(sdh.cellset) ∈ cellset
+                return setup_boundary_cache(subintegrator, sdh)
+            end
+        end
+    end
     return FerriteOperators.EmptySurfaceElementCache()
 end

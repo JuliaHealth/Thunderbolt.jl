@@ -229,54 +229,79 @@ function _setup_local_solver_cache(
 end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
-    material_models::MultiMaterialModel,
+    model::QuasiStaticModel,
+)
+    return _setup_local_solver_cache(local_solver, model.material_model)
+end
+function _setup_local_solver_cache(
+    local_solver::GenericLocalNonlinearSolver,
+    integrator::NonlinearIntegrator,
+)
+    return _setup_local_solver_cache(local_solver, integrator.volume_model)
+end
+function _setup_local_solver_cache(
+    local_solver::GenericLocalNonlinearSolver,
+    integrator::NonlinearMultiDomainIntegrator2,
 )
     return map(
-        material_model -> _setup_local_solver_cache(local_solver, material_model),
-        material_models.materials,
+        subintegrator -> _setup_local_solver_cache(local_solver, subintegrator.volume_model),
+        values(integrator.subintegrators),
     )
 end
-@inline function _setup_solver_cache(
-    wrapper::BackwardEulerStageAnnotation,
-    f::QuasiStaticFunction,
-    solver::MultiLevelNewtonRaphsonSolver,
-)
-    @unpack integrator, dh = f
-    @unpack volume_model, facet_model = integrator
-    @unpack local_solver, newton = solver
 
-    # TODO add an abstraction layer to autoamte the steps below
-    local_solver_cache =
-        _setup_local_solver_cache(solver.local_solver, f.integrator.volume_model.material_model)
-
-    # Extract condensable parts
-    Q     = @view wrapper.u[(ndofs(dh)+1):end]
-    Qprev = @view wrapper.uprev[(ndofs(dh)+1):end]
-    # Connect nonlinear problem and timestepper
-    volume_wrapper =
-        BackwardEulerStageFunctionWrapper(volume_model, Q, Qprev, 0.0, local_solver_cache, f.lvh)
+function _backward_euler_stage_wrapper(integrator::NonlinearIntegrator, Q, Qprev, local_solver_cache, lvh)
+    (; volume_model, facet_model) = integrator
+    volume_wrapper = BackwardEulerStageFunctionWrapper(
+        volume_model,
+        Q,
+        Qprev,
+        0.0,
+        local_solver_cache,
+        lvh
+    )
     facet_wrapper = BackwardEulerStageFunctionWrapper(
         facet_model,
         Q,
         Qprev,
         0.0,
         nothing, # inner model is volume only per construction
-        f.lvh,
+        lvh,
     )
     # This is copy paste of setup_solver_cache(G, solver.newton)
-    # TODO call setup_operator here
+    return NonlinearIntegrator(
+        volume_wrapper,
+        facet_wrapper,
+        integrator.syms,
+        integrator.qrc,
+        integrator.fqrc,
+    )
+end
+
+function _backward_euler_stage_wrapper(integrator::NonlinearMultiDomainIntegrator2, Q, Qprev, local_solver_cache, lvh)
+    return NonlinearMultiDomainIntegrator2(
+        Dict(name => _backward_euler_stage_wrapper(subintegrator, Q, Qprev, local_solver_cache[i], lvh) for (i, (name, subintegrator)) in enumerate(integrator.subintegrators))
+    )
+end
+
+@inline function _setup_solver_cache(
+    wrapper::BackwardEulerStageAnnotation,
+    f::QuasiStaticFunction,
+    solver::MultiLevelNewtonRaphsonSolver,
+)
+    (; integrator, dh, lvh) = f
+    (; local_solver, newton) = solver
+
+    local_solver_cache = _setup_local_solver_cache(solver.local_solver, integrator)
+
+    # Extract condensable parts
+    Q     = @view wrapper.u[(ndofs(dh)+1):end]
+    Qprev = @view wrapper.uprev[(ndofs(dh)+1):end]
+    # Connect nonlinear problem and timestepper
     op = setup_operator(
-        SequentialAssemblyStrategy(SequentialCPUDevice()),
-        NonlinearIntegrator(
-            volume_wrapper,
-            facet_wrapper,
-            integrator.syms,
-            integrator.qrc,
-            integrator.fqrc,
-        ),
+        SequentialAssemblyStrategy(SequentialCPUDevice()), # FIXME f.assembly_strategy,
+        _backward_euler_stage_wrapper(integrator, Q, Qprev, local_solver_cache, lvh),
         dh,
     )
-    # op = setup_operator(f, solver)
     T = Float64
     residual = Vector{T}(undef, ndofs(dh))#solution_size(G))
     Δu = Vector{T}(undef, ndofs(dh))#solution_size(G))
