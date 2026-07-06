@@ -124,7 +124,7 @@ heart_odeform = semidiscretize(
     ReactionEikonalSplit(heart_model, cs),
     (
         FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-        Thunderbolt.SimplicialEikonalDiscretization(;
+        Thunderbolt.FastIterativeMethodDiscretization(;
             activation_protocol,
             subdomains = String[]
         ),

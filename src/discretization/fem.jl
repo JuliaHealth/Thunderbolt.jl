@@ -200,7 +200,7 @@ end
 
 function semidiscretize(
     split::ReactionEikonalDiffusionSplit,
-    discretizations::Tuple{<:FiniteElementDiscretization, <:SimplicialEikonalDiscretization},
+    discretizations::Tuple{<:FiniteElementDiscretization, <:FastIterativeMethodDiscretization},
     mesh::AbstractGrid,
 )
     epmodel = split.model
@@ -251,7 +251,7 @@ end
 
 function semidiscretize(
     split::ReactionEikonalSplit{<:MonodomainModel},
-    discretizations::Tuple{<:FiniteElementDiscretization, <:SimplicialEikonalDiscretization},
+    discretizations::Tuple{<:FiniteElementDiscretization, <:FastIterativeMethodDiscretization},
     mesh::AbstractGrid,
 )
     epmodel = split.model

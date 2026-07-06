@@ -1,7 +1,7 @@
 """
 Descriptor for a tetrahedral element discretization used for solving the Eikonal equation explicitly.
 """
-@kwdef struct SimplicialEikonalDiscretization{
+@kwdef struct FastIterativeMethodDiscretization{
     ActivationProtocolT <: TransmembraneStimulationProtocol,
 }
     order::Int = 1
@@ -39,7 +39,11 @@ function get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh)
     return _get_nodes(protocol, mesh, cs)
 end
 
-function _get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh, cs::NodeIndexCoordinateSystemWrapper)
+function _get_nodes(
+    protocol::AnalyticalTransmembraneStimulationProtocol,
+    mesh,
+    cs::NodeIndexCoordinateSystemWrapper,
+)
     return _get_nodes(protocol, mesh, cs.cs)
 end
 
@@ -64,7 +68,8 @@ end
 
 function _get_nodes(
     protocol::AnalyticalTransmembraneStimulationProtocol,
-    mesh, cs::CartesianCoordinateSystem,
+    mesh,
+    cs::CartesianCoordinateSystem,
 )
 
     f = protocol.f.f
@@ -99,26 +104,35 @@ function get_nodes(::UniformEndocardialActivationProtocol{<:CartesianCoordinateS
     restricted to AnalyticalTransmembraneStimulationProtocol"))
 end
 
-function semidiscretize(model, discretization::SimplicialEikonalDiscretization, mesh)
+function semidiscretize(model, discretization::FastIterativeMethodDiscretization, mesh)
     cs = discretization.activation_protocol.f.coordinate_system_coefficient
     return _semidiscretize(model, discretization, mesh, cs)
 end
 
-function semidiscretize(model, discretization::SimplicialEikonalDiscretization{<:UniformEndocardialActivationProtocol}, mesh)
+function semidiscretize(
+    model,
+    discretization::FastIterativeMethodDiscretization{<:UniformEndocardialActivationProtocol},
+    mesh,
+)
     cs = CartesianCoordinateSystem(mesh)
     return _semidiscretize(model, discretization, mesh, cs)
 end
 
-function _semidiscretize(model::EikonalModel, discretization::SimplicialEikonalDiscretization{<:AnalyticalTransmembraneStimulationProtocol}, mesh, cs::NodeIndexCoordinateSystemWrapper)
+function _semidiscretize(
+    model::EikonalModel,
+    discretization::FastIterativeMethodDiscretization{<:AnalyticalTransmembraneStimulationProtocol},
+    mesh,
+    cs::NodeIndexCoordinateSystemWrapper,
+)
     cs = cs.cs
     return _semidiscretize(model, discretization, mesh, cs)
 end
 
 function _semidiscretize(
     model::EikonalModel,
-    discretization::SimplicialEikonalDiscretization{<:UniformEndocardialActivationProtocol},
+    discretization::FastIterativeMethodDiscretization{<:UniformEndocardialActivationProtocol},
     mesh::SimpleMesh,
-    cs
+    cs,
 )
     activation_points = get_nodes(discretization.activation_protocol, mesh)
     vertices = getproperty.(mesh.grid.nodes, :x)
@@ -147,7 +161,7 @@ function _semidiscretize(
     cells_ferrite .= mesh.grid.cells
 
     activation_points_offsets = activation_points_offsets[activation_points]
-    cells = getproperty.(cells_ferrite, :nodes)
+    cells = [cell.nodes for cell in cells_ferrite]
     nnodes = getnnodes(mesh.grid)
 
     max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))
@@ -173,11 +187,9 @@ end
 
 function _semidiscretize(
     model::EikonalModel,
-    discretization::SimplicialEikonalDiscretization{
-        <:AnalyticalTransmembraneStimulationProtocol,
-    },
+    discretization::FastIterativeMethodDiscretization{<:AnalyticalTransmembraneStimulationProtocol},
     mesh::SimpleMesh,
-    cs::CartesianCoordinateSystem
+    cs::CartesianCoordinateSystem,
 )
     activation_points = get_nodes(discretization.activation_protocol, mesh)
     vertices = getproperty.(mesh.grid.nodes, :x)
@@ -187,7 +199,7 @@ function _semidiscretize(
 
     cells_ferrite .= mesh.grid.cells
 
-    cells = getproperty.(cells_ferrite, :nodes)
+    cells = [cell.nodes for cell in cells_ferrite]
     nnodes = getnnodes(mesh.grid)
 
     max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))
@@ -212,9 +224,9 @@ end
 
 function _semidiscretize(
     model::EikonalModel,
-    discretization::SimplicialEikonalDiscretization{<:AnalyticalTransmembraneStimulationProtocol},
+    discretization::FastIterativeMethodDiscretization{<:AnalyticalTransmembraneStimulationProtocol},
     mesh,
-    cs
+    cs,
 )
     activation_points = get_nodes(discretization.activation_protocol, mesh)
     vertices = getproperty.(mesh.grid.nodes, :x)
@@ -240,7 +252,7 @@ function _semidiscretize(
 
     cells_ferrite .= mesh.grid.cells
 
-    cells = getproperty.(cells_ferrite, :nodes)
+    cells = [cell.nodes for cell in cells_ferrite]
     nnodes = getnnodes(mesh.grid)
 
     max_vertices, max_edges, max_faces = Ferrite._max_nentities_per_cell(getcells(mesh.grid))

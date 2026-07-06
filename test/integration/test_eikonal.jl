@@ -100,7 +100,7 @@ using DiffEqBase
             ReactionEikonalSplit(heart_model, cs),
             (
                 FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                Thunderbolt.SimplicialEikonalDiscretization(; activation_protocol, subdomains),
+                Thunderbolt.FastIterativeMethodDiscretization(; activation_protocol, subdomains),
             ),
             mesh,
         )
@@ -166,7 +166,7 @@ using DiffEqBase
             ReactionEikonalDiffusionSplit(heart_model, cs),
             (
                 FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                Thunderbolt.SimplicialEikonalDiscretization(; activation_protocol, subdomains),
+                Thunderbolt.FastIterativeMethodDiscretization(; activation_protocol, subdomains),
             ),
             mesh,
         )

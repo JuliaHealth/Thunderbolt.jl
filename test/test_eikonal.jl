@@ -43,7 +43,7 @@ using LinearAlgebra
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String[],
                     ),
@@ -73,7 +73,7 @@ using LinearAlgebra
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String[],
                     ),
@@ -98,7 +98,7 @@ using LinearAlgebra
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String[],
                     ),
@@ -134,7 +134,7 @@ using LinearAlgebra
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String[],
                     ),
@@ -169,7 +169,7 @@ using LinearAlgebra
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String[],
                     ),
@@ -240,7 +240,7 @@ end
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String["Left", "Right"],
                     ),
@@ -263,7 +263,7 @@ end
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String["Left", "Right", "Bot"],
                     ),
@@ -293,7 +293,7 @@ end
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String["Left", "Right", "Bot"],
                     ),
@@ -324,7 +324,7 @@ end
                 ReactionEikonalSplit(heart_model, cs),
                 (
                     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-                    Thunderbolt.SimplicialEikonalDiscretization(;
+                    Thunderbolt.FastIterativeMethodDiscretization(;
                         activation_protocol,
                         subdomains = String["Left", "Right", "Bot"],
                     ),
