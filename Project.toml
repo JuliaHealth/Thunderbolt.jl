@@ -10,6 +10,7 @@ DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 DynamicQuantities = "06fc5a27-2a28-4c7c-a15d-362465fb6821"
 FastBroadcast = "7034ab61-46d4-4ed7-9d0f-46aef9175898"
+FastIterativeMethod = "51611a6c-7c63-4cd2-9a52-92f780132403"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 FerriteOperators = "27d9367a-5072-424e-9c5f-fe582399bac3"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
@@ -88,8 +89,8 @@ julia = "1.10"
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
-FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
 FastIterativeMethod = "51611a6c-7c63-4cd2-9a52-92f780132403"
+FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 MatrixDepot = "b51810bb-c9f3-55da-ae3c-350fc1fbce05"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
@@ -102,9 +103,6 @@ SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[sources]
-FastIterativeMethod = {url = "https://git.noc.ruhr-uni-bochum.de/mohama17/eikonal.jl.git"}
 
 [targets]
 test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqRosenbrock", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot", "FastIterativeMethod"]
