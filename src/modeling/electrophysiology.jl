@@ -261,5 +261,6 @@ end
 
 ReactionDiffusionSplit(model) = ReactionDiffusionSplit(model, nothing)
 
+include("cells/aliev-panfilov.jl")
 include("cells/fhn.jl")
 include("cells/pcg2019.jl")

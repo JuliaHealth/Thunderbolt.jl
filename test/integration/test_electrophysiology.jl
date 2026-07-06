@@ -48,14 +48,14 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
         integrator = DiffEqBase.init(problem, timestepper, dt = 1.0, verbose = true)
         DiffEqBase.solve!(integrator)
 
-        # for (u, t) in TimeChoiceIterator(integrator, tspan[1]:1.0:tspan[2])
+        # for (u, t) in TimeChoiceIterator(integrator, tspan[1]:25.0:tspan[2])
         #     (; dh) = odeform.functions[1]
         #     φ = u[odeform.solution_indices[1]]
         #     store_timestep!(io, t, dh.grid) do file
         #         Ferrite.write_cellset(io.current_file, grid2)
         #         Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
         #     end
-        # end;
+        # end
 
         @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
         @test integrator.u ≉ u₀
@@ -112,8 +112,8 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
     end
 
     @testset "Pacemaker subdomain" begin
-        grid = generate_grid(Quadrilateral, (8, 8), Vec{2}((-2.5, -2.5)), Vec{2}((2.5, 2.5)))
-        addcellset!(grid, "Pacemaker", x->norm(x,Inf) ≤ 1.25)
+        grid = generate_grid(Quadrilateral, (64, 64), Vec{2}((-2.5, -2.5)), Vec{2}((2.5, 2.5)))
+        addcellset!(grid, "Pacemaker", x->norm(x,Inf) ≤ 0.75)
         addcellset!(grid, "Myocardium", setdiff(OrderedSet(1:getncells(grid)), getcellset(grid, "Pacemaker")))
         grid2 = insert_interfaces(grid, ["Pacemaker", "Myocardium"]) # FIXME allow to add multiple interfaces
         mesh2 = to_mesh(grid2)
@@ -125,12 +125,8 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
                 ConstantCoefficient(1.0),
                 ConstantCoefficient(1.0),
                 coeff,
-                Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
-                    # Stimulate at apex
-                    AnalyticalCoefficient((x, t) -> norm(x) < 0.1 && t < 2.0 ? 0.01 : 0.0, cs),
-                    [SVector((0.0, 2.1))],
-                ),
-                Thunderbolt.FHNModel(),
+                Thunderbolt.NoStimulationProtocol(),
+                Thunderbolt.ParametrizedFHNModel{Float64}(a = -0.5, b = 1.0, c = -0.6, d = 0.0, e = 0.001, f = 50*0.001),
                 :φₘ,
                 :s1,
             ),
@@ -138,14 +134,14 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
                 ConstantCoefficient(1.0),
                 ConstantCoefficient(1.0),
                 coeff,
-                NoStimulationProtocol(),
-                Thunderbolt.FHNModel(),
+                Thunderbolt.NoStimulationProtocol(),
+                Thunderbolt.ParametrizedFHNModel{Float64}(),
                 :φₘ,
                 :s2,
             ),
             # FIXME explicit name
             "interfaces" => InterfaceDiffusionModel(
-                ConstantCoefficient(0.0025),
+                ConstantCoefficient(1.0),
                 :φₘ,
                 :φₘi,
             ),
@@ -162,12 +158,8 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
                 ConstantCoefficient(1.0),
                 ConstantCoefficient(1.0),
                 coeff,
-                Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
-                    # Stimulate at apex
-                    AnalyticalCoefficient((x, t) -> norm(x) < 0.1 && t < 2.0 ? 0.01 : 0.0, cs),
-                    [SVector((0.0, 2.1))],
-                ),
-                Thunderbolt.FHNModel(),
+                Thunderbolt.NoStimulationProtocol(),
+                Thunderbolt.AlievPanfilovModel(),
                 :φₘ,
                 :s1,
             ),

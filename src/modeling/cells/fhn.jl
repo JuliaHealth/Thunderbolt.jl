@@ -9,6 +9,7 @@ Base.@kwdef struct ParametrizedFHNModel{T} <: AbstractIonicModel
     c::T = T(1.0)
     d::T = T(0.0)
     e::T = T(0.01)
+    f::T = T(1.0)
 end;
 
 const FHNModel = ParametrizedFHNModel{Float64};
@@ -24,10 +25,10 @@ function cell_rhs!(
     t::TT,
     cell_parameters::TP,
 ) where {TD, TU, TX, TT, TP <: ParametrizedFHNModel}
-    @unpack a, b, c, d, e = cell_parameters
+    @unpack a, b, c, d, e, f = cell_parameters
     φₘ = u[1]
     s = u[2]
-    du[1] = φₘ*(1-φₘ)*(φₘ-a) - s
+    du[1] = f*(φₘ*(1-φₘ)*(φₘ-a) - s)
     du[2] = e*(b*φₘ - c*s - d)
     return nothing
 end
