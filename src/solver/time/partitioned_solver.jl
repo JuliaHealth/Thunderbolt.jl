@@ -103,7 +103,8 @@ function setup_solver_cache(
     u = nothing,
     uprev = nothing,
 )
-    @unpack npoints, ode = f
+    (; ode) = f
+    npoints = length(f.associated_states) ÷ num_states(f.ode)
     ndofs_local = num_states(ode)
 
     du = create_system_vector(solver.solution_vector_type, f)
@@ -114,6 +115,50 @@ function setup_solver_cache(
     xs = f.x === nothing ? nothing : Adapt.adapt(solver.solution_vector_type, f.x)
 
     return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.batch_size_hint, xs)
+end
+
+function setup_solver_cache(
+    fs::PointwiseMultiODEFunction,
+    solver::ForwardEulerCellSolver,
+    t₀;
+    u = nothing,
+    uprev = nothing,
+)
+    du    = create_system_vector(solver.solution_vector_type, fs)
+    uₙ    = u === nothing ? create_system_vector(solver.solution_vector_type, fs) : u
+    uₙ₋₁  = uprev === nothing ? uₙ : uprev
+
+    dumat = [
+        reshape(view(du, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
+    ]
+    uₙmat = [
+        reshape(view(uₙ, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
+    ]
+    xs = [
+        f.x === nothing ? nothing : adapt_vector_type(solver.solution_vector_type, f.x) for f in fs.functions
+    ]
+
+    return ForwardEulerCellSolverCache(
+        du,
+        uₙ,
+        uₙ₋₁,
+        dumat,
+        uₙmat,
+        solver.batch_size_hint,
+        xs,
+    )
+end
+
+function repack_subdomain(cache::ForwardEulerCellSolverCache, i)
+    ForwardEulerCellSolverCache(
+        cache.du,
+        cache.uₙ,
+        cache.uₙ₋₁,
+        cache.dumat[i],
+        cache.uₙmat[i],
+        cache.batch_size_hint,
+        cache.xs[i],
+    )
 end
 
 Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: AbstractVector{T}} <:
@@ -189,7 +234,8 @@ function setup_solver_cache(
     u = nothing,
     uprev = nothing,
 )
-    @unpack npoints, ode = f
+    (; ode) = f
+    npoints = length(f.associated_states) ÷ num_states(f.ode)
     ndofs_local = num_states(ode)
 
     du = create_system_vector(solver.solution_vector_type, f)
@@ -233,14 +279,9 @@ function setup_solver_cache(
     uₙmat = [
         reshape(view(uₙ, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
     ]
-
-    # xs = if fs.x === nothing
-    #     nothing
-    # else
-    #     adapt_vector_type(solver.solution_vector_type, fs.x)
-    # end
-    # FIXME recover
-    xs = nothing
+    xs = [
+        f.x === nothing ? nothing : adapt_vector_type(solver.solution_vector_type, f.x) for f in fs.functions
+    ]
 
     return AdaptiveForwardEulerSubstepperCache(
         du,
@@ -265,6 +306,6 @@ function repack_subdomain(cache::AdaptiveForwardEulerSubstepperCache, i)
         cache.substeps,
         cache.reaction_threshold,
         cache.batch_size_hint,
-        cache.xs,
+        cache.xs[i],
     )
 end

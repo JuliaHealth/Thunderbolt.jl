@@ -366,11 +366,8 @@ Base.eltype(data::DenseDataRange) = eltype(data.data)
 end
 
 # To handle embedded elements in the same code
-_inner_product_helper(a::Vec, B::Union{Tensor, SymmetricTensor}, c::Vec) = a ⋅ B ⋅ c
-_inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector) =
-    Vec(a.data) ⋅ B ⋅ Vec(c.data)
+_inner_product_helper(a::Vec, B::AbstractTensor, c::Vec) = a ⋅ B ⋅ c
 _inner_product_helper(a::Vec, B::AbstractFloat, c::Vec) = a ⋅ c * B
-_inner_product_helper(a::SVector, B::AbstractFloat, c::SVector) = Vec(a.data) ⋅ Vec(c.data) * B
 
 function geometric_subdomain_interpolation(sdh::SubDofHandler)
     grid      = get_grid(sdh.dh)

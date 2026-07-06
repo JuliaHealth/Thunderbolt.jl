@@ -106,14 +106,7 @@ function semidiscretize(
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
-
-    if !isempty(discretization.subdomains)
-        for name in discretization.subdomains
-            add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        end
-    else
-        add_subdomain!(dh, single_subdomain_or_error(mesh), [ApproximationDescriptor(sym, ipc)])
-    end
+    add_subdomain!(dh, single_subdomain_or_error(mesh), [ApproximationDescriptor(sym, ipc)])
     close!(dh)
 
     T = get_coordinate_eltype(get_grid(dh))
@@ -205,13 +198,7 @@ function semidiscretize(
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
-    if !isempty(discretization.subdomains)
-        for name in discretization.subdomains
-            add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        end
-    else
-        add_subdomain!(dh, single_subdomain_or_error(mesh), [ApproximationDescriptor(sym, ipc)])
-    end
+    add_subdomain!(dh, single_subdomain_or_error(mesh), [ApproximationDescriptor(sym, ipc)])
     close!(dh)
 
     ch = ConstraintHandler(dh)
@@ -249,14 +236,13 @@ function semidiscretize(
     ndofsφ = ndofs(dh)
     # TODO we need some information about the discretization of this one, e.g. dofs a nodes vs dofs at quadrature points
     # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
+    nstates_per_point = num_states(epmodel.ion)
     odefun = PointwiseODEFunction(
         # TODO epmodel.Cₘ(x)
         epmodel.ion,
         split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym),
-        1:ndofsφ,
-        0,
+        1:(nstates_per_point*ndofsφ),
     )
-    nstates_per_point = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
     heat_dofrange = 1:ndofsφ
     ode_dofrange = 1:(nstates_per_point*ndofsφ)
@@ -328,7 +314,7 @@ function semidiscretize(
             push!(inner_functions,
                 PointwiseODEFunction(
                     model.ion,
-                    xφ,
+                    xφ === nothing ? nothing : view(xφ, mindof:maxdof),
                     state_range,
                 )
             )
@@ -343,6 +329,7 @@ function semidiscretize(
     end
     ionicfun = PointwiseMultiODEFunction(
         inner_functions,
+        xφ,
     )
     ionic_dofrange = 1:offset
     #

@@ -65,6 +65,12 @@ end
             n_reaction_tangents += 1
             φₘidx = transmembranepotential_index(subintegrator.f.ode)
             R = max(R, maximum(@view subintegrator.cache.dumat[:, φₘidx]))
+        elseif subintegrator.f isa PointwiseMultiODEFunction
+            n_reaction_tangents += 1
+            for (i, f) in enumerate(subintegrator.f.functions)
+                φₘidx = transmembranepotential_index(f.ode)
+                R = max(R, maximum(@view subintegrator.cache.dumat[i][:, φₘidx]))
+            end
         end
     end
     @assert n_reaction_tangents == 1 "No or multiple integrators using PointwiseODEFunction found"

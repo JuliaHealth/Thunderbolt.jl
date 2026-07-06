@@ -118,7 +118,7 @@ function assemble_element!(
             jump_δu = shape_value_jump(cellvalues, qp, i)
             for j in 1:getnbasefunctions(cellvalues)
                 jump_u = shape_value_jump(cellvalues, qp, j)
-                Kₑ[i, j] += (jump_δu * D_loc * jump_u) * dΩ
+                Kₑ[i, j] -= (jump_δu * D_loc * jump_u) * dΩ
             end
         end
     end

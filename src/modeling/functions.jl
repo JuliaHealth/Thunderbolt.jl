@@ -59,8 +59,9 @@ solution_size(f::PointwiseODEFunction) = length(f.associated_states)
 
 This acts as as a launch-pad for batches of ODE steps.
 """
-struct PointwiseMultiODEFunction <: AbstractPointwiseFunction
+struct PointwiseMultiODEFunction{xType} <: AbstractPointwiseFunction
     functions::Vector{<:PointwiseODEFunction}
+    x::xType
 end
 
 solution_size(f::PointwiseMultiODEFunction) = sum(solution_size.(f.functions))
