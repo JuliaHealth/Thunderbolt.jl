@@ -153,60 +153,6 @@ function assemble_element!(
     end
 end
 
-struct MultiMaterialModel{MaterialTuple} <: AbstractMaterialModel
-    materials::MaterialTuple
-    domains::Vector{OrderedSet{Int}} # These must match the subdofhandler sets and hence be disjoint
-    domain_names::Vector{String}     # These must match the subdofhandler sets and hence be disjoint
-    function MultiMaterialModel(
-        materials::MaterialTuple,
-        subdomain_names::Vector{String},
-        mesh::AbstractGrid,
-    ) where {MaterialTuple}
-        return new{MaterialTuple}(
-            materials,
-            [getcellset(mesh, subdomain_name) for subdomain_name in subdomain_names],
-            subdomain_names,
-        )
-    end
-end
-
-function setup_quasistatic_element_cache(
-    material_model::MultiMaterialModel,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-    cv::CellValues,
-)
-    return setup_quasistatic_element_cache_multi(
-        material_model.materials,
-        material_model.domains,
-        qr,
-        sdh,
-        cv,
-    )
-end
-@unroll function setup_quasistatic_element_cache_multi(
-    materials::Tuple,
-    domains::Vector,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-    cv::CellValues,
-)
-    idx = 1
-    @unroll for material ∈ materials
-        if first(domains[idx]) ∈ sdh.cellset
-            return QuasiStaticElementCache(
-                material,
-                setup_coefficient_cache(material, qr, sdh),
-                setup_internal_cache(material, qr, sdh),
-                cv,
-            )
-        end
-        idx += 1
-    end
-    error(
-        "MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.",
-    )
-end
 function setup_quasistatic_element_cache(
     material_model::AbstractMaterialModel,
     qr::QuadratureRule,
@@ -227,27 +173,6 @@ function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, sdh::S
     ip_geo     = geometric_subdomain_interpolation(sdh)
     cv         = CellValues(qr, ip, ip_geo)
     return setup_quasistatic_element_cache(model.material_model, qr, sdh, cv)
-end
-
-@unroll function setup_internal_cache_multi(
-    materials::Tuple,
-    domains::Vector,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-)
-    idx = 1
-    @unroll for material ∈ materials
-        if first(domains[idx]) ∈ sdh.cellset
-            return setup_internal_cache(material, qr, sdh)
-        end
-        idx += 1
-    end
-    error(
-        "MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.",
-    )
-end
-function setup_internal_cache(model::MultiMaterialModel, qr::QuadratureRule, sdh::SubDofHandler)
-    return setup_internal_cache_multi(model.materials, model.domains, qr, sdh)
 end
 
 duplicate_for_device(device, model::AbstractMaterialModel) = model

@@ -380,46 +380,6 @@ end
 # so we pass the stage information into the interior.
 function setup_quasistatic_element_cache(
     wrapper::BackwardEulerStageFunctionWrapper,
-    material_model::MultiMaterialModel,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-    cv::CellValues,
-)
-    return setup_quasistatic_element_cache(
-        wrapper,
-        material_model.materials,
-        material_model.domains,
-        qr,
-        sdh,
-        cv,
-    )
-end
-@unroll function setup_quasistatic_element_cache(
-    wrapper::BackwardEulerStageFunctionWrapper,
-    materials::Tuple,
-    domains::Vector,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-    cv::CellValues,
-)
-    idx = 1
-    @unroll for material ∈ materials
-        if first(domains[idx]) ∈ sdh.cellset
-            return QuasiStaticElementCache(
-                material,
-                setup_coefficient_cache(material, qr, sdh),
-                setup_internal_cache(wrapper, qr, sdh),
-                cv,
-            )
-        end
-        idx += 1
-    end
-    error(
-        "MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.",
-    )
-end
-function setup_quasistatic_element_cache(
-    wrapper::BackwardEulerStageFunctionWrapper,
     material_model::AbstractMaterialModel,
     qr::QuadratureRule,
     sdh::SubDofHandler,
@@ -481,65 +441,6 @@ function setup_internal_cache_backward_euler_unwrap(
     sdh::SubDofHandler,
 )
     return internal_cache
-end
-function setup_internal_cache_backward_euler_unwrap(
-    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
-    material_model::MultiMaterialModel,
-    internal_cache::Union{
-        RateIndependentCondensationMaterialStateCache,
-        RateDependentCondensationMaterialStateCache,
-    },
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-)
-    setup_internal_cache_backward_euler_unwrap_multi(
-        wrapper,
-        material_model.materials,
-        material_model.domains,
-        internal_cache,
-        qr,
-        sdh,
-    )
-end
-@unroll function setup_internal_cache_backward_euler_unwrap_multi(
-    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
-    material_models::Tuple,
-    domains::Vector,
-    internal_cache::Union{
-        RateIndependentCondensationMaterialStateCache,
-        RateDependentCondensationMaterialStateCache,
-    },
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-)
-    idx = 1
-    @unroll for material_model ∈ material_models
-        if first(domains[idx]) ∈ sdh.cellset
-            n_ivs_per_qp = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
-            return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
-                # Pass the model
-                material_model,
-                # And some cache to speed up evaluation of f and associated coefficients
-                internal_cache,
-                # Pass global solution info
-                wrapper.u,
-                wrapper.uprev,
-                # Current time step length
-                wrapper.Δt,
-                # Local nonlinear solver cache
-                wrapper.local_solver_cache[idx],
-                # This one holds information about the local dofs inside u and uprev
-                wrapper.lvh,
-                # Buffer for Q and Qprev
-                zeros(n_ivs_per_qp),
-                zeros(n_ivs_per_qp),
-            )
-        end
-        idx += 1
-    end
-    error(
-        "MultiDomainIntegrator is broken: Requested to construct an element cache for a SubDofHandler which is not associated with the integrator.",
-    )
 end
 function setup_internal_cache_backward_euler_unwrap(
     wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},

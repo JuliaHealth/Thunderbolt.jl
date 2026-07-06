@@ -187,20 +187,6 @@ gather_internal_variable_infos(model::QuasiStaticModel) =
     gather_internal_variable_infos(model.material_model)
 gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]
 
-@unroll function __get_material_model_multi(materials, domains, cid, qp)
-    idx = 1
-    @unroll for material ∈ materials
-        if cid ∈ domains[idx]
-            return material
-        end
-        idx += 1
-    end
-    error(
-        "MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.",
-    )
-end
-__get_material_model(model::MultiMaterialModel, cid, qp) =
-    __get_material_model_multi(model.materials, model.domains, cid, qp)
 __get_material_model(model::AbstractMaterialModel, cid, qp) = model
 get_material_model(f::QuasiStaticFunction, cid, qp) =
     __get_material_model(f.integrator.volume_model.material_model, cid, qp)

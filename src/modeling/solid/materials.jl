@@ -560,7 +560,7 @@ mutable struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{
 end
 
 function duplicate_for_device(device, cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache)
-    GenericFirstOrderRateIndependentCondensationMaterialStateCache(
+    return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         cache.model,
         duplicate_for_device(device, cache.model_cache),
         cache.Q,
