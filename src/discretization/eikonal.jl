@@ -13,8 +13,17 @@ end
 Returns the indicies of the nodes belonging to the endocardium, defaulting to 5% of the
 transmural coordinate range as endocardium.
 """
+function get_nodes(protocol, mesh)
+    cs = protocol.f.coordinate_system_coefficient
+    return _get_nodes(protocol, mesh, cs)
+end
+
 function get_nodes(protocol::UniformEndocardialActivationProtocol, mesh)
     cs = protocol.cs
+    return _get_nodes(protocol, mesh, cs)
+end
+
+function _get_nodes(protocol::UniformEndocardialActivationProtocol, mesh, cs)
     qrc = NodalQuadratureRuleCollection{}(LagrangeCollection{1}())
     if haskey(mesh.grid.nodesets, "endocardium")
         return collect(mesh.grid.nodesets["endocardium"])
@@ -34,13 +43,16 @@ function get_nodes(protocol::UniformEndocardialActivationProtocol, mesh)
     return nodes
 end
 
-function get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh)
-    cs = protocol.f.coordinate_system_coefficient
-    return _get_nodes(protocol, mesh, cs)
+function _get_nodes(
+    protocol::AnalyticalTransmembraneStimulationProtocol,
+    mesh,
+    cs::NodeIndexCoordinateSystemWrapper,
+)
+    return _get_nodes(protocol, mesh, cs.cs)
 end
 
 function _get_nodes(
-    protocol::AnalyticalTransmembraneStimulationProtocol,
+    protocol::UniformEndocardialActivationProtocol,
     mesh,
     cs::NodeIndexCoordinateSystemWrapper,
 )
