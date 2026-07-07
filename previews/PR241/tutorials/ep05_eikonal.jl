@@ -32,7 +32,7 @@ heart_mesh = generate_ideal_lv_mesh(
 
 heart_mesh = Thunderbolt.to_mesh(heart_mesh.grid)
 
-cs = compute_lv_coordinate_system(heart_mesh)
+cs = Thunderbolt.NodeIndexCoordinateSystemWrapper(compute_lv_coordinate_system(heart_mesh))
 
 activation_protocol = Thunderbolt.UniformEndocardialActivationProtocol(Dict{String, Float64}(),
 cs
@@ -66,7 +66,7 @@ heart_odeform = semidiscretize(
     ReactionEikonalSplit(heart_model, cs),
     (
         FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-        Thunderbolt.SimplicialEikonalDiscretization(;
+        Thunderbolt.FastIterativeMethodDiscretization(;
             activation_protocol,
             subdomains = String[]
         ),
@@ -92,7 +92,7 @@ Tₘₐₓ = dtvis # hide
 tspan = (0.0, Tₘₐₓ)
 
 single_prob = ODEProblem(
-    (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, nothing, m.stim_offset, t, m),
+    (du, u, m, t) -> Thunderbolt.cell_rhs!(du, u, nothing, t, m),
     Thunderbolt.default_initial_state(cellmodel),
     (first(tspan), last(tspan)),
     Thunderbolt.StimulatedCellModel(; cell_model = cellmodel),
@@ -100,7 +100,7 @@ single_prob = ODEProblem(
 problem = SciMLBase.EnsembleProblem(single_prob, prob_func = heart_odeform.ode_function);
 
 sim = solve(problem, Rodas5P(), saveat = collect(0.0:dtvis:Tₘₐₓ), trajectories = length(heart_odeform.ode_function.activation_timings))
-dh = cs.dh |> deepcopy
+dh = cs.cs.dh |> deepcopy
 Thunderbolt.reorder_nodal!(dh)
 
 io = ParaViewWriter("ep05_eikonal")
