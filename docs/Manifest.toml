@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "5ca681347daf829a348dbe7641c886d38709d781"
+project_hash = "5e44e12cca2a84cc582ce20029d74868e6b4a268"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "bbc22a9a08a0ef6460041086d8a7b27940ed4ffd"
@@ -767,11 +767,9 @@ version = "0.3.2"
 
 [[deps.FastIterativeMethod]]
 deps = ["StaticArrays", "Tensors"]
-git-tree-sha1 = "a3b9064c87571cd4533c7e932bad99f26a3d93b3"
-repo-rev = "main"
-repo-url = "https://git.noc.ruhr-uni-bochum.de/mohama17/eikonal.jl.git"
+git-tree-sha1 = "cede1db20a1cb1519cf724310aee66b39ff0f3e5"
 uuid = "51611a6c-7c63-4cd2-9a52-92f780132403"
-version = "1.0.0-DEV"
+version = "0.1.0"
 
     [deps.FastIterativeMethod.extensions]
     FastIterativeMethodDataStructuresExt = "DataStructures"
@@ -2032,6 +2030,17 @@ git-tree-sha1 = "c16049726e2d398b52224b8baef70b65cd1947ea"
 uuid = "760fc936-9fa0-4281-9c1a-468957eedc89"
 version = "0.3.1"
 
+[[deps.OrdinaryDiffEqRosenbrock]]
+deps = ["ADTypes", "DiffEqBase", "DifferentiationInterface", "FastBroadcast", "FiniteDiff", "ForwardDiff", "LinearAlgebra", "LinearSolve", "MacroTools", "MuladdMacro", "OrdinaryDiffEqCore", "OrdinaryDiffEqDifferentiation", "OrdinaryDiffEqRosenbrockTableaus", "PrecompileTools", "Preferences", "RecursiveArrayTools", "Reexport", "SciMLBase"]
+git-tree-sha1 = "00a6f06d131c0778dd1da79cf13ef330021c709a"
+uuid = "43230ef6-c299-4910-a778-202eb28ce4ce"
+version = "2.3.0"
+
+[[deps.OrdinaryDiffEqRosenbrockTableaus]]
+git-tree-sha1 = "b659f442a3807d4b53f682e9625e5c438d753621"
+uuid = "b4bd8bb3-f80f-41d2-9b21-73a655b304b9"
+version = "2.1.2"
+
 [[deps.OrdinaryDiffEqSDIRK]]
 deps = ["ADTypes", "DiffEqBase", "FastBroadcast", "LinearAlgebra", "MacroTools", "MuladdMacro", "OrdinaryDiffEqCore", "OrdinaryDiffEqDifferentiation", "OrdinaryDiffEqNonlinearSolve", "PrecompileTools", "Preferences", "RecursiveArrayTools", "Reexport", "SciMLBase", "TruncatedStacktraces"]
 git-tree-sha1 = "ed8aae3b58145b6ea46ac51b792b9348d291e4e3"
@@ -2855,7 +2864,7 @@ version = "0.5.6"
 deps = ["Adapt", "BlockArrays", "ConcreteStructs", "DataStructures", "DiffEqBase", "DynamicQuantities", "FastBroadcast", "Ferrite", "FerriteOperators", "ForwardDiff", "JLD2", "KernelAbstractions", "LinearAlgebra", "LinearSolve", "Logging", "ModelingToolkit", "OrderedCollections", "OrdinaryDiffEqCore", "OrdinaryDiffEqOperatorSplitting", "Polyester", "Preferences", "ReadVTK", "Reexport", "SciCompDSL", "SciMLBase", "SciMLIterators", "SciMLLogging", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "SymbolicIndexingInterface", "Tensors", "TimerOutputs", "UnPack", "Unrolled", "WriteVTK"]
 path = ".."
 uuid = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
-version = "0.0.2"
+version = "0.0.3"
 
     [deps.Thunderbolt.extensions]
     CuThunderboltExt = ["CUDA", "GPUArrays"]

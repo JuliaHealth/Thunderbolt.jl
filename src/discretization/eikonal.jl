@@ -104,7 +104,11 @@ function get_nodes(::UniformEndocardialActivationProtocol{<:CartesianCoordinateS
     restricted to AnalyticalTransmembraneStimulationProtocol"))
 end
 
-function semidiscretize(model::EikonalModel, discretization::FastIterativeMethodDiscretization, mesh::AbstractGrid)
+function semidiscretize(
+    model::EikonalModel,
+    discretization::FastIterativeMethodDiscretization,
+    mesh::AbstractGrid,
+)
     cs = discretization.activation_protocol.f.coordinate_system_coefficient
     return _semidiscretize(model, discretization, mesh, cs)
 end
