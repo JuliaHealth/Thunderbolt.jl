@@ -511,13 +511,11 @@ struct RadialBasisFunctionTransferStrategyCache{
     DistanceMeasureT <: AbstractDistanceMeasureCache,
     SIMT <: AbstractMatrix,
     DIMT <: AbstractMatrix,
-    γT <: AbstractVector,
     SLinsolveCT,
 } <: AbstractFieldTransferStrategyCache
     distance_measure::DistanceMeasureT
     source_influence_matrix::SIMT
     destination_influence_matrix::DIMT
-    γf::γT
     source_linsolve_cache::SLinsolveCT
 end
 
@@ -537,7 +535,6 @@ struct RescaledRadialBasisFunctionTransferStrategyCache{
     distance_measure::DistanceMeasureT
     source_influence_matrix::SIMT
     destination_influence_matrix::DIMT
-    γf::γT
     γg::γT
     source_linsolve_cache::SLinsolveCT
 end
@@ -594,7 +591,7 @@ function create_field_transfer_strategy_cache(
         distance_measure_cache,
         α,
     )
-    prob = LinearSolve.LinearProblem(source_influence_matrix, copy(γf))
+    prob = LinearSolve.LinearProblem(source_influence_matrix, γf)
     linsolve = LinearSolve.init(prob, source_linsolve)
 
     return _create_field_transfer_strategy_cache(
@@ -602,7 +599,6 @@ function create_field_transfer_strategy_cache(
         distance_measure_cache,
         source_influence_matrix,
         destination_influence_matrix,
-        γf,
         linsolve,
     )
 end
@@ -612,10 +608,9 @@ function _create_field_transfer_strategy_cache(
     distance_measure_cache,
     source_influence_matrix,
     destination_influence_matrix,
-    γf,
     linsolve,
 )
-    γg = zeros(length(γf))
+    γg = zeros(length(linsolve.u))
     linsolve.b .= 1.0
     sol = LinearSolve.solve!(linsolve)
     γg .= sol.u
@@ -623,7 +618,6 @@ function _create_field_transfer_strategy_cache(
         distance_measure_cache,
         source_influence_matrix,
         destination_influence_matrix,
-        γf,
         γg,
         linsolve,
     )
@@ -635,14 +629,12 @@ function _create_field_transfer_strategy_cache(
     distance_measure_cache,
     source_influence_matrix,
     destination_influence_matrix,
-    γf,
     linsolve,
 )
     return RadialBasisFunctionTransferStrategyCache(
         distance_measure_cache,
         source_influence_matrix,
         destination_influence_matrix,
-        γf,
         linsolve,
     )
 end
@@ -695,7 +687,7 @@ function get_subdofhandler_indices_on_subdomains(dh::DofHandler, subdomain_names
 end
 
 function _compute_dof_nodes_barrier!(nodes, sdh, dofrange, gip, dof_to_node_map, ref_coords)
-    for cc in CellIterator(sdh)
+    for cc ∈ CellIterator(sdh)
         # Compute for each dof the spatial coordinate of from the reference coordiante and store.
         # NOTE We assume a continuous coordinate field if the interpolation is continuous.
         dofs = @view celldofs(cc)[dofrange]
@@ -1003,11 +995,10 @@ function transfer!(
     operator.transfer_strategy_cache.source_linsolve_cache.b .=
         (@view u_from[operator.mapping.node_to_dof_map_from])
     sol = LinearSolve.solve!(operator.transfer_strategy_cache.source_linsolve_cache)
-    operator.transfer_strategy_cache.γf .= sol.u
     u_to[operator.mapping.node_to_dof_map_to] .=
         (
             operator.transfer_strategy_cache.destination_influence_matrix *
-            operator.transfer_strategy_cache.γf
+            sol.u
         ) ./ (
             operator.transfer_strategy_cache.destination_influence_matrix *
             operator.transfer_strategy_cache.γg
@@ -1027,10 +1018,9 @@ function transfer!(
     operator.transfer_strategy_cache.source_linsolve_cache.b .=
         (@view u_from[operator.mapping.node_to_dof_map_from])
     sol = LinearSolve.solve!(operator.transfer_strategy_cache.source_linsolve_cache)
-    operator.transfer_strategy_cache.γf .= sol.u
     u_to[operator.mapping.node_to_dof_map_to] .= (
         operator.transfer_strategy_cache.destination_influence_matrix *
-        operator.transfer_strategy_cache.γf
+        sol.u
     )
 end
 
@@ -1058,7 +1048,7 @@ function OS.forward_sync_external!(
     sync::VolumeTransfer0D3D,
 )
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
-    for chamber in sync.tying.chambers
+    for chamber ∈ sync.tying.chambers
         chamber.V⁰ᴰval = outer_integrator.u[chamber.V⁰ᴰidx_global]
     end
 end
@@ -1083,7 +1073,7 @@ function OS.forward_sync_external!(
     sync::PressureTransfer3D0D,
 )
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
-    for chamber in sync.tying.chambers
+    for chamber ∈ sync.tying.chambers
         pressure = outer_integrator.u[chamber.pressure_dof_index_global]
         inner_integrator.p[chamber.pressure_parameter_index_local] = pressure
     end
