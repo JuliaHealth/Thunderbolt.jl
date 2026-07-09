@@ -64,6 +64,7 @@ bibtex_plugin = CitationBibliography(
             "topics/couplers.md",
             "topics/time-integration.md",
             "topics/nonlinear-solver.md",
+            "topics/transfer_operators.md",
         ],
         "How-to guides" => [
             "Overview" => "howto/index.md",
