@@ -27,7 +27,7 @@ Questions:
 
 Fields can be transfered between non-matching meshes given the source and target `DofHandler`s.
 
-Implementation details are documented in [Transfer operators and internal RBF design](transfer_operators.md).
+More details on theory in [Transfer operators](transfer_operators.md).
 
 ### Solver
 

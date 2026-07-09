@@ -186,7 +186,7 @@
                 (
                     "RL-RBF α = $α, M = $M, k = $k",
                     (dh_from, dh_to, args...; kwargs...) ->
-                        Thunderbolt.RescaledRadialBasisFunctionTransferOperator(
+                        RescaledRadialBasisFunctionTransferOperator(
                             k,
                             M,
                             α,
@@ -199,7 +199,7 @@
                 (
                     "L-RBF α = $α, M = $M, k = $k",
                     (dh_from, dh_to, args...; kwargs...) ->
-                        Thunderbolt.RadialBasisFunctionTransferOperator(
+                        RadialBasisFunctionTransferOperator(
                             k,
                             M,
                             α,
@@ -212,7 +212,7 @@
                 (
                     "RL-RBF-G α = $α, M = $M, k = $k",
                     (dh_from, dh_to, args...; kwargs...) ->
-                        Thunderbolt.RescaledRadialBasisFunctionGeodesicTransferOperator(
+                        RescaledRadialBasisFunctionGeodesicTransferOperator(
                             k,
                             M,
                             α,
@@ -226,7 +226,7 @@
                 (
                     "L-RBF-G α = $α, M = $M, k = $k",
                     (dh_from, dh_to, args...; kwargs...) ->
-                        Thunderbolt.RadialBasisFunctionGeodesicTransferOperator(
+                        RadialBasisFunctionGeodesicTransferOperator(
                             k,
                             M,
                             α,
@@ -241,7 +241,7 @@
         ],
     )
     @testset "Transfer Operator: $name" for (name, transfer_operator) in (
-        ("NodalIntergridInterpolation", Thunderbolt.NodalIntergridInterpolation),
+        ("NodalIntergridInterpolation", NodalIntergridInterpolation),
         rbf_test_cases...,
     )
         test_transfer(source_mesh, target_mesh, transfer_operator)

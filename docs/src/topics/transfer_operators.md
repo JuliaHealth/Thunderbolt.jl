@@ -88,24 +88,3 @@ $$\hat f(x) = \frac{\sum_j \gamma_{f,j} \phi\left(\frac{\lVert x - x_j \rVert}{r
 
 This rescaling ensures that a constant source field remains constant after transfer, which is
 particularly important when the source and target meshes have different node densities.
-
-## Source docstrings
-
-```@docs
-Thunderbolt.WendlandRadialBasisFunction
-Thunderbolt.IntergridDofMapping
-Thunderbolt.EuclideanDistanceMeasure
-Thunderbolt.EuclideanDistanceMeasureCache
-Thunderbolt.GeodesicDistanceMeasure
-Thunderbolt.GeodesicDistanceMeasureCache
-Thunderbolt.RadialBasisFunctionTransferStrategy
-Thunderbolt.RescaledRadialBasisFunctionTransferStrategy
-Thunderbolt.RadialBasisFunctionTransferOperator
-Thunderbolt.RadialBasisFunctionGeodesicTransferOperator
-Thunderbolt.RescaledRadialBasisFunctionTransferOperator
-Thunderbolt.RescaledRadialBasisFunctionGeodesicTransferOperator
-Thunderbolt.RadialBasisFunctionTransferStrategyCache
-Thunderbolt.RescaledRadialBasisFunctionTransferStrategyCache
-Thunderbolt.NodalIntergridTransferStrategy
-Thunderbolt.NodalIntergridTransferStrategyCache
-```

@@ -11,5 +11,6 @@ Pages = [
     "operators.md",
     "solver.md",
     "utility.md",
+    "transfer_operators.md",
 ]
 ```
