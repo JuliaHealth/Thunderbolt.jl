@@ -279,10 +279,10 @@
                             k,
                             M,
                             α,
-                            0.5,
                             dh_from,
                             dh_to,
                             args...;
+                            β = 0.5,
                             kwargs...,
                         ),
                 ),
@@ -293,10 +293,10 @@
                             k,
                             M,
                             α,
-                            0.5,
                             dh_from,
                             dh_to,
                             args...;
+                            β = 0.5,
                             kwargs...,
                         ),
                 ),

@@ -1,4 +1,4 @@
-include("graphs_utiils.jl")
+include("graphs_utils.jl")
 
 """
     AbstractTransferOperator
@@ -50,11 +50,11 @@ Base type for radial basis functions used in transfer.
 abstract type AbstractRadialBasisFunction end
 
 """
-    AbstractLoocalizedRadialBasisFuncttion
+    AbstractLocalizedRadialBasisFunction
 
 Base type for compactly supported radial basis functions.
 """
-abstract type AbstractLoocalizedRadialBasisFuncttion <: AbstractRadialBasisFunction end
+abstract type AbstractLocalizedRadialBasisFunction <: AbstractRadialBasisFunction end
 
 @doc raw"""
     WendlandRadialBasisFunction{Dim, k}
@@ -72,7 +72,7 @@ $$\phi(r) = \begin{cases}
 
 Here $(x)_+ = \max(x, 0)$ and $r$ is the normalized distance.
 """
-struct WendlandRadialBasisFunction{Dim, k} <: AbstractLoocalizedRadialBasisFuncttion end
+struct WendlandRadialBasisFunction{Dim, k} <: AbstractLocalizedRadialBasisFunction end
 
 @inline function (::WendlandRadialBasisFunction{3, 0})(r)
     (max((1 - r), zero(r))^2)
@@ -143,23 +143,21 @@ end
 A geodesic distance measure that combines mesh connectivity and Euclidean distance
 for radial basis function interpolation.
 
-Let $d_euc(x_i, y_i) = \lVert x_i - y_i \rVert$ be the Euclidean distance and let
-`d_geo(x_i, y_i)` be the shortest-path distance along the mesh graph.
-The measure returns
+Let $d_{\mathrm{euc}}(x_i, y_i) = \lVert x_i - y_i \rVert$ be the Euclidean distance and let
+`d_{\mathrm{geo}}(x_i, y_i)` be the shortest-path distance along the mesh graph (precomputed
+per-node up to a cutoff). Define the cutoff distance $c = \beta \; h_{\max}$ where $h_{\max}$
+is the maximum edge length in the mesh. The implemented hybrid selection uses:
 
-$$\delta(x_i, y_i) = \begin{cases}
-  d_{\mathrm{euc}}(x_i, y_i), & d_{\mathrm{geo}}(x_i, y_i) \le d_{\mathrm{euc}}(x_i, y_i) + \beta h_{\max}, \\
-  d_{\mathrm{geo}}(x_i, y_i), & d_{\mathrm{geo}}(x_i, y_i) < \alpha r_i.
-\end{cases}$$
+- If $d_{\mathrm{geo}}(x_i, y_i) \le d_{\mathrm{euc}}(x_i, y_i) + c$, then the Euclidean distance $d_{\mathrm{euc}}$ is used.
+- Otherwise, the geodesic distance $d_{\mathrm{geo}}$ is used when available (i.e., when precomputed within the per-node cutoff).
 
-where $r_i$ is the support radius associated with source node `i` and `h_max`
-is the maximum edge length in the mesh. This choice follows the hybrid distance strategy
-used in the transfer operator formulation described by Bucelli et al. (2024).
+This rule mirrors the implementation's cache lookup: a small geodesic-to-Euclidean gap (within $c$)
+favors the Euclidean distance; larger gaps fall back to the geodesic distance when present.
 
 `M` and `α` are the number of connected neighbors used for support radius calculation
 and the scaling factor for support radii.
 
-`β` is the scaling factor used to decide whether to use geodesic or Euclidean distance.
+`β` is the scaling factor used to compute the geodesic cutoff $c = \beta h_{\max}$.
 """
 struct GeodesicDistanceMeasure <: AbstractDistanceMeasure
     M::Int
@@ -176,13 +174,13 @@ struct GeodesicDistanceMeasureCache{
     KDTreeT,
     GraphT,
     FloatT <: Real,
-    EdgeLenghtMatrixT <: AbstractMatrix,
+    EdgeLengthMatrixT <: AbstractMatrix,
     DijkstraT,
 } <: AbstractDistanceMeasureCache
     source_kdtree::KDTreeT
     source_graph::GraphT
     support_radii::Vector{FloatT}
-    edge_lengths_matrix::EdgeLenghtMatrixT
+    edge_lengths_matrix::EdgeLengthMatrixT
     M::Int
     α::Float64
     β::Float64
@@ -423,9 +421,9 @@ function RescaledRadialBasisFunctionTransferOperator(
 end
 
 """
-    RadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from, dh_to; linsolve = LinearSolve.KrylovJL_GMRES())
-    RadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from, dh_to, field_name::Symbol; linsolve = LinearSolve.KrylovJL_GMRES())
-    RadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from, dh_to, field_name_from::Symbol, field_name_to::Symbol; linsolve = LinearSolve.KrylovJL_GMRES())
+    RadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to, field_name::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to, field_name_from::Symbol, field_name_to::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
 
 Construct a `FieldTransferOperator` that uses the hybrid geodesic distance measure when
 building RBF influence matrices. This constructor exposes the `β` parameter that
@@ -451,10 +449,10 @@ function RadialBasisFunctionGeodesicTransferOperator(
     k,
     M,
     α,
-    β,
     dh_from::DofHandler{sdim},
     dh_to::DofHandler{sdim},
     args...;
+    β = 0.5,
     linsolve = LinearSolve.KrylovJL_GMRES(),
     kwargs...,
 ) where {sdim}
@@ -472,9 +470,9 @@ function RadialBasisFunctionGeodesicTransferOperator(
 end
 
 """
-    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from, dh_to; linsolve = LinearSolve.KrylovJL_GMRES())
-    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from, dh_to, field_name::Symbol; linsolve = LinearSolve.KrylovJL_GMRES())
-    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, β, dh_from, dh_to, field_name_from::Symbol, field_name_to::Symbol; linsolve = LinearSolve.KrylovJL_GMRES())
+    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to, field_name::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to, field_name_from::Symbol, field_name_to::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
 
 Construct a `FieldTransferOperator` that applies normalization (rescaling) and uses the
 hybrid geodesic distance when building RBF influence matrices.
@@ -499,10 +497,10 @@ function RescaledRadialBasisFunctionGeodesicTransferOperator(
     k,
     M,
     α,
-    β,
     dh_from::DofHandler{sdim},
     dh_to::DofHandler{sdim},
     args...;
+    β = 0.5,
     linsolve = LinearSolve.KrylovJL_GMRES(),
     kwargs...,
 ) where {sdim}
