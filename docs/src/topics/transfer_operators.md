@@ -27,7 +27,7 @@ in radial basis function basis, and $A$ is the projection matrix constructed as
 
 $$A_{ij} = φ(‖x_i, x_j‖ / r_j)$$
 
-with $‖\circ, \dotsb‖$ being the distance measure used to calculate the distance between the two nodes,
+with $‖\circ, \circ‖$ being the distance measure used to calculate the distance between the two nodes,
 $x_i$ being the coordinate of the $i$th node in the target mesh, $x_j$ being the
 coordinate of the $j$th node in the source mesh, $r_j$ being the support radius for the $j$th
 node in the source mesh, and $φ$ being the radial basis function of choice.
@@ -51,11 +51,11 @@ The internal transfer implementation supports two distance measures:
 
 The hybrid distance is defined internally as:
 
-$$d(\circ, \square) = \begin{cases}
-  d_{\mathrm{euc}}(\circ, \square), & d_{\mathrm{geo}}(\circ, \square) \leq d_{\mathrm{euc}}(\circ, \square) + \beta h_{\max}, \\
-  d_{\mathrm{geo}}(\circ, \square), & d_{\mathrm{geo}}(\circ, \square) \gt d_{\mathrm{euc}}(\circ, \square) + \beta h_{\max}.\end{cases}$$
+$$d(\circ, \circ) = \begin{cases}
+  d_{\mathrm{euc}}(\circ, \circ), & d_{\mathrm{geo}}(\circ, \circ) \leq d_{\mathrm{euc}}(\circ, \circ) + \beta h_{\max}, \\
+  d_{\mathrm{geo}}(\circ, \circ), & d_{\mathrm{geo}}(\circ, \circ) \gt d_{\mathrm{euc}}(\circ, \circ) + \beta h_{\max}.\end{cases}$$
 
-where $d_{\mathrm{euc}}(\circ, \square) = \lVert \circ - \square \rVert_{\text{L}^2}$ is the Euclidean norm, $d_{\mathrm{geo}}(\circ, \square)$ is the shortest-path mesh distance, $h_{\max}$ is the maximum edge length in the source mesh.
+where $d_{\mathrm{euc}}(\circ, \circ) = \lVert \circ - \circ \rVert_{\text{L}^2}$ is the Euclidean norm, $d_{\mathrm{geo}}(\circ, \circ)$ is the shortest-path mesh distance, $h_{\max}$ is the maximum edge length in the source mesh.
 
 The parameter $\beta$ tunes whether Euclidean distance is preferred in regions where the geodesic distance is not significantly larger.
 

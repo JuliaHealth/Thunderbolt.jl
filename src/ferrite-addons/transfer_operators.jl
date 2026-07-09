@@ -303,10 +303,14 @@ end
 
 A compactly supported RBF transfer strategy that rescales the destination output to preserve normalization.
 
-The rescaled transfer uses the same RBF basis as above, with an additional normalization vector
+The rescaled transfer uses the same RBF basis as in [RadialBasisFunctionTransferStrategy](@ref), with an additional normalization vector
 $γ_g$ obtained from solving
 
 $$A \, \gamma_g = \mathbf{1},$$
+
+where the influence matrix entry is
+
+$$A_{ij} = \phi\left(\frac{\lVert x_i - x_j \rVert}{r_j}\right).$$
 
 so that the transferred field is computed as
 
@@ -337,7 +341,7 @@ Parameters
 - `α::Real` — scaling factor applied to computed support radii (α > 0).
 - `dh_from::DofHandler` — source degrees-of-freedom handler.
 - `dh_to::DofHandler` — target degrees-of-freedom handler.
-- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` must contain exactly one field.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` contains exactly one field.
 - `linsolve` — linear solver used to solve local RBF systems (default: `LinearSolve.KrylovJL_GMRES()`).
 
 Returns
@@ -382,7 +386,7 @@ Parameters
 - `β::Real` — geodesic threshold scaling factor (default `0.5`). The hybrid distance prefers Euclidean distance when the geodesic distance is within `β * h_max` of the Euclidean distance.
 - `dh_from::DofHandler` — source degrees-of-freedom handler.
 - `dh_to::DofHandler` — target degrees-of-freedom handler.
-- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` must contain exactly one field.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` contains exactly one field.
 - `linsolve` — linear solver used to solve local RBF systems (default: `LinearSolve.KrylovJL_GMRES()`).
 
 Returns
@@ -428,7 +432,7 @@ Parameters
 - `β::Real` — geodesic threshold scaling factor. Larger values make geodesic distance more likely to be used.
 - `dh_from::DofHandler` — source degrees-of-freedom handler.
 - `dh_to::DofHandler` — target degrees-of-freedom handler.
-- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` must contain exactly one field.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` contains exactly one field.
 - `linsolve` — linear solver (default: `LinearSolve.KrylovJL_GMRES()`).
 
 Returns
@@ -473,7 +477,7 @@ Parameters
 - `β::Real` — geodesic threshold scaling factor. Larger values make geodesic distance more likely to be used.
 - `dh_from::DofHandler` — source degrees-of-freedom handler.
 - `dh_to::DofHandler` — target degrees-of-freedom handler.
-- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` must contain exactly one field.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` contains exactly one field.
 - `linsolve` — linear solver (default: `LinearSolve.KrylovJL_GMRES()`).
 
 Returns
