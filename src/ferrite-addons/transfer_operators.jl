@@ -1000,10 +1000,7 @@ function transfer!(
         (@view u_from[operator.mapping.node_to_dof_map_from])
     sol = LinearSolve.solve!(operator.transfer_strategy_cache.source_linsolve_cache)
     u_to[operator.mapping.node_to_dof_map_to] .=
-        (
-            operator.transfer_strategy_cache.destination_influence_matrix *
-            sol.u
-        ) ./ (
+        (operator.transfer_strategy_cache.destination_influence_matrix * sol.u) ./ (
             operator.transfer_strategy_cache.destination_influence_matrix *
             operator.transfer_strategy_cache.γg
         )
@@ -1022,10 +1019,8 @@ function transfer!(
     operator.transfer_strategy_cache.source_linsolve_cache.b .=
         (@view u_from[operator.mapping.node_to_dof_map_from])
     sol = LinearSolve.solve!(operator.transfer_strategy_cache.source_linsolve_cache)
-    u_to[operator.mapping.node_to_dof_map_to] .= (
-        operator.transfer_strategy_cache.destination_influence_matrix *
-        sol.u
-    )
+    u_to[operator.mapping.node_to_dof_map_to] .=
+        (operator.transfer_strategy_cache.destination_influence_matrix * sol.u)
 end
 
 
