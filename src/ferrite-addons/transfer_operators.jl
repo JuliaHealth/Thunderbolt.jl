@@ -596,14 +596,14 @@ function create_field_transfer_strategy_cache(
         α,
     )
     prob = LinearSolve.LinearProblem(source_influence_matrix, γf)
-    linsolve = LinearSolve.init(prob, source_linsolve)
+    lincache = LinearSolve.init(prob, source_linsolve)
 
     return _create_field_transfer_strategy_cache(
         evaluator_type,
         distance_measure_cache,
         source_influence_matrix,
         destination_influence_matrix,
-        linsolve,
+        lincache,
     )
 end
 
@@ -612,18 +612,18 @@ function _create_field_transfer_strategy_cache(
     distance_measure_cache,
     source_influence_matrix,
     destination_influence_matrix,
-    linsolve,
+    lincache,
 )
-    γg = zeros(length(linsolve.u))
-    linsolve.b .= 1.0
-    sol = LinearSolve.solve!(linsolve)
+    γg = zeros(length(lincache.u))
+    lincache.b .= 1.0
+    sol = LinearSolve.solve!(lincache)
     γg .= sol.u
     return RescaledRadialBasisFunctionTransferStrategyCache(
         distance_measure_cache,
         source_influence_matrix,
         destination_influence_matrix,
         γg,
-        linsolve,
+        lincache,
     )
 end
 
@@ -633,13 +633,13 @@ function _create_field_transfer_strategy_cache(
     distance_measure_cache,
     source_influence_matrix,
     destination_influence_matrix,
-    linsolve,
+    lincache,
 )
     return RadialBasisFunctionTransferStrategyCache(
         distance_measure_cache,
         source_influence_matrix,
         destination_influence_matrix,
-        linsolve,
+        lincache,
     )
 end
 
