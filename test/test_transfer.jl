@@ -165,6 +165,35 @@
             end
         end
     end
+    function test_pe_true_subdomain()
+        # tests that PointEvalHandler does not search the full grid but only
+        # cells where the field is defined
+        source_grid = generate_grid(Quadrilateral, (40, 40), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
+        addcellset!(source_grid, "hole", x -> norm(x) ≤ 1.0)
+
+        subdomain = getcellset(source_grid, "hole")
+        source_dh = DofHandler(source_grid)
+        sdh = SubDofHandler(source_dh, subdomain)
+        add!(sdh, :v, Lagrange{RefQuadrilateral, 1}())
+        close!(source_dh)
+
+        target_mesh = generate_grid(Triangle, (4, 4), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
+        addcellset!(target_mesh, "hole", x -> norm(x) ≤ 1.0)
+
+        subdomain = getcellset(target_mesh, "hole")
+        target_dh = DofHandler(target_mesh)
+        sdh = SubDofHandler(target_dh, subdomain)
+        add!(sdh, :v, Lagrange{RefTriangle, 1}())
+        close!(target_dh)
+
+        op = NodalIntergridInterpolation(source_dh, target_dh)
+
+        target_u = zeros(ndofs(target_dh))
+        Thunderbolt.transfer!(target_u, op, zeros(ndofs(source_dh)))
+
+        @test_broken !any(isnan.(target_u))
+        return
+    end
     source_mesh = Thunderbolt.generate_simple_disc_mesh(Quadrilateral, 40)
 
     target_mesh = generate_mesh(Triangle, (10, 11))
@@ -245,6 +274,10 @@
         rbf_test_cases...,
     )
         test_transfer(source_mesh, target_mesh, transfer_operator)
+    end
+
+    @testset "Ferrite.jl#1182" begin
+        test_pe_true_subdomain()
     end
 
 end
