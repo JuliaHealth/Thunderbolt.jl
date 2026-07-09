@@ -94,6 +94,36 @@
             target_sdhids = Thunderbolt.get_subdofhandler_indices_on_subdomains(target_dh, ["hole"])
 
             op = transfer_operator(source_dh, target_dh, :v, :v; subdomains_to = target_sdhids)
+
+            # Note that here we assume that all sdh have the same ndofspercell.
+            vdofs_from = sort(
+                unique(
+                    reduce(
+                        vcat,
+                        [
+                            celldofs(source_dh, i)[dof_range(source_dh.subdofhandlers[1], :v)]
+                            for i in source_dh.subdofhandlers[1].cellset
+                        ],
+                    ),
+                ),
+            )
+            vdofs_to = sort(
+                unique(
+                    reduce(
+                        vcat,
+                        [
+                            celldofs(target_dh, i)[v_range] for
+                            i in target_dh.subdofhandlers[target_sdhids[]].cellset
+                        ],
+                    ),
+                ),
+            )
+
+            # Since it is a single subdomain new "nodes" ordering does not match that of dofs
+            # TODO: find a better test, these are constructed almost the same way as the function being tested
+            @test op.mapping.node_to_dof_map_from == vdofs_from
+            @test op.mapping.node_to_dof_map_to == vdofs_to
+
             target_u = [NaN for i = 1:ndofs(target_dh)]
             Thunderbolt.transfer!(target_u, op, source_u)
             cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 2}())
@@ -187,6 +217,10 @@
         close!(target_dh)
 
         op = NodalIntergridInterpolation(source_dh, target_dh)
+
+        # Since it is a single subdomain new "nodes" ordering matches that of dofs
+        @test op.mapping.node_to_dof_map_from == 1:ndofs(source_dh)
+        @test op.mapping.node_to_dof_map_to == 1:ndofs(target_dh)
 
         target_u = zeros(ndofs(target_dh))
         Thunderbolt.transfer!(target_u, op, zeros(ndofs(source_dh)))
