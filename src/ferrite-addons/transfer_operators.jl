@@ -341,7 +341,10 @@ Parameters
 - `α::Real` — scaling factor applied to computed support radii (α > 0).
 - `dh_from::DofHandler` — source degrees-of-freedom handler.
 - `dh_to::DofHandler` — target degrees-of-freedom handler.
-- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` contains exactly one field.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer.
+    - No field names provided: the source `DofHandler` contains exactly one field; that field's name is used for both source and target.
+    - One `field_name::Symbol` provided: the named field is taken from the source and transferred to the target field with the same name.
+    - Two symbols `field_name_from::Symbol, field_name_to::Symbol` provided: the named source field is transferred into the named field on the target; both names exist in their respective `DofHandler`s.
 - `linsolve` — linear solver used to solve local RBF systems (default: `LinearSolve.KrylovJL_GMRES()`).
 
 Returns
@@ -386,7 +389,10 @@ Parameters
 - `β::Real` — geodesic threshold scaling factor (default `0.5`). The hybrid distance prefers Euclidean distance when the geodesic distance is within `β * h_max` of the Euclidean distance.
 - `dh_from::DofHandler` — source degrees-of-freedom handler.
 - `dh_to::DofHandler` — target degrees-of-freedom handler.
-- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` contains exactly one field.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer.
+    - No field names provided: the source `DofHandler` contains exactly one field; that field's name is used for both source and target.
+    - One `field_name::Symbol` provided: the named field is taken from the source and transferred to the target field with the same name.
+    - Two symbols `field_name_from::Symbol, field_name_to::Symbol` provided: the named source field is transferred into the named field on the target; both names exist in their respective `DofHandler`s.
 - `linsolve` — linear solver used to solve local RBF systems (default: `LinearSolve.KrylovJL_GMRES()`).
 
 Returns
@@ -432,7 +438,10 @@ Parameters
 - `β::Real` — geodesic threshold scaling factor. Larger values make geodesic distance more likely to be used.
 - `dh_from::DofHandler` — source degrees-of-freedom handler.
 - `dh_to::DofHandler` — target degrees-of-freedom handler.
-- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` contains exactly one field.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer.
+    - No field names provided: the source `DofHandler` contains exactly one field; that field's name is used for both source and target.
+    - One `field_name::Symbol` provided: the named field is taken from the source and transferred to the target field with the same name.
+    - Two symbols `field_name_from::Symbol, field_name_to::Symbol` provided: the named source field is transferred into the named field on the target; both names exist in their respective `DofHandler`s.
 - `linsolve` — linear solver (default: `LinearSolve.KrylovJL_GMRES()`).
 
 Returns
@@ -477,7 +486,10 @@ Parameters
 - `β::Real` — geodesic threshold scaling factor. Larger values make geodesic distance more likely to be used.
 - `dh_from::DofHandler` — source degrees-of-freedom handler.
 - `dh_to::DofHandler` — target degrees-of-freedom handler.
-- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer. If omitted, the source `DofHandler` contains exactly one field.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer.
+    - No field names provided: the source `DofHandler` contains exactly one field; that field's name is used for both source and target.
+    - One `field_name::Symbol` provided: the named field is taken from the source and transferred to the target field with the same name.
+    - Two symbols `field_name_from::Symbol, field_name_to::Symbol` provided: the named source field is transferred into the named field on the target; both names exist in their respective `DofHandler`s.
 - `linsolve` — linear solver (default: `LinearSolve.KrylovJL_GMRES()`).
 
 Returns
