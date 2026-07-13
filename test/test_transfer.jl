@@ -272,12 +272,12 @@
             ] for α ∈ 1.5:1.5:3.0, M ∈ 1:2, k ∈ 0:2 # Due to how the circle connectivity the tests for lower alphas fail
         ],
     )
-    # @testset "Transfer Operator: $name" for (name, transfer_operator) in (
-    #     ("NodalIntergridInterpolation", NodalIntergridInterpolation),
-    #     rbf_test_cases...,
-    # )
-    #     test_transfer(source_mesh, target_mesh, transfer_operator)
-    # end
+    @testset "Transfer Operator: $name" for (name, transfer_operator) in (
+        ("NodalIntergridInterpolation", NodalIntergridInterpolation),
+        rbf_test_cases...,
+    )
+        test_transfer(source_mesh, target_mesh, transfer_operator)
+    end
 
     @testset "Ferrite.jl#1182" begin
         # tests that PointEvalHandler does not search the full grid but only
@@ -363,7 +363,7 @@
         close!(source_dh)
 
         #=
-            source dofs : 
+            source dofs :
             53----52---59----66----65
             |     |     |     |     |
             |     |     |     |     |
