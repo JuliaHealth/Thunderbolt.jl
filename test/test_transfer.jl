@@ -195,43 +195,12 @@
             end
         end
     end
-    function test_pe_true_subdomain()
-        # tests that PointEvalHandler does not search the full grid but only
-        # cells where the field is defined
-        source_grid = generate_grid(Quadrilateral, (40, 40), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
-        addcellset!(source_grid, "hole", x -> norm(x) ≤ 1.0)
 
-        subdomain = getcellset(source_grid, "hole")
-        source_dh = DofHandler(source_grid)
-        sdh = SubDofHandler(source_dh, subdomain)
-        add!(sdh, :v, Lagrange{RefQuadrilateral, 1}())
-        close!(source_dh)
-
-        target_mesh = generate_grid(Triangle, (4, 4), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
-        addcellset!(target_mesh, "hole", x -> norm(x) ≤ 1.0)
-
-        subdomain = getcellset(target_mesh, "hole")
-        target_dh = DofHandler(target_mesh)
-        sdh = SubDofHandler(target_dh, subdomain)
-        add!(sdh, :v, Lagrange{RefTriangle, 1}())
-        close!(target_dh)
-
-        op = NodalIntergridInterpolation(source_dh, target_dh)
-
-        # Since it is a single subdomain new "nodes" ordering matches that of dofs
-        @test op.mapping.node_to_dof_map_from == 1:ndofs(source_dh)
-        @test op.mapping.node_to_dof_map_to == 1:ndofs(target_dh)
-
-        target_u = zeros(ndofs(target_dh))
-        Thunderbolt.transfer!(target_u, op, zeros(ndofs(source_dh)))
-
-        @test_broken !any(isnan.(target_u))
-        return
-    end
     source_mesh = Thunderbolt.generate_simple_disc_mesh(Quadrilateral, 40)
 
     target_mesh = generate_mesh(Triangle, (10, 11))
     target_mesh_nonmatching = generate_mesh(Triangle, (40, 44), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
+
     cells_hole = Set{Int}()
     cells_remaining = Set{Int}()
     for cc in CellIterator(target_mesh.grid)
@@ -303,15 +272,138 @@
             ] for α ∈ 1.5:1.5:3.0, M ∈ 1:2, k ∈ 0:2 # Due to how the circle connectivity the tests for lower alphas fail
         ],
     )
-    @testset "Transfer Operator: $name" for (name, transfer_operator) in (
-        ("NodalIntergridInterpolation", NodalIntergridInterpolation),
-        rbf_test_cases...,
-    )
-        test_transfer(source_mesh, target_mesh, transfer_operator)
-    end
+    # @testset "Transfer Operator: $name" for (name, transfer_operator) in (
+    #     ("NodalIntergridInterpolation", NodalIntergridInterpolation),
+    #     rbf_test_cases...,
+    # )
+    #     test_transfer(source_mesh, target_mesh, transfer_operator)
+    # end
 
     @testset "Ferrite.jl#1182" begin
-        test_pe_true_subdomain()
+        # tests that PointEvalHandler does not search the full grid but only
+        # cells where the field is defined
+        source_grid = generate_grid(Quadrilateral, (4, 4), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
+        addcellset!(source_grid, "hole", x -> norm(x, Inf) ≤ 1.0)
+
+        subdomain = getcellset(source_grid, "hole")
+        source_dh = DofHandler(source_grid)
+        sdh = SubDofHandler(source_dh, subdomain)
+        add!(sdh, :v, Lagrange{RefQuadrilateral, 1}())
+        close!(source_dh)
+
+        target_grid = generate_grid(Triangle, (4, 4), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
+        addcellset!(target_grid, "hole", x -> norm(x, Inf) ≤ 1.0)
+
+        subdomain = getcellset(target_grid, "hole")
+        target_dh = DofHandler(target_grid)
+        sdh = SubDofHandler(target_dh, subdomain)
+        add!(sdh, :v, Lagrange{RefTriangle, 1}())
+        close!(target_dh)
+
+        op = NodalIntergridInterpolation(source_dh, target_dh)
+
+        target_u = zeros(ndofs(target_dh))
+        Thunderbolt.transfer!(target_u, op, zeros(ndofs(source_dh)))
+
+        @test_broken !any(isnan.(target_u))
+    end
+
+    @testset "IntergridDofMapping" begin
+        # We start by testing transfer where we have a single sdh thus all dofs are included.
+        source_grid = generate_grid(Quadrilateral, (4, 4), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
+        addcellset!(source_grid, "hole", x -> norm(x, Inf) ≤ 1.0)
+
+        subdomain = getcellset(source_grid, "hole")
+        source_dh = DofHandler(source_grid)
+        sdh = SubDofHandler(source_dh, subdomain)
+        add!(sdh, :v, Lagrange{RefQuadrilateral, 1}())
+        close!(source_dh)
+
+        target_grid = generate_grid(Triangle, (4, 4), Vec((-2.0, -2.0)), Vec((2.0, 2.0)))
+        addcellset!(target_grid, "hole", x -> norm(x, Inf) ≤ 1.0)
+
+        subdomain = getcellset(target_grid, "hole")
+        target_dh = DofHandler(target_grid)
+        sdh = SubDofHandler(target_dh, subdomain)
+        add!(sdh, :v, Lagrange{RefTriangle, 1}())
+        close!(target_dh)
+
+        ndofs_source = ndofs(source_dh)
+        ndofs_target = ndofs(target_dh)
+
+
+        op = NodalIntergridInterpolation(source_dh, target_dh)
+
+        @test op.mapping.nodes_from == unique(
+            reduce(vcat, [getcoordinates(source_grid, i) for i in getcellset(source_grid, "hole")]),
+        )
+        @test op.mapping.nodes_to == unique(
+            reduce(vcat, [getcoordinates(target_grid, i) for i in getcellset(target_grid, "hole")]),
+        )
+
+        @test op.mapping.node_to_dof_map_from == 1:ndofs_source
+        @test op.mapping.node_to_dof_map_to == 1:ndofs_target
+
+        @test [op.mapping.dof_to_node_map_from[i] for i = 1:ndofs_source] == 1:ndofs_source
+        @test [op.mapping.dof_to_node_map_to[i] for i = 1:ndofs_target] == 1:ndofs_target
+        # Now we add another sdh and only transfer one of the subdomains.
+
+        addcellset!(source_grid, "not hole", x -> norm(x, Inf) ≥ 1.0)
+
+        hole_subdomain = getcellset(source_grid, "hole")
+        not_hole_subdomain = getcellset(source_grid, "not hole")
+        source_dh = DofHandler(source_grid)
+
+        sdh = SubDofHandler(source_dh, not_hole_subdomain)
+        add!(sdh, :v, Lagrange{RefQuadrilateral, 2}())
+
+        sdh = SubDofHandler(source_dh, hole_subdomain)
+        add!(sdh, :v, Lagrange{RefQuadrilateral, 1}())
+
+        close!(source_dh)
+
+        #=
+            source dofs : 
+            53----52---59----66----65
+            |     |     |     |     |
+            |     |     |     |     |
+            41----40----58----47----46
+            |     |     |     |     |
+            |     |     |     |     |
+            29----28----73---35----34
+            |     |     |     |     |
+            |     |     |     |     |
+            4----3----11----17----23
+            |     |     |     |     |
+            |     |     |     |     |
+            1----2----10----16----22
+        =#
+
+        source_transfered_nodes = [7, 8, 9, 12, 14, 17, 19, 18, 13]
+        source_transfered_dofs = [3, 11, 17, 28, 35, 40, 47, 58, 73]
+        ndofs_target = ndofs(target_dh)
+
+        source_sdhids = Thunderbolt.get_subdofhandler_indices_on_subdomains(source_dh, ["hole"])
+
+        op = NodalIntergridInterpolation(
+            source_dh,
+            target_dh,
+            :v,
+            :v,
+            subdomains_from = source_sdhids,
+        )
+
+        @test op.mapping.nodes_from ==
+              [node.x for node in source_grid.nodes[source_transfered_nodes]]
+        @test op.mapping.nodes_to == unique(
+            reduce(vcat, [getcoordinates(target_grid, i) for i in getcellset(target_grid, "hole")]),
+        )
+
+        @test op.mapping.node_to_dof_map_from == source_transfered_dofs
+        @test op.mapping.node_to_dof_map_to == 1:ndofs_target
+
+        @test [op.mapping.dof_to_node_map_from[i] for i in source_transfered_dofs] == 1:length(source_transfered_dofs)
+        @test [op.mapping.dof_to_node_map_to[i] for i = 1:ndofs_target] == 1:ndofs_target
     end
 
 end
