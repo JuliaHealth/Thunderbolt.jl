@@ -20,7 +20,7 @@ function precompute_dijkstra_with_cutoffs(
     n_nodes = length(all_nodes)
     results = Vector{Vector{T}}(undef, n_nodes)
 
-    @batch minbatch = n_nodes ÷ Threads.nthreads() for i = 1:n_nodes
+    @batch minbatch = max(1, n_nodes ÷ Threads.nthreads() ÷ 3) for i = 1:n_nodes
         node = all_nodes[i]
         maxdist = support_radii[i] * α
 
