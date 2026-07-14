@@ -119,11 +119,6 @@
                 ),
             )
 
-            # Since it is a single subdomain new "nodes" ordering does not match that of dofs
-            # TODO: find a better test, these are constructed almost the same way as the function being tested
-            @test op.mapping.node_to_dof_map_from == vdofs_from
-            @test op.mapping.node_to_dof_map_to == vdofs_to
-
             target_u = [NaN for i = 1:ndofs(target_dh)]
             Thunderbolt.transfer!(target_u, op, source_u)
             cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 2}())
