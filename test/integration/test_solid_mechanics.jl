@@ -48,6 +48,7 @@ end
 
 @testset "Passive Structure" begin
 
+    node_coords_tol = 1e-6
     grid = generate_grid(
         Hexahedron,
         (10, 10, 2),
@@ -55,8 +56,8 @@ end
         Ferrite.Vec{3}((1.0, 1.0, 0.2)),
     )
     addcellset!(grid, "myocardium", x->true)
-    addcellset!(grid, "inner", x->x[3] ≤ 0.0)
-    addcellset!(grid, "outer", x->x[3] ≥ 0.0)
+    addcellset!(grid, "inner", x->x[3] ≤ node_coords_tol)
+    addcellset!(grid, "outer", x->x[3] ≥ -node_coords_tol)
     mesh = to_mesh(grid)
 
     u₁ = test_solve_passive_structure(
@@ -351,6 +352,7 @@ end
 @testset "Contracting cuboid" begin
     # mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
     # mesh = generate_mesh(Hexahedron, (1, 1, 1), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+    node_coords_tol = 1e-6
 
     grid = generate_grid(
         Hexahedron,
@@ -359,10 +361,10 @@ end
         Ferrite.Vec{3}((1.0, 1.0, 0.2)),
     )
     addcellset!(grid, "myocardium", x->true)
-    addcellset!(grid, "inner", x->x[3] ≤ 0.1)
-    addcellset!(grid, "outer", x->x[3] ≥ 0.1)
-    addcellset!(grid, "front", x->x[1] ≤ 0.1)
-    addcellset!(grid, "back", x->x[1] ≥ 0.1)
+    addcellset!(grid, "inner", x->x[3] ≤ 0.1 + node_coords_tol)
+    addcellset!(grid, "outer", x->x[3] ≥ 0.1 + -node_coords_tol)
+    addcellset!(grid, "front", x->x[1] ≤ 0.1 + node_coords_tol)
+    addcellset!(grid, "back", x->x[1] ≥ 0.1 + -node_coords_tol)
     mesh = to_mesh(grid)
 
     microstructure_model = OrthotropicMicrostructureModel(

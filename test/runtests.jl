@@ -1,4 +1,4 @@
-using Test, Tensors, Thunderbolt, StaticArrays
+using Test, Tensors, Thunderbolt, StaticArrays, LinearSolve
 
 import Thunderbolt: OrderedSet, to_mesh
 

@@ -64,6 +64,7 @@ bibtex_plugin = CitationBibliography(
             "topics/couplers.md",
             "topics/time-integration.md",
             "topics/nonlinear-solver.md",
+            "topics/transfer_operators.md",
         ],
         "How-to guides" => [
             "Overview" => "howto/index.md",
@@ -83,11 +84,13 @@ bibtex_plugin = CitationBibliography(
             "api-reference/discretization.md",
             "api-reference/solver.md",
             "api-reference/utility.md",
+            "api-reference/transfer_operators.md",
         ],
         "Developer Documentation" => [
             "Overview" => "devdocs/index.md",
             "devdocs/elements.md",
             "devdocs/domain_management.md",
+            "devdocs/transfer_operators.md",
         ],
         "vroom.md",
         "references.md",

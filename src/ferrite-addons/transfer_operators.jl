@@ -1,4 +1,687 @@
+include("graphs_utils.jl")
+
+"""
+    AbstractTransferOperator
+
+Base type for operators that move field data between discretizations.
+"""
 abstract type AbstractTransferOperator end
+
+"""
+    AbstractDistanceMeasure
+
+Base type for distance metrics used by radial basis function evaluations.
+"""
+abstract type AbstractDistanceMeasure end
+
+"""
+    AbstractDistanceMeasureCache
+
+Base cache type for repeated RBF distance queries.
+"""
+abstract type AbstractDistanceMeasureCache end
+
+"""
+    AbstractFieldTransferStrategy
+
+Base type for field transfer strategies.
+"""
+abstract type AbstractFieldTransferStrategy end
+
+"""
+    AbstractFieldTransferStrategyCache
+
+Base cache type for field transfer, storing strategy-specific data.
+"""
+abstract type AbstractFieldTransferStrategyCache end
+
+"""
+    AbstractRadialBasisFunctionTransferStrategy
+
+Base type for radial basis function transfer strategy configurations.
+"""
+abstract type AbstractRadialBasisFunctionTransferStrategy <: AbstractFieldTransferStrategy end
+
+"""
+    AbstractRadialBasisFunction
+
+Base type for radial basis functions used in transfer.
+"""
+abstract type AbstractRadialBasisFunction end
+
+"""
+    AbstractLocalizedRadialBasisFunction
+
+Base type for compactly supported radial basis functions.
+"""
+abstract type AbstractLocalizedRadialBasisFunction <: AbstractRadialBasisFunction end
+
+@doc raw"""
+    WendlandRadialBasisFunction{Dim, k}
+
+A compactly supported Wendland radial basis function with spatial dimension `Dim`
+and smoothness degree `2k`.
+
+For the three-dimensional case used in Thunderbolt, the kernel is defined by
+
+$$\phi(r) = \begin{cases}
+  (1 - r)_+^2, & k = 0, \\
+  (1 - r)_+^4 (1 + 4 r), & k = 1, \\
+  (1 - r)_+^6 (35 r^2 + 18 r + 3), & k = 2.
+\end{cases}$$
+
+Here $(x)_+ = \max(x, 0)$ and $r$ is the normalized distance.
+"""
+struct WendlandRadialBasisFunction{Dim, k} <: AbstractLocalizedRadialBasisFunction end
+
+@inline function (::WendlandRadialBasisFunction{3, 0})(r)
+    (max((1 - r), zero(r))^2)
+end
+
+@inline function (::WendlandRadialBasisFunction{3, 1})(r)
+    (max((1 - r), zero(r))^4) * (1 + 4r)
+end
+
+@inline function (::WendlandRadialBasisFunction{3, 2})(r)
+    (max((1 - r), zero(r))^6) * (35*r^2 + 18r + 3)
+end
+
+"""
+    IntergridDofMapping{VecT, IntT}
+
+A mapping between nodes and degrees of freedom used for field transfer.
+
+The mapping stores the coordinates of the selected source and destination dofs and
+provides fast translations between dof indices and node indices for transfer evaluation.
+"""
+struct IntergridDofMapping{VecT <: AbstractVector{<:Real}, IntT <: Integer}
+    nodes_from::Vector{VecT}
+    nodes_to::Vector{VecT}
+    node_to_dof_map_from::Vector{IntT}
+    node_to_dof_map_to::Vector{IntT}
+    dof_to_node_map_from::Dict{IntT, IntT}
+    dof_to_node_map_to::Dict{IntT, IntT}
+end
+
+"""
+    EuclideanDistanceMeasure(M, α)
+
+A Euclidean distance measure for radial basis function transfer operators.
+
+`M` and `α` are the number of connected neighbors used for support radius calculation
+and the scaling factor for support radii.
+"""
+struct EuclideanDistanceMeasure <: AbstractDistanceMeasure
+    M::Int
+    α::Float64
+end
+
+"""
+    EuclideanDistanceMeasureCache(M, α)
+
+Cache for Euclidean distance computations used in RBF transfer evaluation.
+
+`M` and `α` are the number of connected neighbors used for support radius calculation
+and the scaling factor for support radii.
+"""
+struct EuclideanDistanceMeasureCache <: AbstractDistanceMeasureCache
+    M::Int
+    α::Float64
+end
+
+function create_distance_measure_cache(distance_measure::EuclideanDistanceMeasure, argv...)
+    return EuclideanDistanceMeasureCache(distance_measure.M, distance_measure.α)
+end
+
+function (::EuclideanDistanceMeasureCache)(x, xi, y, yi)
+    return norm(x[xi] - y[yi])
+end
+
+@doc raw"""
+    GeodesicDistanceMeasure(M, α, β)
+
+A geodesic distance measure that combines mesh connectivity and Euclidean distance
+for radial basis function interpolation.
+
+Let $d_{\mathrm{euc}}(x_i, y_i) = \lVert x_i - y_i \rVert$ be the Euclidean distance and let
+`d_{\mathrm{geo}}(x_i, y_i)` be the shortest-path distance along the mesh graph (precomputed
+per-node up to a cutoff). Define the cutoff distance $c = \beta \; h_{\max}$ where $h_{\max}$
+is the maximum edge length in the mesh. The implemented hybrid selection uses:
+
+- If $d_{\mathrm{geo}}(x_i, y_i) \le d_{\mathrm{euc}}(x_i, y_i) + c$, then the Euclidean distance $d_{\mathrm{euc}}$ is used.
+- Otherwise, the geodesic distance $d_{\mathrm{geo}}$ is used when available (i.e., when precomputed within the per-node cutoff).
+
+This rule mirrors the implementation's cache lookup: a small geodesic-to-Euclidean gap (within $c$)
+favors the Euclidean distance; larger gaps fall back to the geodesic distance when present.
+
+`M` and `α` are the number of connected neighbors used for support radius calculation
+and the scaling factor for support radii.
+
+`β` is the scaling factor used to compute the geodesic cutoff $c = \beta h_{\max}$.
+"""
+struct GeodesicDistanceMeasure <: AbstractDistanceMeasure
+    M::Int
+    α::Float64
+    β::Float64
+end
+
+"""
+    GeodesicDistanceMeasureCache(source_kdtree, source_graph, support_radii, edge_lengths_matrix, M, α, β)
+
+Cache for fast geodesic distance evaluation using a precomputed graph and per-node support radii.
+"""
+struct GeodesicDistanceMeasureCache{
+    KDTreeT,
+    GraphT,
+    FloatT <: Real,
+    EdgeLengthMatrixT <: AbstractMatrix,
+    DijkstraT,
+} <: AbstractDistanceMeasureCache
+    source_kdtree::KDTreeT
+    source_graph::GraphT
+    support_radii::Vector{FloatT}
+    edge_lengths_matrix::EdgeLengthMatrixT
+    M::Int
+    α::Float64
+    β::Float64
+    h_max::Float64
+    dijkstra_cache::DijkstraT
+end
+
+function create_distance_measure_cache(
+    source_kdtree,
+    source_graph,
+    support_radii,
+    edge_lengths_matrix,
+    M,
+    α,
+    β,
+)
+    n_nodes = nv(source_graph)
+    h_max = maximum(edge_lengths_matrix)
+
+    # Parallel pre-computation with per-node cutoffs
+    dijkstra_cache = precompute_dijkstra_with_cutoffs(
+        source_graph,
+        collect(1:n_nodes),
+        support_radii,
+        α,
+        edge_lengths_matrix;
+    )
+
+    return GeodesicDistanceMeasureCache(
+        source_kdtree,
+        source_graph,
+        support_radii,
+        edge_lengths_matrix,
+        M,
+        α,
+        β,
+        h_max,
+        dijkstra_cache,
+    )
+end
+
+function create_distance_measure_cache(
+    distance_measure::GeodesicDistanceMeasure,
+    source_kdtree,
+    source_graph,
+    support_radii,
+    mapping,
+    dh_from,
+)
+    edge_lengths_matrix = allocate_matrix(dh_from)
+    for i in mapping.node_to_dof_map_from
+        for j in mapping.node_to_dof_map_from
+            edge_lengths_matrix[i, j] = norm(
+                mapping.nodes_from[mapping.dof_to_node_map_from[i]] -
+                mapping.nodes_from[mapping.dof_to_node_map_from[j]],
+            )
+        end
+    end
+    return create_distance_measure_cache(
+        source_kdtree,
+        source_graph,
+        support_radii,
+        edge_lengths_matrix,
+        distance_measure.M,
+        distance_measure.α,
+        distance_measure.β,
+    )
+end
+
+# Fast O(1) lookup in measure function
+function (measure::GeodesicDistanceMeasureCache)(x, xi, y, yi)
+    (; source_kdtree, support_radii, h_max, α, β, dijkstra_cache) = measure
+
+    coords_destination = y[yi]
+    nearest_node_in_source, distance_to_neighbor = nn(source_kdtree, coords_destination)
+    norm_distance = norm(x[xi] - y[yi])
+    # dijkstra_cutoff_distance = support_radii[xi] * β
+    dijkstra_cutoff_distance = h_max * β
+
+    # O(1) cache lookup
+    nn_distance = dijkstra_cache[nearest_node_in_source][xi]
+
+    ret =
+        nn_distance <= (norm_distance + dijkstra_cutoff_distance) ? norm_distance :
+        (nn_distance > (dijkstra_cutoff_distance + norm_distance) ? nn_distance : Inf)
+    return ret
+end
+
+@doc raw"""
+    RadialBasisFunctionTransferStrategy(rbf, distance_measure, source_linsolve)
+
+A compactly supported RBF transfer strategy.
+
+The transfer is built from the interpolation system
+
+$$A \, \gamma_f = f,$$
+
+where the influence matrix entry is
+
+$$A_{ij} = \phi\left(\frac{\lVert x_i - x_j \rVert}{r_j}\right).$$
+
+The transferred field is evaluated as
+
+$$\hat f(x) = \sum_j \gamma_{f,j} \phi\left(\frac{\lVert x - x_j \rVert}{r_j}\right).$$
+"""
+struct RadialBasisFunctionTransferStrategy{
+    DistanceMeasureT <: AbstractDistanceMeasure,
+    SLinsolveCT,
+    RBF <: AbstractRadialBasisFunction,
+} <: AbstractRadialBasisFunctionTransferStrategy
+    rbf::RBF
+    distance_measure::DistanceMeasureT
+    source_linsolve::SLinsolveCT
+end
+
+@doc raw"""
+    RescaledRadialBasisFunctionTransferStrategy(rbf, distance_measure, source_linsolve)
+
+A compactly supported RBF transfer strategy that rescales the destination output to preserve normalization.
+
+The rescaled transfer uses the same RBF basis as in [RadialBasisFunctionTransferStrategy](@ref), with an additional normalization vector
+$γ_g$ obtained from solving
+
+$$A \, \gamma_g = \mathbf{1},$$
+
+where the influence matrix entry is
+
+$$A_{ij} = \phi\left(\frac{\lVert x_i - x_j \rVert}{r_j}\right).$$
+
+so that the transferred field is computed as
+
+$$\hat f(x) = \frac{\sum_j \gamma_{f,j} \phi\left(\frac{\lVert x - x_j \rVert}{r_j}\right)}{
+  \sum_j \gamma_{g,j} \phi\left(\frac{\lVert x - x_j \rVert}{r_j}\right)}.$$
+"""
+struct RescaledRadialBasisFunctionTransferStrategy{
+    DistanceMeasureT <: AbstractDistanceMeasure,
+    SLinsolveCT,
+    RBF <: AbstractRadialBasisFunction,
+} <: AbstractRadialBasisFunctionTransferStrategy
+    rbf::RBF
+    distance_measure::DistanceMeasureT
+    source_linsolve::SLinsolveCT
+end
+
+"""
+    RadialBasisFunctionTransferOperator(k, M, α, dh_from, dh_to; linsolve = LinearSolve.KrylovJL_GMRES())
+    RadialBasisFunctionTransferOperator(k, M, α, dh_from, dh_to, field_name::Symbol; linsolve = LinearSolve.KrylovJL_GMRES())
+    RadialBasisFunctionTransferOperator(k, M, α, dh_from, dh_to, field_name_from::Symbol, field_name_to::Symbol; linsolve = LinearSolve.KrylovJL_GMRES())
+
+Construct a `FieldTransferOperator` using compactly-supported Wendland radial basis
+functions and the Euclidean distance measure.
+
+Parameters
+- `k::Int` — Wendland kernel smoothness index (0, 1, or 2). Controls kernel smoothness.
+- `M::Int` — number of neighbors used to determine each source node's support radius.
+- `α::Real` — scaling factor applied to computed support radii (α > 0).
+- `dh_from::DofHandler` — source degrees-of-freedom handler.
+- `dh_to::DofHandler` — target degrees-of-freedom handler.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer.
+    - No field names provided: the source `DofHandler` contains exactly one field; that field's name is used for both source and target.
+    - One `field_name::Symbol` provided: the named field is taken from the source and transferred to the target field with the same name.
+    - Two symbols `field_name_from::Symbol, field_name_to::Symbol` provided: the named source field is transferred into the named field on the target; both names exist in their respective `DofHandler`s.
+- `linsolve` — linear solver used to solve local RBF systems (default: `LinearSolve.KrylovJL_GMRES()`).
+
+Returns
+- `FieldTransferOperator` configured with an RBF transfer strategy.
+"""
+function RadialBasisFunctionTransferOperator(
+    k,
+    M,
+    α,
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    args...;
+    linsolve = LinearSolve.KrylovJL_GMRES(),
+    kwargs...,
+) where {sdim}
+    FieldTransferOperator(
+        dh_from,
+        dh_to,
+        args...,
+        RadialBasisFunctionTransferStrategy(
+            WendlandRadialBasisFunction{3, k}(),
+            EuclideanDistanceMeasure(M, α),
+            linsolve,
+        );
+        kwargs...,
+    )
+end
+
+"""
+    RescaledRadialBasisFunctionTransferOperator(k, M, α, dh_from, dh_to; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RescaledRadialBasisFunctionTransferOperator(k, M, α, dh_from, dh_to, field_name::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RescaledRadialBasisFunctionTransferOperator(k, M, α, dh_from, dh_to, field_name_from::Symbol, field_name_to::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+
+Construct a `FieldTransferOperator` that applies RBF interpolation with an additional
+normalization step to preserve constant fields. This operator uses the hybrid geodesic
+distance measure to select between Euclidean and geodesic distances during RBF evaluation.
+
+Parameters
+- `k::Int` — Wendland kernel smoothness index (0, 1, or 2).
+- `M::Int` — number of neighbors used to determine each source node's support radius.
+- `α::Real` — scaling factor applied to computed support radii (α > 0).
+- `β::Real` — geodesic threshold scaling factor (default `0.5`). The hybrid distance prefers Euclidean distance when the geodesic distance is within `β * h_max` of the Euclidean distance.
+- `dh_from::DofHandler` — source degrees-of-freedom handler.
+- `dh_to::DofHandler` — target degrees-of-freedom handler.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer.
+    - No field names provided: the source `DofHandler` contains exactly one field; that field's name is used for both source and target.
+    - One `field_name::Symbol` provided: the named field is taken from the source and transferred to the target field with the same name.
+    - Two symbols `field_name_from::Symbol, field_name_to::Symbol` provided: the named source field is transferred into the named field on the target; both names exist in their respective `DofHandler`s.
+- `linsolve` — linear solver used to solve local RBF systems (default: `LinearSolve.KrylovJL_GMRES()`).
+
+Returns
+- `FieldTransferOperator` configured with a rescaled RBF transfer strategy.
+"""
+function RescaledRadialBasisFunctionTransferOperator(
+    k,
+    M,
+    α,
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    args...;
+    β = 0.5,
+    linsolve = LinearSolve.KrylovJL_GMRES(),
+    kwargs...,
+) where {sdim}
+    FieldTransferOperator(
+        dh_from,
+        dh_to,
+        args...,
+        RescaledRadialBasisFunctionTransferStrategy(
+            WendlandRadialBasisFunction{3, k}(),
+            GeodesicDistanceMeasure(M, α, β),
+            linsolve,
+        );
+        kwargs...,
+    )
+end
+
+"""
+    RadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to, field_name::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to, field_name_from::Symbol, field_name_to::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+
+Construct a `FieldTransferOperator` that uses the hybrid geodesic distance measure when
+building RBF influence matrices. This constructor exposes the `β` parameter that
+controls the threshold between Euclidean and geodesic distances.
+
+Parameters
+- `k::Int` — Wendland kernel smoothness index (0, 1, or 2).
+- `M::Int` — number of neighbors used to determine each source node's support radius.
+- `α::Real` — scaling factor applied to computed support radii (α > 0).
+- `β::Real` — geodesic threshold scaling factor. Larger values make geodesic distance more likely to be used.
+- `dh_from::DofHandler` — source degrees-of-freedom handler.
+- `dh_to::DofHandler` — target degrees-of-freedom handler.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer.
+    - No field names provided: the source `DofHandler` contains exactly one field; that field's name is used for both source and target.
+    - One `field_name::Symbol` provided: the named field is taken from the source and transferred to the target field with the same name.
+    - Two symbols `field_name_from::Symbol, field_name_to::Symbol` provided: the named source field is transferred into the named field on the target; both names exist in their respective `DofHandler`s.
+- `linsolve` — linear solver (default: `LinearSolve.KrylovJL_GMRES()`).
+
+Returns
+- `FieldTransferOperator` configured with an RBF transfer strategy using geodesic distances.
+"""
+function RadialBasisFunctionGeodesicTransferOperator(
+    k,
+    M,
+    α,
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    args...;
+    β = 0.5,
+    linsolve = LinearSolve.KrylovJL_GMRES(),
+    kwargs...,
+) where {sdim}
+    FieldTransferOperator(
+        dh_from,
+        dh_to,
+        args...,
+        RadialBasisFunctionTransferStrategy(
+            WendlandRadialBasisFunction{3, k}(),
+            GeodesicDistanceMeasure(M, α, β),
+            linsolve,
+        );
+        kwargs...,
+    )
+end
+
+"""
+    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to, field_name::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+    RescaledRadialBasisFunctionGeodesicTransferOperator(k, M, α, dh_from, dh_to, field_name_from::Symbol, field_name_to::Symbol; β=0.5, linsolve = LinearSolve.KrylovJL_GMRES())
+
+Construct a `FieldTransferOperator` that applies normalization (rescaling) and uses the
+hybrid geodesic distance when building RBF influence matrices.
+
+Parameters
+- `k::Int` — Wendland kernel smoothness index (0, 1, or 2).
+- `M::Int` — number of neighbors used to determine each source node's support radius.
+- `α::Real` — scaling factor applied to computed support radii (α > 0).
+- `β::Real` — geodesic threshold scaling factor. Larger values make geodesic distance more likely to be used.
+- `dh_from::DofHandler` — source degrees-of-freedom handler.
+- `dh_to::DofHandler` — target degrees-of-freedom handler.
+- `field_name::Symbol` or `field_name_from::Symbol, field_name_to::Symbol` — optional field name(s) to transfer.
+    - No field names provided: the source `DofHandler` contains exactly one field; that field's name is used for both source and target.
+    - One `field_name::Symbol` provided: the named field is taken from the source and transferred to the target field with the same name.
+    - Two symbols `field_name_from::Symbol, field_name_to::Symbol` provided: the named source field is transferred into the named field on the target; both names exist in their respective `DofHandler`s.
+- `linsolve` — linear solver (default: `LinearSolve.KrylovJL_GMRES()`).
+
+Returns
+- `FieldTransferOperator` configured with a rescaled RBF transfer strategy using geodesic distances.
+"""
+function RescaledRadialBasisFunctionGeodesicTransferOperator(
+    k,
+    M,
+    α,
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    args...;
+    β = 0.5,
+    linsolve = LinearSolve.KrylovJL_GMRES(),
+    kwargs...,
+) where {sdim}
+    FieldTransferOperator(
+        dh_from,
+        dh_to,
+        args...,
+        RescaledRadialBasisFunctionTransferStrategy(
+            WendlandRadialBasisFunction{3, k}(),
+            GeodesicDistanceMeasure(M, α, β),
+            linsolve,
+        );
+        kwargs...,
+    )
+end
+"""
+    RadialBasisFunctionTransferStrategyCache
+
+Cache storing precomputed influence matrices and solver state for RBF field transfer.
+"""
+struct RadialBasisFunctionTransferStrategyCache{
+    DistanceMeasureT <: AbstractDistanceMeasureCache,
+    SIMT <: AbstractMatrix,
+    DIMT <: AbstractMatrix,
+    SLinsolveCT,
+} <: AbstractFieldTransferStrategyCache
+    distance_measure::DistanceMeasureT
+    source_influence_matrix::SIMT
+    destination_influence_matrix::DIMT
+    source_linsolve_cache::SLinsolveCT
+end
+
+"""
+    RescaledRadialBasisFunctionTransferStrategyCache
+
+Cache storing precomputed influence matrices, normalization weights, and solver state
+for rescaled RBF transfer.
+"""
+struct RescaledRadialBasisFunctionTransferStrategyCache{
+    DistanceMeasureT <: AbstractDistanceMeasureCache,
+    SIMT <: AbstractMatrix,
+    DIMT <: AbstractMatrix,
+    γT <: AbstractVector,
+    SLinsolveCT,
+} <: AbstractFieldTransferStrategyCache
+    distance_measure::DistanceMeasureT
+    source_influence_matrix::SIMT
+    destination_influence_matrix::DIMT
+    γg::γT
+    source_linsolve_cache::SLinsolveCT
+end
+
+function create_field_transfer_strategy_cache(
+    evaluator_type::AbstractRadialBasisFunctionTransferStrategy,
+    mapping::IntergridDofMapping,
+    dh_from::DofHandler,
+    dh_to::DofHandler,
+)
+    rbf_value = evaluator_type.rbf
+    M = evaluator_type.distance_measure.M
+    α = evaluator_type.distance_measure.α
+    source_linsolve = evaluator_type.source_linsolve
+    distances_source = allocate_matrix(SparseMatrixCSC{Bool, Int}, dh_from)
+    distances_source.nzval .= 1.0
+
+    # The "nodal" values projected into the RBF space.
+    γf = zeros(length(mapping.node_to_dof_map_from))
+
+    source_kdtree = KDTree(mapping.nodes_from)
+    # Build graph from adjacency, we index here because we might get unwanted
+    # connectivity if we don't use all sdhs.
+    source_graph =
+        SimpleGraph(distances_source[mapping.node_to_dof_map_from, mapping.node_to_dof_map_from])
+    Nsrc = length(mapping.nodes_from)
+    support_radii = zeros(Float64, Nsrc)
+    @inbounds for src = 1:Nsrc
+        hop_dists = neighborhood_dists(source_graph, src, M)
+        dist = maximum(norm.(Ref(mapping.nodes_from[src]) .- mapping.nodes_from[first.(hop_dists)]))
+        support_radii[src] = dist
+    end
+    distance_measure_cache = create_distance_measure_cache(
+        evaluator_type.distance_measure,
+        source_kdtree,
+        source_graph,
+        support_radii,
+        mapping,
+        dh_from,
+    )
+    source_influence_matrix = construct_RBF_dist_kdtree(
+        mapping.nodes_from,
+        support_radii,
+        mapping.nodes_from,
+        rbf_value,
+        distance_measure_cache,
+        α,
+    )
+    destination_influence_matrix = construct_RBF_dist_kdtree(
+        mapping.nodes_from,
+        support_radii,
+        mapping.nodes_to,
+        rbf_value,
+        distance_measure_cache,
+        α,
+    )
+    prob = LinearSolve.LinearProblem(source_influence_matrix, γf)
+    lincache = LinearSolve.init(prob, source_linsolve)
+
+    return _create_field_transfer_strategy_cache(
+        evaluator_type,
+        distance_measure_cache,
+        source_influence_matrix,
+        destination_influence_matrix,
+        lincache,
+    )
+end
+
+function _create_field_transfer_strategy_cache(
+    ::RescaledRadialBasisFunctionTransferStrategy,
+    distance_measure_cache,
+    source_influence_matrix,
+    destination_influence_matrix,
+    lincache,
+)
+    γg = zeros(length(lincache.u))
+    lincache.b .= 1.0
+    sol = LinearSolve.solve!(lincache)
+    γg .= sol.u
+    return RescaledRadialBasisFunctionTransferStrategyCache(
+        distance_measure_cache,
+        source_influence_matrix,
+        destination_influence_matrix,
+        γg,
+        lincache,
+    )
+end
+
+
+function _create_field_transfer_strategy_cache(
+    ::RadialBasisFunctionTransferStrategy,
+    distance_measure_cache,
+    source_influence_matrix,
+    destination_influence_matrix,
+    lincache,
+)
+    return RadialBasisFunctionTransferStrategyCache(
+        distance_measure_cache,
+        source_influence_matrix,
+        destination_influence_matrix,
+        lincache,
+    )
+end
+
+"""
+    NodalIntergridTransferStrategy
+
+A transfer strategy that evaluates source field values at target nodal using `PointEvalHandler`.
+"""
+struct NodalIntergridTransferStrategy <: AbstractFieldTransferStrategy end
+
+"""
+    NodalIntergridTransferStrategyCache(ph)
+
+Cache containing a prepared point evaluation handler for nodal intergrid transfer.
+"""
+struct NodalIntergridTransferStrategyCache{PointEvalHandlerT <: PointEvalHandler} <:
+       AbstractFieldTransferStrategyCache
+    ph::PointEvalHandlerT
+end
+
+function create_field_transfer_strategy_cache(
+    ::NodalIntergridTransferStrategy,
+    mapping::IntergridDofMapping,
+    dh_from::DofHandler,
+    dh_to::DofHandler,
+)
+    ph = PointEvalHandler(Ferrite.get_grid(dh_from), mapping.nodes_to; warn = false)
+    n_missing = sum(x -> x === nothing, ph.cells)
+    n_missing == 0 ||
+        @warn "Constructing the nodal intergrid interpolation failed. $n_missing (out of $(length(ph.cells))) points not found."
+    return NodalIntergridTransferStrategyCache(ph)
+end
 
 function get_subdofhandler_indices_on_subdomains(dh::DofHandler, subdomain_names::Vector{String})
     grid = get_grid(dh)
@@ -29,6 +712,114 @@ function _compute_dof_nodes_barrier!(nodes, sdh, dofrange, gip, dof_to_node_map,
     end
 end
 
+function IntergridDofMapping(
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    field_name_from::Symbol,
+    field_name_to::Symbol;
+    subdomains_from = 1:length(dh_from.subdofhandlers),
+    subdomains_to = 1:length(dh_to.subdofhandlers),
+) where {sdim}
+    @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
+    @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
+
+    dofset_from = Set{Int}()
+    dofset_to = Set{Int}()
+    for sdh in dh_to.subdofhandlers[subdomains_to]
+        # Skip subdofhandler if field is not present
+        field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
+        # Just gather the dofs of the given field in the set
+        for cellidx in sdh.cellset
+            dofs = celldofs(dh_to, cellidx)
+            for dof in dofs[dof_range(sdh, field_name_to)]
+                push!(dofset_to, dof)
+            end
+        end
+    end
+    for sdh in dh_from.subdofhandlers[subdomains_from]
+        # Skip subdofhandler if field is not present
+        field_name_from ∈ Ferrite.getfieldnames(sdh) || continue
+        # Just gather the dofs of the given field in the set
+        for cellidx in sdh.cellset
+            dofs = celldofs(dh_from, cellidx)
+            for dof in dofs[dof_range(sdh, field_name_from)]
+                push!(dofset_from, dof)
+            end
+        end
+    end
+    node_to_dof_map_to = sort(collect(dofset_to))
+    node_to_dof_map_from = sort(collect(dofset_from))
+
+    # Build inverse map
+    dof_to_node_map_to = Dict{Int, Int}()
+    dof_to_node_map_from = Dict{Int, Int}()
+    next_dof_index = 1
+    for dof in node_to_dof_map_to
+        dof_to_node_map_to[dof] = next_dof_index
+        next_dof_index += 1
+    end
+
+    next_dof_index = 1
+    for dof in node_to_dof_map_from
+        dof_to_node_map_from[dof] = next_dof_index
+        next_dof_index += 1
+    end
+
+    # Compute nodes
+    grid_to = Ferrite.get_grid(dh_to)
+    grid_from = Ferrite.get_grid(dh_from)
+    nodes_from = Vector{Ferrite.get_coordinate_type(grid_from)}(undef, length(dofset_from))
+    nodes_to = Vector{Ferrite.get_coordinate_type(grid_to)}(undef, length(dofset_to))
+    for sdh in dh_from.subdofhandlers[subdomains_from]
+        # Skip subdofhandler if field is not present
+        field_name_from ∈ Ferrite.getfieldnames(sdh) || continue
+        # Grab the reference coordinates of the field to interpolate
+        ip = Ferrite.getfieldinterpolation(sdh, field_name_from)
+        ref_coords = Ferrite.reference_coordinates(ip)
+        # Grab the geometric interpolation
+        first_cell = getcells(grid_from, first(sdh.cellset))
+        cell_type  = typeof(first_cell)
+        gip        = Ferrite.geometric_interpolation(cell_type)
+
+        _compute_dof_nodes_barrier!(
+            nodes_from,
+            sdh,
+            Ferrite.dof_range(sdh, field_name_from),
+            gip,
+            dof_to_node_map_from,
+            ref_coords,
+        )
+    end
+    for sdh in dh_to.subdofhandlers[subdomains_to]
+        # Skip subdofhandler if field is not present
+        field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
+        # Grab the reference coordinates of the field to interpolate
+        ip = Ferrite.getfieldinterpolation(sdh, field_name_to)
+        ref_coords = Ferrite.reference_coordinates(ip)
+        # Grab the geometric interpolation
+        first_cell = getcells(grid_to, first(sdh.cellset))
+        cell_type  = typeof(first_cell)
+        gip        = Ferrite.geometric_interpolation(cell_type)
+
+        _compute_dof_nodes_barrier!(
+            nodes_to,
+            sdh,
+            Ferrite.dof_range(sdh, field_name_to),
+            gip,
+            dof_to_node_map_to,
+            ref_coords,
+        )
+    end
+    return IntergridDofMapping(
+        nodes_from,
+        nodes_to,
+        node_to_dof_map_from,
+        node_to_dof_map_to,
+        dof_to_node_map_from,
+        dof_to_node_map_to,
+    )
+end
+
 """
     NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
     NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol; subdomain_from = 1:length(dh_from.subdofhandlers), subdomains_to = 1:length(dh_to.subdofhandlers))
@@ -42,122 +833,204 @@ interpolation values, as this operator does not have extrapolation functionality
 !!! note
     We assume a continuous coordinate field, if the interpolation of the named field is continuous.
 """
-struct NodalIntergridInterpolation{
-    PH <: PointEvalHandler,
+function NodalIntergridInterpolation(args...; kwargs...)
+    FieldTransferOperator(args..., NodalIntergridTransferStrategy(); kwargs...)
+end
+
+function construct_RBF_dist_kdtree(coords_src, distances, coords_dist, rbf_func, distance_func, α)
+    N_src = length(coords_src)
+    N_dst = length(coords_dist)
+
+    tree = KDTree(coords_dist)
+
+    # First pass: count exact number of nonzeros
+    nnz = 0
+    @inbounds for j = 1:N_src
+        radius = distances[j] * α
+        idxs = inrange(tree, coords_src[j], radius)
+        filter!(x -> isfinite(distance_func(coords_src, j, coords_dist, x)), idxs)
+        nnz += length(idxs)
+    end
+
+    # Exact pre-allocation
+    rows = Vector{Int}(undef, nnz)
+    cols = Vector{Int}(undef, nnz)
+    vals = Vector{Float64}(undef, nnz)
+
+    # Second pass: fill arrays
+    idx = 1
+    @inbounds for j = 1:N_src
+        radius = distances[j] * α
+        idxs = inrange(tree, coords_src[j], radius)
+        filter!(x -> isfinite(distance_func(coords_src, j, coords_dist, x)), idxs)
+        for i in idxs
+            d = distance_func(coords_src, j, coords_dist, i)
+            val = rbf_func(d/radius)
+            rows[idx] = i
+            cols[idx] = j
+            vals[idx] = val
+            idx += 1
+        end
+    end
+
+    # Sort by row index
+    p = sortperm(rows)
+    rows_sorted = rows[p]
+    cols_sorted = cols[p]
+    vals_sorted = vals[p]
+
+    # Build CSR row pointers
+    rowptr = ones(Int, N_dst + 1)
+    @inbounds for k = 1:nnz
+        rowptr[rows_sorted[k]+1] = k + 1
+    end
+
+    # Cumulative max to fill gaps (rows with no entries)
+    @inbounds for r = 2:(N_dst+1)
+        rowptr[r] = max(rowptr[r], rowptr[r-1])
+    end
+
+    return ThreadedSparseMatrixCSR(N_dst, N_src, rowptr, cols_sorted, vals_sorted)
+end
+
+"""
+    FieldTransferOperator(dh_from, dh_to, field_name_from, field_name_to, transfer_strategy_type; subdomains_from, subdomains_to)
+    FieldTransferOperator(dh_from, dh_to, transfer_strategy_type)
+    FieldTransferOperator(dh_from, dh_to, field_name, transfer_strategy_type)
+
+Generic transfer operator for moving a field from one Ferrite DofHandler to another.
+
+The operator builds an `IntergridDofMapping` and a transfer strategy cache to support the
+requested transfer strategy, such as nodal interpolation or radial basis function transfer.
+"""
+struct FieldTransferOperator{
+    TransferStrategyCacheT <: AbstractFieldTransferStrategyCache,
     DH1 <: AbstractDofHandler,
     DH2 <: AbstractDofHandler,
+    IntergridDofMappingT <: IntergridDofMapping,
 } <: AbstractTransferOperator
-    ph::PH
     dh_from::DH1
     dh_to::DH2
-    node_to_dof_map::Vector{Int}
-    dof_to_node_map::Dict{Int, Int}
+    mapping::IntergridDofMappingT
     field_name_from::Symbol
     field_name_to::Symbol
-
-    function NodalIntergridInterpolation(
-        dh_from::DofHandler{sdim},
-        dh_to::DofHandler{sdim},
-        field_name_from::Symbol,
-        field_name_to::Symbol;
-        subdomains_from = 1:length(dh_from.subdofhandlers),
-        subdomains_to = 1:length(dh_to.subdofhandlers),
-    ) where {sdim}
-        @assert field_name_from ∈ Ferrite.getfieldnames(dh_from)
-        @assert field_name_to ∈ Ferrite.getfieldnames(dh_to)
-
-        dofset = Set{Int}()
-        for sdh in dh_to.subdofhandlers[subdomains_to]
-            # Skip subdofhandler if field is not present
-            field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
-            # Just gather the dofs of the given field in the set
-            for cellidx ∈ sdh.cellset
-                dofs = celldofs(dh_to, cellidx)
-                for dof in dofs[dof_range(sdh, field_name_to)]
-                    push!(dofset, dof)
-                end
-            end
-        end
-        node_to_dof_map = sort(collect(dofset))
-
-        # Build inverse map
-        dof_to_node_map = Dict{Int, Int}()
-        next_dof_index = 1
-        for dof ∈ node_to_dof_map
-            dof_to_node_map[dof] = next_dof_index
-            next_dof_index += 1
-        end
-
-        # Compute nodes
-        grid_to   = Ferrite.get_grid(dh_to)
-        grid_from = Ferrite.get_grid(dh_from)
-        nodes     = Vector{Ferrite.get_coordinate_type(grid_to)}(undef, length(dofset))
-        for sdh in dh_to.subdofhandlers[subdomains_from]
-            # Skip subdofhandler if field is not present
-            field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
-            # Grab the reference coordinates of the field to interpolate
-            ip = Ferrite.getfieldinterpolation(sdh, field_name_to)
-            ref_coords = Ferrite.reference_coordinates(ip)
-            # Grab the geometric interpolation
-            first_cell = getcells(grid_to, first(sdh.cellset))
-            cell_type  = typeof(first_cell)
-            gip        = Ferrite.geometric_interpolation(cell_type)
-
-            _compute_dof_nodes_barrier!(
-                nodes,
-                sdh,
-                Ferrite.dof_range(sdh, field_name_to),
-                gip,
-                dof_to_node_map,
-                ref_coords,
-            )
-        end
-
-        ph = PointEvalHandler(Ferrite.get_grid(dh_from), nodes; warn = false)
-
-        n_missing = sum(x -> x === nothing, ph.cells)
-        n_missing == 0 ||
-            @warn "Constructing the interpolation for $field_name_from to $field_name_to failed. $n_missing (out of $(length(ph.cells))) points not found."
-
-        new{typeof(ph), typeof(dh_from), typeof(dh_to)}(
-            ph,
-            dh_from,
-            dh_to,
-            node_to_dof_map,
-            dof_to_node_map,
-            field_name_from,
-            field_name_to,
-        )
-    end
+    transfer_strategy_cache::TransferStrategyCacheT
 end
 
-function NodalIntergridInterpolation(
+function FieldTransferOperator(
     dh_from::DofHandler{sdim},
     dh_to::DofHandler{sdim},
+    field_name_from::Symbol,
+    field_name_to::Symbol,
+    transfer_strategy_type::AbstractFieldTransferStrategy;
+    subdomains_from = 1:length(dh_from.subdofhandlers),
+    subdomains_to = 1:length(dh_to.subdofhandlers),
 ) where {sdim}
-    @assert length(Ferrite.getfieldnames(dh_from)) == 1 "Multiple fields found in source dof handler. Please specify which field you want to transfer."
-    return NodalIntergridInterpolation(dh_from, dh_to, first(Ferrite.getfieldnames(dh_from)))
+
+    # These are the "nodes" placed at the support points of the Dofs.
+    mapping = IntergridDofMapping(
+        dh_from,
+        dh_to,
+        field_name_from,
+        field_name_to;
+        subdomains_from = subdomains_from,
+        subdomains_to = subdomains_to,
+    )
+    transfer_strategy_cache =
+        create_field_transfer_strategy_cache(transfer_strategy_type, mapping, dh_from, dh_to)
+
+    FieldTransferOperator{
+        typeof(transfer_strategy_cache),
+        typeof(dh_from),
+        typeof(dh_to),
+        typeof(mapping),
+    }(
+        dh_from,
+        dh_to,
+        mapping,
+        field_name_from,
+        field_name_to,
+        transfer_strategy_cache,
+    )
 end
 
-function NodalIntergridInterpolation(
+function FieldTransferOperator(
+    dh_from::DofHandler{sdim},
+    dh_to::DofHandler{sdim},
+    transfer_strategy_type::AbstractFieldTransferStrategy,
+) where {sdim}
+    @assert length(Ferrite.getfieldnames(dh_from)) == 1 "Multiple fields found in source dof handler. Please specify which field you want to transfer."
+    return FieldTransferOperator(
+        dh_from,
+        dh_to,
+        first(Ferrite.getfieldnames(dh_from)),
+        transfer_strategy_type,
+    )
+end
+
+function FieldTransferOperator(
     dh_from::DofHandler{sdim},
     dh_to::DofHandler{sdim},
     field_name::Symbol,
+    transfer_strategy_type::AbstractFieldTransferStrategy,
 ) where {sdim}
-    return NodalIntergridInterpolation(dh_from, dh_to, field_name, field_name)
+    return FieldTransferOperator(dh_from, dh_to, field_name, field_name, transfer_strategy_type)
 end
 
 """
-    This is basically a fancy matrix-vector product to transfer the solution from one problem to another one.
+    transfer!(u_to, operator::FieldTransferOperator{<:NodalIntergridTransferStrategyCache}, u_from)
+
+Transfer source values using nodal intergrid transfer strategy.
 """
 function transfer!(
     u_to::AbstractArray,
-    operator::NodalIntergridInterpolation,
+    operator::FieldTransferOperator{<:NodalIntergridTransferStrategyCache},
     u_from::AbstractArray,
 )
     # TODO non-allocating version
-    u_to[operator.node_to_dof_map] .=
-        Ferrite.evaluate_at_points(operator.ph, operator.dh_from, u_from, operator.field_name_from)
+    u_to[operator.mapping.node_to_dof_map_to] .= Ferrite.evaluate_at_points(
+        operator.transfer_strategy_cache.ph,
+        operator.dh_from,
+        u_from,
+        operator.field_name_from,
+    )
+end
+
+"""
+    transfer!(u_to, operator::FieldTransferOperator{<:RescaledRadialBasisFunctionTransferStrategyCache}, u_from)
+
+Transfer source values using a rescaled radial basis function transfer operator.
+"""
+function transfer!(
+    u_to::AbstractArray,
+    operator::FieldTransferOperator{<:RescaledRadialBasisFunctionTransferStrategyCache},
+    u_from::AbstractArray,
+)
+    operator.transfer_strategy_cache.source_linsolve_cache.b .=
+        (@view u_from[operator.mapping.node_to_dof_map_from])
+    sol = LinearSolve.solve!(operator.transfer_strategy_cache.source_linsolve_cache)
+    u_to[operator.mapping.node_to_dof_map_to] .=
+        (operator.transfer_strategy_cache.destination_influence_matrix * sol.u) ./ (
+            operator.transfer_strategy_cache.destination_influence_matrix *
+            operator.transfer_strategy_cache.γg
+        )
+end
+
+"""
+    transfer!(u_to, operator::FieldTransferOperator{<:RadialBasisFunctionTransferStrategyCache}, u_from)
+
+Transfer source values using a plain radial basis function transfer operator.
+"""
+function transfer!(
+    u_to::AbstractArray,
+    operator::FieldTransferOperator{<:RadialBasisFunctionTransferStrategyCache},
+    u_from::AbstractArray,
+)
+    operator.transfer_strategy_cache.source_linsolve_cache.b .=
+        (@view u_from[operator.mapping.node_to_dof_map_from])
+    sol = LinearSolve.solve!(operator.transfer_strategy_cache.source_linsolve_cache)
+    u_to[operator.mapping.node_to_dof_map_to] .=
+        (operator.transfer_strategy_cache.destination_influence_matrix * sol.u)
 end
 
 

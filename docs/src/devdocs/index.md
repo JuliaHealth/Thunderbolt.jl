@@ -23,6 +23,12 @@ Questions:
 1. How to deal with quasi-static problems which also need velocities?
 2. How to make recursive assemble_element definitions for volume coupled problems?
 
+### Transfer operators
+
+Fields can be transfered between non-matching meshes given the source and target `DofHandler`s.
+
+More details on theory in [Transfer operators](transfer_operators.md).
+
 ### Solver
 
 Solvers construct operators from given functions and solve some problem with the function info.

@@ -60,6 +60,10 @@ import Polyester: @batch
 using SparseMatricesCSR, LinearAlgebra
 using OrderedCollections: OrderedDict, OrderedSet
 using BlockArrays, SparseArrays, StaticArrays
+using NearestNeighbors
+import Graphs: SimpleGraph, dijkstra_shortest_paths, add_edge!, neighborhood_dists, a_star, nv
+import Graphs.Parallel
+import Graphs.vertices as GraphsVertices
 
 using JLD2: jldopen
 import WriteVTK
@@ -96,7 +100,7 @@ import SymbolicIndexingInterface
 import SciMLBase
 @reexport import SciMLBase: init, solve, solve!, step!
 @reexport import SciMLIterators: TimeChoiceIterator
-using SciMLBase: recursivecopy!, recursivecopy
+using RecursiveArrayTools: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import OrdinaryDiffEqCore:
@@ -306,6 +310,17 @@ export
     load_voom2_grid,
     load_mfem_grid,
     solution_size,
+    NodalIntergridInterpolation,
+    transfer!,
+    EuclideanDistanceMeasure,
+    GeodesicDistanceMeasure,
+    RadialBasisFunctionTransferStrategy,
+    RescaledRadialBasisFunctionTransferStrategy,
+    RadialBasisFunctionTransferOperator,
+    RadialBasisFunctionGeodesicTransferOperator,
+    RescaledRadialBasisFunctionTransferOperator,
+    RescaledRadialBasisFunctionGeodesicTransferOperator,
+    NodalIntergridTransferStrategy,
     # IO
     ParaViewWriter,
     JLD2Writer,
