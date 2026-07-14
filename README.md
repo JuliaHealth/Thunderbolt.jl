@@ -28,7 +28,7 @@ Installing Thunderbolt can then be done from the Pkg REPL; press `]` at the `jul
 enter `pkg>` mode:
 
 ```
-pkg> registry add github.com/termi-official/termis-backyard
+pkg> registry add https://github.com/termi-official/termis-backyard
 pkg> add Thunderbolt
 ```
 
