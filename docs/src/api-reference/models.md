@@ -101,6 +101,7 @@ MonodomainModel
 Thunderbolt.ParabolicParabolicBidomainModel
 Thunderbolt.ParabolicEllipticBidomainModel
 ReactionDiffusionSplit
+Thunderbolt.EikonalModel
 ```
 
 ```@docs

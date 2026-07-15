@@ -64,6 +64,38 @@
         end
     end
 
+    @testset "Tetrahedral $element_type" for element_type ∈
+                                             [Hexahedron, Wedge, Pyramid, Tetrahedron]
+        dim = Ferrite.getrefdim(element_type)
+        grid = generate_grid(element_type, ntuple(_ -> 4, dim))
+        addcellset!(grid, "right_cells", x -> x[1] ≥ 0.0)
+        addcellset!(grid, "left_cells", x -> x[1] ≤ 0.0)
+
+        grid_tet = Thunderbolt.tetrahedralize(grid)
+        @test all(typeof.(getcells(grid_tet)) .== Tetrahedron) # Test if we really hit all elements
+        test_detJ(grid_tet) # And for messed up elements
+
+        # Check for correct transfer of facetsets
+        addfacetset!(grid_tet, "right_new", x -> x[1] ≈ 1.0)
+        @test getfacetset(grid_tet, "right") == getfacetset(grid_tet, "right_new")
+        addfacetset!(grid_tet, "left_new", x -> x[1] ≈ -1.0)
+        @test getfacetset(grid_tet, "left") == getfacetset(grid_tet, "left_new")
+        addfacetset!(grid_tet, "top_new", x -> x[3] ≈ 1.0)
+        @test getfacetset(grid_tet, "top") == getfacetset(grid_tet, "top_new")
+        addfacetset!(grid_tet, "bottom_new", x -> x[3] ≈ -1.0)
+        @test getfacetset(grid_tet, "bottom") == getfacetset(grid_tet, "bottom_new")
+        addfacetset!(grid_tet, "front_new", x -> x[2] ≈ -1.0)
+        @test getfacetset(grid_tet, "front") == getfacetset(grid_tet, "front_new")
+        addfacetset!(grid_tet, "back_new", x -> x[2] ≈ 1.0)
+        @test getfacetset(grid_tet, "back") == getfacetset(grid_tet, "back_new")
+
+        # Check for correct transfer of cellsets
+        addcellset!(grid_tet, "right_cells_new", x -> x[1] ≥ 0.0)
+        @test getcellset(grid_tet, "right_cells") == getcellset(grid_tet, "right_cells_new")
+        addcellset!(grid_tet, "left_cells_new", x -> x[1] ≤ 0.0)
+        @test getcellset(grid_tet, "left_cells") == getcellset(grid_tet, "left_cells_new")
+    end
+
     @testset "Linear Hex Ring" begin
         ring_mesh = generate_ring_mesh(8, 3, 3)
         test_detJ(ring_mesh)

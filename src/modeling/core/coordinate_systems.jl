@@ -1,5 +1,25 @@
 abstract type CoordinateSystemCoefficient end
 
+
+struct NodeIndexCoordinateWrapper{CoordT}
+    i::Int
+    coord::CoordT
+end
+
+"""
+    NodeIndexCoordinateSystemWrapper(cs)
+
+Coordinate system wrapper with node index as the part of the cooridnates.
+"""
+struct NodeIndexCoordinateSystemWrapper{CSType} <: CoordinateSystemCoefficient
+    cs::CSType
+    function NodeIndexCoordinateSystemWrapper(cs)
+        return new{typeof(cs)}(cs)
+    end
+end
+
+value_type(cs::NodeIndexCoordinateSystemWrapper) = NodeIndexCoordinateWrapper{value_type(cs.cs)}
+
 """
     CartesianCoordinateSystem(mesh)
 

@@ -98,7 +98,7 @@ function setup_solver_cache(
     uₙ = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
     uₙ₋₁ = uₙ
     uₙmat = reshape(uₙ, (npoints, ndofs_local))
-    xs = f.x === nothing ? nothing : Adapt.adapt(solver.solution_vector_type, f.x)
+    xs = f.x
 
     return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.batch_size_hint, xs)
 end

@@ -96,7 +96,7 @@ import SymbolicIndexingInterface
 import SciMLBase
 @reexport import SciMLBase: init, solve, solve!, step!
 @reexport import SciMLIterators: TimeChoiceIterator
-using SciMLBase: recursivecopy!, recursivecopy
+using RecursiveArrayTools: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import OrdinaryDiffEqCore:
@@ -139,6 +139,9 @@ include("modeling/solid_mechanics.jl")
 include("modeling/fluid_mechanics.jl")
 
 include("modeling/multiphysics.jl")
+include("modeling/core/eikonal.jl")
+
+include("discretization/eikonal.jl")
 
 include("modeling/functions.jl")
 include("modeling/problems.jl")
@@ -249,6 +252,10 @@ export
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
     ReactionDiffusionSplit,
+    ReactionEikonalSplit,
+    ReactionEikonalDiffusionSplit,
+    ReactionEikonalFunction,
+    ReactionEikonalDiffusionFunction,
     # Circuit
     RSAFDQ2022LumpedCicuitModel,
     MTKLumpedCicuitModel,

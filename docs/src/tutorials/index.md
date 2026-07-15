@@ -93,7 +93,7 @@ In this tutorial you will learn how to:
 * transfer coefficients and solutions between overlapping domains
 * compute the ECG form a monodomain model as a postprocessing step
 ---
-#### [EP Tutorial 05: Reaction-Eikonal ECG](@ref ep-tutorial_eikonal) (TODO)
+#### [EP Tutorial 05: Reaction-Eikonal ECG](@ref ep-tutorial_eikonal)
 In this tutorial you will learn how to:
 * perform ECG simulations with a simplified activation dynamics model
 ---

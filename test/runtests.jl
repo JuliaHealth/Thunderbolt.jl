@@ -65,6 +65,9 @@ include("integration/test_ecg.jl")
 include("integration/test_fsi.jl")
 include("integration/test_multigrid.jl")
 
+include("test_eikonal.jl")
+include("integration/test_eikonal.jl")
+
 include("test_aqua.jl")
 
 include("validation/land2015.jl")

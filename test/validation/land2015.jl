@@ -1,4 +1,5 @@
-using Thunderbolt, Test, LinearSolve, DiffEqBase
+using Thunderbolt, Test, LinearSolve
+import DiffEqBase: solve!
 
 struct TimeFunctionCoefficient{F}
     f::F

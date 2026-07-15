@@ -143,6 +143,18 @@ function duplicate_for_device(device, cache::ConductivityToDiffusivityCoefficien
     )
 end
 
+function compute_nodal_values(
+    csc::NodeIndexCoordinateSystemWrapper,
+    dh::DofHandler,
+    field_name::Symbol,
+)
+    nodal_values = compute_nodal_values(csc.cs, dh, field_name)
+    Tv = value_type(csc)
+    nodal_values_with_idx = [Tv(i, nodal_values[i]) for i in eachindex(nodal_values)]
+
+    return nodal_values_with_idx
+end
+
 function compute_nodal_values(csc::CoordinateSystemCoefficient, dh::DofHandler, field_name::Symbol)
     Tv = value_type(csc)
     nodal_values = Vector{Tv}(UndefInitializer(), ndofs(dh))
