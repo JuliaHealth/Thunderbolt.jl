@@ -61,14 +61,6 @@ function _get_nodes(
     restricted to AnalyticalTransmembraneStimulationProtocol"))
 end
 
-function _get_nodes(
-    protocol::UniformEndocardialActivationProtocol,
-    mesh,
-    cs::NodeIndexCoordinateSystemWrapper,
-)
-    return _get_nodes(protocol, mesh, cs.cs)
-end
-
 function _get_nodes(protocol::AnalyticalTransmembraneStimulationProtocol, mesh, cs)
     qrc = NodalQuadratureRuleCollection{}(LagrangeCollection{1}())
     f = protocol.f.f
