@@ -54,6 +54,16 @@ end
 function _get_nodes(
     protocol::UniformEndocardialActivationProtocol,
     mesh,
+    cs::CartesianCoordinateSystem,
+)
+    throw(error("Uniformally activating the endocardium requires using either
+    LV or BiV coordinate system. usage with Cartesian Coordinate System is
+    restricted to AnalyticalTransmembraneStimulationProtocol"))
+end
+
+function _get_nodes(
+    protocol::UniformEndocardialActivationProtocol,
+    mesh,
     cs::NodeIndexCoordinateSystemWrapper,
 )
     return _get_nodes(protocol, mesh, cs.cs)
@@ -108,12 +118,6 @@ function _get_nodes(
         end
     end
     return nodes
-end
-
-function get_nodes(::UniformEndocardialActivationProtocol{<:CartesianCoordinateSystem}, mesh)
-    throw(error("Uniformally activating the endocardium requires using either
-    LV or BiV coordinate system. usage with Cartesian Coordinate System is
-    restricted to AnalyticalTransmembraneStimulationProtocol"))
 end
 
 function semidiscretize(
@@ -247,7 +251,6 @@ function _semidiscretize(
     activation_points = get_nodes(discretization.activation_protocol, mesh)
     vertices = getproperty.(mesh.grid.nodes, :x)
     f = discretization.activation_protocol.f.f
-    cs = discretization.activation_protocol.f.coordinate_system_coefficient
     qrc = NodalQuadratureRuleCollection{}(LagrangeCollection{1}())
     activation_points_offsets = Float64[]
     activation_points = Int[]

@@ -183,14 +183,6 @@ function _compute_nodal_values!(nodal_values, qr, cc, sdh)
     end
 end
 
-function setup_coefficient_cache(
-    cs::NodeIndexCoordinateSystemWrapper,
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-)
-    return setup_coefficient_cache(cs.cs, qr, sdh)
-end
-
 struct CartesianCoordinateSystemCache{CS, CV}
     cs::CS
     cv::CV

@@ -6,10 +6,6 @@ struct NodeIndexCoordinateWrapper{CoordT}
     coord::CoordT
 end
 
-Base.zero(::Type{NodeIndexCoordinateWrapper{T}}) where {T} = NodeIndexCoordinateWrapper(0, zero(T))
-Base.eltype(::Type{NodeIndexCoordinateWrapper{T}}) where {T} = eltype(T)
-Base.eltype(::NodeIndexCoordinateWrapper{T}) where {T} = eltype(T)
-
 """
     NodeIndexCoordinateSystemWrapper(cs)
 
@@ -23,9 +19,6 @@ struct NodeIndexCoordinateSystemWrapper{CSType} <: CoordinateSystemCoefficient
 end
 
 value_type(cs::NodeIndexCoordinateSystemWrapper) = NodeIndexCoordinateWrapper{value_type(cs.cs)}
-
-getcoordinateinterpolation(cs::NodeIndexCoordinateSystemWrapper, cell::AbstractCell) =
-    getcoordinateinterpolation(cs.cs, cell)
 
 """
     CartesianCoordinateSystem(mesh)
