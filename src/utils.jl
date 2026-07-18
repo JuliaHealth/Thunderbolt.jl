@@ -484,10 +484,10 @@ end
 function narrow_dict_types(d::Dict)
     # 1. Gather all unique types of the actual values in the dictionary
     val_types = Tuple(unique(typeof(v) for v in values(d)))
-    
+
     # 2. Create a Union of those specific types
     NarrowUnion = Union{val_types...}
-    
+
     # 3. Construct a new dictionary with the exact Key type and the new Union type
     return Dict{keytype(d), NarrowUnion}(d)
 end

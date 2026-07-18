@@ -102,7 +102,7 @@ end
     addcellset!(grid2, "inner", x->x[3] ≤ 0.0)
     addcellset!(grid2, "outer", x->x[3] ≥ 0.0)
     mesh2 = to_mesh(grid2)
-    
+
     # The prestress should force a different solution
     @test u₁ ≉ u₂
 
@@ -170,7 +170,7 @@ function Thunderbolt.evaluate_coefficient(
     cell_cache::CellCache,
     qp::QuadraturePoint,
     t,
-) 
+)
     Ca = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
     return Ca
 end
