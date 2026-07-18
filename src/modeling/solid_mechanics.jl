@@ -10,7 +10,8 @@ struct QuasiStaticModel{MM#= <: AbstractMaterialModel =#, FM}
     facet_models::FM
 end
 
-QuasiStaticModel(displacement_symbol, material_model) = QuasiStaticModel(displacement_symbol, material_model, ())
+QuasiStaticModel(displacement_symbol, material_model) =
+    QuasiStaticModel(displacement_symbol, material_model, ())
 
 get_field_variable_names(model::QuasiStaticModel) = [model.displacement_symbol]
 

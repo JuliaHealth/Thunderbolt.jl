@@ -249,16 +249,16 @@ function _setup_local_solver_cache(
     )
 end
 
-function _backward_euler_stage_wrapper(integrator::NonlinearIntegrator, Q, Qprev, local_solver_cache, lvh)
+function _backward_euler_stage_wrapper(
+    integrator::NonlinearIntegrator,
+    Q,
+    Qprev,
+    local_solver_cache,
+    lvh,
+)
     (; volume_model, facet_model) = integrator
-    volume_wrapper = BackwardEulerStageFunctionWrapper(
-        volume_model,
-        Q,
-        Qprev,
-        0.0,
-        local_solver_cache,
-        lvh
-    )
+    volume_wrapper =
+        BackwardEulerStageFunctionWrapper(volume_model, Q, Qprev, 0.0, local_solver_cache, lvh)
     facet_wrapper = BackwardEulerStageFunctionWrapper(
         facet_model,
         Q,
@@ -277,9 +277,19 @@ function _backward_euler_stage_wrapper(integrator::NonlinearIntegrator, Q, Qprev
     )
 end
 
-function _backward_euler_stage_wrapper(integrator::NonlinearMultiDomainIntegrator2, Q, Qprev, local_solver_cache, lvh)
+function _backward_euler_stage_wrapper(
+    integrator::NonlinearMultiDomainIntegrator2,
+    Q,
+    Qprev,
+    local_solver_cache,
+    lvh,
+)
     return NonlinearMultiDomainIntegrator2(
-        Dict(name => _backward_euler_stage_wrapper(subintegrator, Q, Qprev, local_solver_cache[i], lvh) for (i, (name, subintegrator)) in enumerate(integrator.subintegrators))
+        Dict(
+            name =>
+                _backward_euler_stage_wrapper(subintegrator, Q, Qprev, local_solver_cache[i], lvh)
+            for (i, (name, subintegrator)) in enumerate(integrator.subintegrators)
+        ),
     )
 end
 

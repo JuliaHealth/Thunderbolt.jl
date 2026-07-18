@@ -559,7 +559,10 @@ mutable struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{
     localQprev::QType2
 end
 
-function duplicate_for_device(device, cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache)
+function duplicate_for_device(
+    device,
+    cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+)
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         cache.model,
         duplicate_for_device(device, cache.model_cache),

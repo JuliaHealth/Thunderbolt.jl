@@ -120,13 +120,7 @@ function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     ndofs(f.lvh) == 0 && return # no internal variable
     uq = @view u[(ndofs(f.dh)+1):end]
     for sdh in f.dh.subdofhandlers
-        default_initial_condition_quasistatic_subdomain!(
-            u,
-            uq,
-            f,
-            f.integrator,
-            sdh
-        )
+        default_initial_condition_quasistatic_subdomain!(u, uq, f, f.integrator, sdh)
     end
 end
 
@@ -137,7 +131,14 @@ function default_initial_condition_quasistatic_subdomain!(
     integrator::NonlinearIntegrator,
     sdh,
 )
-    default_initial_condition_quasistatic_subdomain!(u, uq, f, integrator, integrator.volume_model, sdh)
+    default_initial_condition_quasistatic_subdomain!(
+        u,
+        uq,
+        f,
+        integrator,
+        integrator.volume_model,
+        sdh,
+    )
 end
 
 function default_initial_condition_quasistatic_subdomain!(

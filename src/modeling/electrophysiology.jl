@@ -139,11 +139,7 @@ A dummy protocol describing the absence of stimuli for a simulation.
 """
 struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 
-function setup_element_cache(
-    protocol::NoStimulationProtocol,
-    qr,
-    sdh::SubDofHandler,
-)
+function setup_element_cache(protocol::NoStimulationProtocol, qr, sdh::SubDofHandler)
     return EmptyVolumetricElementCache()
 end
 

@@ -240,7 +240,7 @@ function PoissonECGReconstructionCache(
         Dict(name => torso_model for name in subdomain_names(torso_grid)),
         FiniteElementDiscretization(
             Dict(extracellular_potential_symbol => ipc);
-            dbcs=[Dirichlet(extracellular_potential_symbol, ground, (x, t) -> 0.0)],
+            dbcs = [Dirichlet(extracellular_potential_symbol, ground, (x, t) -> 0.0)],
         ),
         torso_grid,
     )

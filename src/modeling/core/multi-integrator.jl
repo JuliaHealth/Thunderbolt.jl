@@ -75,10 +75,7 @@ struct LinearMultiIntegrator <: AbstractLinearIntegrator
     subintegrators::Dict{<: String, <: AbstractLinearIntegrator}
 end
 
-function FerriteOperators.setup_element_cache(
-    integrator::LinearMultiIntegrator,
-    sdh::SubDofHandler,
-)
+function FerriteOperators.setup_element_cache(integrator::LinearMultiIntegrator, sdh::SubDofHandler)
     grid = get_grid(sdh.dh)
     for (name, subintegrator) in integrator.subintegrators
         cellset = getcellset(grid, name)

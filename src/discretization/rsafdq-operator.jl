@@ -155,10 +155,8 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
     # TODO this is also not possible yet
     tying_caches = [
         [
-            (
-                sdh,
-                setup_3D0D_coupling_integrator(sdh, chamber, integrator),
-            ) for sdh in _find_sdhs(dh, chamber.facets)
+            (sdh, setup_3D0D_coupling_integrator(sdh, chamber, integrator)) for
+            sdh in _find_sdhs(dh, chamber.facets)
         ] for chamber in tying_info.chambers
     ]
 

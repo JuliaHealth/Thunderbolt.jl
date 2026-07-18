@@ -62,34 +62,23 @@ end
     mesh = to_mesh(grid)
 
     ortho_ms = ConstantCoefficient(
-        OrthotropicMicrostructure(
-            Vec((1.0, 0.0, 0.0)),
-            Vec((0.0, 1.0, 0.0)),
-            Vec((0.0, 0.0, 1.0)),
-        ),
+        OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
     )
     u₁ = test_solve_passive_structure(
         mesh,
-        QuasiStaticModel(:d,
-            PK1Model(
-                HolzapfelOgden2009Model(),
-                ortho_ms,
-            )
-        ),
+        QuasiStaticModel(:d, PK1Model(HolzapfelOgden2009Model(), ortho_ms)),
     )
     @test !iszero(u₁)
 
     u₂ = test_solve_passive_structure(
         mesh,
-        QuasiStaticModel(:d,
+        QuasiStaticModel(
+            :d,
             PrestressedMechanicalModel(
-                PK1Model(
-                    HolzapfelOgden2009Model(),
-                    ortho_ms,
-                ),
+                PK1Model(HolzapfelOgden2009Model(), ortho_ms),
                 ConstantCoefficient(Tensor{2, 3}((1.1, 0.1, 0.0, 0.2, 0.9, 0.1, -0.1, 0.0, 1.0))),
             ),
-        )
+        ),
     )
 
     grid2 = generate_grid(
@@ -109,19 +98,9 @@ end
     u₃ = test_solve_passive_structure(
         mesh2,
         Dict(
-            "inner" => QuasiStaticModel(:d,
-                PK1Model(
-                    HolzapfelOgden2009Model(),
-                    ortho_ms,
-                ),
-            ),
-            "outer" => QuasiStaticModel(:d,
-                PK1Model(
-                    Guccione1991PassiveModel(),
-                    ortho_ms,
-                )
-            )
-        )
+            "inner" => QuasiStaticModel(:d, PK1Model(HolzapfelOgden2009Model(), ortho_ms)),
+            "outer" => QuasiStaticModel(:d, PK1Model(Guccione1991PassiveModel(), ortho_ms)),
+        ),
     )
 
     @test u₃ ≉ u₁
@@ -129,19 +108,9 @@ end
     u₄ = test_solve_passive_structure(
         mesh2,
         Dict(
-            "inner" => QuasiStaticModel(:d,
-                PK1Model(
-                    HolzapfelOgden2009Model(),
-                    ortho_ms,
-                ),
-            ),
-            "outer" => QuasiStaticModel(:d,
-                PK1Model(
-                    HolzapfelOgden2009Model(),
-                    ortho_ms,
-                )
-            )
-        )
+            "inner" => QuasiStaticModel(:d, PK1Model(HolzapfelOgden2009Model(), ortho_ms)),
+            "outer" => QuasiStaticModel(:d, PK1Model(HolzapfelOgden2009Model(), ortho_ms)),
+        ),
     )
 
     @test u₄ ≉ u₃
@@ -149,14 +118,7 @@ end
 
     u₅ = test_solve_passive_structure(
         mesh2,
-        Dict(
-            "myocardium" => QuasiStaticModel(:d,
-                PK1Model(
-                    HolzapfelOgden2009Model(),
-                    ortho_ms,
-                ),
-            ),
-        )
+        Dict("myocardium" => QuasiStaticModel(:d, PK1Model(HolzapfelOgden2009Model(), ortho_ms))),
     )
 
     @test sort(u₅) ≈ sort(u₁)
@@ -187,11 +149,7 @@ Thunderbolt.evaluate_coefficient(
     t,
 ) = t/1000.0 < 0.5 ? (2.0*t/1000.0)^2 : 2.0-(2.0*t/1000.0)^2
 
-function test_solve_contractile_cuboid(
-    mesh,
-    model,
-    timestepper,
-)
+function test_solve_contractile_cuboid(mesh, model, timestepper)
     tspan = timestepper isa BackwardEulerSolver ? (0.0, 2.0) : (0.0, 300.0)
     Δt = timestepper isa BackwardEulerSolver ? 0.25 : 100.0
 
@@ -271,11 +229,7 @@ function test_solve_contractile_ideal_lv(
 
     # Create sparse matrix and residual vector
     timestepper = HomotopyPathSolver(
-        NewtonRaphsonSolver(
-            inner_solver = UMFPACKFactorization(),
-            max_iter = 10,
-            tol = 1e-10,
-        ),
+        NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-10),
     )
     integrator =
         init(problem, timestepper, dt = Δt, verbose = true, adaptive = adaptive, maxiters = 50)
@@ -298,11 +252,7 @@ end
         ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
     )
 
-    newton = NewtonRaphsonSolver(
-        inner_solver = UMFPACKFactorization(),
-        max_iter = 10,
-        tol = 1e-10,
-    )
+    newton = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-10)
 
     facemodels = (
         NormalSpringBC(0.0, "right"),
@@ -421,7 +371,7 @@ end
                     facemodels,
                 ),
             ),
-            timestepper
+            timestepper,
         )
         # VTKGridFile(
         #     "SolidMechanicsIntegrationDebug",
@@ -452,7 +402,7 @@ end
                     facemodels,
                 ),
             ),
-            timestepper
+            timestepper,
         )
 
         mesh = to_mesh(generate_mixed_dimensional_grid_3D())

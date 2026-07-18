@@ -1,4 +1,7 @@
-function FerriteOperators.getquadraturerule(qrc::FerriteOperators.QuadratureRuleCollection, cell::InterfaceCell)
+function FerriteOperators.getquadraturerule(
+    qrc::FerriteOperators.QuadratureRuleCollection,
+    cell::InterfaceCell,
+)
     return getquadraturerule(qrc, cell.here)
 end
 

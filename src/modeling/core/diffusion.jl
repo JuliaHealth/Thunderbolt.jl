@@ -50,9 +50,9 @@ function assemble_element!(
 end
 
 function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::SubDofHandler)
-    qr         = getquadraturerule(element_model.qrc, sdh)
-    ip         = Ferrite.getfieldinterpolation(sdh, element_model.sym)
-    ip_geo     = geometric_subdomain_interpolation(sdh)
+    qr     = getquadraturerule(element_model.qrc, sdh)
+    ip     = Ferrite.getfieldinterpolation(sdh, element_model.sym)
+    ip_geo = geometric_subdomain_interpolation(sdh)
     BilinearDiffusionElementCache(
         setup_coefficient_cache(element_model.D, qr, sdh),
         CellValues(qr, ip, ip_geo),
@@ -88,7 +88,8 @@ end
 """
 The cache associated with [`BilinearDiffusionIntegrator`](@ref) to assemble element diffusion matrices.
 """
-struct BilinearInterfaceDiffusionElementCache{CoefficientCacheType, CV} <: AbstractVolumetricElementCache
+struct BilinearInterfaceDiffusionElementCache{CoefficientCacheType, CV} <:
+       AbstractVolumetricElementCache
     Dcache::CoefficientCacheType
     cellvalues::CV
 end
@@ -111,12 +112,12 @@ function assemble_element!(
 
     reinit!(cellvalues, cell)
 
-    for qp in 1:getnquadpoints(cellvalues)
+    for qp = 1:getnquadpoints(cellvalues)
         D_loc = evaluate_coefficient(Dcache, cell, qp, time)
         dΩ = getdetJdV_average(cellvalues, qp)
-        for i in 1:getnbasefunctions(cellvalues)
+        for i = 1:getnbasefunctions(cellvalues)
             jump_δu = shape_value_jump(cellvalues, qp, i)
-            for j in 1:getnbasefunctions(cellvalues)
+            for j = 1:getnbasefunctions(cellvalues)
                 jump_u = shape_value_jump(cellvalues, qp, j)
                 Kₑ[i, j] -= (jump_δu * D_loc * jump_u) * dΩ
             end
@@ -124,7 +125,10 @@ function assemble_element!(
     end
 end
 
-function setup_element_cache(element_model::BilinearInterfaceDiffusionIntegrator, sdh::SubDofHandler)
+function setup_element_cache(
+    element_model::BilinearInterfaceDiffusionIntegrator,
+    sdh::SubDofHandler,
+)
     qr = getquadraturerule(element_model.qrc, sdh)
     ip = Ferrite.getfieldinterpolation(sdh, element_model.sym1)
     cv = InterfaceCellValues(qr, ip)

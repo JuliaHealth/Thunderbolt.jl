@@ -35,7 +35,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
 
         spatial_discretization_method = FiniteElementDiscretization(
             Dict(:displacement => LagrangeCollection{order}()^3);
-            dbcs=[
+            dbcs = [
                 Dirichlet(
                     :displacement,
                     getfacetset(mesh, "left"),

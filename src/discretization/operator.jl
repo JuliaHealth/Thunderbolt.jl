@@ -8,7 +8,10 @@ function needs_update(op::LinearFerriteOperator, integrator, t)
 end
 
 function needs_update(op::LinearFerriteOperator, integrator::LinearMultiIntegrator, t)
-    return any([_needs_update(op, subintegrator.integrand, t) for subintegrator in values(integrator.subintegrators)])
+    return any([
+        _needs_update(op, subintegrator.integrand, t) for
+        subintegrator in values(integrator.subintegrators)
+    ])
 end
 
 function _needs_update(

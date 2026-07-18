@@ -27,7 +27,8 @@ function perform_step!(
     Δt::Real,
 )
     @timeit_debug "reaction solve" for (i, f) in enumerate(fs.functions)
-       ! _pointwise_step_outer_kernel!(f, t, Δt, repack_subdomain(cache, i), cache.uₙ) && return false
+        ! _pointwise_step_outer_kernel!(f, t, Δt, repack_subdomain(cache, i), cache.uₙ) &&
+            return false
     end
 
     return true
@@ -124,29 +125,28 @@ function setup_solver_cache(
     u = nothing,
     uprev = nothing,
 )
-    du    = create_system_vector(solver.solution_vector_type, fs)
-    uₙ    = u === nothing ? create_system_vector(solver.solution_vector_type, fs) : u
-    uₙ₋₁  = uprev === nothing ? uₙ : uprev
+    du   = create_system_vector(solver.solution_vector_type, fs)
+    uₙ   = u === nothing ? create_system_vector(solver.solution_vector_type, fs) : u
+    uₙ₋₁ = uprev === nothing ? uₙ : uprev
 
     dumat = [
-        reshape(view(du, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
+        reshape(
+            view(du, f.associated_states),
+            (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)),
+        )' for f in fs.functions
     ]
     uₙmat = [
-        reshape(view(uₙ, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
+        reshape(
+            view(uₙ, f.associated_states),
+            (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)),
+        )' for f in fs.functions
     ]
     xs = [
-        f.x === nothing ? nothing : adapt_vector_type(solver.solution_vector_type, f.x) for f in fs.functions
+        f.x === nothing ? nothing : adapt_vector_type(solver.solution_vector_type, f.x) for
+        f in fs.functions
     ]
 
-    return ForwardEulerCellSolverCache(
-        du,
-        uₙ,
-        uₙ₋₁,
-        dumat,
-        uₙmat,
-        solver.batch_size_hint,
-        xs,
-    )
+    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.batch_size_hint, xs)
 end
 
 function repack_subdomain(cache::ForwardEulerCellSolverCache, i)
@@ -269,18 +269,25 @@ function setup_solver_cache(
     u = nothing,
     uprev = nothing,
 )
-    du    = create_system_vector(solver.solution_vector_type, fs)
-    uₙ    = u === nothing ? create_system_vector(solver.solution_vector_type, fs) : u
-    uₙ₋₁  = uprev === nothing ? uₙ : uprev
+    du   = create_system_vector(solver.solution_vector_type, fs)
+    uₙ   = u === nothing ? create_system_vector(solver.solution_vector_type, fs) : u
+    uₙ₋₁ = uprev === nothing ? uₙ : uprev
 
     dumat = [
-        reshape(view(du, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
+        reshape(
+            view(du, f.associated_states),
+            (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)),
+        )' for f in fs.functions
     ]
     uₙmat = [
-        reshape(view(uₙ, f.associated_states), (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)))' for f in fs.functions
+        reshape(
+            view(uₙ, f.associated_states),
+            (num_states(f.ode), length(f.associated_states) ÷ num_states(f.ode)),
+        )' for f in fs.functions
     ]
     xs = [
-        f.x === nothing ? nothing : adapt_vector_type(solver.solution_vector_type, f.x) for f in fs.functions
+        f.x === nothing ? nothing : adapt_vector_type(solver.solution_vector_type, f.x) for
+        f in fs.functions
     ]
 
     return AdaptiveForwardEulerSubstepperCache(

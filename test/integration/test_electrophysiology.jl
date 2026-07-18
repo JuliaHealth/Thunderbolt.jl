@@ -31,9 +31,9 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
             ReactionDiffusionSplit(model),
             FiniteElementDiscretization(
                 Dict(
-                    :φₘ  => LagrangeCollection{1}(),
-                    :φₘi => Thunderbolt.InterfaceCollection(LagrangeCollection{1}())
-                )
+                    :φₘ => LagrangeCollection{1}(),
+                    :φₘi => Thunderbolt.InterfaceCollection(LagrangeCollection{1}()),
+                ),
             ),
             mesh,
         )
@@ -63,7 +63,8 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
     end
 
     timestepper = LieTrotterGodunov((BackwardEulerSolver(), ForwardEulerCellSolver()))
-    timestepper_adaptive = LieTrotterGodunov((BackwardEulerSolver(), AdaptiveForwardEulerSubstepper()))
+    timestepper_adaptive =
+        LieTrotterGodunov((BackwardEulerSolver(), AdaptiveForwardEulerSubstepper()))
     timestepper_rtc = Thunderbolt.ReactionTangentController(timestepper, 0.5, 1.0, (0.98, 1.02))
 
     @testset "Single subdomain" begin
@@ -92,7 +93,9 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
 
         mesh = generate_ideal_lv_mesh(4, 1, 1)
         cs = CartesianCoordinateSystem(mesh)
-        coeff = ConstantCoefficient(SymmetricTensor{2, 3, Float64}((4.5e-4, 0.0, 0.0, 2.0e-4, 0.0, 2.0e-4)))
+        coeff = ConstantCoefficient(
+            SymmetricTensor{2, 3, Float64}((4.5e-4, 0.0, 0.0, 2.0e-4, 0.0, 2.0e-4)),
+        )
         model = MonodomainModel(
             ConstantCoefficient(1.0),
             ConstantCoefficient(1.0),
@@ -113,8 +116,12 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
 
     @testset "Pacemaker subdomain" begin
         grid = generate_grid(Quadrilateral, (64, 64), Vec{2}((-2.5, -2.5)), Vec{2}((2.5, 2.5)))
-        addcellset!(grid, "Pacemaker", x->norm(x,Inf) ≤ 0.75)
-        addcellset!(grid, "Myocardium", setdiff(OrderedSet(1:getncells(grid)), getcellset(grid, "Pacemaker")))
+        addcellset!(grid, "Pacemaker", x->norm(x, Inf) ≤ 0.75)
+        addcellset!(
+            grid,
+            "Myocardium",
+            setdiff(OrderedSet(1:getncells(grid)), getcellset(grid, "Pacemaker")),
+        )
         grid2 = insert_interfaces(grid, ["Pacemaker", "Myocardium"]) # FIXME allow to add multiple interfaces
         mesh2 = to_mesh(grid2)
         cs = CartesianCoordinateSystem(mesh2)
@@ -126,7 +133,14 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
                 ConstantCoefficient(1.0),
                 coeff,
                 Thunderbolt.NoStimulationProtocol(),
-                Thunderbolt.ParametrizedFHNModel{Float64}(a = -0.5, b = 1.0, c = -0.6, d = 0.0, e = 0.001, f = 50*0.001),
+                Thunderbolt.ParametrizedFHNModel{Float64}(
+                    a = -0.5,
+                    b = 1.0,
+                    c = -0.6,
+                    d = 0.0,
+                    e = 0.001,
+                    f = 50*0.001,
+                ),
                 :φₘ,
                 :s1,
             ),
@@ -140,11 +154,7 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
                 :s2,
             ),
             # FIXME explicit name
-            "interfaces" => InterfaceDiffusionModel(
-                ConstantCoefficient(1.0),
-                :φₘ,
-                :φₘi,
-            ),
+            "interfaces" => InterfaceDiffusionModel(ConstantCoefficient(1.0), :φₘ, :φₘi),
         )
         u = solve_waveprop(mesh2, models, timestepper)
         u_adaptive = solve_waveprop(mesh2, models, timestepper_adaptive)

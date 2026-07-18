@@ -39,10 +39,7 @@ import FerriteOperators:
     value_type
 
 import FerriteInterfaceElements:
-    InterfaceCellInterpolation,
-    InterfaceCellValues,
-    InterfaceCell,
-    getdetJdV_average
+    InterfaceCellInterpolation, InterfaceCellValues, InterfaceCell, getdetJdV_average
 
 import FerriteOperators:
     LinearizedFerriteOperator,

@@ -495,7 +495,10 @@ end
 function collect_dofs_on_subdomain(dh, mesh, name)
     dofs = Set{Int}()
     for sdh in dh.subdofhandlers
-        if any([CellIndex(first(sdh.cellset)) ∈ subset for subset in values(mesh.volumetric_subdomains[name].data)])
+        if any([
+            CellIndex(first(sdh.cellset)) ∈ subset for
+            subset in values(mesh.volumetric_subdomains[name].data)
+        ])
             for cellid in sdh.cellset
                 for dof in celldofs(sdh, cellid)
                     push!(dofs, dof)
