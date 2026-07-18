@@ -237,11 +237,10 @@ function PoissonECGReconstructionCache(
     )
 
     torso_fun = semidiscretize(
-        torso_model,
+        Dict(name => torso_model for name in subdomain_names(torso_grid)),
         FiniteElementDiscretization(
             Dict(extracellular_potential_symbol => ipc);
             dbcs=[Dirichlet(extracellular_potential_symbol, ground, (x, t) -> 0.0)],
-            subdomains=subdomain_names(torso_grid),
         ),
         torso_grid,
     )
@@ -491,18 +490,17 @@ function Geselowitz1989ECGLeadCache(
     )
 
     lead_field_fun = semidiscretize(
-        lead_field_model,
+        Dict(name => lead_field_model for name in subdomain_names(torso_grid)),
         FiniteElementDiscretization(
             Dict(lead_field_sym => ipc);
             dbcs = [Dirichlet(lead_field_sym, ground, (x, t) -> 0.0)],
-            subdomains = subdomain_names(torso_grid),
         ),
         torso_grid,
     )
 
     sourcefun = semidiscretize(
-        source_model,
-        FiniteElementDiscretization(Dict(tmpsym => ipc); subdomains = subdomain_names(torso_grid)),
+        Dict(name => source_model for name in subdomain_names(torso_grid)),
+        FiniteElementDiscretization(Dict(tmpsym => ipc)),
         torso_grid,
     )
 
@@ -510,7 +508,7 @@ function Geselowitz1989ECGLeadCache(
         strategy,
         BilinearDiffusionIntegrator(heart_diffusion_tensor_field, qrc, tmpsym),
         system_matrix_type,
-        lead_field_fun.dh,
+        sourcefun.dh,
     )
     update_operator!(ϕₘ_op, 0.0) # Trigger assembly
 

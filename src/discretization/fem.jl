@@ -217,6 +217,43 @@ function semidiscretize(
 end
 
 function semidiscretize(
+    models::Dict{String, <:SteadyDiffusionModel},
+    discretization::FiniteElementDiscretization,
+    mesh::AbstractGrid,
+)
+    dh = DofHandler(mesh)
+
+    rhs_integrators    = Dict{String, AbstractBilinearIntegrator}()
+    linear_integrators = Dict{String, AbstractLinearIntegrator}()
+
+    for (name, model) in models
+        sym = model.solution_variable_symbol
+        ipc = _get_interpolation_from_discretization(discretization, sym)
+        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+
+        qrc = _get_quadrature_from_discretization(discretization, sym)
+        rhs_integrators[name]    = BilinearDiffusionIntegrator(model.κ, qrc, sym)
+        linear_integrators[name] = LinearIntegrator(model.source, qrc)
+    end
+
+    close!(dh)
+
+    ch = ConstraintHandler(dh)
+    for dbc ∈ discretization.dbcs
+        Ferrite.add!(ch, dbc)
+    end
+    close!(ch)
+
+    return AffineSteadyStateFunction(
+        BilinearMultiIntegrator(rhs_integrators),
+        LinearMultiIntegrator(linear_integrators),
+        dh,
+        ch,
+        discretization.assembly_strategy,
+    )
+end
+
+function semidiscretize(
     split::ReactionDiffusionSplit{<:MonodomainModel},
     discretization::FiniteElementDiscretization,
     mesh::AbstractGrid,
@@ -274,7 +311,7 @@ function semidiscretize(
     mesh::AbstractGrid,
 )
     models = narrow_dict_types(split.model)
-    semidiscretize(ReactionDiffusionSplit(models), discretization, mesh)
+    semidiscretize(ReactionDiffusionSplit(models, split.cs), discretization, mesh)
 end
 
 function semidiscretize(
@@ -295,7 +332,10 @@ function semidiscretize(
     # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
     inner_functions = PointwiseODEFunction[]
     offset = 0
-    xφ = (split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, epmodel.transmembrane_solution_symbol))
+    epmodel_symbols = Set(model.transmembrane_solution_symbol for model in values(epmodels) if model isa AbstractEPModel)
+    @assert length(epmodel_symbols) == 1 "All EP models in a domain split must share the same transmembrane potential symbol, got $(epmodel_symbols)."
+    φsym = first(epmodel_symbols)
+    xφ = (split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym))
     heat_dofrange = Int[]
     for (name, model) in epmodels
         if typeof(model) <: AbstractEPModel # Only handle the EP models

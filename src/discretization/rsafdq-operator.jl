@@ -106,6 +106,43 @@ function _find_sdhs(dh, facetset)
     return sdhs
 end
 
+function setup_3D0D_coupling_integrator(sdh, chamber, integrator::NonlinearIntegrator)
+    return setup_boundary_cache(
+        Pressure3D0DVolumeCouplerIntegrator(
+            integrator.fqrc,
+            integrator.volume_model.displacement_symbol,
+            chamber.pressure_symbol,
+            chamber.facets,
+            chamber.volume_method,
+        ),
+        sdh,
+    )
+end
+
+function setup_3D0D_coupling_integrator(sdh, chamber, integrator::NonlinearMultiDomainIntegrator2)
+    # FIXME tighter weaveing between sdh and chamber.facets
+    grid = get_grid(sdh.dh)
+    for (name, subintegrator) in integrator.subintegrators
+        has_volumetric_subdomain(grid, name) || continue
+        volumetric_subdomain = grid.volumetric_subdomains[name]
+        for cellset in values(volumetric_subdomain.data)
+            if CellIndex(first(sdh.cellset)) ∈ cellset # FIXME how to get around this fallacy here?
+                return setup_boundary_cache(
+                    Pressure3D0DVolumeCouplerIntegrator(
+                        subintegrator.fqrc,
+                        subintegrator.volume_model.displacement_symbol,
+                        chamber.pressure_symbol,
+                        chamber.facets,
+                        chamber.volume_method,
+                    ),
+                    sdh,
+                )
+            end
+        end
+    end
+    return FerriteOperators.EmptySurfaceElementCache()
+end
+
 function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver)
     (; tying_info, structural_function) = f
     (; dh, integrator, assembly_strategy) = structural_function
@@ -120,16 +157,7 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
         [
             (
                 sdh,
-                setup_boundary_cache(
-                    Pressure3D0DVolumeCouplerIntegrator(
-                        integrator.fqrc,
-                        integrator.volume_model.displacement_symbol,
-                        chamber.pressure_symbol,
-                        chamber.facets,
-                        chamber.volume_method,
-                    ),
-                    sdh,
-                ),
+                setup_3D0D_coupling_integrator(sdh, chamber, integrator),
             ) for sdh in _find_sdhs(dh, chamber.facets)
         ] for chamber in tying_info.chambers
     ]

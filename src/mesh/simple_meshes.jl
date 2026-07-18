@@ -282,4 +282,5 @@ end
 # https://github.com/Ferrite-FEM/Ferrite.jl/pull/987
 Ferrite.nfacets(cc::CellCache{<:Any, <:SimpleMesh}) = nfacets(cc.grid.grid.cells[cc.cellid[]])
 
+has_volumetric_subdomain(mesh::SimpleMesh, name::String) = haskey(mesh.volumetric_subdomains, name)
 has_surface_subdomain(mesh::SimpleMesh, name::String) = haskey(mesh.surface_subdomains, name)
