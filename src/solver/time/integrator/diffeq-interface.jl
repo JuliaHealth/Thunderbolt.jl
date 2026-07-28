@@ -427,7 +427,7 @@ function compute_rate_prototype(prob)
        eltype(u) <: Number &&
        uBottomEltypeNoUnits == uBottomEltype &&
        tType == tTypeNoUnits # Could this be more efficient for other arrays?
-        return SciMLBase.recursivecopy(u)
+        return recursivecopy(u)
     else
         _compute_rate_prototype_mass_matrix_form(prob)
     end

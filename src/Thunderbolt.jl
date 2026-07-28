@@ -99,7 +99,7 @@ import SymbolicIndexingInterface
 import SciMLBase
 @reexport import SciMLBase: init, solve, solve!, step!
 @reexport import SciMLIterators: TimeChoiceIterator
-using SciMLBase: recursivecopy!, recursivecopy
+using RecursiveArrayTools: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import OrdinaryDiffEqCore:

@@ -88,8 +88,14 @@ end
         Ferrite.Vec{3}((1.0, 1.0, 0.2)),
     )
     addcellset!(grid2, "myocardium", x->true)
-    addcellset!(grid2, "inner", x->x[3] ≤ 0.0)
-    addcellset!(grid2, "outer", x->x[3] ≥ 0.0)
+    # NOTE: the nodes on the nominal z=0 plane carry floating point noise of O(1e-17) from the grid
+    # generator, so a bare `x[3] ≤ 0.0` predicate (which Ferrite evaluates on *all* nodes of a cell)
+    # picks up only those cells whose interface nodes happen to round the right way. Use a tolerance
+    # for one half and take the complement for the other, so that the two really do partition grid2.
+    addcellset!(grid2, "inner", x->x[3] ≤ 1.0e-8)
+    addcellset!(grid2, "outer", setdiff(OrderedSet(1:getncells(grid2)), getcellset(grid2, "inner")))
+    @assert length(getcellset(grid2, "inner")) + length(getcellset(grid2, "outer")) ==
+            getncells(grid2)
     mesh2 = to_mesh(grid2)
 
     # The prestress should force a different solution

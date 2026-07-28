@@ -263,7 +263,7 @@ add_subdomain!(dh, domain_name, descriptor::Pair) =
     add_subdomain!(dh, domain_name, [ApproximationDescriptor(descriptor[1], descriptor[2])])
 function add_subdomain!(dh, descriptor)
     vsubdomain = get_grid(dh).volumetric_subdomains
-    @assert length(vsubdomain) > 1 "Mesh has multiple subdomains. Please specify the subdomain on which the approximation is defined."
+    @assert length(vsubdomain) == 1 "Mesh has multiple subdomains. Please specify the subdomain on which the approximation is defined."
     add_subdomain!(dh, first(keys(vsubdomain)), descriptor)
 end
 

@@ -88,8 +88,83 @@ function _get_facet_quadrature_from_discretization(disc::FiniteElementDiscretiza
         return FacetQuadratureRuleCollection(intorder)
     end
     error(
-        "Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))) and $(collect(keys(disc.qrcs))).",
+        "Finite element discretization does not have an interpolation or facet quadrature rule for $sym. Available symbols: $(collect(keys(disc.interpolations))) and $(collect(keys(disc.fqrcs))).",
     )
+end
+
+"""
+    _approximation_descriptors(disc::FiniteElementDiscretization, model)
+
+Gather the [`ApproximationDescriptor`](@ref)s for all field variables of `model`.
+
+All fields of one model on one subdomain must be registered in a *single* `add_subdomain!` call,
+because every call constructs a fresh `SubDofHandler`. Registering them one by one would yield one
+single-field `SubDofHandler` per field over the same cellset instead of one handler carrying all
+fields.
+"""
+function _approximation_descriptors(disc::FiniteElementDiscretization, model)
+    return [
+        ApproximationDescriptor(sym, _get_interpolation_from_discretization(disc, sym)) for
+        sym in get_field_variable_names(model)
+    ]
+end
+
+"""
+    _subdomain_cellids(mesh, name)
+
+All cell ids of the volumetric subdomain `name`, flattened over the per-celltype split.
+"""
+function _subdomain_cellids(mesh, name)
+    haskey(mesh.volumetric_subdomains, name) || error(
+        "Volumetric subdomain $name not found on mesh. Available subdomains: $(collect(keys(mesh.volumetric_subdomains))).",
+    )
+    return Set(idx.idx for (_, cellset) in mesh.volumetric_subdomains[name].data for idx in cellset)
+end
+
+"""
+    _add_dirichlet_conditions!(ch, dbcs)
+
+Add all Dirichlet conditions to `ch`, re-raising Ferrite's binding failure with the information
+needed to diagnose it: which fields and how much of the mesh the dof handler actually covers. The
+usual cause is a condition whose set reaches into cells that carry no model, and hence no dofs.
+"""
+function _add_dirichlet_conditions!(ch::ConstraintHandler, dbcs)
+    dh = ch.dh
+    for (i, dbc) ∈ enumerate(dbcs)
+        try
+            Ferrite.add!(ch, dbc)
+        catch e
+            e isa ErrorException || rethrow()
+            ncovered = sum(length(sdh.cellset) for sdh in dh.subdofhandlers; init = 0)
+            error(
+                "Failed to add Dirichlet condition $i on field :$(dbc.field_name) - $(e.msg)\n" *
+                "The dof handler carries fields $(dh.field_names) on $ncovered of " *
+                "$(getncells(get_grid(dh))) cells. If the condition reaches cells outside the " *
+                "subdomains carrying a model, those cells have no dofs to constrain.",
+            )
+        end
+    end
+    return ch
+end
+
+"""
+    _check_model_subdomains_disjoint(mesh, names)
+
+Ferrite associates each cell with at most one `SubDofHandler`, so the subdomains carrying models
+must not overlap. Overlapping *cellsets* on the mesh are fine - only the subset used by the models
+is constrained. Errors with the offending pair and the size of the overlap.
+"""
+function _check_model_subdomains_disjoint(mesh, names)
+    cellids = Dict(name => _subdomain_cellids(mesh, name) for name in names)
+    for (i, name1) in enumerate(names), name2 in Iterators.drop(names, i)
+        overlap = intersect(cellids[name1], cellids[name2])
+        isempty(overlap) || error(
+            "Subdomains \"$name1\" and \"$name2\" both carry a model but share $(length(overlap)) cells " *
+            "(e.g. cell $(first(sort(collect(overlap))))). Ferrite associates every cell with at most one " *
+            "SubDofHandler, so subdomains carrying models must be pairwise disjoint.",
+        )
+    end
+    return nothing
 end
 
 semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) =
@@ -177,6 +252,8 @@ function semidiscretize(
 )
     @assert length(discretization.dbcs) == 0 "Dirichlet conditions not supported yet for transient diffusion models"
 
+    _check_model_subdomains_disjoint(mesh, collect(keys(models)))
+
     dh = DofHandler(mesh)
 
     # 3 weak forms
@@ -236,9 +313,7 @@ function semidiscretize(
     close!(dh)
 
     ch = ConstraintHandler(dh)
-    for dbc ∈ discretization.dbcs
-        Ferrite.add!(ch, dbc)
-    end
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
     close!(ch)
 
     return AffineSteadyStateFunction(
@@ -255,6 +330,8 @@ function semidiscretize(
     discretization::FiniteElementDiscretization,
     mesh::AbstractGrid,
 )
+    _check_model_subdomains_disjoint(mesh, collect(keys(models)))
+
     dh = DofHandler(mesh)
 
     rhs_integrators    = Dict{String, AbstractBilinearIntegrator}()
@@ -273,9 +350,7 @@ function semidiscretize(
     close!(dh)
 
     ch = ConstraintHandler(dh)
-    for dbc ∈ discretization.dbcs
-        Ferrite.add!(ch, dbc)
-    end
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
     close!(ch)
 
     return AffineSteadyStateFunction(
@@ -385,9 +460,10 @@ function semidiscretize(
             mindof, maxdof = extrema(subdofs)
             @assert length(mindof:maxdof) == length(subdofs) "$(mindof:maxdof) does not match length(subdofs)=$(length(subdofs)) => Subdomain is not isolated. "
             nstates = num_states(model.ion)
-            state_min_dof = nstates*(mindof-1)+1
-            state_max_dof = nstates*(maxdof-1)+nstates
-            state_range = state_min_dof:state_max_dof
+            # The state vector is packed subdomain by subdomain in iteration order, *not* by
+            # global dof index, because the number of states per point varies between subdomains.
+            # Hence the range is derived from the running offset, exactly as the heat dof map below.
+            state_range = (offset+1):(offset+nstates*length(subdofs))
             @info "Mapping state range on $name to $state_range from $(mindof:maxdof)"
 
             # Create ode function for subdomain
@@ -434,18 +510,13 @@ function semidiscretize(
     dh = DofHandler(mesh)
     lvh = InternalVariableHandler(mesh)
     name = single_subdomain_or_error(get_grid(dh))
-    for sym in get_field_variable_names(model)
-        ipc = _get_interpolation_from_discretization(discretization, sym)
-        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-    end
+    add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
     add_subdomain!(lvh, name, gather_internal_variable_infos(model), qrc, dh)
     close!(dh)
     close!(lvh)
 
     ch = ConstraintHandler(dh)
-    for dbc ∈ discretization.dbcs
-        Ferrite.add!(ch, dbc)
-    end
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
     close!(ch)
 
     semidiscrete_problem = QuasiStaticFunction(
@@ -464,14 +535,13 @@ function semidiscretize(
     discretization::FiniteElementDiscretization,
     mesh::AbstractGrid,
 )
+    _check_model_subdomains_disjoint(mesh, collect(keys(models)))
+
     dh = DofHandler(mesh)
     lvh = InternalVariableHandler(mesh)
     integrators = Dict{String, NonlinearIntegrator}()
     for (name, model) in models
-        for sym in get_field_variable_names(model)
-            ipc = _get_interpolation_from_discretization(discretization, sym)
-            add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        end
+        add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
 
         form_names = get_volumetric_weak_form_names(model)
         @assert length(form_names) == 1
@@ -493,9 +563,7 @@ function semidiscretize(
     close!(lvh)
 
     ch = ConstraintHandler(dh)
-    for dbc ∈ discretization.dbcs
-        Ferrite.add!(ch, dbc)
-    end
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
     # FIXME add affine constraints due to AMR
     close!(ch)
 
