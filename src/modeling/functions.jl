@@ -28,6 +28,71 @@ abstract type AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunctio
 solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))
 num_blocks(f::AbstractSemidiscreteBlockedFunction) = length(blocksizes(f))
 
+"""
+    SolutionBlock(name, indices, placement)
+
+One block of a semidiscrete solution vector: the field or auxiliary state `name`, occupying
+`indices` of the solution vector, laid out according to `placement`.
+
+`placement` is a [`DofPlacement`](@ref) for ordinary field variables and for auxiliary state living
+on dofs, and a [`QuadraturePointPlacement`](@ref) for auxiliary state living at quadrature points.
+"""
+struct SolutionBlock{I <: AbstractVector{Int}, P <: AbstractStatePlacement}
+    name::Symbol
+    indices::I
+    placement::P
+end
+
+solution_size(b::SolutionBlock) = length(b.indices)
+
+"""
+    SolutionPartition(blocks)
+
+Describes how a semidiscrete solution vector is partitioned into named blocks.
+
+This exists because the dof bookkeeping of split problems is the painful part `semidiscretize`
+automates, and it used to be produced implicitly - each consumer re-derived the index sets from
+scratch, under conventions that could and did disagree. Building it once, where the dof layout is
+actually known, makes those layouts inspectable and keeps the consumers honest:
+
+  - operator splitting derives its `solution_indices` from a partition rather than owning them,
+  - monolithic solvers can use it for field-split or block preconditioning,
+  - solvers partitioned by physics can dispatch on the blocks they are handed.
+
+Query with [`solution_partition`](@ref).
+"""
+struct SolutionPartition{B <: AbstractVector{<:SolutionBlock}}
+    blocks::B
+end
+
+# NOTE: deliberately not called `blocks` - `BlockArrays.blocks` is in scope package-wide and a
+# `SolutionPartition` is not a block array.
+solution_blocks(p::SolutionPartition) = p.blocks
+num_blocks(p::SolutionPartition) = length(p.blocks)
+solution_size(p::SolutionPartition) = sum(solution_size, p.blocks; init = 0)
+
+"""
+    block_indices(partition) -> Tuple
+    block_indices(partition, name::Symbol)
+
+The index sets of all blocks in order - ready to hand to a `GenericSplitFunction` - or the indices
+of the single block called `name`.
+"""
+block_indices(p::SolutionPartition) = Tuple(b.indices for b in p.blocks)
+function block_indices(p::SolutionPartition, name::Symbol)
+    for b in p.blocks
+        b.name === name && return b.indices
+    end
+    error("No solution block named $name. Available blocks: $([b.name for b in p.blocks]).")
+end
+
+"""
+    solution_partition(f) -> SolutionPartition
+
+How the solution vector of the semidiscrete function `f` is laid out. See [`SolutionPartition`](@ref).
+"""
+function solution_partition end
+
 
 """
     NullFunction(ndofs)
@@ -112,6 +177,28 @@ end
 get_strategy(f::QuasiStaticFunction) = f.assembly_strategy
 
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
+
+"""
+    solution_partition(f::QuasiStaticFunction)
+
+The solution vector is laid out as `[fe_dofs | internal_variables]`.
+
+!!! note
+    The internal variables are condensed out at quadrature point level and do not enter the global
+    linear system. Indices into the solution vector are therefore not indices into the system
+    matrix.
+"""
+function solution_partition(f::QuasiStaticFunction)
+    nfe = ndofs(f.dh)
+    niv = ndofs(f.lvh)
+    fe_block = SolutionBlock(:fe_dofs, 1:nfe, DofPlacement(Tuple(f.dh.field_names)))
+    niv == 0 && return SolutionPartition([fe_block])
+    return SolutionPartition([
+        fe_block,
+        SolutionBlock(:internal_variables, (nfe+1):(nfe+niv), QuadraturePointPlacement()),
+    ])
+end
+
 internal_variable_offset(f::QuasiStaticFunction, cid) = internal_variable_offset(f.lvh, cid)
 internal_variable_size(f::QuasiStaticFunction, cid, qp) =
     internal_variable_size(get_material_model(f, cid, qp), cid, qp)

@@ -126,6 +126,8 @@ include("utils.jl")
 
 include("devices.jl")
 
+include("state_placement.jl")
+
 include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 include("ferrite-addons/point.jl")
