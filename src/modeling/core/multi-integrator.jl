@@ -1,4 +1,4 @@
-struct NonlinearMultiDomainIntegrator2 <: AbstractNonlinearIntegrator
+struct NonlinearMultiDomainIntegrator2 <: FerriteOperators.AbstractCondensedNonlinearIntegrator
     subintegrators::Dict{<: String, <: AbstractNonlinearIntegrator}
 end
 

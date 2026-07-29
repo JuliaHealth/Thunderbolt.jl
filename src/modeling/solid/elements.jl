@@ -16,6 +16,43 @@ struct QuasiStaticElementCache{M, CCache, CMCache, CV} <: AbstractVolumetricElem
     cv::CV
 end
 
+"""
+    get_number_of_internal_dofs_per_element(integrator, element_cache, sdh)
+
+Number of condensed unknowns each cell of `sdh` carries, as an iterable of `length(sdh.cellset)`.
+Used by `FerriteOperators` to lay out the [`InternalVariableHandler`](@ref). Dispatches on the
+element cache, since that is what determines how many condensed unknowns a cell carries.
+"""
+function FerriteOperators.get_number_of_internal_dofs_per_element(
+    integrator,
+    element_cache::QuasiStaticElementCache,
+    sdh::SubDofHandler,
+)
+    nqp          = getnquadpoints(element_cache.cv)
+    ndofs_per_qp = internal_variable_size(element_cache.constitutive_model, nothing, nothing)
+    return Iterators.repeated(ndofs_per_qp*nqp, length(sdh.cellset))
+end
+
+# The condensed unknowns of a cell are appended after its finite element dofs, so the element
+# unknown vector is laid out as `[fe_dofs | internal_variables]`. Sizes are computed from the cache
+# rather than stored, which keeps `QuasiStaticElementCache` unchanged.
+_qs_nbase(e::QuasiStaticElementCache) = getnbasefunctions(e.cv)
+_qs_ninternal(e::QuasiStaticElementCache) =
+    internal_variable_size(e.constitutive_model, nothing, nothing)*getnquadpoints(e.cv)
+
+FerriteOperators.allocate_element_unknown_vector(e::QuasiStaticElementCache, _) =
+    zeros(_qs_nbase(e) + _qs_ninternal(e))
+
+function FerriteOperators.load_element_unknowns!(uₑ, u, cell, ivh, e::QuasiStaticElementCache)
+    n, ni = _qs_nbase(e), _qs_ninternal(e)
+    @views uₑ[1:n] .= u[celldofs(cell)]
+    if ni > 0
+        o = internal_variable_offset(ivh, cellid(cell))
+        @views uₑ[(n+1):(n+ni)] .= u[(o+1):(o+ni)]
+    end
+    return nothing
+end
+
 # TODO how to control dispatch on required input for the material routin?
 # TODO finer granularity on the dispatch here. depending on the evolution law of the internal variable this routine looks slightly different.
 function assemble_element!(
@@ -28,6 +65,7 @@ function assemble_element!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
+    dₑ = @view uₑ[1:ndofs]
 
     reinit!(cv, geometry_cache)
 
@@ -35,7 +73,7 @@ function assemble_element!(
         dΩ = getdetJdV(cv, qp)
 
         # Compute deformation gradient F
-        ∇u = function_gradient(cv, qp, uₑ)
+        ∇u = function_gradient(cv, qp, dₑ)
         F = one(∇u) + ∇u
 
         # Compute stress and tangent
@@ -75,6 +113,7 @@ function assemble_element!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
+    dₑ = @view uₑ[1:ndofs]
 
     reinit!(cv, geometry_cache)
 
@@ -82,7 +121,7 @@ function assemble_element!(
         dΩ = getdetJdV(cv, qp)
 
         # Compute deformation gradient F
-        ∇u = function_gradient(cv, qp, uₑ)
+        ∇u = function_gradient(cv, qp, dₑ)
         F = one(∇u) + ∇u
 
         # Compute "tangent only"
@@ -122,6 +161,7 @@ function assemble_element!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
+    dₑ = @view uₑ[1:ndofs]
 
     reinit!(cv, geometry_cache)
 
@@ -129,7 +169,7 @@ function assemble_element!(
         dΩ = getdetJdV(cv, qp)
 
         # Compute deformation gradient F
-        ∇u = function_gradient(cv, qp, uₑ)
+        ∇u = function_gradient(cv, qp, dₑ)
         F = one(∇u) + ∇u
 
         # Compute stress only

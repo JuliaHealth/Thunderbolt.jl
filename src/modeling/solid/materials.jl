@@ -793,9 +793,13 @@ function _query_local_state(
     geometry_cache,
     qp,
 )
-    size                                 = internal_variable_size(state_cache.model, cellid(geometry_cache), qp)
-    range_begin                          = 1+(qp.i-1)*size
-    range_end                            = qp.i*size
+    size = internal_variable_size(state_cache.model, cellid(geometry_cache), qp)
+    # `internal_variable_offset` is the absolute 0-based start of this cell's condensed block, so the
+    # quadrature point index has to be taken relative to it. Without the cell offset every cell would
+    # read and write the first cell's slots.
+    cell_offset                          = internal_variable_offset(state_cache.lvh, cellid(geometry_cache))
+    range_begin                          = cell_offset+1+(qp.i-1)*size
+    range_end                            = cell_offset+qp.i*size
     Qv                                   = @view state_cache.Q[range_begin:range_end]
     Qpv                                  = @view state_cache.Qprev[range_begin:range_end]
     @inbounds @.. state_cache.localQ     = Qv
@@ -810,8 +814,9 @@ function _store_local_state!(
     qp,
 )
     size = internal_variable_size(state_cache.model, cellid(geometry_cache), qp)
-    range_begin = 1+(qp.i-1)*size
-    range_end = qp.i*size
+    cell_offset = internal_variable_offset(state_cache.lvh, cellid(geometry_cache))
+    range_begin = cell_offset+1+(qp.i-1)*size
+    range_end = cell_offset+qp.i*size
     Qv = @view state_cache.Q[range_begin:range_end]
     @inbounds @.. Qv = state_cache.localQ
 

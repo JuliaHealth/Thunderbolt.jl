@@ -504,8 +504,8 @@ function semidiscretize(
     # partition once here, where the layout is actually known, and let the split function derive its
     # indices from it instead of re-deriving them.
     partition = SolutionPartition([
-        SolutionBlock(:heat, heat_dofrange, DofPlacement(φsym)),
-        SolutionBlock(:ionic, ionic_dofrange, DofPlacement(φsym)),
+        SolutionBlock(:heat, heat_dofrange, DofPlacement(φsym), 1),
+        SolutionBlock(:ionic, ionic_dofrange, DofPlacement(φsym), 1),
     ])
 
     semidiscrete_ode = GenericSplitFunction(
@@ -515,6 +515,22 @@ function semidiscretize(
     )
 
     return semidiscrete_ode
+end
+
+"""
+    _setup_internal_variable_handler(integrator, dh)
+
+Build the [`InternalVariableHandler`](@ref) for `integrator` using `FerriteOperators`, rather than
+laying the condensed unknowns out by hand.
+
+`FerriteOperators` normally does this inside `setup_subdomain_caches`, i.e. at operator setup - but
+`solution_size` has to be known already at `semidiscretize` time in order to size the initial
+solution vector, so it is built eagerly here. The element caches are constructed once more later
+during operator setup; that is setup-only cost.
+"""
+function _setup_internal_variable_handler(integrator, dh)
+    element_caches = [setup_element_cache(integrator, sdh) for sdh in dh.subdofhandlers]
+    return FerriteOperators.setup_internal_variable_handler(integrator, element_caches, dh)
 end
 
 # Solid mechanics semidiscretize interface
@@ -527,24 +543,20 @@ function semidiscretize(
     qrc = _get_quadrature_from_discretization(discretization, sym)
     fqrc = _get_facet_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
-    lvh = InternalVariableHandler(mesh)
     name = single_subdomain_or_error(get_grid(dh))
     add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
-    add_subdomain!(lvh, name, gather_internal_variable_infos(model), qrc, dh)
     close!(dh)
-    close!(lvh)
+
+    integrator =
+        NonlinearIntegrator(model, model.facet_models, get_field_variable_names(model), qrc, fqrc)
+    lvh = _setup_internal_variable_handler(integrator, dh)
 
     ch = ConstraintHandler(dh)
     _add_dirichlet_conditions!(ch, discretization.dbcs)
     close!(ch)
 
-    semidiscrete_problem = QuasiStaticFunction(
-        dh,
-        ch,
-        lvh,
-        NonlinearIntegrator(model, model.facet_models, get_field_variable_names(model), qrc, fqrc),
-        discretization.assembly_strategy,
-    )
+    semidiscrete_problem =
+        QuasiStaticFunction(dh, ch, lvh, integrator, discretization.assembly_strategy)
 
     return semidiscrete_problem
 end
@@ -557,7 +569,6 @@ function semidiscretize(
     _check_model_subdomains_disjoint(mesh, collect(keys(models)))
 
     dh = DofHandler(mesh)
-    lvh = InternalVariableHandler(mesh)
     integrators = Dict{String, NonlinearIntegrator}()
     for (name, model) in models
         add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
@@ -566,7 +577,6 @@ function semidiscretize(
         @assert length(form_names) == 1
         form_name = first(form_names)
         qrc = _get_quadrature_from_discretization(discretization, form_name) # FIXME we want a more intrusive approach which also takes the model into account here
-        add_subdomain!(lvh, name, gather_internal_variable_infos(model), qrc, dh)
 
         fqrc = _get_facet_quadrature_from_discretization(discretization, form_name)
 
@@ -579,7 +589,8 @@ function semidiscretize(
         )
     end
     close!(dh)
-    close!(lvh)
+
+    lvh = _setup_internal_variable_handler(NonlinearMultiDomainIntegrator2(integrators), dh)
 
     ch = ConstraintHandler(dh)
     _add_dirichlet_conditions!(ch, discretization.dbcs)

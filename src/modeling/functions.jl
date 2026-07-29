@@ -29,21 +29,33 @@ solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))
 num_blocks(f::AbstractSemidiscreteBlockedFunction) = length(blocksizes(f))
 
 """
-    SolutionBlock(name, indices, placement)
+    SolutionBlock(name, indices, placement, time_order)
 
 One block of a semidiscrete solution vector: the field or auxiliary state `name`, occupying
 `indices` of the solution vector, laid out according to `placement`.
 
 `placement` is a [`DofPlacement`](@ref) for ordinary field variables and for auxiliary state living
 on dofs, and a [`QuadraturePointPlacement`](@ref) for auxiliary state living at quadrature points.
+
+`time_order` is the highest order of time derivative of this block appearing in the semidiscrete
+problem: `0` for a purely algebraic block (a quasi-static displacement, an elliptic potential), `1`
+for a first order block, `2` for a second order one. It is stated per block rather than per problem
+because problems are routinely mixed - see [`SolutionPartition`](@ref).
 """
 struct SolutionBlock{I <: AbstractVector{Int}, P <: AbstractStatePlacement}
     name::Symbol
     indices::I
     placement::P
+    time_order::Int
 end
 
 solution_size(b::SolutionBlock) = length(b.indices)
+
+"This block is algebraic, i.e. no time derivative of it appears in the problem."
+is_algebraic(b::SolutionBlock) = b.time_order == 0
+
+"This block is differential, i.e. some time derivative of it appears in the problem."
+is_differential(b::SolutionBlock) = b.time_order > 0
 
 """
     SolutionPartition(blocks)
@@ -70,6 +82,42 @@ end
 solution_blocks(p::SolutionPartition) = p.blocks
 num_blocks(p::SolutionPartition) = length(p.blocks)
 solution_size(p::SolutionPartition) = sum(solution_size, p.blocks; init = 0)
+
+"""
+    max_time_order(partition)
+
+Highest order of time derivative appearing anywhere in the problem: `0` for a steady problem, `1`
+for first order, `2` for second order.
+"""
+max_time_order(p::SolutionPartition) = maximum(b.time_order for b in p.blocks; init = 0)
+
+"""
+    has_algebraic_blocks(partition)
+
+Whether some blocks carry a time derivative and others do not - equivalently, whether the mass
+matrix of the semidiscrete system is singular.
+
+Derived from the per-block `time_order` rather than declared, so mixed problems classify themselves.
+Quasi-static mechanics with internal variables is the canonical example: the displacement block is
+algebraic (the weak form contains no `u̇`) while the internal variables evolve. A bidomain
+formulation is another, with a parabolic transmembrane potential alongside an elliptic extracellular
+potential.
+
+!!! warning "This does not by itself say the problem is a DAE"
+    The block structure gives only half the classification. Which kind of problem this is
+    additionally depends on whether the internal variable model consumes *rates*:
+
+    | internal variable model | resulting system |
+    | :---------------------- | :--------------- |
+    | `dₜQ = L(F, Q)` - strains only | ODE in mass matrix form, `M ẏ = f(y,t)` with singular `M` (formally a DAE) |
+    | `dₜQ = L(F, dₜF, Q)` - rate dependent | true DAE: `f` depends on `ẏ`, so the system is not in mass matrix form |
+    | fractional `dₜQ` | fractional ODE or fractional DAE, again depending on strain rate dependence |
+
+    Distinguishing these needs a rate-dependence trait on the internal variable model, which does
+    not exist yet. Until it does, do not infer "DAE" from this predicate alone.
+"""
+has_algebraic_blocks(p::SolutionPartition) =
+    any(is_algebraic, p.blocks) && any(is_differential, p.blocks)
 
 """
     block_indices(partition) -> Tuple
@@ -191,11 +239,15 @@ The solution vector is laid out as `[fe_dofs | internal_variables]`.
 function solution_partition(f::QuasiStaticFunction)
     nfe = ndofs(f.dh)
     niv = ndofs(f.lvh)
-    fe_block = SolutionBlock(:fe_dofs, 1:nfe, DofPlacement(Tuple(f.dh.field_names)))
+    # The quasi-static weak form contains no time derivative of the displacement, so the finite
+    # element block is algebraic; the internal variables evolve, so the mass matrix is singular.
+    # Whether that makes this a mass-matrix ODE or a true DAE depends on whether the internal
+    # variable model is rate dependent - see `has_algebraic_blocks`.
+    fe_block = SolutionBlock(:fe_dofs, 1:nfe, DofPlacement(Tuple(f.dh.field_names)), 0)
     niv == 0 && return SolutionPartition([fe_block])
     return SolutionPartition([
         fe_block,
-        SolutionBlock(:internal_variables, (nfe+1):(nfe+niv), QuadraturePointPlacement()),
+        SolutionBlock(:internal_variables, (nfe+1):(nfe+niv), QuadraturePointPlacement(), 1),
     ])
 end
 
@@ -205,32 +257,22 @@ internal_variable_size(f::QuasiStaticFunction, cid, qp) =
 function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     fill!(u, 0.0)
     ndofs(f.lvh) == 0 && return # no internal variable
-    uq = @view u[(ndofs(f.dh)+1):end]
     for sdh in f.dh.subdofhandlers
-        default_initial_condition_quasistatic_subdomain!(u, uq, f, f.integrator, sdh)
+        default_initial_condition_quasistatic_subdomain!(u, f, f.integrator, sdh)
     end
 end
 
 function default_initial_condition_quasistatic_subdomain!(
     u,
-    uq,
     f::QuasiStaticFunction,
     integrator::NonlinearIntegrator,
     sdh,
 )
-    default_initial_condition_quasistatic_subdomain!(
-        u,
-        uq,
-        f,
-        integrator,
-        integrator.volume_model,
-        sdh,
-    )
+    default_initial_condition_quasistatic_subdomain!(u, f, integrator, integrator.volume_model, sdh)
 end
 
 function default_initial_condition_quasistatic_subdomain!(
     u,
-    uq,
     f::QuasiStaticFunction,
     integrator::NonlinearIntegrator,
     volume_model::QuasiStaticModel,
@@ -246,7 +288,10 @@ function default_initial_condition_quasistatic_subdomain!(
         for qp in QuadratureIterator(qr)
             ivsize_per_qp = internal_variable_size(material_model, cid, qp)
             ivsize_per_qp == 0 && continue
-            q = @view uq[offset:(offset+ivsize_per_qp-1)]
+            # `internal_variable_offset` is an absolute 0-based offset into the solution vector
+            # (the FerriteOperators convention), so index `u` directly rather than a view of the
+            # internal variable block.
+            q = @view u[(offset+1):(offset+ivsize_per_qp)]
             default_initial_state!(q, material_model)
             offset += ivsize_per_qp
         end
@@ -255,7 +300,6 @@ end
 
 function default_initial_condition_quasistatic_subdomain!(
     u,
-    uq,
     f::QuasiStaticFunction,
     integrator::NonlinearMultiDomainIntegrator2,
     sdh,
@@ -267,7 +311,7 @@ function default_initial_condition_quasistatic_subdomain!(
         first(sdh.cellset) ∈ getcellset(sdh.dh.grid, name) || continue
         @debug "Setting default initial condition for subdomain $name"
         subintegrator = integrator.subintegrators[name]
-        default_initial_condition_quasistatic_subdomain!(u, uq, f, subintegrator, sdh)
+        default_initial_condition_quasistatic_subdomain!(u, f, subintegrator, sdh)
     end
 end
 

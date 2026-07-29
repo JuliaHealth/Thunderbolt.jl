@@ -628,3 +628,45 @@ end
     @test integrator.u[3*8+1] ≈ 0.05 atol=1e-5
     @test integrator.u[(3*8+2):end] ≈ zeros(5) atol=1e-5
 end
+
+@testset "Internal variables are stored per cell" begin
+    # Regression test: `_query_local_state`/`_store_local_state!` used to index the *global*
+    # internal variable block by quadrature point alone, without a per-cell offset, so every cell
+    # read and wrote the first cell's slots. On a single cell mesh that is indistinguishable from
+    # correct behaviour, which is why the smoke tests above never caught it.
+    mesh = generate_mesh(Hexahedron, (2, 1, 1))
+    material = Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> (0.1, 0.0, 0.0), [1, 2, 3]),
+    ]
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(:d, material, ()),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 0.3))
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+            newton = NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 10,
+                tol = 1e-8,
+            ),
+        ),
+    )
+    integrator = init(problem, timestepper, dt = 0.1, verbose = false)
+    solve!(integrator)
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    nfe = ndofs(quasistaticform.dh)
+    niv = ndofs(quasistaticform.lvh)
+    ncells = getncells(mesh)
+    blocksize = niv ÷ ncells
+    @test niv == ncells * blocksize
+    cell_block(c) = integrator.u[(nfe+(c-1)*blocksize+1):(nfe+c*blocksize)]
+    # The first cell is written correctly even with the bug present, since the missing offset is
+    # zero for it. The defect is that every *later* cell is left untouched.
+    @test !iszero(cell_block(1))
+    @test all(c -> !iszero(cell_block(c)), 2:ncells)
+end

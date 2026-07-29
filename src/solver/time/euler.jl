@@ -304,8 +304,10 @@ end
     local_solver_cache = _setup_local_solver_cache(solver.local_solver, integrator)
 
     # Extract condensable parts
-    Q     = @view wrapper.u[(ndofs(dh)+1):end]
-    Qprev = @view wrapper.uprev[(ndofs(dh)+1):end]
+    # Pass the *whole* solution vector, not just the condensed tail: the internal variable handler
+    # stores absolute offsets, so the material routine can locate each cell's block directly.
+    Q     = wrapper.u
+    Qprev = wrapper.uprev
     # Connect nonlinear problem and timestepper
     op = setup_operator(
         SequentialAssemblyStrategy(SequentialCPUDevice()), # FIXME f.assembly_strategy,

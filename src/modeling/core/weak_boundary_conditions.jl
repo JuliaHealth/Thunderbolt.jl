@@ -117,7 +117,7 @@ function assemble_facet!(
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
-        u_q = function_value(fv, qp, uₑ)
+        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)
 
         # Add contribution to the residual from this test function
@@ -151,7 +151,7 @@ function assemble_facet!(
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
-        u_q = function_value(fv, qp, uₑ)
+        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)
 
         # Add contribution to the residual from this test function
@@ -184,7 +184,7 @@ function assemble_facet!(
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
-        u_q = function_value(fv, qp, uₑ)
+        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         ∂Ψ∂u = Tensors.gradient(u -> α*u⋅u, u_q)
 
         # Add contribution to the residual from this test function
@@ -216,7 +216,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        u_q = function_value(fv, qp, uₑ)
+        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
 
         # Add contribution to the residual from this test function
@@ -251,7 +251,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        u_q = function_value(fv, qp, uₑ)
+        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
 
         # Add contribution to the residual from this test function
@@ -285,7 +285,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        u_q = function_value(fv, qp, uₑ)
+        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         ∂Ψ∂u = Tensors.gradient(u -> 0.5*kₛ*(u⋅N)^2, u_q)
 
         # Add contribution to the residual from this test function
@@ -317,7 +317,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        ∇u = function_gradient(fv, qp, uₑ)
+        ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         F = one(∇u) + ∇u
 
         ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
@@ -359,7 +359,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        ∇u = function_gradient(fv, qp, uₑ)
+        ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         F = one(∇u) + ∇u
 
         ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
@@ -400,7 +400,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        ∇u = function_gradient(fv, qp, uₑ)
+        ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
         F = one(∇u) + ∇u
 
         ∂Ψ∂F =
@@ -429,7 +429,7 @@ function assemble_facet_pressure_qp!(
     dΓ = getdetJdV(fv, qp)
     n₀ = getnormal(fv, qp)
 
-    ∇u = function_gradient(fv, qp, uₑ)
+    ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
     F = one(∇u) + ∇u
 
     invF = inv(F)
@@ -462,7 +462,7 @@ function assemble_facet_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector,
     dΓ = getdetJdV(fv, qp)
     n₀ = getnormal(fv, qp)
 
-    ∇u = function_gradient(fv, qp, uₑ)
+    ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
     F = one(∇u) + ∇u
 
     invF = inv(F)
@@ -498,7 +498,7 @@ function assemble_facet_pressure_qp!(
     dΓ = getdetJdV(fv, qp)
     n₀ = getnormal(fv, qp)
 
-    ∇u = function_gradient(fv, qp, uₑ)
+    ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
     F = one(∇u) + ∇u
 
     invF = inv(F)
