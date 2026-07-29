@@ -24,8 +24,6 @@ struct LumpedFluidSolidCoupler{CVM} <: AbstractCoupler
     displacement_symbol::Union{Symbol, ModelingToolkit.Num}
 end
 
-is_bidrectional(::LumpedFluidSolidCoupler) = true
-
 """
     Debug helper for FSI. Just keeps the chamber volume constant.
 """
@@ -179,51 +177,3 @@ function FerriteOperators.assemble_facet!(
         # Kₑ[pdof, pdof] += 0
     end
 end
-
-# struct Volume0DResidualIntegrator <: AbstractNonlinearIntegrator
-#     pressure_symbol::Symbol
-#     chamber_index::Int
-#     V⁰ᴰs::AbstractVector{Float64}
-# end
-
-# @concrete struct Volume0DResidualCache <: AbstractVolumetricElementCache
-#     pressure_dof_index
-#     chamber_index
-#     V⁰ᴰs
-# end
-
-# function FerriteOperators.setup_element_cache(model::Volume0DResidualIntegrator, sdh)
-#     pressure_dof_range = dof_range(sdh, model.pressure_symbol)
-#     @assert length(pressure_dof_range) == 1 "Pressure ,,$(pressure_symbol)'' is associated with more than one dof ($(length(pressure_dof_range)))"
-
-#     return Volume0DResidualCache(first(pressure_dof_range), model.chamber_index, model.V⁰ᴰs)
-# end
-
-# function FerriteOperators.assemble_element!(
-#     Kₑ::AbstractMatrix,
-#     residualₑ::AbstractVector,
-#     uₑ::AbstractVector,
-#     geometry_cache::CellCache,
-#     element::Volume0DResidualCache,
-#     t,
-# )
-#     residualₑ[element.pressure_dof_index] -= element.V⁰ᴰs[element.chamber_index]
-# end
-
-# function FerriteOperators.assemble_element!(
-#     Kₑ::AbstractMatrix,
-#     uₑ::AbstractVector,
-#     geometry_cache::CellCache,
-#     element::Volume0DResidualCache,
-#     t,
-# ) end
-
-# function FerriteOperators.assemble_element!(
-#     residualₑ::AbstractVector,
-#     uₑ::AbstractVector,
-#     geometry_cache::CellCache,
-#     element::Volume0DResidualCache,
-#     t,
-# )
-#     residualₑ[element.pressure_dof_index] -= element.V⁰ᴰs[element.chamber_index]
-# end

@@ -99,16 +99,6 @@ function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinea
     return setup_operator(get_strategy(f), f.integrator, f.dh)
 end
 
-# # TODO correct dispatches
-# function setup_coupling_operator(first_problem::SciMLBase.AbstractDEProblem, second_problem::SciMLBase.AbstractDEProblem, relevant_couplings, solver::AbstractNonlinearSolver)
-#     NullOperator{Float64,solution_size(second_problem),solution_size(first_problem)}()
-# end
-
-# # Block-Diagonal entry
-# setup_operator(coupled_problem::CoupledProblem, i::Int, solver) = setup_operator(coupled_problem.base_problems[i], coupled_problem.couplings, solver)
-# # Offdiagonal entry
-# setup_coupling_operator(coupled_problem::CoupledProblem, i::Int, j::Int, solver) = setup_coupling_operator(coupled_problem.base_problems[i], coupled_problem.base_problems[j], coupled_problem.couplings, solver)
-
 function update_constraints!(
     f::AbstractSemidiscreteFunction,
     solver_cache::AbstractTimeSolverCache,

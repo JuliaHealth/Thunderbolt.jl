@@ -282,9 +282,6 @@ export
     compute_midmyocardial_section_coordinate_system,
     getcoordinateinterpolation,
     vtk_coordinate_system,
-    # Coupling
-    Coupling,
-    CoupledModel,
     # Discretization
     semidiscretize,
     FiniteElementDiscretization,

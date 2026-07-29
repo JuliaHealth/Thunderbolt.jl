@@ -3,51 +3,6 @@ struct InternalVariableInfo
     size::Int
 end
 
-# struct SubInternalVariableHandler
-#     names::Vector{Symbol} # Contains symbols for all variables in the handler
-#     local_ranges::Vector{UnitRange{Int}} # Step at given point
-#     subdomain_ranges::Vector{StepRange{Int,Int}} # Full range of indices per subdomain per element
-# end
-
-# function add!(slvh::SubInternalVariableHandler, info::InternalVariableInfo, qr::QuadratureRule, nel::Int)
-#     @assert info.name ∉ slvh.names "Trying to register local variable $(info.name) twice. Registered variables: $(slvh.names)."
-
-#     push(slvh.names, info.name)
-#     nqp = length(qr.points)
-#     local_range = if length(slvh.subdomain_ranges) > 0
-#         o = last(last(slvh.subdomain_ranges))
-#         (o+1):(o+1+info.size)
-#     else
-#         1:info.size
-#     end
-#     push!(slvh.local_ranges, local_range)
-
-#     local_range = if length(slvh.subdomain_ranges) > 0
-#         o = last(last(slvh.subdomain_ranges))
-#         (o+1):(o+1+info.size)
-#     else
-#         1:info.size
-#     end
-# end
-
-# """
-#     InternalVariableHandler(...)
-
-# Handler for variables without associated field. Also called "internal variable".
-# """
-# struct InternalVariableHandler{M} #<: AbstractDofHandler
-#     mesh::M
-#     sublvhandlers::Vector{SubInternalVariableHandler} # Must mirror corresponding SubDofHandler index structure
-# end
-
-# SubInternalVariableHandler() = SubInternalVariableHandler(Symbol[], Vector{Vector{Int}}(), Vector{StepRange{Int,Int}}(), Vector{Vector{Int}}())
-# InternalVariableHandler(mesh) = InternalVariableHandler(mesh, SubInternalVariableHandler[])
-# ndofs(lvh::InternalVariableHandler) = length(lvh.subdomain_ranges) > 0 ? last(last(lvh.subdomain_ranges)) : 0
-
-# function local_dofrange(elementid::Int, sym::Symbol, qp::QuadraturePoint)
-#     # Well...
-# end
-
 InternalVariableHandler(mesh::SimpleMesh) = InternalVariableHandler(zeros(Int, getncells(mesh)), 0)
 
 _add_ivh_subdomain_recursive!(lvh, sdh, ::Nothing, qr) = nothing

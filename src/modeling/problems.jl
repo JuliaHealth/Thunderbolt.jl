@@ -102,32 +102,6 @@ function SciMLBase.build_solution(
     #     stats)
 end
 
-# abstract type AbstractCoupledProblem <: AbstractSemidiscreteProblem end
-
-# """
-#     CoupledProblem{MT, CT}
-
-# Generic description of a coupled problem.
-# """
-# struct CoupledProblem{MT <: Tuple, CT <: Tuple} <: AbstractCoupledProblem
-#     base_problems::MT
-#     couplings::CT
-# end
-
-# base_problems(problem::CoupledProblem) = problem.base_problems
-
-# solution_size(problem::AbstractCoupledProblem) = sum([solution_size(p) for p ∈ base_problems(problem)])
-
-# function get_coupler(problem::CoupledProblem, i::Int, j::Int)
-#     for coupling in problem.couplers
-#         @unpack coupler = coupling
-#         is_correct_coupler(coupling.coupler, i, j) && return
-#     end
-#     return NullCoupler()
-# end
-
-# relevant_couplings(problem::CoupledProblem, i::Int) = [coupling for coupling in problem.couplings if is_relevant_coupling(coupling)]
-
 struct QuasiStaticProblem{fType <: AbstractQuasiStaticFunction, uType, tType, pType} <:
        AbstractSemidiscreteProblem
     f::fType

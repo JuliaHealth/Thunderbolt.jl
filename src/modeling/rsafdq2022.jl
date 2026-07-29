@@ -125,7 +125,7 @@ end
 """
 Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
-struct RSAFDQ2022Split{MODEL <: Union{CoupledModel, RSAFDQ2022Model}}
+struct RSAFDQ2022Split{MODEL <: RSAFDQ2022Model}
     model::MODEL
 end
 
@@ -237,18 +237,6 @@ function semidiscretize(
     )
 
     return splitfun
-end
-
-
-function semidiscretize(
-    split::RSAFDQ2022Split{<:CoupledModel},
-    discretization::FiniteElementDiscretization,
-    grid::AbstractGrid,
-)
-    ets = elementtypes(grid)
-    @assert length(ets) == 1 "Multiple element types not supported"
-    @assert length(split.model.base_models) == 2 "I can only handle pure mechanics coupled to pure circuit."
-    error("Implementation for RSAFDQ2022Split{<:CoupledModel} currently broken. 💔")
 end
 
 #################################################################################

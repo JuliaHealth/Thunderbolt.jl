@@ -167,9 +167,6 @@ function _check_model_subdomains_disjoint(mesh, names)
     return nothing
 end
 
-semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) =
-    @error "No implementation for the generic discretization of coupled problems available yet."
-
 function semidiscretize(
     model::TransientDiffusionModel,
     discretization::FiniteElementDiscretization,
