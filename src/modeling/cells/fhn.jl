@@ -42,8 +42,6 @@ end
     cell_parameters::ParametrizedFHNModel,
 ) where {TD <: SubArray, TV, TS, TX, TT}
     @unpack a = cell_parameters
-    φₘ = u[1]
-    s = u[2]
     dφₘ .= φₘ*(1-φₘ)*(φₘ-a) - s
     return nothing
 end
@@ -57,8 +55,6 @@ end
     cell_parameters::ParametrizedFHNModel,
 ) where {TD <: SubArray, TV, TS, TX, TT}
     @unpack b, c, d, e = cell_parameters
-    φₘ = u[1]
-    s = u[2]
     ds .= e*(b*φₘ - c*s - d)
     return nothing
 end

@@ -27,6 +27,7 @@ function OS._build_child(
     adaptive,
     verbose,
     save_end = false,
+    save_everystep = false,
     controller = nothing,
     internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
 ) where {S, T, P, F}

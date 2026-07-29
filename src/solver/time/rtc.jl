@@ -106,10 +106,10 @@ end
     alg::ReactionTangentController,
     q,
 )
-    if integrator.dt ≤ Δt_bounds[1] # Check for "≤" to also handle the boundary cases
+    if integrator.dt ≤ alg.Δt_bounds[1] # Check for "≤" to also handle the boundary cases
         error("RTC cannot recover from step rejection below Δt min") # Force failure
     else
-        integrator.dt = Δt_bounds[1]
+        integrator.dt = alg.Δt_bounds[1]
     end
     return nothing # Do nothing
 end

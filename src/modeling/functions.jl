@@ -190,4 +190,15 @@ gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableI
 
 __get_material_model(model::AbstractMaterialModel, cid, qp) = model
 get_material_model(f::QuasiStaticFunction, cid, qp) =
-    __get_material_model(f.integrator.volume_model.material_model, cid, qp)
+    __get_material_model(_volume_model_for_cell(f, f.integrator, cid).material_model, cid, qp)
+
+_volume_model_for_cell(f, integrator::NonlinearIntegrator, cid) = integrator.volume_model
+function _volume_model_for_cell(f, integrator::NonlinearMultiDomainIntegrator2, cid)
+    grid = get_grid(f.dh)
+    for (name, subintegrator) in integrator.subintegrators
+        cid ∈ getcellset(grid, name) && return subintegrator.volume_model
+    end
+    error(
+        "Cell $cid is not covered by any subdomain of the integrator. Available subdomains: $(collect(keys(integrator.subintegrators))).",
+    )
+end

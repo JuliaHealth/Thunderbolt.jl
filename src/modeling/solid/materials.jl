@@ -94,7 +94,9 @@ function reduced_material_routine(
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
     Q            = solve_local_constraint_state_only(F, coefficients, material_model, state_cache, geometry_cache, qp, time)
     P            = stress_function(material_model, F, coefficients, Q)
-    return P, ∂P∂F + ∂P∂QdQdF
+    # Residual-only variant: no tangent is requested here, matching the other
+    # `reduced_material_routine` methods and the single-value call site in solid/elements.jl.
+    return P
 end
 
 @doc raw"""

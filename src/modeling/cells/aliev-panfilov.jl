@@ -37,9 +37,7 @@ end
     t::TT,
     cell_parameters::ParametrizedAlievPanfilovModel,
 ) where {TD <: SubArray, TV, TS, TX, TT}
-    (; cₜ, k, a, ϵ₀, μ₁, μ₂) = cell_parameters
-    φₘ = u[2]
-    s = u[1]
+    (; cₜ, k, a) = cell_parameters
     dφₘ .= cₜ * (k*φₘ*(φₘ-a)*(1-φₘ) - φₘ*s)
     return nothing
 end
@@ -53,19 +51,7 @@ end
     cell_parameters::ParametrizedAlievPanfilovModel,
 ) where {TD <: SubArray, TV, TS, TX, TT}
     (; cₜ, k, a, ϵ₀, μ₁, μ₂) = cell_parameters
-    φₘ = u[2]
-    s = u[1]
     ε = ϵ₀ + s * μ₁ / (φₘ + μ₂)
     ds .= cₜ * ε * (-s - k*φₘ*(φₘ-a-1))
     return nothing
-end
-
-
-function f(du, u, p, t)
-    (; cₜ, k, a, ϵ₀, μ₁, μ₂) = p
-    φₘ = u[2]
-    s = u[1]
-    ε = ϵ₀ + s * μ₁ / (φₘ + μ₂)
-    du[2] = cₜ * (k*φₘ*(φₘ-a)*(1-φₘ) - φₘ*s)
-    du[1] = cₜ * ε * (-s - k*φₘ*(φₘ-a-1))
 end

@@ -131,6 +131,35 @@ end
 
 #################################################################################
 
+"""
+    _check_rsafdq_internal_variables(structural_problem)
+
+The 3D-0D coupling does not support materials carrying internal variables yet. Two independent
+reasons, both of which need the redesign to resolve properly:
+
+ 1. The 3D block's *solution vector* is laid out `[u_dofs | internal_vars | pressures]`
+    (`blocksizes`, sized via `solution_size(::QuasiStaticFunction) = ndofs(dh) + ndofs(lvh)`),
+    while its *system matrix* is laid out `[u_dofs | pressures]`
+    (`block_sizes = [ndofs(dh), num_chambers]` in `setup_operator`). The tying assembly in
+    `_update_tying_subdomain_Jr` builds a single `dofs` array and uses it to index both, so the two
+    layouts must coincide - which they only do when there are no internal variables.
+ 2. `RSAFDQ2022Split` is solved through `HomotopyPathSolver`, which never routes through
+    `BackwardEulerStageAnnotation`. Internal variables would therefore never be advanced in time
+    even if the indexing were corrected, which is a worse failure mode than an error.
+
+Fixing this properly requires distinguishing the solution-vector layout from the system layout,
+which is what the planned solution-partition concept is for.
+"""
+function _check_rsafdq_internal_variables(structural_problem)
+    niv = ndofs(structural_problem.lvh)
+    niv == 0 || error(
+        "The RSAFDQ2022 3D-0D coupling does not support materials with internal variables yet " *
+        "(got $niv internal variable dofs). See `_check_rsafdq_internal_variables` for why. " *
+        "Use a material without internal variables, e.g. a plain `PK1Model`.",
+    )
+    return nothing
+end
+
 function create_chamber_tyings(
     coupler::LumpedFluidSolidCoupler{CVM},
     structural_problem,
@@ -179,6 +208,7 @@ function semidiscretize(
 
     # Discretize individual problems
     structural_problem = semidiscretize(model.structural_model, discretization, mesh)
+    _check_rsafdq_internal_variables(structural_problem)
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
     # ODE problem for blood circuit
