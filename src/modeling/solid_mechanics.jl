@@ -13,9 +13,9 @@ end
 QuasiStaticModel(displacement_symbol, material_model) =
     QuasiStaticModel(displacement_symbol, material_model, ())
 
-get_field_variable_names(model::QuasiStaticModel) = [model.displacement_symbol]
+get_field_variable_names(model::QuasiStaticModel) = (model.displacement_symbol,)
 
-get_volumetric_weak_form_names(model::QuasiStaticModel) = [model.displacement_symbol]
+get_volumetric_weak_form_names(model::QuasiStaticModel) = (model.displacement_symbol,)
 
 """
     structural_displacement_symbol(model)

@@ -127,6 +127,36 @@ struct FitzHughNagumoModel <: HodgkinHuxleyTypeModel end;
 
 abstract type AbstractEPModel end;
 
+"""
+    has_pointwise_reaction_part(model) -> Bool
+
+Capability trait: does `model` contribute a pointwise reaction ODE that a reaction-diffusion split
+can peel off into its own subproblem?
+
+This is a trait rather than an `isa AbstractEPModel` check so that models outside Thunderbolt's own
+type hierarchy - including types owned by other packages, which cannot be retrofitted with a
+supertype - can declare the capability. Models answering `true` must also implement
+[`reaction_model`](@ref) and [`reaction_solution_symbol`](@ref).
+"""
+has_pointwise_reaction_part(model) = false
+has_pointwise_reaction_part(::AbstractEPModel) = true
+
+"""
+    reaction_model(model)
+
+The pointwise ODE model driving the reaction part of `model`, for models with
+[`has_pointwise_reaction_part`](@ref).
+"""
+reaction_model(model::AbstractEPModel) = model.ion
+
+"""
+    reaction_solution_symbol(model)
+
+The field variable the reaction part of `model` acts on, for models with
+[`has_pointwise_reaction_part`](@ref).
+"""
+function reaction_solution_symbol end
+
 abstract type AbstractStimulationProtocol <: AbstractSourceTerm end;
 
 @doc raw"""
@@ -242,6 +272,8 @@ struct MonodomainModel{
 end
 
 get_field_variable_names(model::MonodomainModel) = (model.transmembrane_solution_symbol,)
+
+reaction_solution_symbol(model::MonodomainModel) = model.transmembrane_solution_symbol
 
 """
     ReactionDiffusionSplit(model)

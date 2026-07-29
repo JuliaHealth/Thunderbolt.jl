@@ -952,8 +952,8 @@ end
 
 function gather_internal_variable_infos(model::LinearMaxwellMaterial{T, sdim}) where {T, sdim}
     if sdim == 3
-        return InternalVariableInfo(:εᵛ, 6)
+        return (InternalVariableInfo(:εᵛ, 6),)
     else
-        return InternalVariableInfo(:εᵛ, 4)
+        return (InternalVariableInfo(:εᵛ, 4),)
     end
 end

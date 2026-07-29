@@ -6,12 +6,13 @@ Represents the integrand a the nonlinear form over some function space.
 struct NonlinearIntegrator{
     VM,
     FM,
+    SYMS <: Base.AbstractVecOrTuple{Symbol},
     QRC <: Union{<:QuadratureRuleCollection, Nothing},
     FQRC <: Union{<:FacetQuadratureRuleCollection, Nothing},
 } <: AbstractNonlinearIntegrator
     volume_model::VM
     facet_model::FM
-    syms::Vector{Symbol}  # The symbols for all unknowns in the submodels.
+    syms::SYMS  # The symbols for all unknowns in the submodels.
     qrc::QRC
     fqrc::FQRC
 end

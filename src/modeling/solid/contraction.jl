@@ -58,7 +58,7 @@ function default_initial_state!(Q::AbstractVector, model::AbstractSteadyStateSar
     return nothing
 end
 function gather_internal_variable_infos(model::AbstractSteadyStateSarcomereModel)
-    return nothing
+    return ()
 end
 function 𝓝(state, F, coefficients, mp::AbstractSteadyStateSarcomereModel)
     return state
@@ -520,7 +520,7 @@ function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_stretch)
 end
 
 function gather_internal_variable_infos(model::RDQ20MFModel)
-    return InternalVariableInfo(:s, 20)
+    return (InternalVariableInfo(:s, 20),)
 end
 
 function 𝓝(state, F, coefficients, model::RDQ20MFModel)

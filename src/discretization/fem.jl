@@ -441,22 +441,35 @@ function semidiscretize(
     # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
     inner_functions = PointwiseODEFunction[]
     offset = 0
+    # Only bulk models own a block of the solution vector; coupling models attach to fields that
+    # bulk models introduced and are handled entirely by the heat function.
+    bulk_models = filter(nm -> !is_coupling_model(last(nm)), epmodels)
+    for (name, model) in epmodels
+        if is_coupling_model(model) && has_pointwise_reaction_part(model)
+            error(
+                "Coupling model on \"$name\" ($(typeof(model))) carries a pointwise reaction part, " *
+                "which is not supported yet: a coupling model does not own a block of the solution " *
+                "vector, so its reaction state has nowhere to live.",
+            )
+        end
+    end
+
     epmodel_symbols = Set(
-        model.transmembrane_solution_symbol for
-        model in values(epmodels) if model isa AbstractEPModel
+        reaction_solution_symbol(model) for
+        model in values(bulk_models) if has_pointwise_reaction_part(model)
     )
     @assert length(epmodel_symbols) == 1 "All EP models in a domain split must share the same transmembrane potential symbol, got $(epmodel_symbols)."
     φsym = first(epmodel_symbols)
     xφ = (split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym))
     heat_dofrange = Int[]
-    for (name, model) in epmodels
-        if typeof(model) <: AbstractEPModel # Only handle the EP models
+    for (name, model) in bulk_models
+        if has_pointwise_reaction_part(model) # Bulk models without a reaction part need no ODE block
             # Extract dofs associated with subdomain
             subdofs = collect_dofs_on_subdomain(dh, mesh, name)
             # Compute range for states
             mindof, maxdof = extrema(subdofs)
             @assert length(mindof:maxdof) == length(subdofs) "$(mindof:maxdof) does not match length(subdofs)=$(length(subdofs)) => Subdomain is not isolated. "
-            nstates = num_states(model.ion)
+            nstates = num_states(reaction_model(model))
             # The state vector is packed subdomain by subdomain in iteration order, *not* by
             # global dof index, because the number of states per point varies between subdomains.
             # Hence the range is derived from the running offset, exactly as the heat dof map below.
@@ -467,7 +480,7 @@ function semidiscretize(
             push!(
                 inner_functions,
                 PointwiseODEFunction(
-                    model.ion,
+                    reaction_model(model),
                     xφ === nothing ? nothing : view(xφ, mindof:maxdof),
                     state_range,
                 ),
@@ -476,11 +489,11 @@ function semidiscretize(
             # Map heat dofs
             heat_dofs_submodel =
                 ((subdofs .- minimum(subdofs)) .* nstates) .+
-                transmembranepotential_index(model.ion) .+ offset
+                transmembranepotential_index(reaction_model(model)) .+ offset
             append!(heat_dofrange, heat_dofs_submodel)
 
             # Update total number of dofs in split
-            offset += length(subdofs)*num_states(model.ion)
+            offset += length(subdofs)*num_states(reaction_model(model))
         end
     end
     ionicfun = PointwiseMultiODEFunction(inner_functions, xφ)
@@ -520,7 +533,7 @@ function semidiscretize(
         dh,
         ch,
         lvh,
-        NonlinearIntegrator(model, model.facet_models, [sym], qrc, fqrc),
+        NonlinearIntegrator(model, model.facet_models, get_field_variable_names(model), qrc, fqrc),
         discretization.assembly_strategy,
     )
 

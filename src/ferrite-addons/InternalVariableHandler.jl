@@ -5,8 +5,6 @@ end
 
 InternalVariableHandler(mesh::SimpleMesh) = InternalVariableHandler(zeros(Int, getncells(mesh)), 0)
 
-_add_ivh_subdomain_recursive!(lvh, sdh, ::Nothing, qr) = nothing
-
 function _add_ivh_subdomain_recursive!(lvh, sdh, ivi::InternalVariableInfo, qr)
     _add_ivh_subdomain_recursive!(lvh, sdh, (ivi,), qr)
     return nothing

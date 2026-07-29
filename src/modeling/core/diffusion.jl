@@ -70,7 +70,7 @@ struct TransientDiffusionModel{ConductivityCoefficientType, SourceType <: Abstra
     solution_variable_symbol::Symbol
 end
 
-get_volumetric_weak_form_names(model::TransientDiffusionModel) = [model.solution_variable_symbol] # FIXME
+get_volumetric_weak_form_names(model::TransientDiffusionModel) = (model.solution_variable_symbol,)
 
 @doc raw"""
     BilinearDiffusionIntegrator{CoefficientType}
@@ -150,7 +150,9 @@ Model formulated as ``\int_{\Gamma^{\text{P}/\text{M}}} [\![ \delta u ]\!] G [\!
     interface_interpolation_symbol::Symbol
 end
 
-get_volumetric_weak_form_names(model::InterfaceDiffusionModel) = [model.solution_variable_symbol] # FIXME
+get_volumetric_weak_form_names(model::InterfaceDiffusionModel) = (model.solution_variable_symbol,)
+
+is_coupling_model(::InterfaceDiffusionModel) = true
 
 @doc raw"""
     SteadyDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
@@ -163,4 +165,4 @@ struct SteadyDiffusionModel{ConductivityCoefficientType, SourceType <: AbstractS
     solution_variable_symbol::Symbol
 end
 
-get_volumetric_weak_form_names(model::SteadyDiffusionModel) = [model.solution_variable_symbol] # FIXME
+get_volumetric_weak_form_names(model::SteadyDiffusionModel) = (model.solution_variable_symbol,)

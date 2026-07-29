@@ -184,9 +184,16 @@ function default_initial_condition_quasistatic_subdomain!(
     end
 end
 
+"""
+    gather_internal_variable_infos(model) -> Tuple{Vararg{InternalVariableInfo}}
+
+Describe the quadrature-point-local state a model carries. Return an **empty tuple** when the model
+has none. Implementations must always return a tuple, so that consumers never have to branch on the
+shape of the result.
+"""
 gather_internal_variable_infos(model::QuasiStaticModel) =
     gather_internal_variable_infos(model.material_model)
-gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]
+gather_internal_variable_infos(model::AbstractMaterialModel) = ()
 
 __get_material_model(model::AbstractMaterialModel, cid, qp) = model
 get_material_model(f::QuasiStaticFunction, cid, qp) =
