@@ -90,9 +90,11 @@ UnPack = "1"
 julia = "1.10"
 
 [extras]
+AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
+FerriteMultigrid = "69a0a054-a29c-4d77-8818-cd7ec12cfcdc"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 MatrixDepot = "b51810bb-c9f3-55da-ae3c-350fc1fbce05"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
@@ -106,4 +108,4 @@ Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "DelimitedFiles", "FerriteGmsh", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot"]
+test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot"]
