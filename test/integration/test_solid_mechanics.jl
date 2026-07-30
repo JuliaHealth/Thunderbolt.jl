@@ -541,6 +541,37 @@ end
             end
         end
 
+        # Regression: `setup_boundary_cache` for `NonlinearMultiDomainIntegrator2` used to look the
+        # subdomain name up in the *surface* subdomains, which is a different namespace from the
+        # volumetric one its subintegrators are keyed by. It therefore returned an empty cache and
+        # silently dropped every weak boundary condition.
+        #
+        # The testsets above do not catch it: `generate_grid` names its facetsets "front"/"back", so
+        # the cellset names they use collide with facetset names and accidentally match. Here the
+        # subdomains are "inner"/"outer", which no facetset is called, and the *only* load is a weak
+        # boundary condition — so if it is dropped, the body simply never deforms.
+        @testset "Weak boundary conditions on subdomains without a matching facetset" begin
+            # Ramped from zero, so the initial state stays consistent for the homotopy solver.
+            pressure_load = (PressureFieldBC(TestRampField(), "top"),)
+            i = test_solve_contractile_cuboid(
+                mesh,
+                Dict(
+                    "inner" => QuasiStaticModel(
+                        :d,
+                        PK1Model(Guccione1991PassiveModel(), microstructure_model),
+                        pressure_load,
+                    ),
+                    "outer" => QuasiStaticModel(
+                        :d,
+                        PK1Model(Guccione1991PassiveModel(), microstructure_model),
+                        pressure_load,
+                    ),
+                ),
+                HomotopyPathSolver(newton),
+            )
+            @test norm(i.u) > 1.0e-8
+        end
+
         mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 
         timestepper = HomotopyPathSolver(newton)
