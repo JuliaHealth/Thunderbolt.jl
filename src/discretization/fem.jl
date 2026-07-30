@@ -499,18 +499,12 @@ function semidiscretize(
     ionicfun = PointwiseMultiODEFunction(inner_functions, xφ)
     ionic_dofrange = 1:offset
 
-    # Both blocks are dof-placed: the ionic states carry `num_states` values per transmembrane
-    # potential dof, and the heat block picks out the transmembrane potential among them. Build the
-    # partition once here, where the layout is actually known, and let the split function derive its
-    # indices from it instead of re-deriving them.
-    partition = SolutionPartition([
-        SolutionBlock(:heat, heat_dofrange, DofPlacement(φsym), 1),
-        SolutionBlock(:ionic, ionic_dofrange, DofPlacement(φsym), 1),
-    ])
-
+    # NOTE: these two index sets deliberately *overlap* - `heat_dofrange` picks the transmembrane
+    # potential entries out of the ionic state vector. Operator splitting splits the operator, not
+    # the unknowns, so this is not a partition of the solution vector.
     semidiscrete_ode = GenericSplitFunction(
         (heatfun, ionicfun),
-        block_indices(partition),
+        (heat_dofrange, ionic_dofrange),
         # No transfer operators needed, because the the solutions variables overlap with the subproblems perfectly
     )
 

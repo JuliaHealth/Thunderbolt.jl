@@ -32,6 +32,9 @@ function material_routine(
     return stress_and_tangent(material_model, F, coefficients, Q)
 end
 
+# `gto1` form: the caller supplies the internal variable and the timestep, so no time data is read
+# from the cache. This is the form the element assembly uses. The shim below derives the same data
+# from the cache and disappears once the backward Euler stage wrapper is retired.
 function material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
@@ -40,6 +43,9 @@ function material_routine(
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
+    Qflat,
+    Qprevflat,
+    Δt,
 )
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
     Q, ∂P∂QdQdF = solve_local_constraint(
@@ -50,10 +56,48 @@ function material_routine(
         geometry_cache,
         qp,
         time,
+        Qflat,
+        Qprevflat,
+        Δt,
     )
     P, ∂P∂F = stress_and_tangent(material_model, F, coefficients, Q)
     return P, ∂P∂F + ∂P∂QdQdF
 end
+
+# A condensation material reached the bare-`time` assembly path, which is used by
+# `HomotopyPathSolver` — a load-stepping continuation with no timestep and no previous solution. Such
+# a material must therefore be *rate free*: its local problem has to be the algebraic constraint
+# `L(F, Q) = 0` rather than a time-discretized `(Q - Qprev)/Δt = L(F, Q)`. No rate-free condensation
+# material exists yet, so the local solver for it is deliberately not written; implement a
+# `material_routine` for that cache type taking the current `Q` only.
+material_routine(
+    material_model::AbstractMaterialModel,
+    F::Tensor{2},
+    coefficient_cache,
+    state_cache::RateIndependentCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+) = error(
+    "$(typeof(material_model)) carries a rate-type internal variable, so it needs a timestep and a " *
+    "previous state. It cannot be assembled on the rate-free path used by e.g. HomotopyPathSolver.",
+)
+
+# Materials without condensed state ignore the `gto1` payload. Deliberately restricted to the two
+# stateless cache types: any *other* cache reaching this arity without its own method is a
+# `MethodError` rather than a silent fallback to cache-held state.
+material_routine(
+    material_model::AbstractMaterialModel,
+    F::Tensor{2},
+    coefficient_cache,
+    state_cache::Union{EmptyInternalCache, TrivialCondensationMaterialStateCache},
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qprevflat,
+    Δt,
+) = material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
 
 function reduced_material_routine(
     material_model::AbstractMaterialModel,
@@ -82,6 +126,21 @@ function reduced_material_routine(
     return stress_function(material_model, F, coefficients, Q)
 end
 
+# See the `material_routine` counterpart above.
+reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    F::Tensor{2},
+    coefficient_cache,
+    state_cache::RateIndependentCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+) = error(
+    "$(typeof(material_model)) carries a rate-type internal variable, so it needs a timestep and a " *
+    "previous state. It cannot be assembled on the rate-free path used by e.g. HomotopyPathSolver.",
+)
+
+# `gto1` form, see the `material_routine` counterpart above.
 function reduced_material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
@@ -90,14 +149,48 @@ function reduced_material_routine(
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
+    Qflat,
+    Qprevflat,
+    Δt,
 )
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
-    Q            = solve_local_constraint_state_only(F, coefficients, material_model, state_cache, geometry_cache, qp, time)
-    P            = stress_function(material_model, F, coefficients, Q)
+    Q = solve_local_constraint_state_only(
+        F,
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+        Qprevflat,
+        Δt,
+    )
     # Residual-only variant: no tangent is requested here, matching the other
     # `reduced_material_routine` methods and the single-value call site in solid/elements.jl.
-    return P
+    return stress_function(material_model, F, coefficients, Q)
 end
+
+reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    F::Tensor{2},
+    coefficient_cache,
+    state_cache::Union{EmptyInternalCache, TrivialCondensationMaterialStateCache},
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qprevflat,
+    Δt,
+) = reduced_material_routine(
+    material_model,
+    F,
+    coefficient_cache,
+    state_cache,
+    geometry_cache,
+    qp,
+    time,
+)
 
 @doc raw"""
     PrestressedMechanicalModel(inner_model, prestress_field)
@@ -298,6 +391,8 @@ setup_internal_cache(
     qr::QuadratureRule,
     sdh::SubDofHandler,
 ) = setup_internal_cache(material_model.inner_model, qr, sdh)
+internal_variable_evolution(material_model::PrestressedMechanicalModel) =
+    internal_variable_evolution(material_model.inner_model)
 
 @doc raw"""
     PK1Model(material, coefficient_field)
@@ -323,6 +418,8 @@ default_initial_state!(uq, model::PK1Model) = default_initial_state!(uq, model.i
 
 setup_internal_cache(material_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) =
     setup_internal_cache(material_model.internal_model, qr, sdh)
+internal_variable_evolution(material_model::PK1Model) =
+    internal_variable_evolution(material_model.internal_model)
 
 function stress_function(model::PK1Model, F::Tensor{2}, coefficients, ::EmptyInternalModel)
     ∂Ψ∂F = Tensors.gradient(F_ad -> Ψ(F_ad, coefficients, model.material), F)
@@ -532,33 +629,34 @@ setup_internal_cache(
     qr::QuadratureRule,
     sdh::SubDofHandler,
 ) = setup_contraction_model_cache(material_model.rhs.contraction_model, qr, sdh)
+internal_variable_evolution(
+    material_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel},
+) = internal_variable_evolution(material_model.contraction_model)
+internal_variable_evolution(
+    material_model::Union{
+        <:ElastodynamicsModel{<:ActiveStressModel},
+        <:ElastodynamicsModel{<:ExtendedHillModel},
+        <:ElastodynamicsModel{<:GeneralizedHillModel},
+    },
+) = internal_variable_evolution(material_model.rhs.contraction_model)
 
 # TODO this actually belongs to the multi-level newton file :)
-# TODO remove \delta t
 # Dual (global cache and element-level cache) use for now to make it non-allocating.
-mutable struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{
+# Immutable by construction: everything time dependent (`Q`, `Qprev`, `Δt`) is now supplied per call
+# by `gto1`, and the `localQ`/`localQprev` scratch existed only to copy the state out of the global
+# vector. What remains is genuinely per-subdomain setup data.
+#
+# This is where the GPU story improves: the cache no longer captures a global solution vector, so
+# nothing here has to be re-pointed to move an element loop onto a device.
+struct GenericFirstOrderRateIndependentCondensationMaterialStateCache{
     LocalModelType,
     LocalModelCacheType,
     LocalSolverType,
-    QType,
-    QType2,
-    T,
-    LVH,
 } <: RateIndependentCondensationMaterialStateCache
     # The actual model
     model::LocalModelType
     model_cache::LocalModelCacheType
-    # Internal state at t and tprev
-    # TODO play around with using a Qvector here and throw out lvh
-    Q::QType
-    Qprev::QType
-    # t - tprev
-    Δt::T
     local_solver_cache::LocalSolverType
-    lvh::LVH
-    # These are used locally
-    localQ::QType2
-    localQprev::QType2
 end
 
 function duplicate_for_device(
@@ -568,13 +666,7 @@ function duplicate_for_device(
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         cache.model,
         duplicate_for_device(device, cache.model_cache),
-        cache.Q,
-        cache.Qprev,
-        cache.Δt,
         duplicate_for_device(device, cache.local_solver_cache),
-        cache.lvh,
-        duplicate_for_device(device, cache.localQ),
-        duplicate_for_device(device, cache.localQprev),
     )
 end
 
@@ -585,7 +677,7 @@ function _solve_local_sarcomere_dQdF(
     F,
     coefficients,
     active_term_model,
-    wrapper::CaDrivenInternalSarcomereModel,
+    wrapper::Union{CaDrivenInternalSarcomereModel, AsRateIndependent},
 )
     return _solve_local_sarcomere_dQdF(
         dQdλ,
@@ -613,6 +705,10 @@ function _solve_local_sarcomere_dQdF(
 end
 
 # Local solve
+#
+# `t` and `Δt` are passed in rather than read from `state_cache`. Under `gto1` the time
+# discretization is supplied per call (`GenericFirstOrderTimeParameters`), so the local problem must
+# not depend on time data baked into the cache at setup.
 function solve_internal_timestep(
     material_model::ActiveStressModel,
     state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
@@ -621,15 +717,16 @@ function solve_internal_timestep(
     Q,
     Qprev,
     Ca,
+    t,
+    Δt,
 )
-    @unpack Δt = state_cache
     #     dsdt = sarcomere_rhs(s,λ,t)
     # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
 
     function local_residual!(R, Q, λ, dλdt)
         dQ = zeros(eltype(Q), length(Q)) # TODO preallocate during setup
-        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
-        @.. R = (Q - Qprev) / state_cache.Δt - dQ
+        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, t, material_model.contraction_model)
+        @.. R = (Q - Qprev) / Δt - dQ
         return nothing
     end
 
@@ -671,8 +768,10 @@ function solve_local_constraint(
     geometry_cache,
     qp,
     time,
+    Qflat,
+    Qprevflat,
+    Δt,
 ) where {dim}
-    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     # Early out if any of the previous local solves failed
     if state_cache.local_solver_cache.retcode ∉
        (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
@@ -689,20 +788,28 @@ function solve_local_constraint(
     dλdt = 0.0 # TODO query
     Ca = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
 
-    Q, J = solve_internal_timestep(material_model, state_cache, λ, dλdt, Qflat, Qprevflat, Ca)
+    Q, J = solve_internal_timestep(
+        material_model,
+        state_cache,
+        λ,
+        dλdt,
+        Qflat,
+        Qprevflat,
+        Ca,
+        time,
+        Δt,
+    )
     # Abort if local solve failed
     if state_cache.local_solver_cache.retcode ∉
        (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
         return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
     end
-    # Qflat .= Q
-    _store_local_state!(state_cache, geometry_cache, qp)
 
     # Solve corrector problem
     function local_residual_rhs_wrap!(R, λ)
         dQ = zeros(eltype(λ), length(Q)) # TODO preallocate during setup
         sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
-        @.. R = (Q - Qprevflat) / state_cache.Δt - dQ
+        @.. R = (Q - Qprevflat) / Δt - dQ
         return nothing
     end
     R = state_cache.local_solver_cache.residual
@@ -730,8 +837,10 @@ function solve_local_constraint_state_only(
     geometry_cache,
     qp,
     time,
+    Qflat,
+    Qprevflat,
+    Δt,
 ) where {dim}
-    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     # Early out if any of the previous local solves failed
     if state_cache.local_solver_cache.retcode ∉
        (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
@@ -748,14 +857,22 @@ function solve_local_constraint_state_only(
     dλdt = 0.0 # TODO query
     Ca = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
 
-    Q, J = solve_internal_timestep(material_model, state_cache, λ, dλdt, Qflat, Qprevflat, Ca)
+    Q, J = solve_internal_timestep(
+        material_model,
+        state_cache,
+        λ,
+        dλdt,
+        Qflat,
+        Qprevflat,
+        Ca,
+        time,
+        Δt,
+    )
     # Abort if local solve failed
     if state_cache.local_solver_cache.retcode ∉
        (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
         return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
     end
-    # Qflat .= Q
-    _store_local_state!(state_cache, geometry_cache, qp)
 
     return Q
 end
@@ -788,49 +905,14 @@ function _compute_internal_variable_size(total, lvi::InternalVariableInfo)
     return lvi.size
 end
 
-function _query_local_state(
-    state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
-    geometry_cache,
-    qp,
-)
-    size = internal_variable_size(state_cache.model, cellid(geometry_cache), qp)
-    # `internal_variable_offset` is the absolute 0-based start of this cell's condensed block, so the
-    # quadrature point index has to be taken relative to it. Without the cell offset every cell would
-    # read and write the first cell's slots.
-    cell_offset                          = internal_variable_offset(state_cache.lvh, cellid(geometry_cache))
-    range_begin                          = cell_offset+1+(qp.i-1)*size
-    range_end                            = cell_offset+qp.i*size
-    Qv                                   = @view state_cache.Q[range_begin:range_end]
-    Qpv                                  = @view state_cache.Qprev[range_begin:range_end]
-    @inbounds @.. state_cache.localQ     = Qv
-    @inbounds @.. state_cache.localQprev = Qpv
-
-    return state_cache.localQ, state_cache.localQprev
-end
-
-function _store_local_state!(
-    state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
-    geometry_cache,
-    qp,
-)
-    size = internal_variable_size(state_cache.model, cellid(geometry_cache), qp)
-    cell_offset = internal_variable_offset(state_cache.lvh, cellid(geometry_cache))
-    range_begin = cell_offset+1+(qp.i-1)*size
-    range_end = cell_offset+qp.i*size
-    Qv = @view state_cache.Q[range_begin:range_end]
-    @inbounds @.. Qv = state_cache.localQ
-
-    return nothing
-end
-
 function solve_internal_timestep(
     material::LinearMaxwellMaterial,
     state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
     ε::SymmetricTensor{2, dim},
     εᵛflat,
     εᵛprevflat,
+    Δt,
 ) where {dim}
-    @unpack Δt = state_cache
     εᵛ₁ = SymmetricTensor{2, dim}(εᵛflat)
     εᵛ₀ = SymmetricTensor{2, dim}(εᵛprevflat)
     #     dεᵛdt = E₁/η₁ c : (ε - εᵛ)
@@ -858,12 +940,13 @@ function solve_local_constraint(
     geometry_cache,
     qp,
     time,
+    Qflat,
+    Qprevflat,
+    Δt,
 ) where {dim}
-    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     ε = symmetric(F - one(F))
-    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat)
+    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat, Δt)
     Qflat .= Q.data
-    _store_local_state!(state_cache, geometry_cache, qp)
 
     # Corrector
     function solve_internal_timestep_corrector(
@@ -873,8 +956,8 @@ function solve_local_constraint(
         εᵛflat,
         εᵛprevflat,
         coefficients,
+        Δt,
     )
-        @unpack Δt = state_cache
         εᵛ₁ = SymmetricTensor{2, dim}(εᵛflat)
         εᵛ₀ = SymmetricTensor{2, dim}(εᵛprevflat)
         # Local problem: (𝐈 / Δt + E₁/η₁ c) : εᵛ₁ = εᵛ₀/Δt + E₁/η₁ c : ε
@@ -899,6 +982,7 @@ function solve_local_constraint(
         Qflat,
         Qprevflat,
         coefficients,
+        Δt,
     )
     ∂P∂Q = Tensors.gradient(εᵛ->stress_function(material_model, ε, coefficients, εᵛ), Q)
 
@@ -913,12 +997,13 @@ function solve_local_constraint_state_only(
     geometry_cache,
     qp,
     time,
+    Qflat,
+    Qprevflat,
+    Δt,
 ) where {dim}
-    Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     ε = symmetric(F - one(F))
-    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat)
+    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat, Δt)
     Qflat .= Q.data
-    _store_local_state!(state_cache, geometry_cache, qp)
 
     return Q
 end
@@ -954,6 +1039,9 @@ function setup_internal_cache(
 )
     return EmptyRateIndependentCondensationMaterialStateCache()
 end
+
+# η₁ dₜεᵛ = E₁ (ε - εᵛ), i.e. first order in the internal variable and independent of dₜε.
+internal_variable_evolution(::LinearMaxwellMaterial) = FirstOrderEvolution()
 
 function gather_internal_variable_infos(model::LinearMaxwellMaterial{T, sdim}) where {T, sdim}
     if sdim == 3

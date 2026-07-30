@@ -93,6 +93,7 @@ function nlsolve!(
     f::AbstractSemidiscreteFunction,
     mlcache::MultiLevelNewtonRaphsonSolverCache,
     t,
+    p = t,
 )
     cache = mlcache.global_solver_cache
 
@@ -107,7 +108,7 @@ function nlsolve!(
     while true
         cache.iter += 1
         residual .= 0.0
-        @timeit_debug "update operator" update_linearization!(op, residual, u, t)
+        @timeit_debug "update operator" update_linearization!(op, residual, u, p)
         # Check if local solve failed
         if check_local_solve_covergence(mlcache.local_solver_cache)
             @debug "Some local newton did not converge. Aborting. ||r|| = $residualnorm" _group=:nlsolve

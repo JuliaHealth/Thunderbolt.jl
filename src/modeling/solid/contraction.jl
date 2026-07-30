@@ -3,6 +3,11 @@ abstract type AbstractSteadyStateSarcomereModel <: AbstractSarcomereModel end
 abstract type AbstractRateIndependentSarcomereModel <: AbstractSarcomereModel end
 abstract type AbstractRateDependentSarcomereModel <: AbstractSarcomereModel end
 
+# The sarcomere hierarchy is exactly the evolution classification, so the trait reads straight off it.
+internal_variable_evolution(::AbstractSteadyStateSarcomereModel) = NoEvolution()
+internal_variable_evolution(::AbstractRateIndependentSarcomereModel) = FirstOrderEvolution()
+internal_variable_evolution(::AbstractRateDependentSarcomereModel) = RateCoupledEvolution()
+
 abstract type AbstractCondensationMaterialStateCache end
 
 # Material states without evolution equations. I.e. the states variables are at most a function of space (reference) and time.
@@ -64,13 +69,25 @@ function 𝓝(state, F, coefficients, mp::AbstractSteadyStateSarcomereModel)
     return state
 end
 
-# Ignore rate dependency of a rate dependent model to emulate rate independency.
-struct RateIndependentSarcomereModelWrapper{T <: AbstractRateDependentSarcomereModel} <:
+@doc raw"""
+    AsRateIndependent(model)
+
+Evaluate a rate dependent sarcomere `model` at zero shortening velocity, i.e. with $\dot{\lambda}$
+replaced by 0. The wrapped model is thereby rate independent: its internal variable follows
+$\mathrm{d}_t Q = L(F, Q)$ and it assembles on the condensed ODE path rather than the DAE path.
+
+Two uses:
+
+- it is how a rate dependent model is run without the (not yet implemented) $\dot{F}$ material
+  contract, and
+- comparing wrapped against unwrapped measures how much the velocity dependence actually contributes.
+"""
+struct AsRateIndependent{T <: AbstractRateDependentSarcomereModel} <:
        AbstractRateIndependentSarcomereModel
     model::T
 end
 function setup_contraction_model_cache(
-    wrapper::RateIndependentSarcomereModelWrapper,
+    wrapper::AsRateIndependent,
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
@@ -78,7 +95,21 @@ function setup_contraction_model_cache(
             EmptyRateDependentCondensationMaterialStateCache "Wrapping non-trivial material state caches not supported."
     return EmptyRateIndependentCondensationMaterialStateCache()
 end
-num_states(wrapper::RateIndependentSarcomereModelWrapper) = num_states(wrapper.model)
+# The whole point of the wrapper: drop the velocity before it reaches the wrapped model.
+sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, t, wrapper::AsRateIndependent) =
+    sarcomere_rhs!(dQ, Q, λ, zero(dλdt), Ca, t, wrapper.model)
+num_states(wrapper::AsRateIndependent) = num_states(wrapper.model)
+𝓝(state, F, coefficients, wrapper::AsRateIndependent) = 𝓝(state, F, coefficients, wrapper.model)
+compute_λᵃ(state, wrapper::AsRateIndependent) = compute_λᵃ(state, wrapper.model)
+gather_internal_variable_infos(wrapper::AsRateIndependent) =
+    gather_internal_variable_infos(wrapper.model)
+default_initial_state!(Q::AbstractVector, wrapper::AsRateIndependent) =
+    default_initial_state!(Q, wrapper.model)
+compute_active_tension(wrapper::AsRateIndependent, state, sarcomere_stretch) =
+    compute_active_tension(wrapper.model, state, sarcomere_stretch)
+compute_active_stiffness(wrapper::AsRateIndependent, state, sarcomere_stretch) =
+    compute_active_stiffness(wrapper.model, state, sarcomere_stretch)
+fraction_single_overlap(wrapper::AsRateIndependent, λ) = fraction_single_overlap(wrapper.model, λ)
 
 # We use this for testing and fitting purposes
 Base.@kwdef struct StandaloneSarcomereModel{ModelType, CaF, SF, VF}
@@ -111,6 +142,8 @@ gather_internal_variable_infos(wrapper::CaDrivenInternalSarcomereModel) =
     gather_internal_variable_infos(wrapper.model)
 default_initial_state!(Q::AbstractVector, wrapper::CaDrivenInternalSarcomereModel) =
     default_initial_state!(Q, wrapper.model)
+internal_variable_evolution(wrapper::CaDrivenInternalSarcomereModel) =
+    internal_variable_evolution(wrapper.model)
 
 struct TrivialCaDrivenCondensationSarcomereCache{ModelType, ModelCacheType, CalciumCacheType} <:
        TrivialCondensationMaterialStateCache
@@ -285,6 +318,16 @@ Base.@kwdef struct RDQ20MFModel{TD} <: AbstractRateDependentSarcomereModel
     μ₁_fP::TD = 0.000778 # 1/ms
     # Upscaling parameter
     a_XB::TD = 22.894e3 # kPa
+    # Regularization width of |dλdt| in the distortion-velocity rate q(v) = α|v|, so that the
+    # tangent stays continuous at zero shortening velocity (see `smooth_abs`). Only active for
+    # |dλdt| ≲ εᵛ; the unregularized model is recovered as εᵛ → 0.
+    #
+    # PROVISIONAL default. It has no effect while dλdt is hardcoded to zero, because
+    # `smooth_abs(0, εᵛ) == 0` for every εᵛ > 0. Calibrate it when the velocity dependence goes
+    # live: it must sit well below physiological |dλdt| (order 1e-3 1/ms) so the physics is
+    # untouched, yet be wide enough that the linearization is valid across a Newton step — too
+    # small and the kink is smooth on paper but still a kink numerically.
+    εᵛ::TD = 1.0e-6 # 1/ms
 end
 
 function default_initial_state!(Q::AbstractVector, model::RDQ20MFModel)
@@ -479,7 +522,7 @@ function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
     end
 
     #           q(v) = α|v|
-    r = p.r₀ + p.α*abs(dλdt)
+    r = p.r₀ + p.α*smooth_abs(dλdt, p.εᵛ)
     diag_P = r + k_PN
     diag_N = r + k_NP
 

@@ -508,3 +508,33 @@ function collect_dofs_on_subdomain(dh, mesh, name)
     end
     return sort(collect(dofs))
 end
+
+@doc raw"""
+    smooth_abs(x, ε)
+
+Smooth approximation of ``|x|``:
+
+```math
+    \operatorname{smooth\_abs}(x, \varepsilon) = \frac{x^2}{\sqrt{x^2 + \varepsilon^2}} .
+```
+
+Needed wherever ``|x|`` enters a residual that is differentiated to obtain a tangent. ``|x|`` has a
+kink at the origin, so its linearization is discontinuous there and Newton's method degrades to
+semismooth behaviour exactly at ``x = 0`` — which for a rate ``x`` is the physically common case of
+"currently not moving", not an exotic corner.
+
+Chosen over the more familiar pseudo-Huber ``\sqrt{x^2 + \varepsilon^2} - \varepsilon`` for two
+reasons:
+
+- **Asymptotically exact.** Both vanish at the origin, but this form additionally has error
+  ``\mathcal{O}(\varepsilon^2 / |x|)`` for ``|x| \gg \varepsilon``, where the pseudo-Huber keeps an
+  ``\mathcal{O}(\varepsilon)`` bias for arbitrarily large arguments.
+- **No cancellation.** ``\sqrt{x^2 + \varepsilon^2} - \varepsilon`` subtracts two nearly equal
+  numbers when ``|x| \ll \varepsilon``.
+
+Both the value and the derivative vanish at the origin; a vanishing derivative is the only value a
+smooth, even approximation can take there.
+
+Requires ``\varepsilon > 0``.
+"""
+smooth_abs(x, ε) = x^2 / sqrt(x^2 + ε^2)

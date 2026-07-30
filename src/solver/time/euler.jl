@@ -190,18 +190,21 @@ struct BackwardEulerStageAnnotation{F, U}
     uprev::U
 end
 
-abstract type AbstractTimeDiscretizationAnnotation{T} end
+# Marks a model tree rewritten to carry solver-side information down to the element caches.
+abstract type AbstractModelAnnotation{T} end
 
 # This is the wrapper used to communicate solver info into the operator.
-# In a nutshell this should contain all information to setup the evaluation of the nonlinear problem to make the backward Euler step.
-mutable struct BackwardEulerStageFunctionWrapper{F, U, T, S, LVH} <:
-               AbstractTimeDiscretizationAnnotation{F}
-    const f::F
-    const u::U
-    const uprev::U
-    Δt::T
-    const local_solver_cache::S
-    const lvh::LVH
+# Carries the *solver-owned* state that has to reach the element caches, and nothing else. Since
+# `gto1` supplies the previous solution and the timestep as call parameters, the only thing left to
+# inject is the local nonlinear solver cache, which the material routine needs for the per-quadrature
+# point Newton (`materials.jl`, `solve_internal_timestep`).
+#
+# Formerly `BackwardEulerStageFunctionWrapper`, which additionally carried `u`, `uprev` and a mutable
+# `Δt` that `update_stage!` wrote into before every step. Both are gone: this no longer encodes any
+# time discretization, hence the rename.
+struct LocalSolverCacheAnnotation{F, S} <: AbstractModelAnnotation{F}
+    f::F
+    local_solver_cache::S
 end
 
 # We unpack to dispatch per function class
@@ -249,46 +252,26 @@ function _setup_local_solver_cache(
     )
 end
 
-function _backward_euler_stage_wrapper(
-    integrator::NonlinearIntegrator,
-    Q,
-    Qprev,
-    local_solver_cache,
-    lvh,
-)
+function _annotate_with_local_solver_cache(integrator::NonlinearIntegrator, local_solver_cache)
     (; volume_model, facet_model) = integrator
-    volume_wrapper =
-        BackwardEulerStageFunctionWrapper(volume_model, Q, Qprev, 0.0, local_solver_cache, lvh)
-    facet_wrapper = BackwardEulerStageFunctionWrapper(
-        facet_model,
-        Q,
-        Qprev,
-        0.0,
-        nothing, # inner model is volume only per construction
-        lvh,
-    )
-    # This is copy paste of setup_solver_cache(G, solver.newton)
     return NonlinearIntegrator(
-        volume_wrapper,
-        facet_wrapper,
+        LocalSolverCacheAnnotation(volume_model, local_solver_cache),
+        # The inner model is volume only per construction, so facets have no local solve.
+        LocalSolverCacheAnnotation(facet_model, nothing),
         integrator.syms,
         integrator.qrc,
         integrator.fqrc,
     )
 end
 
-function _backward_euler_stage_wrapper(
+function _annotate_with_local_solver_cache(
     integrator::NonlinearMultiDomainIntegrator2,
-    Q,
-    Qprev,
     local_solver_cache,
-    lvh,
 )
     return NonlinearMultiDomainIntegrator2(
         Dict(
-            name =>
-                _backward_euler_stage_wrapper(subintegrator, Q, Qprev, local_solver_cache[i], lvh)
-            for (i, (name, subintegrator)) in enumerate(integrator.subintegrators)
+            name => _annotate_with_local_solver_cache(subintegrator, local_solver_cache[i]) for
+            (i, (name, subintegrator)) in enumerate(integrator.subintegrators)
         ),
     )
 end
@@ -303,15 +286,12 @@ end
 
     local_solver_cache = _setup_local_solver_cache(solver.local_solver, integrator)
 
-    # Extract condensable parts
-    # Pass the *whole* solution vector, not just the condensed tail: the internal variable handler
-    # stores absolute offsets, so the material routine can locate each cell's block directly.
-    Q     = wrapper.u
-    Qprev = wrapper.uprev
-    # Connect nonlinear problem and timestepper
+    # The previous solution and the timestep are no longer threaded in here: `gto1` supplies them per
+    # call via `GenericFirstOrderTimeParameters`. Only the local solver cache still has to reach the
+    # element.
     op = setup_operator(
         SequentialAssemblyStrategy(SequentialCPUDevice()), # FIXME f.assembly_strategy,
-        _backward_euler_stage_wrapper(integrator, Q, Qprev, local_solver_cache, lvh),
+        _annotate_with_local_solver_cache(integrator, local_solver_cache),
         dh,
     )
     T = Float64
@@ -391,21 +371,22 @@ end
 #    0 = L(u,v,dₜu,dₜv)     (or simpler dₜv = L(u,v))
 # so we pass the stage information into the interior.
 function setup_quasistatic_element_cache(
-    wrapper::BackwardEulerStageFunctionWrapper,
+    wrapper::LocalSolverCacheAnnotation,
     material_model::AbstractMaterialModel,
     qr::QuadratureRule,
     sdh::SubDofHandler,
     cv::CellValues,
 )
-    return QuasiStaticElementCache(
+    internal_cache = setup_internal_cache(wrapper, qr, sdh)
+    return quasistatic_element_cache_type(internal_variable_evolution(material_model))(
         material_model,
         setup_coefficient_cache(material_model, qr, sdh),
-        setup_internal_cache(wrapper, qr, sdh),
+        internal_cache,
         cv,
     )
 end
 function setup_element_cache(
-    wrapper::AbstractTimeDiscretizationAnnotation{<:QuasiStaticModel},
+    wrapper::AbstractModelAnnotation{<:QuasiStaticModel},
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
@@ -417,19 +398,6 @@ function setup_element_cache(
     return setup_quasistatic_element_cache(wrapper, wrapper.f.material_model, qr, sdh, cv)
 end
 
-update_stage!(stage::BackwardEulerStageCache, kΔt) =
-    update_stage!(stage, stage.nlsolver.global_solver_cache.op, kΔt)
-function update_stage!(stage::BackwardEulerStageCache, op::LinearizedFerriteOperator, kΔt)
-    for sdc in op.subdomain_caches
-        _update_stage!(sdc.domain.element.internal_cache, kΔt)
-    end
-end
-function _update_stage!(internal_cache, kΔt)
-    if hasfield(typeof(internal_cache), :Δt)
-        internal_cache.Δt = kΔt
-    end
-end
-
 function perform_backward_euler_step!(
     f::QuasiStaticFunction,
     cache::BackwardEulerSolverCache,
@@ -438,67 +406,66 @@ function perform_backward_euler_step!(
     Δt,
 )
     update_constraints!(f, cache, t + Δt)
-    update_stage!(stage_info, Δt)
-    if !nlsolve!(cache.uₙ, f, stage_info.nlsolver, t + Δt)
+    # `gto1`: hand the nonlinear solver the previous solution and the timestep as *parameters*
+    # instead of mutating them into the element caches beforehand. `update_stage!` is what used to do
+    # the mutating and is now unnecessary.
+    #
+    # The leading `nothing` is the inner parameter object, which FerriteOperators forwards to the
+    # element via `query_element_parameters(element, cell, ivh, p.p)`. It is the slot reserved for the
+    # parameters being *optimized* — not the model's parameters in general, which stay in the model
+    # struct. Nothing is optimized here, hence `nothing`. See the `nlsolve!` docstring.
+    p = FerriteOperators.GenericFirstOrderTimeParameters(nothing, t + Δt, Δt, cache.uₙ₋₁)
+    if !nlsolve!(cache.uₙ, f, stage_info.nlsolver, t + Δt, p)
         return false
     end
     return true
 end
 
-function setup_internal_cache_backward_euler_unwrap(
-    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
+# Whether the element needs a local solver cache is the same question as which element cache it gets,
+# so it is answered by the same trait rather than by a second classification of the state cache.
+function _setup_internal_cache_annotation_unwrap(
+    wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
     material_model::AbstractMaterialModel,
-    internal_cache::Union{EmptyInternalCache, TrivialCondensationMaterialStateCache},
+    internal_cache,
+    ::NoEvolution,
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
     return internal_cache
 end
-function setup_internal_cache_backward_euler_unwrap(
-    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
+function _setup_internal_cache_annotation_unwrap(
+    wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
     material_model::AbstractMaterialModel,
-    internal_cache::Union{
-        RateIndependentCondensationMaterialStateCache,
-        RateDependentCondensationMaterialStateCache,
-    },
+    internal_cache,
+    ::Union{FirstOrderEvolution, RateCoupledEvolution},
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
-    n_ivs_per_qp = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
         # Pass the model
         material_model,
         # And some cache to speed up evaluation of f and associated coefficients
         internal_cache,
-        # Pass global solution info
-        wrapper.u,
-        wrapper.uprev,
-        # Current time step length
-        wrapper.Δt,
         # Local nonlinear solver cache
         wrapper.local_solver_cache,
-        # This one holds information about the local dofs inside u and uprev
-        wrapper.lvh,
-        # Buffer for Q and Qprev
-        zeros(n_ivs_per_qp),
-        zeros(n_ivs_per_qp),
     )
 end
 function setup_internal_cache(
-    wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel},
+    wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
-    return setup_internal_cache_backward_euler_unwrap(
+    return _setup_internal_cache_annotation_unwrap(
         wrapper,
         wrapper.f.material_model,
         setup_internal_cache(wrapper.f.material_model, qr, sdh),
+        internal_variable_evolution(wrapper.f.material_model),
         qr,
         sdh,
     )
 end
 
-function setup_boundary_cache(wrapper::BackwardEulerStageFunctionWrapper, fqr, sdh)
+function setup_boundary_cache(wrapper::LocalSolverCacheAnnotation, fqr, sdh)
     # TODO this technically unlocks differential boundary conditions, if done correctly.
     setup_boundary_cache(wrapper.f, fqr, sdh)
 end

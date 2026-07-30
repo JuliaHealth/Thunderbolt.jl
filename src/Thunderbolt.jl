@@ -236,6 +236,7 @@ export
     LinearSpringModel,
     SimpleActiveSpring,
     # Contraction model
+    AsRateIndependent,
     CaDrivenInternalSarcomereModel,
     ConstantStretchModel,
     PelceSunLangeveld1995Model,

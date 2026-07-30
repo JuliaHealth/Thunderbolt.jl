@@ -10,6 +10,43 @@ struct EmptyInternalCache end
 
 setup_internal_cache(::EmptyInternalModel, ::QuadratureRule, ::SubDofHandler) = EmptyInternalCache()
 
+"""
+    InternalVariableEvolution
+
+Holy trait classifying the evolution law of a condensed internal variable `Q`, and with it the class
+of the resulting system:
+
+| trait                 | local problem per quadrature point | resulting system        |
+| :-------------------- | :--------------------------------- | :---------------------- |
+| `NoEvolution`         | none, or algebraic `L(F, Q) = 0`    | rate free               |
+| `FirstOrderEvolution` | `dₜQ = L(F, Q)`                     | ODE in mass matrix form |
+| `RateCoupledEvolution`| `dₜQ = L(F, dₜF, Q)`                | true DAE                |
+
+This is a property of the *model*, deliberately not of the state cache it is lowered into. The
+`Empty…CondensationMaterialStateCache` types say only that a model needs no extra scratch space for
+its evaluation; they say nothing about whether it carries an internal variable or how that variable
+evolves. Reading the classification off them conflates the two questions.
+
+It is also askable before a mesh exists, which the cache-based answer is not.
+"""
+abstract type InternalVariableEvolution end
+struct NoEvolution <: InternalVariableEvolution end
+struct FirstOrderEvolution <: InternalVariableEvolution end
+struct RateCoupledEvolution <: InternalVariableEvolution end
+
+"""
+    internal_variable_evolution(model) -> InternalVariableEvolution
+
+The [`InternalVariableEvolution`](@ref) of `model`. Material models delegate to whatever internal
+model they carry, mirroring `setup_internal_cache`.
+"""
+internal_variable_evolution(model) = error(
+    "$(typeof(model)) does not declare how its internal variable evolves. Add a method " *
+    "`Thunderbolt.internal_variable_evolution(::$(typeof(model)))` returning `NoEvolution()`, " *
+    "`FirstOrderEvolution()` or `RateCoupledEvolution()`, or delegate to the internal model it wraps.",
+)
+internal_variable_evolution(::EmptyInternalModel) = NoEvolution()
+
 
 abstract type AbstractSourceTerm end
 

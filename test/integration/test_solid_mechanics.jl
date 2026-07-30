@@ -394,13 +394,16 @@ end
                     PK1Model(Guccione1991PassiveModel(), microstructure_model),
                     facemodels,
                 ),
+                # `AsRateIndependent` routes the sarcomere onto the condensed *ODE* element cache,
+                # where the unwrapped model above uses the DAE one. Both must give the same answer
+                # as long as `dλdt` is still hardcoded to zero in the local solve.
                 "back" => QuasiStaticModel(
                     :d,
                     ActiveStressModel(
                         Guccione1991PassiveModel(),
                         SimpleActiveStress(; Tmax = 220e3),
                         Thunderbolt.CaDrivenInternalSarcomereModel(
-                            Thunderbolt.RDQ20MFModel(),
+                            Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()),
                             TestCalciumHatField(),
                         ),
                         microstructure_model,
