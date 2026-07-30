@@ -142,6 +142,12 @@ function Thunderbolt.evaluate_coefficient(
     Ca = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
     return Ca
 end
+# Time dependent scalar field, used to check that coefficient evaluation on a subdomain actually
+# receives the *time* rather than the time integrator's parameter object.
+struct TestRampField end
+Thunderbolt.setup_coefficient_cache(coeff::TestRampField, ::QuadratureRule, ::SubDofHandler) = coeff
+Thunderbolt.evaluate_coefficient(::TestRampField, ::CellCache, ::QuadraturePoint, t) = 0.01 * t
+
 struct TestCalciumQuadraticHatField end
 Thunderbolt.setup_coefficient_cache(
     coeff::TestCalciumQuadraticHatField,
@@ -156,6 +162,15 @@ Thunderbolt.evaluate_coefficient(
 ) = t/1000.0 < 0.5 ? (2.0*t/1000.0)^2 : 2.0-(2.0*t/1000.0)^2
 
 function test_solve_contractile_cuboid(mesh, model, timestepper)
+    integrator, u₀ = solve_contractile_cuboid(mesh, model, timestepper)
+    @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
+    @test integrator.u ≉ u₀
+    return integrator
+end
+
+# Assertion-free variant, so tests documenting a *known broken* configuration can wrap the whole
+# solve in `@test_broken` without the inner assertions firing on the way.
+function solve_contractile_cuboid(mesh, model, timestepper)
     tspan = timestepper isa BackwardEulerSolver ? (0.0, 2.0) : (0.0, 300.0)
     Δt = timestepper isa BackwardEulerSolver ? 0.25 : 100.0
 
@@ -190,10 +205,8 @@ function test_solve_contractile_cuboid(mesh, model, timestepper)
     )
     u₀ = copy(integrator.u)
     solve!(integrator)
-    @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
-    @test integrator.u ≉ u₀
 
-    return integrator
+    return integrator, u₀
 end
 
 function test_solve_contractile_ideal_lv(
@@ -413,6 +426,120 @@ end
             ),
             timestepper,
         )
+
+        # A rate-free (`NoEvolution`) subdomain still has to be assembled by the time integrator when
+        # it sits next to a subdomain that carries an internal variable. Its element cache is a
+        # `QuasiStaticElementCache`, which is not a `gto1` cache, so FerriteOperators' generic
+        # `query_element_parameters(element, cell, ivh, p) = p` hands it the whole
+        # `GenericFirstOrderTimeParameters` where the assembly expects a time.
+        #
+        # Everything above passes only because no coefficient on a rate-free subdomain looks at `t`.
+        # Below, the rate-free subdomain drives its sarcomere from a time dependent calcium field,
+        # which is the ordinary cardiac case.
+        #
+        # BROKEN: to be fixed together with the parameter system, which is what decides how a
+        # subdomain asks for the time and for the parameters it is differentiated against.
+        @testset "Time dependent coefficient on a rate-free subdomain" begin
+            @test_broken (
+                solve_contractile_cuboid(
+                    mesh,
+                    Dict(
+                        # `PelceSunLangeveld1995Model` is a steady state model -> `NoEvolution`
+                        "front" => QuasiStaticModel(
+                            :d,
+                            ActiveStressModel(
+                                Guccione1991PassiveModel(),
+                                SimpleActiveStress(; Tmax = 220e3),
+                                Thunderbolt.CaDrivenInternalSarcomereModel(
+                                    PelceSunLangeveld1995Model(),
+                                    TestCalciumHatField(),
+                                ),
+                                microstructure_model,
+                            ),
+                            facemodels,
+                        ),
+                        # ... next to a subdomain that does carry an internal variable, so the
+                        # problem genuinely needs the `gto1` protocol.
+                        "back" => QuasiStaticModel(
+                            :d,
+                            ActiveStressModel(
+                                Guccione1991PassiveModel(),
+                                SimpleActiveStress(; Tmax = 220e3),
+                                Thunderbolt.CaDrivenInternalSarcomereModel(
+                                    Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()),
+                                    TestCalciumHatField(),
+                                ),
+                                microstructure_model,
+                            ),
+                            facemodels,
+                        ),
+                    ),
+                    timestepper,
+                )[1].sol.retcode == DiffEqBase.ReturnCode.Success
+            )
+        end
+
+        # Same defect on the facet path. The surface element cache is handed whatever
+        # `query_element_parameters` produced for the *volumetric* cache of its subdomain, so on a
+        # rate-free subdomain that is again the raw parameter object. The unwrapping methods this
+        # branch adds are typed on `GenericFirstOrderTimeElementParameters` and never fire here.
+        #
+        # BROKEN, same fix as above.
+        let facemodels_tdep = (
+                NormalSpringBC(0.0, "right"),
+                ConstantPressureBC(0.0, "back"),
+                PressureFieldBC(TestRampField(), "top"),
+            )
+            @testset "Time dependent facet coefficient on a rate-free subdomain" begin
+                @test_broken (
+                    solve_contractile_cuboid(
+                        mesh,
+                        Dict(
+                            "front" => QuasiStaticModel(
+                                :d,
+                                PK1Model(Guccione1991PassiveModel(), microstructure_model),
+                                facemodels_tdep,
+                            ),
+                            "back" => QuasiStaticModel(
+                                :d,
+                                PK1Model(Guccione1991PassiveModel(), microstructure_model),
+                                facemodels,
+                            ),
+                        ),
+                        timestepper,
+                    )[1].sol.retcode == DiffEqBase.ReturnCode.Success
+                )
+            end
+
+            # ... whereas on a subdomain that does go through `gto1` the unwrapping methods do fire.
+            # Nothing else covers a time dependent facet coefficient, so this pins them down.
+            @testset "Time dependent facet coefficient on a gto1 subdomain" begin
+                test_solve_contractile_cuboid(
+                    mesh,
+                    Dict(
+                        "front" => QuasiStaticModel(
+                            :d,
+                            PK1Model(Guccione1991PassiveModel(), microstructure_model),
+                            facemodels,
+                        ),
+                        "back" => QuasiStaticModel(
+                            :d,
+                            ActiveStressModel(
+                                Guccione1991PassiveModel(),
+                                SimpleActiveStress(; Tmax = 220e3),
+                                Thunderbolt.CaDrivenInternalSarcomereModel(
+                                    Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()),
+                                    TestCalciumHatField(),
+                                ),
+                                microstructure_model,
+                            ),
+                            facemodels_tdep,
+                        ),
+                    ),
+                    timestepper,
+                )
+            end
+        end
 
         mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 
