@@ -6,6 +6,17 @@ using TimerOutputs: @timeit_debug
 
 import SciMLLogging: Standard
 
+# These two must be imported *before* anything that pulls in Tensors (which `FerriteOperators` does,
+# via Ferrite). Loading Tensors first makes parts of Symbolics'/ModelingToolkit's precompiled images
+# fail validation, so they are recompiled inside their `__init__` — measured at ~4.5 s of extra load
+# time per Julia process (12.1 s -> 7.6 s), of which `Symbolics.__init__` alone goes 0.1 ms -> 1464 ms
+# at 100% recompilation.
+#
+# This is a *cache* effect, not method invalidation: `@snoop_invalidations using Tensors` reports zero
+# invalidated MethodInstances. It therefore depends on the current Tensors/SIMD/Symbolics combination
+# and can regress silently on an upgrade — the load-time check in CLAUDE.md is what catches that.
+import DynamicQuantities
+
 import FerriteOperators:
     FerriteOperators,
     SequentialCPUDevice,
@@ -106,7 +117,6 @@ import OrdinaryDiffEqCore:
     DummyController, DummyControllerCache, default_controller, setup_controller_cache
 import LinearSolve
 using LinearSolve: LinearAliasSpecifier
-import DynamicQuantities
 
 import ConcreteStructs: @concrete
 
@@ -114,8 +124,6 @@ using Base: @kwdef
 import Base: *, +, -
 
 import ForwardDiff
-
-import ModelingToolkit
 
 # Accelerator support libraries
 using Adapt: @adapt_structure, Adapt
@@ -168,7 +176,7 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
-include("modeling/mtkmodels.jl")
+# The `MTKModels` circuit definitions live in `ThunderboltMTKExt`; reach them via `mtk_models()`.
 
 # TODO put exports into the individual submodules above!
 export

@@ -421,14 +421,30 @@ setup_internal_cache(material_model::PK1Model, qr::QuadratureRule, sdh::SubDofHa
 internal_variable_evolution(material_model::PK1Model) =
     internal_variable_evolution(material_model.internal_model)
 
+# The AD helpers below take the *energy model* rather than the material model, and that is the whole
+# point: a Julia closure captures whole variables, not the fields its body reads. Writing
+# `F_ad -> Ψ(F_ad, coefficients, model.material)` therefore captures all of `model`, so
+# `Tensors.hessian` — which specializes on the closure type — is recompiled for every distinct
+# `PK1Model{PMat, IMod, CFType}`, even though `IMod` and `CFType` are never read inside. That is
+# ~1.6 s of byte-identical AD codegen per redundant combination.
+#
+# Capturing only the leaves keys the specialization on `(typeof(material), typeof(coefficients))`.
+# `coefficients` here is the *evaluated* coefficient value, so different coefficient *fields*
+# (`ConstantCoefficient`, `FieldCoefficient`, …) collapse onto one instance while everything the
+# arithmetic depends on stays concrete. Identical code reaches LLVM; only how often changes.
+@inline _pk1_stress(material, F, coefficients) =
+    Tensors.gradient(F_ad -> Ψ(F_ad, coefficients, material), F)
+@inline _pk1_stress_and_tangent(material, F, coefficients) =
+    Tensors.hessian(F_ad -> Ψ(F_ad, coefficients, material), F, :all)
+
 function stress_function(model::PK1Model, F::Tensor{2}, coefficients, ::EmptyInternalModel)
-    ∂Ψ∂F = Tensors.gradient(F_ad -> Ψ(F_ad, coefficients, model.material), F)
+    ∂Ψ∂F = _pk1_stress(model.material, F, coefficients)
 
     return ∂Ψ∂F
 end
 
 function stress_and_tangent(model::PK1Model, F::Tensor{2}, coefficients, ::EmptyInternalModel)
-    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ad -> Ψ(F_ad, coefficients, model.material), F, :all)
+    ∂²Ψ∂F², ∂Ψ∂F = _pk1_stress_and_tangent(model.material, F, coefficients)
 
     return ∂Ψ∂F, ∂²Ψ∂F²
 end
@@ -457,6 +473,19 @@ function setup_coefficient_cache(m::GeneralizedHillModel, qr::QuadratureRule, sd
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
+# Capture the two springs, not the model — see the note above `_pk1_stress`.
+@inline _generalized_hill_stress(passive_spring, active_spring, Fᵃ, F, coefficients) =
+    Tensors.gradient(
+        F_ad -> Ψ(F_ad, coefficients, passive_spring) + Ψ(F_ad, Fᵃ, coefficients, active_spring),
+        F,
+    )
+@inline _generalized_hill_stress_and_tangent(passive_spring, active_spring, Fᵃ, F, coefficients) =
+    Tensors.hessian(
+        F_ad -> Ψ(F_ad, coefficients, passive_spring) + Ψ(F_ad, Fᵃ, coefficients, active_spring),
+        F,
+        :all,
+    )
+
 function stress_function(model::GeneralizedHillModel, F::Tensor{2}, coefficients, state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(
@@ -466,12 +495,7 @@ function stress_function(model::GeneralizedHillModel, F::Tensor{2}, coefficients
         model.active_deformation_gradient_model,
     )
 
-    ∂Ψ∂F = Tensors.gradient(
-        F_ad ->
-            Ψ(F_ad, coefficients, model.passive_spring) +
-            Ψ(F_ad, Fᵃ, coefficients, model.active_spring),
-        F,
-    )
+    ∂Ψ∂F = _generalized_hill_stress(model.passive_spring, model.active_spring, Fᵃ, F, coefficients)
 
     return ∂Ψ∂F
 end
@@ -485,12 +509,12 @@ function stress_and_tangent(model::GeneralizedHillModel, F::Tensor{2}, coefficie
         model.active_deformation_gradient_model,
     )
 
-    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
-        F_ad ->
-            Ψ(F_ad, coefficients, model.passive_spring) +
-            Ψ(F_ad, Fᵃ, coefficients, model.active_spring),
+    ∂²Ψ∂F², ∂Ψ∂F = _generalized_hill_stress_and_tangent(
+        model.passive_spring,
+        model.active_spring,
+        Fᵃ,
         F,
-        :all,
+        coefficients,
     )
 
     return ∂Ψ∂F, ∂²Ψ∂F²
@@ -521,6 +545,19 @@ function setup_coefficient_cache(m::ExtendedHillModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
+# Capture the two springs and the scalar `N`, not the model — see the note above `_pk1_stress`.
+@inline _extended_hill_stress(passive_spring, active_spring, Fᵃ, N, F, coefficients) =
+    Tensors.gradient(
+        F_ad -> Ψ(F_ad, coefficients, passive_spring) + N*Ψ(F_ad, Fᵃ, coefficients, active_spring),
+        F,
+    )
+@inline _extended_hill_stress_and_tangent(passive_spring, active_spring, Fᵃ, N, F, coefficients) =
+    Tensors.hessian(
+        F_ad -> Ψ(F_ad, coefficients, passive_spring) + N*Ψ(F_ad, Fᵃ, coefficients, active_spring),
+        F,
+        :all,
+    )
+
 function stress_function(model::ExtendedHillModel, F::Tensor{2}, coefficients, cell_state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(
@@ -531,12 +568,7 @@ function stress_function(model::ExtendedHillModel, F::Tensor{2}, coefficients, c
     )
     N = 𝓝(cell_state, F, coefficients, model.contraction_model)
 
-    ∂Ψ∂F = Tensors.gradient(
-        F_ad ->
-            Ψ(F_ad, coefficients, model.passive_spring) +
-            N*Ψ(F_ad, Fᵃ, coefficients, model.active_spring),
-        F,
-    )
+    ∂Ψ∂F = _extended_hill_stress(model.passive_spring, model.active_spring, Fᵃ, N, F, coefficients)
 
     return ∂Ψ∂F
 end
@@ -551,12 +583,13 @@ function stress_and_tangent(model::ExtendedHillModel, F::Tensor{2}, coefficients
     )
     N = 𝓝(cell_state, F, coefficients, model.contraction_model)
 
-    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
-        F_ad ->
-            Ψ(F_ad, coefficients, model.passive_spring) +
-            N*Ψ(F_ad, Fᵃ, coefficients, model.active_spring),
+    ∂²Ψ∂F², ∂Ψ∂F = _extended_hill_stress_and_tangent(
+        model.passive_spring,
+        model.active_spring,
+        Fᵃ,
+        N,
         F,
-        :all,
+        coefficients,
     )
 
     return ∂Ψ∂F, ∂²Ψ∂F²
@@ -590,8 +623,29 @@ function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
+# Two independent AD closures here, so two pairs of leaves to capture — see the note above
+# `_pk1_stress`. Neither reads `model.microstructure_model`, which is why `MS` is dead weight in the
+# specialization key.
+@inline _active_stress_passive(material_model, F, coefficients) =
+    Tensors.gradient(F_ad -> Ψ(F_ad, coefficients, material_model), F)
+@inline _active_stress_passive_and_tangent(material_model, F, coefficients) =
+    Tensors.hessian(F_ad -> Ψ(F_ad, coefficients, material_model), F, :all)
+@inline _active_stress_active_and_tangent(
+    contraction_model,
+    active_stress_model,
+    cell_state,
+    F,
+    coefficients,
+) = Tensors.gradient(
+    F_ad ->
+        𝓝(cell_state, F_ad, coefficients, contraction_model) *
+        active_stress(active_stress_model, F_ad, coefficients),
+    F,
+    :all,
+)
+
 function stress_function(model::ActiveStressModel, F::Tensor{2}, coefficients, cell_state)
-    ∂Ψ∂F = Tensors.gradient(F_ad -> Ψ(F_ad, coefficients, model.material_model), F)
+    ∂Ψ∂F = _active_stress_passive(model.material_model, F, coefficients)
 
     P2 =
         𝓝(cell_state, F, coefficients, model.contraction_model) *
@@ -599,14 +653,14 @@ function stress_function(model::ActiveStressModel, F::Tensor{2}, coefficients, c
     return ∂Ψ∂F + P2
 end
 function stress_and_tangent(model::ActiveStressModel, F::Tensor{2}, coefficients, cell_state)
-    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ad -> Ψ(F_ad, coefficients, model.material_model), F, :all)
+    ∂²Ψ∂F², ∂Ψ∂F = _active_stress_passive_and_tangent(model.material_model, F, coefficients)
 
-    ∂2, P2 = Tensors.gradient(
-        F_ad ->
-            𝓝(cell_state, F_ad, coefficients, model.contraction_model) *
-            active_stress(model.active_stress_model, F_ad, coefficients),
+    ∂2, P2 = _active_stress_active_and_tangent(
+        model.contraction_model,
+        model.active_stress_model,
+        cell_state,
         F,
-        :all,
+        coefficients,
     )
     return ∂Ψ∂F + P2, ∂²Ψ∂F² + ∂2
 end

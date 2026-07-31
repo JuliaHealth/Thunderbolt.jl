@@ -1,5 +1,5 @@
-# Some dispatches to make the dispatcher happy
-*(::ThreadedSparseMatrixCSR, ::ModelingToolkit.Symbolics.Arr{<:Any, 1}) = @error "Not implemented"
+# Some dispatches to make the dispatcher happy.
+# The two ModelingToolkit-typed ones live in `ThunderboltMTKExt`.
 *(::ThreadedSparseMatrixCSR, ::SciMLBase.AbstractNoTimeSolution{T, 1} where {T}) =
     @error "Not implemented"
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.FillArrays.AbstractZeros{<:Any, 1}) = mul(A, v)
@@ -22,9 +22,3 @@
     Q <: DynamicQuantities.UnionAbstractQuantity{T, D},
     V <: AbstractMatrix{T},
 } = mul(A, v)
-
-mul!(
-    ::ModelingToolkit.ModelingToolkitBase.JumpProcesses.ExtendedJumpArray,
-    ::ThreadedSparseMatrixCSR,
-    ::AbstractVector{<:Number},
-) = @error "Not implemented"

@@ -6,7 +6,6 @@ version = "0.0.3"
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
 ConcreteStructs = "2569d6c7-a4a2-43d3-a901-331e8e4be471"
-DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 DynamicQuantities = "06fc5a27-2a28-4c7c-a15d-362465fb6821"
 FastBroadcast = "7034ab61-46d4-4ed7-9d0f-46aef9175898"
@@ -19,7 +18,6 @@ KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
-ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 OrdinaryDiffEqCore = "bbf590c4-e513-4bbe-9b18-05decba2e5d8"
 OrdinaryDiffEqOperatorSplitting = "760fc936-9fa0-4281-9c1a-468957eedc89"
@@ -28,7 +26,6 @@ Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 RecursiveArrayTools = "731186ca-8d62-57ce-b412-fbd966d074cd"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
-SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
 SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
 SciMLIterators = "efe4dcdd-3aed-4391-894d-a9dbd16a2f14"
 SciMLLogging = "a6db7da4-7206-11f0-1eab-35f2a5dbe1d1"
@@ -47,11 +44,15 @@ AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 FerriteMultigrid = "69a0a054-a29c-4d77-8818-cd7ec12cfcdc"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
+SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
 
 [extensions]
 CuThunderboltExt = ["CUDA", "GPUArrays"]
 ThunderboltFerriteMultigridExt = ["AlgebraicMultigrid", "FerriteMultigrid"]
 ThunderboltGPUArraysExt = "GPUArrays"
+ThunderboltMTKExt = "ModelingToolkit"
+ThunderboltMTKModelsExt = ["ModelingToolkit", "SciCompDSL"]
 
 [compat]
 AlgebraicMultigrid = "2"
@@ -103,9 +104,10 @@ OrdinaryDiffEqNonlinearSolve = "127b3ac7-2247-4354-8eb6-78cf4e7c58e8"
 OrdinaryDiffEqTsit5 = "b1df2697-797e-41e3-8120-5422d3b24e4a"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "StaticArrays", "Tensors", "Test", "MatrixDepot"]
+test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "Tensors", "Test", "MatrixDepot"]
