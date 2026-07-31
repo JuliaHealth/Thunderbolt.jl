@@ -1,70 +1,57 @@
-using Test, Tensors, Thunderbolt, StaticArrays
+using Thunderbolt
+using ParallelTestRunner
 
-import Thunderbolt: OrderedSet, to_mesh
+# Each test file runs in its own module, in its own worker process. That is why every file under
+# `test/` carries its own `using` header and includes `testfixtures.jl` itself — keep it that way, or
+# it will pass here and fail when run on its own (and vice versa).
+#
+# Useful invocations:
+#   julia --project=. -e 'using Pkg; Pkg.test()'                         # all files, parallel
+#   julia --project=. -e 'using Pkg; Pkg.test(test_args=["--jobs=1"])'   # serial, for debugging
+#   julia --project=. -e 'using Pkg; Pkg.test(test_args=["test_mesh"])'  # one file (prefix match)
+#   julia --project=. -e 'using Pkg; Pkg.test(test_args=["--list"])'     # show what would run
 
-using JET: @test_call, @test_opt
+const TESTDIR = @__DIR__
 
-function generate_mixed_grid_2D()
-    nodes = Node.([
-        Vec((-1.0, -1.0)),
-        Vec((0.0, -1.0)),
-        Vec((1.0, -1.0)),
-        Vec((-1.0, 1.0)),
-        Vec((0.0, 1.0)),
-        Vec((1.0, 1.0)),
-    ])
-    elements = [Triangle((1, 2, 5)), Triangle((1, 5, 4)), Quadrilateral((2, 3, 6, 5))]
-    cellsets = Dict(("Pacemaker" => OrderedSet([1]), "Myocardium" => OrderedSet([2, 3])))
-    return Grid(elements, nodes; cellsets)
+testsuite = find_tests(TESTDIR)   # NOT the `pwd()` default: from the repo root that walks docs/, bak/, …
+
+# Not part of the suite:
+#   testfixtures    — shared helpers, included by the files that need them
+#   gpu/*           — needs CUDA and its own project, no CI job yet
+#   test_fsi_element — scratch file, untracked and without a testset
+delete!(testsuite, "testfixtures")
+for name in collect(keys(testsuite))
+    startswith(name, "gpu/") && delete!(testsuite, name)
 end
 
-function generate_mixed_dimensional_grid_3D()
-    nodes = Node.([
-        Vec((-1.0, -1.0, -1.0)),
-        Vec((1.0, -1.0, -1.0)),
-        Vec((-1.0, 1.0, -1.0)),
-        Vec((1.0, 1.0, -1.0)),
-        Vec((-1.0, -1.0, 1.0)),
-        Vec((1.0, -1.0, 1.0)),
-        Vec((-1.0, 1.0, 1.0)),
-        Vec((1.0, 1.0, 1.0)),
-        Vec((0.0, 0.0, 0.0)),
-    ])
-    elements = [Hexahedron((1, 2, 4, 3, 5, 6, 8, 7)), Line((8, 9))]
-    cellsets = Dict(("Ventricle" => OrderedSet([1]), "Purkinje" => OrderedSet([2])))
-    facetsets = Dict((
-        "bottom" => OrderedSet([FacetIndex(1, 1)]),
-        "front" => OrderedSet([FacetIndex(1, 2)]),
-        "right" => OrderedSet([FacetIndex(1, 3)]),
-        "back" => OrderedSet([FacetIndex(1, 4)]),
-        "left" => OrderedSet([FacetIndex(1, 5)]),
-        "top" => OrderedSet([FacetIndex(1, 6)]),
-    ))
-    return Grid(elements, nodes; cellsets, facetsets)
+# `default_njobs()` maximises workers against CPU count and free memory, but it does not know that the
+# integration workers below each take `INTEGRATION_THREADS` threads for the per-color assembly. The
+# useful bound is therefore cores ÷ threads-per-worker, not cores. Measured on a 16-core box:
+# 4 jobs = 190 s, the 11-job default = 340 s, serial = 520 s. Explicit `--jobs=N` still wins.
+const INTEGRATION_THREADS = max(1, min(4, Sys.CPU_THREADS ÷ 4))
+default_jobs() = clamp(Sys.CPU_THREADS ÷ INTEGRATION_THREADS, 1, ParallelTestRunner.default_njobs())
+
+argv = copy(ARGS)
+any(startswith("--jobs"), argv) || push!(argv, "--jobs=$(default_jobs())")
+
+args = parse_args(argv)
+filter_tests!(testsuite, args)
+
+# Loaded once per test file, into the fresh module that file gets.
+const init_code = quote
+    using Test
+    using Thunderbolt
 end
 
-include("test_elements.jl")
-include("test_sarcomere.jl")
+# The integration tests are the ones that exercise the threaded per-color assembly, so give those
+# workers real threads. `addworker` otherwise pins JULIA_NUM_THREADS=1, which would silently drop
+# that coverage; `-t` overrides the env var. Keep the product of jobs x threads at or below the core
+# count — Polyester spins, so oversubscription hurts more than it helps.
+test_worker(name) =
+    if startswith(name, "integration/")
+        addworker(; exeflags = ["--threads=$(INTEGRATION_THREADS)"])
+    else
+        nothing
+    end
 
-include("test_solver.jl")
-
-include("test_transfer.jl")
-
-include("test_integrators.jl")
-
-include("test_type_stability.jl")
-include("test_mesh.jl")
-include("test_coefficients.jl")
-include("test_microstructures.jl")
-
-include("test_io.jl")
-
-include("integration/test_solid_mechanics.jl")
-include("integration/test_electrophysiology.jl")
-include("integration/test_ecg.jl")
-include("integration/test_fsi.jl")
-include("integration/test_multigrid.jl")
-
-include("test_aqua.jl")
-
-include("validation/land2015.jl")
+runtests(Thunderbolt, args; testsuite, init_code, test_worker)

@@ -1,3 +1,5 @@
+using Test, Thunderbolt, Tensors
+using JET: @test_opt, @test_call
 @testset "Type Stability" begin
     f₀       = Tensors.Vec{3, Float64}((1.0, 0.0, 0.0))
     s₀       = Tensors.Vec{3, Float64}((0.0, 1.0, 0.0))

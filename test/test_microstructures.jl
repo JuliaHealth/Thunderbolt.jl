@@ -1,3 +1,4 @@
+using Test, Thunderbolt, Tensors
 @testset "microstructures" begin
     setup_test_cache(args...) = Thunderbolt.duplicate_for_device(
         PolyesterDevice(),

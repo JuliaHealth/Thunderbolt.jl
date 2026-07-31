@@ -1,3 +1,5 @@
+using Test, Thunderbolt, Tensors, StaticArrays
+using JET: @test_opt, @test_call
 @testset "Coefficient API" begin
     device = PolyesterDevice()
 

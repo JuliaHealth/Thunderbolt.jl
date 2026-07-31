@@ -1,3 +1,4 @@
+using Test, Thunderbolt
 using Aqua
 
 @testset "Aqua.jl" begin

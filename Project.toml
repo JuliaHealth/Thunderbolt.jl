@@ -102,6 +102,7 @@ ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 OrdinaryDiffEqLowOrderRK = "1344f307-1e59-4825-a18e-ace9aa3fa4c6"
 OrdinaryDiffEqNonlinearSolve = "127b3ac7-2247-4354-8eb6-78cf4e7c58e8"
 OrdinaryDiffEqTsit5 = "b1df2697-797e-41e3-8120-5422d3b24e4a"
+ParallelTestRunner = "d3525ed8-44d0-4b2c-a655-542cee43accc"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
@@ -110,4 +111,4 @@ Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "Tensors", "Test", "MatrixDepot"]
+test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "ParallelTestRunner", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "Tensors", "Test", "MatrixDepot"]

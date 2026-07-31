@@ -1,3 +1,4 @@
+using Test, Thunderbolt, Tensors
 @testset "Mesh" begin
     num_refined_elements(::Type{Hexahedron}) = 8
     num_refined_elements(::Type{Tetrahedron}) = 8
