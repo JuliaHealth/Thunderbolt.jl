@@ -366,11 +366,8 @@ Base.eltype(data::DenseDataRange) = eltype(data.data)
 end
 
 # To handle embedded elements in the same code
-_inner_product_helper(a::Vec, B::Union{Tensor, SymmetricTensor}, c::Vec) = a ⋅ B ⋅ c
-_inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector) =
-    Vec(a.data) ⋅ B ⋅ Vec(c.data)
+_inner_product_helper(a::Vec, B::AbstractTensor, c::Vec) = a ⋅ B ⋅ c
 _inner_product_helper(a::Vec, B::AbstractFloat, c::Vec) = a ⋅ c * B
-_inner_product_helper(a::SVector, B::AbstractFloat, c::SVector) = Vec(a.data) ⋅ Vec(c.data) * B
 
 function geometric_subdomain_interpolation(sdh::SubDofHandler)
     grid      = get_grid(sdh.dh)
@@ -483,3 +480,61 @@ function is_sdh_on_any_subdomain(sdh, names::Vector{String})
     end
     return false
 end
+
+function narrow_dict_types(d::Dict)
+    # 1. Gather all unique types of the actual values in the dictionary
+    val_types = Tuple(unique(typeof(v) for v in values(d)))
+
+    # 2. Create a Union of those specific types
+    NarrowUnion = Union{val_types...}
+
+    # 3. Construct a new dictionary with the exact Key type and the new Union type
+    return Dict{keytype(d), NarrowUnion}(d)
+end
+
+function collect_dofs_on_subdomain(dh, mesh, name)
+    dofs = Set{Int}()
+    for sdh in dh.subdofhandlers
+        if any([
+            CellIndex(first(sdh.cellset)) ∈ subset for
+            subset in values(mesh.volumetric_subdomains[name].data)
+        ])
+            for cellid in sdh.cellset
+                for dof in celldofs(sdh, cellid)
+                    push!(dofs, dof)
+                end
+            end
+        end
+    end
+    return sort(collect(dofs))
+end
+
+@doc raw"""
+    smooth_abs(x, ε)
+
+Smooth approximation of ``|x|``:
+
+```math
+    \operatorname{smooth\_abs}(x, \varepsilon) = \frac{x^2}{\sqrt{x^2 + \varepsilon^2}} .
+```
+
+Needed wherever ``|x|`` enters a residual that is differentiated to obtain a tangent. ``|x|`` has a
+kink at the origin, so its linearization is discontinuous there and Newton's method degrades to
+semismooth behaviour exactly at ``x = 0`` — which for a rate ``x`` is the physically common case of
+"currently not moving", not an exotic corner.
+
+Chosen over the more familiar pseudo-Huber ``\sqrt{x^2 + \varepsilon^2} - \varepsilon`` for two
+reasons:
+
+- **Asymptotically exact.** Both vanish at the origin, but this form additionally has error
+  ``\mathcal{O}(\varepsilon^2 / |x|)`` for ``|x| \gg \varepsilon``, where the pseudo-Huber keeps an
+  ``\mathcal{O}(\varepsilon)`` bias for arbitrarily large arguments.
+- **No cancellation.** ``\sqrt{x^2 + \varepsilon^2} - \varepsilon`` subtracts two nearly equal
+  numbers when ``|x| \ll \varepsilon``.
+
+Both the value and the derivative vanish at the origin; a vanishing derivative is the only value a
+smooth, even approximation can take there.
+
+Requires ``\varepsilon > 0``.
+"""
+smooth_abs(x, ε) = x^2 / sqrt(x^2 + ε^2)

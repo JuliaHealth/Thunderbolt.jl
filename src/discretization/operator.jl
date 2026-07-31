@@ -1,6 +1,17 @@
 
 function needs_update(op::LinearFerriteOperator, t)
-    return _needs_update(op, op.integrator.integrand, t)
+    return needs_update(op, op.integrator, t)
+end
+
+function needs_update(op::LinearFerriteOperator, integrator, t)
+    return _needs_update(op, integrator.integrand, t)
+end
+
+function needs_update(op::LinearFerriteOperator, integrator::LinearMultiIntegrator, t)
+    return any([
+        _needs_update(op, subintegrator.integrand, t) for
+        subintegrator in values(integrator.subintegrators)
+    ])
 end
 
 function _needs_update(

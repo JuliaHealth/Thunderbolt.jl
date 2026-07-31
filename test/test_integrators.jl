@@ -83,7 +83,7 @@ end
     # ode_true and ode1/ode2 side by side to see how they connect.
     f1dofs = [1, 2, 3]
     f2dofs = [1, 3]
-    fpw = PointwiseODEFunction(1, f2, [0.0])
+    fpw = PointwiseODEFunction(f2, nothing, 1:length(f2dofs))
 
     fsplit1 = GenericSplitFunction((f1, fpw), (f1dofs, f2dofs))
     fsplit1b = GenericSplitFunction((f1, f2), (f1dofs, f2dofs))
@@ -126,7 +126,7 @@ end
     end
 
     f_NaN = ODEFunction(ode_NaN)
-    fpw_NaN = PointwiseODEFunction(1, f_NaN, [0.0])
+    fpw_NaN = PointwiseODEFunction(f_NaN, nothing, 1:2)
     f_NaN_dofs = f3dofs
     fsplit_NaN = GenericSplitFunction((f1, fpw_NaN), (f1dofs, f_NaN_dofs))
     prob_NaN = OperatorSplittingProblem(fsplit_NaN, u0, tspan)
@@ -143,7 +143,7 @@ end
         du[2] = 0.5
     end
 
-    fpw_force_half = PointwiseODEFunction(1, ODEFunction(ode2_force_half), [0.0])
+    fpw_force_half = PointwiseODEFunction(ODEFunction(ode2_force_half), nothing, 1:2)
 
     fsplit_force_half = GenericSplitFunction((f1, fpw_force_half), (f1dofs, f2dofs))
     prob_force_half = OperatorSplittingProblem(fsplit_force_half, u0, tspan)

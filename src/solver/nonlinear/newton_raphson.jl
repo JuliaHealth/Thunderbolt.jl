@@ -189,11 +189,41 @@ function _ew_prestep!(fc::EisenstatWalkerForcingCache, linear_solver_cache, resi
     return nothing
 end
 
+"""
+    nlsolve!(u, f, cache, t, p = t)
+
+`t` is the time, used for monitoring. `p` is the parameter object handed to the operator and thence to
+`FerriteOperators.query_element_parameters`.
+
+!!! warning "Transitional: `p` is currently overloaded"
+    `p` is *intended* to carry the current time together with the **parameters being optimized**, so
+    that a solve can be differentiated with respect to them.
+
+    Note "being optimized", not "the model's parameters". A material with ten parameters of which
+    nine are known from experiment contributes exactly one entry to `p`, so calibrating it is a 1D
+    problem rather than a 10D one. The known nine stay in the model struct; `p` selectively supplies
+    the free ones.
+
+    The framework is not there yet. Today `p` is used only to pass around either a bare time or a
+    `FerriteOperators.GenericFirstOrderTimeParameters`, and several layers still treat a single
+    argument as time and parameters at once — the surface element caches most visibly, since they
+    hand it straight to `evaluate_coefficient`.
+
+    Splitting `p` from `t` here is the first step out of that conflation, not the end of it. When
+    material parameters do become part of `p`, the slot to put them in already exists: the leading
+    `p` field of `GenericFirstOrderTimeParameters`, which FerriteOperators forwards via
+    `query_element_parameters(element, cell, ivh, p.p)`. Do not add new meanings to `t`.
+
+`p` defaults to `t` so callers with nothing extra to say are unaffected — notably
+`HomotopyPathSolver`, which is a load-stepping continuation rather than a time integrator and so has
+neither a previous solution nor a timestep to offer.
+"""
 function nlsolve!(
     u::AbstractVector{T},
     f::AbstractSemidiscreteFunction,
     cache::NewtonRaphsonSolverCache,
     t,
+    p = t,
 ) where {T}
     @unpack op, residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
@@ -208,11 +238,11 @@ function nlsolve!(
         fill!(residual, 0.0)
         if simplified && cache.iter > 0
             # Simplified Newton: reuse Jacobian and preconditioner from iter 0.
-            @timeit_debug "update residual" residual!(op, residual, u, t)
+            @timeit_debug "update residual" residual!(op, residual, u, p)
             @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, f)
             # Leave isfresh / precsisfresh false → reuse existing factorization.
         else
-            @timeit_debug "update operator" update_linearization!(op, residual, u, t)
+            @timeit_debug "update operator" update_linearization!(op, residual, u, p)
             @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
             linear_solver_cache.isfresh = true        # Notify linear solver that both the matrix and the preconditioner need to be updated.
             linear_solver_cache.precsisfresh = true

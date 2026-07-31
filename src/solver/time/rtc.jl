@@ -65,6 +65,12 @@ end
             n_reaction_tangents += 1
             φₘidx = transmembranepotential_index(subintegrator.f.ode)
             R = max(R, maximum(@view subintegrator.cache.dumat[:, φₘidx]))
+        elseif subintegrator.f isa PointwiseMultiODEFunction
+            n_reaction_tangents += 1
+            for (i, f) in enumerate(subintegrator.f.functions)
+                φₘidx = transmembranepotential_index(f.ode)
+                R = max(R, maximum(@view subintegrator.cache.dumat[i][:, φₘidx]))
+            end
         end
     end
     @assert n_reaction_tangents == 1 "No or multiple integrators using PointwiseODEFunction found"
@@ -100,10 +106,10 @@ end
     alg::ReactionTangentController,
     q,
 )
-    if integrator.dt ≤ Δt_bounds[1] # Check for "≤" to also handle the boundary cases
+    if integrator.dt ≤ alg.Δt_bounds[1] # Check for "≤" to also handle the boundary cases
         error("RTC cannot recover from step rejection below Δt min") # Force failure
     else
-        integrator.dt = Δt_bounds[1]
+        integrator.dt = alg.Δt_bounds[1]
     end
     return nothing # Do nothing
 end

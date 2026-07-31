@@ -1,3 +1,15 @@
+# The general FEM semidiscretize algorithm should be like this
+#
+# for each subdomain+model pair
+#     for each weak form
+#         for each field in the weak form
+#             register field in dof handler
+#         query quadrature rule from discretization or compute from weak form order
+#         for each internal variable
+#             register internal variables at the quadrature points
+#         register integrator
+# return function type matching the integrator list
+
 """
 Descriptor for a finite element discretization of a part of a PDE over some subdomain.
 
@@ -7,17 +19,16 @@ Descriptor for a finite element discretization of a part of a PDE over some subd
 struct FiniteElementDiscretization
     """
     """
-    interpolations::Dict{Symbol, Any}#, Union{<:InterpolationCollection, Pair{<:InterpolationCollection, <:QuadratureRuleCollection}}}
+    interpolations::Dict{Symbol}
     """
     """
     dbcs::Vector{Dirichlet} # TODO descriptor instead of Dirichlet. This allows us to distinguish different cases.
     """
+    Each model comes with a set of symbols identifying the weak forms.
+    These fields map user-provided quadrature rules.
     """
-    subdomains::Vector{String}
-    """
-    This field might be removed in future updates.
-    """
-    mass_qrc::Union{<:QuadratureRuleCollection, Nothing} # TODO maybe an "extras" field should be used instead :)
+    qrcs::Dict{Symbol}
+    fqrcs::Dict{Symbol}
     """
     This field might be removed in future updates.
     """
@@ -25,13 +36,13 @@ struct FiniteElementDiscretization
     """
     """
     function FiniteElementDiscretization(
-        ips::Dict{Symbol},
+        ips::Dict{Symbol};
         dbcs::Vector{Dirichlet} = Dirichlet[],
-        subdomains::Vector{String} = String[],
+        qrcs::Dict{Symbol} = Dict{Symbol, Any}(),
+        fqrcs::Dict{Symbol} = Dict{Symbol, Any}(),
         assembly_strategy = SequentialAssemblyStrategy(SequentialCPUDevice()),
-        mass_qrc = nothing,
     )
-        new(ips, dbcs, subdomains, mass_qrc, assembly_strategy)
+        new(ips, dbcs, qrcs, fqrcs, assembly_strategy)
     end
 end
 
@@ -54,25 +65,107 @@ function _get_interpolation_from_discretization(disc::FiniteElementDiscretizatio
     return _extract_ipc(disc.interpolations[sym])
 end
 function _get_quadrature_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
-    if !haskey(disc.interpolations, sym)
-        error(
-            "Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).",
-        )
+    # Step 1: Try to query from qrcs discretization table
+    if haskey(disc.qrcs, sym)
+        return disc.qrcs[sym]
     end
-    return _extract_qrc(disc.interpolations[sym])
+    # Step 2: Deduce from interpolation order
+    if haskey(disc.interpolations, sym)
+        return _extract_qrc(disc.interpolations[sym])
+    end
+    error(
+        "Finite element discretization does not have an interpolation or quadrature rule for $sym. Available symbols: $(collect(keys(disc.interpolations))) and $(collect(keys(disc.qrcs))).",
+    )
 end
 function _get_facet_quadrature_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
-    if !haskey(disc.interpolations, sym)
-        error(
-            "Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).",
-        )
+    # Step 1: Try to query from qrcs discretization table
+    if haskey(disc.fqrcs, sym)
+        return disc.fqrcs[sym]
     end
-    intorder = getorder(_extract_ipc(disc.interpolations[sym]))
-    return FacetQuadratureRuleCollection(intorder)
+    # Step 2: Deduce from interpolation order
+    if haskey(disc.interpolations, sym)
+        intorder = getorder(_extract_ipc(disc.interpolations[sym]))
+        return FacetQuadratureRuleCollection(intorder)
+    end
+    error(
+        "Finite element discretization does not have an interpolation or facet quadrature rule for $sym. Available symbols: $(collect(keys(disc.interpolations))) and $(collect(keys(disc.fqrcs))).",
+    )
 end
 
-semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) =
-    @error "No implementation for the generic discretization of coupled problems available yet."
+"""
+    _approximation_descriptors(disc::FiniteElementDiscretization, model)
+
+Gather the [`ApproximationDescriptor`](@ref)s for all field variables of `model`.
+
+All fields of one model on one subdomain must be registered in a *single* `add_subdomain!` call,
+because every call constructs a fresh `SubDofHandler`. Registering them one by one would yield one
+single-field `SubDofHandler` per field over the same cellset instead of one handler carrying all
+fields.
+"""
+function _approximation_descriptors(disc::FiniteElementDiscretization, model)
+    return [
+        ApproximationDescriptor(sym, _get_interpolation_from_discretization(disc, sym)) for
+        sym in get_field_variable_names(model)
+    ]
+end
+
+"""
+    _subdomain_cellids(mesh, name)
+
+All cell ids of the volumetric subdomain `name`, flattened over the per-celltype split.
+"""
+function _subdomain_cellids(mesh, name)
+    haskey(mesh.volumetric_subdomains, name) || error(
+        "Volumetric subdomain $name not found on mesh. Available subdomains: $(collect(keys(mesh.volumetric_subdomains))).",
+    )
+    return Set(idx.idx for (_, cellset) in mesh.volumetric_subdomains[name].data for idx in cellset)
+end
+
+"""
+    _add_dirichlet_conditions!(ch, dbcs)
+
+Add all Dirichlet conditions to `ch`, re-raising Ferrite's binding failure with the information
+needed to diagnose it: which fields and how much of the mesh the dof handler actually covers. The
+usual cause is a condition whose set reaches into cells that carry no model, and hence no dofs.
+"""
+function _add_dirichlet_conditions!(ch::ConstraintHandler, dbcs)
+    dh = ch.dh
+    for (i, dbc) ∈ enumerate(dbcs)
+        try
+            Ferrite.add!(ch, dbc)
+        catch e
+            e isa ErrorException || rethrow()
+            ncovered = sum(length(sdh.cellset) for sdh in dh.subdofhandlers; init = 0)
+            error(
+                "Failed to add Dirichlet condition $i on field :$(dbc.field_name) - $(e.msg)\n" *
+                "The dof handler carries fields $(dh.field_names) on $ncovered of " *
+                "$(getncells(get_grid(dh))) cells. If the condition reaches cells outside the " *
+                "subdomains carrying a model, those cells have no dofs to constrain.",
+            )
+        end
+    end
+    return ch
+end
+
+"""
+    _check_model_subdomains_disjoint(mesh, names)
+
+Ferrite associates each cell with at most one `SubDofHandler`, so the subdomains carrying models
+must not overlap. Overlapping *cellsets* on the mesh are fine - only the subset used by the models
+is constrained. Errors with the offending pair and the size of the overlap.
+"""
+function _check_model_subdomains_disjoint(mesh, names)
+    cellids = Dict(name => _subdomain_cellids(mesh, name) for name in names)
+    for (i, name1) in enumerate(names), name2 in Iterators.drop(names, i)
+        overlap = intersect(cellids[name1], cellids[name2])
+        isempty(overlap) || error(
+            "Subdomains \"$name1\" and \"$name2\" both carry a model but share $(length(overlap)) cells " *
+            "(e.g. cell $(first(sort(collect(overlap))))). Ferrite associates every cell with at most one " *
+            "SubDofHandler, so subdomains carrying models must be pairwise disjoint.",
+        )
+    end
+    return nothing
+end
 
 function semidiscretize(
     model::TransientDiffusionModel,
@@ -85,25 +178,120 @@ function semidiscretize(
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
-
-    if !isempty(discretization.subdomains)
-        for name in discretization.subdomains
-            add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        end
-    else
-        add_subdomain!(dh, single_subdomain_or_error(mesh), [ApproximationDescriptor(sym, ipc)])
-    end
+    add_subdomain!(dh, single_subdomain_or_error(mesh), [ApproximationDescriptor(sym, ipc)])
     close!(dh)
 
     T = get_coordinate_eltype(get_grid(dh))
     return AffineODEFunction(
         BilinearMassIntegrator(
             ConstantCoefficient(T(1.0)),
-            discretization.mass_qrc === nothing ? qrc : mass_qrc, # Allow e.g. mass lumping for explicit integrators.
+            haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass] : qrc, # Allow e.g. mass lumping for explicit integrators.
             sym,
         ),
         BilinearDiffusionIntegrator(model.κ, qrc, sym),
         LinearIntegrator(model.source, qrc),
+        dh,
+        discretization.assembly_strategy,
+    )
+end
+
+function register_affine_ode_integrators!(
+    mass_integrators,
+    rhs_integrators,
+    linear_integrators,
+    dh,
+    name,
+    discretization::FiniteElementDiscretization,
+    model::TransientDiffusionModel,
+)
+    sym = model.solution_variable_symbol
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+
+    T = get_coordinate_eltype(get_grid(dh))
+
+    qrc = _get_quadrature_from_discretization(discretization, sym)
+    # TODO allow e.g. mass lumping for explicit integrators.
+    mass_integrators[name] = BilinearMassIntegrator(
+        ConstantCoefficient(T(1.0)),
+        haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass] : qrc,
+        sym,
+    )
+    rhs_integrators[name] = BilinearDiffusionIntegrator(model.κ, qrc, sym)
+    linear_integrators[name] = LinearIntegrator(model.source, qrc)
+end
+
+function register_affine_ode_integrators!(
+    mass_integrators,
+    rhs_integrators,
+    linear_integrators,
+    dh,
+    name,
+    discretization::FiniteElementDiscretization,
+    model::InterfaceDiffusionModel,
+)
+    sym = model.solution_variable_symbol
+    ipc =
+        _get_interpolation_from_discretization(discretization, model.interface_interpolation_symbol)
+    add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+
+    T = get_coordinate_eltype(get_grid(dh))
+
+    qrc = _get_quadrature_from_discretization(discretization, sym)
+    rhs_integrators[name] =
+        BilinearInterfaceDiffusionIntegrator(model.G, qrc, sym, model.solution_variable_symbol)
+end
+
+function semidiscretize(
+    models::Dict{String, <:Union{<:TransientDiffusionModel, <:InterfaceDiffusionModel}},
+    discretization::FiniteElementDiscretization,
+    mesh::AbstractGrid,
+)
+    @assert length(discretization.dbcs) == 0 "Dirichlet conditions not supported yet for transient diffusion models"
+
+    _check_model_subdomains_disjoint(mesh, collect(keys(models)))
+
+    dh = DofHandler(mesh)
+
+    # 3 weak forms
+    rhs_integrators    = Dict{String, AbstractBilinearIntegrator}()
+    mass_integrators   = Dict{String, AbstractBilinearIntegrator}()
+    linear_integrators = Dict{String, AbstractLinearIntegrator}()
+
+    for (name, model) in models
+        if typeof(model) <: TransientDiffusionModel
+            register_affine_ode_integrators!(
+                mass_integrators,
+                rhs_integrators,
+                linear_integrators,
+                dh,
+                name,
+                discretization,
+                model,
+            )
+        end
+    end
+    # We register the interfaces in a separate step, so they do not interfere with the dof distribution
+    for (name, model) in models
+        if typeof(model) <: InterfaceDiffusionModel
+            register_affine_ode_integrators!(
+                mass_integrators,
+                rhs_integrators,
+                linear_integrators,
+                dh,
+                name,
+                discretization,
+                model,
+            )
+        end
+    end
+
+    close!(dh)
+
+    return AffineODEFunction(
+        BilinearMultiIntegrator(mass_integrators),
+        BilinearMultiIntegrator(rhs_integrators),
+        LinearMultiIntegrator(linear_integrators),
         dh,
         discretization.assembly_strategy,
     )
@@ -118,24 +306,53 @@ function semidiscretize(
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
-    if !isempty(discretization.subdomains)
-        for name in discretization.subdomains
-            add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        end
-    else
-        add_subdomain!(dh, single_subdomain_or_error(mesh), [ApproximationDescriptor(sym, ipc)])
-    end
+    add_subdomain!(dh, single_subdomain_or_error(mesh), [ApproximationDescriptor(sym, ipc)])
     close!(dh)
 
     ch = ConstraintHandler(dh)
-    for dbc ∈ discretization.dbcs
-        Ferrite.add!(ch, dbc)
-    end
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
     close!(ch)
 
     return AffineSteadyStateFunction(
         BilinearDiffusionIntegrator(model.κ, qrc, sym),
         LinearIntegrator(model.source, qrc),
+        dh,
+        ch,
+        discretization.assembly_strategy,
+    )
+end
+
+function semidiscretize(
+    models::Dict{String, <:SteadyDiffusionModel},
+    discretization::FiniteElementDiscretization,
+    mesh::AbstractGrid,
+)
+    _check_model_subdomains_disjoint(mesh, collect(keys(models)))
+
+    dh = DofHandler(mesh)
+
+    rhs_integrators    = Dict{String, AbstractBilinearIntegrator}()
+    linear_integrators = Dict{String, AbstractLinearIntegrator}()
+
+    for (name, model) in models
+        sym = model.solution_variable_symbol
+        ipc = _get_interpolation_from_discretization(discretization, sym)
+        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+
+        qrc                      = _get_quadrature_from_discretization(discretization, sym)
+        rhs_integrators[name]    = BilinearDiffusionIntegrator(model.κ, qrc, sym)
+        linear_integrators[name] = LinearIntegrator(model.source, qrc)
+    end
+
+    close!(dh)
+
+    ch = ConstraintHandler(dh)
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
+    close!(ch)
+
+    return AffineSteadyStateFunction(
+        BilinearMultiIntegrator(rhs_integrators),
+        LinearMultiIntegrator(linear_integrators),
         dh,
         ch,
         discretization.assembly_strategy,
@@ -162,13 +379,13 @@ function semidiscretize(
     ndofsφ = ndofs(dh)
     # TODO we need some information about the discretization of this one, e.g. dofs a nodes vs dofs at quadrature points
     # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
+    nstates_per_point = num_states(epmodel.ion)
     odefun = PointwiseODEFunction(
         # TODO epmodel.Cₘ(x)
-        ndofsφ,
         epmodel.ion,
         split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym),
+        1:(nstates_per_point*ndofsφ),
     )
-    nstates_per_point = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
     heat_dofrange = 1:ndofsφ
     ode_dofrange = 1:(nstates_per_point*ndofsφ)
@@ -182,125 +399,203 @@ function semidiscretize(
     return semidiscrete_ode
 end
 
-# Solid mechanics semidiscretize interface
-function semidiscretize_register_subdomains!(
-    dh,
-    lvh,
-    model,
-    discretization::FiniteElementDiscretization,
-    subdomains,
-)
-    semidiscretize_register_subdomains!(
-        dh,
-        lvh,
-        model,
-        model.material_model,
-        discretization,
-        subdomains,
+function semidiscretize_map_diffusion_part(epmodel::MonodomainModel)
+    return TransientDiffusionModel(
+        ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
+        epmodel.stim,
+        epmodel.transmembrane_solution_symbol,
     )
 end
-function semidiscretize_register_subdomains!(
-    dh,
-    lvh,
-    model,
-    material_model::AbstractMaterialModel,
+
+function semidiscretize_map_diffusion_part(model::InterfaceDiffusionModel)
+    return model
+end
+
+function semidiscretize(
+    split::ReactionDiffusionSplit{Dict{String, Any}},
     discretization::FiniteElementDiscretization,
-    subdomains,
+    mesh::AbstractGrid,
 )
-    sym = model.displacement_symbol
-    ipc = _get_interpolation_from_discretization(discretization, sym)
-    qrc = _get_quadrature_from_discretization(discretization, sym)
-    if !isempty(subdomains)
-        for name in subdomains
-            add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-            add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
+    models = narrow_dict_types(split.model)
+    semidiscretize(ReactionDiffusionSplit(models, split.cs), discretization, mesh)
+end
+
+function semidiscretize(
+    split::ReactionDiffusionSplit{
+        <:Dict{String, <: Union{<:AbstractEPModel, <:InterfaceDiffusionModel}},
+    },
+    discretization::FiniteElementDiscretization,
+    mesh::AbstractGrid,
+)
+    epmodels = split.model
+
+    heat_models =
+        Dict(name => semidiscretize_map_diffusion_part(epmodel) for (name, epmodel) in epmodels)
+
+    heatfun = semidiscretize(heat_models, discretization, mesh)
+
+    dh = heatfun.dh
+    ndofsφ = ndofs(dh)
+
+    # TODO we need some information about the discretization of this one, e.g. dofs a nodes vs dofs at quadrature points
+    # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
+    inner_functions = PointwiseODEFunction[]
+    offset = 0
+    # Only bulk models own a block of the solution vector; coupling models attach to fields that
+    # bulk models introduced and are handled entirely by the heat function.
+    bulk_models = filter(nm -> !is_coupling_model(last(nm)), epmodels)
+    for (name, model) in epmodels
+        if is_coupling_model(model) && has_pointwise_reaction_part(model)
+            error(
+                "Coupling model on \"$name\" ($(typeof(model))) carries a pointwise reaction part, " *
+                "which is not supported yet: a coupling model does not own a block of the solution " *
+                "vector, so its reaction state has nowhere to live.",
+            )
         end
-    else
-        name = single_subdomain_or_error(get_grid(dh))
-        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        add_subdomain!(lvh, name, gather_internal_variable_infos(material_model), qrc, dh)
     end
-end
 
-function semidiscretize_register_subdomains!(
-    dh,
-    lvh,
-    model,
-    material_models::MultiMaterialModel,
-    discretization::FiniteElementDiscretization,
-    subdomains,
-)
-    if length(subdomains) > 1
-        @warn "Multimaterials ignore discretization subdomains for now."
-    end
-    semidiscretize_register_subdomains_multi!(
-        dh,
-        lvh,
-        model,
-        material_models.materials,
-        material_models.domains,
-        material_models.domain_names,
-        discretization,
+    epmodel_symbols = Set(
+        reaction_solution_symbol(model) for
+        model in values(bulk_models) if has_pointwise_reaction_part(model)
     )
-end
-@unroll function semidiscretize_register_subdomains_multi!(
-    dh,
-    lvh,
-    model,
-    material_models,
-    domains,
-    domain_names,
-    discretization,
-)
-    sym = model.displacement_symbol
-    ipc = _get_interpolation_from_discretization(discretization, sym)
-    qrc = _get_quadrature_from_discretization(discretization, sym)
-    idx = 1
-    @unroll for material_model in material_models
-        add_subdomain!(dh, domain_names[idx], [ApproximationDescriptor(sym, ipc)])
-        add_subdomain!(
-            lvh,
-            domain_names[idx],
-            gather_internal_variable_infos(material_model),
-            qrc,
-            dh,
-        )
-        idx += 1
+    @assert length(epmodel_symbols) == 1 "All EP models in a domain split must share the same transmembrane potential symbol, got $(epmodel_symbols)."
+    φsym = first(epmodel_symbols)
+    xφ = (split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym))
+    heat_dofrange = Int[]
+    for (name, model) in bulk_models
+        if has_pointwise_reaction_part(model) # Bulk models without a reaction part need no ODE block
+            # Extract dofs associated with subdomain
+            subdofs = collect_dofs_on_subdomain(dh, mesh, name)
+            # Compute range for states
+            mindof, maxdof = extrema(subdofs)
+            @assert length(mindof:maxdof) == length(subdofs) "$(mindof:maxdof) does not match length(subdofs)=$(length(subdofs)) => Subdomain is not isolated. "
+            nstates = num_states(reaction_model(model))
+            # The state vector is packed subdomain by subdomain in iteration order, *not* by
+            # global dof index, because the number of states per point varies between subdomains.
+            # Hence the range is derived from the running offset, exactly as the heat dof map below.
+            state_range = (offset+1):(offset+nstates*length(subdofs))
+            @info "Mapping state range on $name to $state_range from $(mindof:maxdof)"
+
+            # Create ode function for subdomain
+            push!(
+                inner_functions,
+                PointwiseODEFunction(
+                    reaction_model(model),
+                    xφ === nothing ? nothing : view(xφ, mindof:maxdof),
+                    state_range,
+                ),
+            )
+
+            # Map heat dofs
+            heat_dofs_submodel =
+                ((subdofs .- minimum(subdofs)) .* nstates) .+
+                transmembranepotential_index(reaction_model(model)) .+ offset
+            append!(heat_dofrange, heat_dofs_submodel)
+
+            # Update total number of dofs in split
+            offset += length(subdofs)*num_states(reaction_model(model))
+        end
     end
+    ionicfun = PointwiseMultiODEFunction(inner_functions, xφ)
+    ionic_dofrange = 1:offset
+
+    # NOTE: these two index sets deliberately *overlap* - `heat_dofrange` picks the transmembrane
+    # potential entries out of the ionic state vector. Operator splitting splits the operator, not
+    # the unknowns, so this is not a partition of the solution vector.
+    semidiscrete_ode = GenericSplitFunction(
+        (heatfun, ionicfun),
+        (heat_dofrange, ionic_dofrange),
+        # No transfer operators needed, because the the solutions variables overlap with the subproblems perfectly
+    )
+
+    return semidiscrete_ode
 end
 
+"""
+    _setup_internal_variable_handler(integrator, dh)
 
+Build the [`InternalVariableHandler`](@ref) for `integrator` using `FerriteOperators`, rather than
+laying the condensed unknowns out by hand.
+
+`FerriteOperators` normally does this inside `setup_subdomain_caches`, i.e. at operator setup - but
+`solution_size` has to be known already at `semidiscretize` time in order to size the initial
+solution vector, so it is built eagerly here. The element caches are constructed once more later
+during operator setup; that is setup-only cost.
+"""
+function _setup_internal_variable_handler(integrator, dh)
+    element_caches = [setup_element_cache(integrator, sdh) for sdh in dh.subdofhandlers]
+    return FerriteOperators.setup_internal_variable_handler(integrator, element_caches, dh)
+end
+
+# Solid mechanics semidiscretize interface
 function semidiscretize(
     model::QuasiStaticModel,
     discretization::FiniteElementDiscretization,
     mesh::AbstractGrid,
 )
     sym = model.displacement_symbol
-    ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
+    fqrc = _get_facet_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
-    lvh = InternalVariableHandler(mesh)
-    semidiscretize_register_subdomains!(dh, lvh, model, discretization, discretization.subdomains)
+    name = single_subdomain_or_error(get_grid(dh))
+    add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
     close!(dh)
-    close!(lvh)
+
+    integrator =
+        NonlinearIntegrator(model, model.facet_models, get_field_variable_names(model), qrc, fqrc)
+    lvh = _setup_internal_variable_handler(integrator, dh)
 
     ch = ConstraintHandler(dh)
-    for dbc ∈ discretization.dbcs
-        Ferrite.add!(ch, dbc)
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
+    close!(ch)
+
+    semidiscrete_problem =
+        QuasiStaticFunction(dh, ch, lvh, integrator, discretization.assembly_strategy)
+
+    return semidiscrete_problem
+end
+
+function semidiscretize(
+    models::Dict{String, <: QuasiStaticModel},
+    discretization::FiniteElementDiscretization,
+    mesh::AbstractGrid,
+)
+    _check_model_subdomains_disjoint(mesh, collect(keys(models)))
+
+    dh = DofHandler(mesh)
+    integrators = Dict{String, NonlinearIntegrator}()
+    for (name, model) in models
+        add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
+
+        form_names = get_volumetric_weak_form_names(model)
+        @assert length(form_names) == 1
+        form_name = first(form_names)
+        qrc = _get_quadrature_from_discretization(discretization, form_name) # FIXME we want a more intrusive approach which also takes the model into account here
+
+        fqrc = _get_facet_quadrature_from_discretization(discretization, form_name)
+
+        integrators[name] = NonlinearIntegrator(
+            model,
+            model.facet_models,
+            get_field_variable_names(model),
+            qrc,
+            fqrc,
+        )
     end
+    close!(dh)
+
+    lvh = _setup_internal_variable_handler(NonlinearMultiDomainIntegrator2(integrators), dh)
+
+    ch = ConstraintHandler(dh)
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
+    # FIXME add affine constraints due to AMR
     close!(ch)
 
     semidiscrete_problem = QuasiStaticFunction(
         dh,
         ch,
         lvh,
-        NonlinearIntegrator(
-            model,
-            model.facet_models,
-            [sym],
-            qrc,
-            _get_facet_quadrature_from_discretization(discretization, sym),
-        ),
+        NonlinearMultiDomainIntegrator2(integrators),
         discretization.assembly_strategy,
     )
 

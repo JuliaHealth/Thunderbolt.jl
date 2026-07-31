@@ -44,7 +44,7 @@ bibtex_plugin = CitationBibliography(
             "Continuum Mechanics" => [
                 "CM01: Simple Active Stress" => "tutorials/cm01_simple-active-stress.md",
                 "CM02: Prestressing (WIP)" => "tutorials/cm02_prestress.md",
-                # "CM03: 0D Blood Circuit" => "tutorials/cm03_3d0d-coupling.md", # FIXME blocked again by https://github.com/TS-CUBED/CirculatorySystemModels.jl/pull/38 ...
+                "CM03: 0D Blood Circuit" => "tutorials/cm03_3d0d-coupling.md",
                 "CM04: Pericadium (TODO)" => "tutorials/cm04_pericardium.md",
                 "CM05: Four Chamber (TODO)" => "tutorials/cm05_fourchambers.md",
                 "CM06: Heart Valves (TODO)" => "tutorials/cm06_heartvalves.md",
@@ -86,6 +86,7 @@ bibtex_plugin = CitationBibliography(
         ],
         "Developer Documentation" => [
             "Overview" => "devdocs/index.md",
+            "devdocs/model_interface.md",
             "devdocs/elements.md",
             "devdocs/domain_management.md",
         ],

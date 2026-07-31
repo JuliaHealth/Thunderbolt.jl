@@ -38,6 +38,9 @@ import FerriteOperators:
     assemble_facet!,
     value_type
 
+import FerriteInterfaceElements:
+    InterfaceCellInterpolation, InterfaceCellValues, InterfaceCell, getdetJdV_average
+
 import FerriteOperators:
     LinearizedFerriteOperator,
     BilinearFerriteOperator,
@@ -96,7 +99,7 @@ import SymbolicIndexingInterface
 import SciMLBase
 @reexport import SciMLBase: init, solve, solve!, step!
 @reexport import SciMLIterators: TimeChoiceIterator
-using SciMLBase: recursivecopy!, recursivecopy
+using RecursiveArrayTools: recursivecopy!, recursivecopy
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 import OrdinaryDiffEqCore:
@@ -202,6 +205,7 @@ export
     to_mesh,
     # Generic models
     TransientDiffusionModel,
+    InterfaceDiffusionModel,
     AffineODEFunction,
     default_initial_condition!,
     # Local API
@@ -230,6 +234,7 @@ export
     LinearSpringModel,
     SimpleActiveSpring,
     # Contraction model
+    AsRateIndependent,
     CaDrivenInternalSarcomereModel,
     ConstantStretchModel,
     PelceSunLangeveld1995Model,
@@ -278,9 +283,6 @@ export
     compute_midmyocardial_section_coordinate_system,
     getcoordinateinterpolation,
     vtk_coordinate_system,
-    # Coupling
-    Coupling,
-    CoupledModel,
     # Discretization
     semidiscretize,
     FiniteElementDiscretization,

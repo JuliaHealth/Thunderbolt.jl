@@ -90,21 +90,23 @@ coupler = LumpedFluidSolidCoupler(
     ],
     :displacement,
 )
-coupled_model = RSAFDQ2022Model(solid_model, fluid_model, coupler);
+# The structural model is keyed by the subdomain it lives on, exactly as for an uncoupled mechanics
+# problem. Note that the subdomain map goes *inside* the coupled model: `RSAFDQ2022Split` annotates
+# the whole 3D-0D problem, so it is not itself something that lives on a subdomain.
+coupled_model = RSAFDQ2022Model(Dict("myocardium" => solid_model), fluid_model, coupler);
 # !!! todo
 #     Once we figure out a nicer way to do this we should add more detailed docs here.
 
 # Now we semidiscretize the model spatially as usual with finite elements and annotate the model with a stable split.
 spatial_discretization_method = FiniteElementDiscretization(
-    Dict(:displacement => LagrangeCollection{1}()^3),
-    [
+    Dict(:displacement => LagrangeCollection{1}()^3);
+    dbcs = [
         Dirichlet(:displacement, getfacetset(mesh, "Base"), (x,t) -> [0.0], [3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor4"), (x,t) -> (0.0,), [3])
     ],
-    ["myocardium"],
 )
 splitform = semidiscretize(
     RSAFDQ2022Split(coupled_model),

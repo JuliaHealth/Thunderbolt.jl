@@ -28,7 +28,6 @@ abstract type AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunctio
 solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))
 num_blocks(f::AbstractSemidiscreteBlockedFunction) = length(blocksizes(f))
 
-
 """
     NullFunction(ndofs)
 
@@ -40,15 +39,31 @@ end
 
 solution_size(f::NullFunction) = f.ndofs
 
-# See https://github.com/JuliaGPU/Adapt.jl/issues/84 for the reason why hardcoding Int does not work
-struct PointwiseODEFunction{IndexType <: Integer, ODEType, xType} <: AbstractPointwiseFunction
-    npoints::IndexType
+"""
+    PointwiseODEFunction
+
+This acts as as a launch-pad for batches of ODE steps.
+"""
+struct PointwiseODEFunction{ODEType, xType, IndexVectorType} <: AbstractPointwiseFunction
     ode::ODEType
     x::xType
+    # Indices of the states associated with this
+    associated_states::IndexVectorType
 end
-Adapt.@adapt_structure PointwiseODEFunction
 
-solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
+solution_size(f::PointwiseODEFunction) = length(f.associated_states)
+
+"""
+    PointwiseMultiODEFunction
+
+This acts as as a launch-pad for batches of ODE steps.
+"""
+struct PointwiseMultiODEFunction{xType} <: AbstractPointwiseFunction
+    functions::Vector{<:PointwiseODEFunction}
+    x::xType
+end
+
+solution_size(f::PointwiseMultiODEFunction) = sum(solution_size.(f.functions))
 
 struct AffineODEFunction{MI, BI, ST, DH, AS} <: AbstractSemidiscreteFunction
     mass_term::MI
@@ -96,49 +111,96 @@ end
 get_strategy(f::QuasiStaticFunction) = f.assembly_strategy
 
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
+
+# The solution vector is laid out as `[fe_dofs | internal_variables]`. The internal variables are
+# condensed out at quadrature point level and do not enter the global linear system, so indices into
+# the solution vector are not indices into the system matrix.
 internal_variable_offset(f::QuasiStaticFunction, cid) = internal_variable_offset(f.lvh, cid)
 internal_variable_size(f::QuasiStaticFunction, cid, qp) =
     internal_variable_size(get_material_model(f, cid, qp), cid, qp)
 function default_initial_condition!(u::AbstractVector, f::QuasiStaticFunction)
     fill!(u, 0.0)
     ndofs(f.lvh) == 0 && return # no internal variable
-    uq = @view u[(ndofs(f.dh)+1):end]
     for sdh in f.dh.subdofhandlers
-        qr = getquadraturerule(f.integrator.qrc, sdh)
-        for cell in CellIterator(sdh)
-            cid = cellid(cell)
-            offset = internal_variable_offset(f.lvh, cid)
-            offset == 0 && continue
-            for qp in QuadratureIterator(qr)
-                material_model = get_material_model(f, cid, qp)
-                ivsize_per_qp = internal_variable_size(material_model, cid, qp)
-                ivsize_per_qp == 0 && continue
-                q = @view uq[offset:(offset+ivsize_per_qp-1)]
-                default_initial_state!(q, material_model)
-                offset += ivsize_per_qp
-            end
+        default_initial_condition_quasistatic_subdomain!(u, f, f.integrator, sdh)
+    end
+end
+
+function default_initial_condition_quasistatic_subdomain!(
+    u,
+    f::QuasiStaticFunction,
+    integrator::NonlinearIntegrator,
+    sdh,
+)
+    default_initial_condition_quasistatic_subdomain!(u, f, integrator, integrator.volume_model, sdh)
+end
+
+function default_initial_condition_quasistatic_subdomain!(
+    u,
+    f::QuasiStaticFunction,
+    integrator::NonlinearIntegrator,
+    volume_model::QuasiStaticModel,
+    sdh,
+)
+    (; material_model) = volume_model
+
+    qr = getquadraturerule(integrator.qrc, sdh)
+    for cell in CellIterator(sdh)
+        cid = cellid(cell)
+        offset = internal_variable_offset(f.lvh, cid)
+        offset == 0 && continue
+        for qp in QuadratureIterator(qr)
+            ivsize_per_qp = internal_variable_size(material_model, cid, qp)
+            ivsize_per_qp == 0 && continue
+            # `internal_variable_offset` is an absolute 0-based offset into the solution vector
+            # (the FerriteOperators convention), so index `u` directly rather than a view of the
+            # internal variable block.
+            q = @view u[(offset+1):(offset+ivsize_per_qp)]
+            default_initial_state!(q, material_model)
+            offset += ivsize_per_qp
         end
     end
 end
 
+function default_initial_condition_quasistatic_subdomain!(
+    u,
+    f::QuasiStaticFunction,
+    integrator::NonlinearMultiDomainIntegrator2,
+    sdh,
+)
+    for (name, set) in sdh.dh.grid.volumetric_subdomains
+        # First, check if the subdomain at hand is used byt he integrator
+        haskey(integrator.subintegrators, name) || continue
+        # Then check if the subdofhandler is part of the subdomain
+        first(sdh.cellset) ∈ getcellset(sdh.dh.grid, name) || continue
+        @debug "Setting default initial condition for subdomain $name"
+        subintegrator = integrator.subintegrators[name]
+        default_initial_condition_quasistatic_subdomain!(u, f, subintegrator, sdh)
+    end
+end
+
+"""
+    gather_internal_variable_infos(model) -> Tuple{Vararg{InternalVariableInfo}}
+
+Describe the quadrature-point-local state a model carries. Return an **empty tuple** when the model
+has none. Implementations must always return a tuple, so that consumers never have to branch on the
+shape of the result.
+"""
 gather_internal_variable_infos(model::QuasiStaticModel) =
     gather_internal_variable_infos(model.material_model)
-gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]
+gather_internal_variable_infos(model::AbstractMaterialModel) = ()
 
-@unroll function __get_material_model_multi(materials, domains, cid, qp)
-    idx = 1
-    @unroll for material ∈ materials
-        if cid ∈ domains[idx]
-            return material
-        end
-        idx += 1
-    end
-    error(
-        "MultiDomainIntegrator is broken: Requested to construct an internal cache for a SubDofHandler which is not associated with the integrator.",
-    )
-end
-__get_material_model(model::MultiMaterialModel, cid, qp) =
-    __get_material_model_multi(model.materials, model.domains, cid, qp)
 __get_material_model(model::AbstractMaterialModel, cid, qp) = model
 get_material_model(f::QuasiStaticFunction, cid, qp) =
-    __get_material_model(f.integrator.volume_model.material_model, cid, qp)
+    __get_material_model(_volume_model_for_cell(f, f.integrator, cid).material_model, cid, qp)
+
+_volume_model_for_cell(f, integrator::NonlinearIntegrator, cid) = integrator.volume_model
+function _volume_model_for_cell(f, integrator::NonlinearMultiDomainIntegrator2, cid)
+    grid = get_grid(f.dh)
+    for (name, subintegrator) in integrator.subintegrators
+        cid ∈ getcellset(grid, name) && return subintegrator.volume_model
+    end
+    error(
+        "Cell $cid is not covered by any subdomain of the integrator. Available subdomains: $(collect(keys(integrator.subintegrators))).",
+    )
+end

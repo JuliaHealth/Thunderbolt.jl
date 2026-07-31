@@ -51,10 +51,8 @@ active_stress_model = ActiveStressModel(
 )
 mechanical_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions)
 spatial_discretization_method = FiniteElementDiscretization(
-    Dict(:displacement => LagrangeCollection{2}()^3),
-    Dirichlet[],
-    String[],
-    PerColorAssemblyStrategy(PolyesterDevice()),
+    Dict(:displacement => LagrangeCollection{2}()^3);
+    assembly_strategy = PerColorAssemblyStrategy(PolyesterDevice()),
 )
 quasistaticform = semidiscretize(mechanical_model, spatial_discretization_method, fine_mesh);
 

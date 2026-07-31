@@ -108,5 +108,39 @@ using Thunderbolt, DelimitedFiles, Test
         end
     end
 
+    @testset "AsRateIndependent" begin
+        inner   = Thunderbolt.RDQ20MFModel()
+        wrapped = Thunderbolt.AsRateIndependent(inner)
+
+        @test Thunderbolt.internal_variable_evolution(inner) isa Thunderbolt.RateCoupledEvolution
+        @test Thunderbolt.internal_variable_evolution(wrapped) isa Thunderbolt.FirstOrderEvolution
+
+        # The velocity enters only through the cross-bridge block, so those states must be populated
+        # for the comparison below to see anything.
+        u = zeros(Thunderbolt.num_states(inner)); u[1] = 1.0; u[17:20] .= 0.1
+        λ, Ca, t = 0.97, 0.5, 12.0
+
+        # The wrapper is the wrapped model evaluated at zero shortening velocity, for any velocity.
+        duref = zeros(Thunderbolt.num_states(inner))
+        Thunderbolt.sarcomere_rhs!(duref, u, λ, 0.0, Ca, t, inner)
+        for dλdt ∈ (0.0, -1.0e-3, 5.0e-3)
+            du = zeros(Thunderbolt.num_states(wrapped))
+            Thunderbolt.sarcomere_rhs!(du, u, λ, dλdt, Ca, t, wrapped)
+            @test du ≈ duref
+        end
+
+        # ... and the velocity dependence it drops is real, so it must not be a no-op in general.
+        du = zeros(Thunderbolt.num_states(inner))
+        Thunderbolt.sarcomere_rhs!(du, u, λ, -1.0e-3, Ca, t, inner)
+        @test !(du ≈ duref)
+
+        @test Thunderbolt.num_states(wrapped) == Thunderbolt.num_states(inner)
+        @test Thunderbolt.gather_internal_variable_infos(wrapped) ==
+              Thunderbolt.gather_internal_variable_infos(inner)
+        @test Thunderbolt.compute_active_tension(wrapped, u, λ) ==
+              Thunderbolt.compute_active_tension(inner, u, λ)
+        @test Thunderbolt.compute_active_stiffness(wrapped, u, λ) ==
+              Thunderbolt.compute_active_stiffness(inner, u, λ)
+    end
 end
 #! format: on

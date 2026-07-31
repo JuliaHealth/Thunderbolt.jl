@@ -42,7 +42,7 @@ function eliminate_constraints_from_linearization!(
     f::AbstractSemidiscreteBlockedFunction,
 )
     for (i, _) ∈ enumerate(blocks(f))
-        eliminate_constraints_from_linearization_blocked!(cache, problem, Block(i))
+        eliminate_constraints_from_linearization_blocked!(cache, f, Block(i))
     end
 end
 

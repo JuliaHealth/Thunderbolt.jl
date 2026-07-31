@@ -50,11 +50,9 @@ function assemble_element!(
 end
 
 function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::SubDofHandler)
-    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
-    qr         = getquadraturerule(element_model.qrc, sdh)
-    field_name = first(sdh.dh.field_names)
-    ip         = Ferrite.getfieldinterpolation(sdh, field_name)
-    ip_geo     = geometric_subdomain_interpolation(sdh)
+    qr     = getquadraturerule(element_model.qrc, sdh)
+    ip     = Ferrite.getfieldinterpolation(sdh, element_model.sym)
+    ip_geo = geometric_subdomain_interpolation(sdh)
     BilinearDiffusionElementCache(
         setup_coefficient_cache(element_model.D, qr, sdh),
         CellValues(qr, ip, ip_geo),
@@ -72,6 +70,90 @@ struct TransientDiffusionModel{ConductivityCoefficientType, SourceType <: Abstra
     solution_variable_symbol::Symbol
 end
 
+get_volumetric_weak_form_names(model::TransientDiffusionModel) = (model.solution_variable_symbol,)
+
+@doc raw"""
+    BilinearDiffusionIntegrator{CoefficientType}
+
+Represents the integrand of the bilinear form ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
+"""
+struct BilinearInterfaceDiffusionIntegrator{CoefficientType, QRC <: QuadratureRuleCollection} <:
+       AbstractBilinearIntegrator
+    D::CoefficientType
+    qrc::QRC
+    sym1::Symbol
+    sym2::Symbol
+end
+
+"""
+The cache associated with [`BilinearDiffusionIntegrator`](@ref) to assemble element diffusion matrices.
+"""
+struct BilinearInterfaceDiffusionElementCache{CoefficientCacheType, CV} <:
+       AbstractVolumetricElementCache
+    Dcache::CoefficientCacheType
+    cellvalues::CV
+end
+
+function duplicate_for_device(device, cache::BilinearInterfaceDiffusionElementCache)
+    return BilinearInterfaceDiffusionElementCache(
+        duplicate_for_device(device, cache.Dcache),
+        duplicate_for_device(device, cache.cellvalues),
+    )
+end
+
+function assemble_element!(
+    Kₑ::AbstractMatrix,
+    cell,
+    element_cache::BilinearInterfaceDiffusionElementCache,
+    time,
+)
+    (; cellvalues, Dcache) = element_cache
+    n_basefuncs = getnbasefunctions(cellvalues)
+
+    reinit!(cellvalues, cell)
+
+    for qp = 1:getnquadpoints(cellvalues)
+        D_loc = evaluate_coefficient(Dcache, cell, qp, time)
+        dΩ = getdetJdV_average(cellvalues, qp)
+        for i = 1:getnbasefunctions(cellvalues)
+            jump_δu = shape_value_jump(cellvalues, qp, i)
+            for j = 1:getnbasefunctions(cellvalues)
+                jump_u = shape_value_jump(cellvalues, qp, j)
+                Kₑ[i, j] -= (jump_δu * D_loc * jump_u) * dΩ
+            end
+        end
+    end
+end
+
+function setup_element_cache(
+    element_model::BilinearInterfaceDiffusionIntegrator,
+    sdh::SubDofHandler,
+)
+    qr = getquadraturerule(element_model.qrc, sdh)
+    ip = Ferrite.getfieldinterpolation(sdh, element_model.sym1)
+    cv = InterfaceCellValues(qr, ip)
+    return BilinearInterfaceDiffusionElementCache(
+        setup_coefficient_cache(element_model.D, qr, sdh),
+        cv,
+    )
+end
+
+
+@doc raw"""
+    TransientDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
+
+Model formulated as ``\int_{\Gamma^{\text{P}/\text{M}}} [\![ \delta u ]\!] G [\![ u ]\!] \mathrm{d}\Gamma``.
+"""
+@concrete struct InterfaceDiffusionModel
+    G
+    solution_variable_symbol::Symbol
+    interface_interpolation_symbol::Symbol
+end
+
+get_volumetric_weak_form_names(model::InterfaceDiffusionModel) = (model.solution_variable_symbol,)
+
+is_coupling_model(::InterfaceDiffusionModel) = true
+
 @doc raw"""
     SteadyDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
 
@@ -82,3 +164,5 @@ struct SteadyDiffusionModel{ConductivityCoefficientType, SourceType <: AbstractS
     source::SourceType
     solution_variable_symbol::Symbol
 end
+
+get_volumetric_weak_form_names(model::SteadyDiffusionModel) = (model.solution_variable_symbol,)

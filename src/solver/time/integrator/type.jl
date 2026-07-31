@@ -353,7 +353,7 @@ function setup_u(prob::AbstractSemidiscreteProblem, solver, alias_u0)
     if alias_u0
         return prob.u0
     else
-        return SciMLBase.recursivecopy(prob.u0)
+        return recursivecopy(prob.u0)
     end
 end
 

@@ -132,13 +132,13 @@ RSAFDQ2022LumpedCicuitModel
 
 ## Multiphysics
 
-### Generic Interface
+!!! warning
+    There is no generic coupling interface yet. Every coupling in the package is currently bespoke;
+    the only concrete coupler is [`LumpedFluidSolidCoupler`](@ref) below. A generic interface is
+    being designed.
 
 ```@docs
-Thunderbolt.InterfaceCoupler
-Thunderbolt.VolumeCoupler
-Coupling
-CoupledModel
+Thunderbolt.AbstractCoupler
 ```
 
 ### FSI
