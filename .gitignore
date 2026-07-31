@@ -25,9 +25,6 @@ Manifest.toml
 
 *.vtu
 *.pvd
-# Test artifacts; the suite now writes to mktempdir(), but keep this so a stray
-# THUNDERBOLT_TEST_KEEP_VTK run cannot dirty the tree.
-testdata/
 *.msh
 *.zip
 *.pdf
