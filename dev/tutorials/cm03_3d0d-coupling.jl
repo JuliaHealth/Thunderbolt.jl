@@ -72,18 +72,18 @@ coupler = LumpedFluidSolidCoupler(
     ],
     :displacement,
 )
-coupled_model = RSAFDQ2022Model(solid_model, fluid_model, coupler);
+
+coupled_model = RSAFDQ2022Model(Dict("myocardium" => solid_model), fluid_model, coupler);
 
 spatial_discretization_method = FiniteElementDiscretization(
-    Dict(:displacement => LagrangeCollection{1}()^3),
-    [
+    Dict(:displacement => LagrangeCollection{1}()^3);
+    dbcs = [
         Dirichlet(:displacement, getfacetset(mesh, "Base"), (x,t) -> [0.0], [3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),
         Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor4"), (x,t) -> (0.0,), [3])
     ],
-    ["myocardium"],
 )
 splitform = semidiscretize(
     RSAFDQ2022Split(coupled_model),
