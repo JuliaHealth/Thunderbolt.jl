@@ -1,3 +1,5 @@
+using Test, Thunderbolt, Tensors
+using JET: @test_opt, @test_call
 @testset "Element API" begin
     import Thunderbolt: assemble_element!, assemble_facet!
     import Thunderbolt: setup_element_cache, setup_boundary_cache

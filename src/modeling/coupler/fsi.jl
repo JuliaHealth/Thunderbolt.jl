@@ -5,8 +5,14 @@ struct ChamberVolumeCoupling{CVM}
     chamber_surface_setname::String
     control_point_setname::String
     chamber_volume_method::CVM
-    lumped_volume_symbol::Union{Symbol, ModelingToolkit.Num}
-    lumped_pressure_symbol::Union{Symbol, ModelingToolkit.Num}
+    # Untyped on purpose. These hold either a plain `Symbol` (hand-written lumped models) or a
+    # `ModelingToolkit.Num` (MTK-backed ones), and naming the MTK type here would make this struct
+    # undefinable without ModelingToolkit — which it must not be, since the `Symbol` flavour is used
+    # without MTK. They are read exactly three times, all in `create_chamber_tyings`/`semidiscretize`,
+    # and the value that reaches assembly is narrowed to `Symbol` by
+    # `RSAFDQ2022SingleChamberTying.displacement_symbol`, so leaving them untyped costs no runtime.
+    lumped_volume_symbol::Any
+    lumped_pressure_symbol::Any
     pressure_symbol_3D::Symbol
 end
 
@@ -21,7 +27,7 @@ This approach has been proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
 struct LumpedFluidSolidCoupler{CVM} <: AbstractCoupler
     chamber_couplings::Vector{ChamberVolumeCoupling{CVM}}
-    displacement_symbol::Union{Symbol, ModelingToolkit.Num}
+    displacement_symbol::Any # see the note on `ChamberVolumeCoupling`
 end
 
 """

@@ -334,7 +334,33 @@ end
 
 
 mtk_parameter_query_filter(discard_me, sym) = false
-mtk_parameter_query_filter(param::ModelingToolkit.BasicSymbolic, sym) = true
+# The `ModelingToolkit.BasicSymbolic` method lives in `ThunderboltMTKExt`.
+
+"""
+    mtk_models()
+
+The `MTKModels` submodule, which holds the prebuilt ModelingToolkit circuit definitions (e.g.
+`RSAFDQ2022CircuitMTK`). It lives in `ThunderboltMTKModelsExt` rather than in `Thunderbolt` itself, so
+that `ModelingToolkit` and `SciCompDSL` stay weak dependencies; this accessor is how you reach it:
+
+```julia
+using ModelingToolkit, SciCompDSL          # loads ThunderboltMTKModelsExt
+@mtkcompile sys = Thunderbolt.mtk_models().RSAFDQ2022CircuitMTK()
+```
+
+Both packages are needed because `@mtkmodel` comes from `SciCompDSL`. The 3D-0D coupling itself needs
+only `ModelingToolkit`.
+
+Errors with an actionable message when the extension is not loaded.
+"""
+function mtk_models()
+    ext = Base.get_extension(@__MODULE__, :ThunderboltMTKModelsExt)
+    ext === nothing && error(
+        "The ModelingToolkit circuit models live in `ThunderboltMTKModelsExt`, which is not loaded. " *
+        "Run `using ModelingToolkit, SciCompDSL` first (`@mtkmodel` comes from SciCompDSL).",
+    )
+    return ext.MTKModels
+end
 
 function query_mtk_parameter_by_symbol(sys, sym::Symbol)
     symbol_list = SymbolicIndexingInterface.parameter_symbols(sys)

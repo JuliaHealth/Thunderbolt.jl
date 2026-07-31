@@ -5,6 +5,16 @@ import SciMLIterators: intervals
 using Test
 using LinearSolve
 using OrderedCollections
+include(joinpath(@__DIR__, "..", "testfixtures.jl"))
+
+"""
+Directory for the per-Newton-iteration VTK dumps of `VTKNewtonMonitor`. A fresh temporary directory
+by default, so the writes cannot collide between parallel workers and do not depend on the cwd. Set
+`THUNDERBOLT_TEST_KEEP_VTK=/some/path` to keep them somewhere durable when debugging a solve.
+"""
+newton_debug_dir() = get(ENV, "THUNDERBOLT_TEST_KEEP_VTK") do
+    mktempdir()
+end
 
 function test_solve_passive_structure(mesh, models)
     tspan = (0.0, 1.0)
@@ -37,7 +47,7 @@ function test_solve_passive_structure(mesh, models)
     timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(;
             max_iter = 10,
-            monitor = Thunderbolt.VTKNewtonMonitor(joinpath("testdata", "newton-debug")),
+            monitor = Thunderbolt.VTKNewtonMonitor(joinpath(newton_debug_dir(), "newton-debug")),
         ),
     )
     integrator = init(problem, timestepper, dt = Δt, verbose = true)

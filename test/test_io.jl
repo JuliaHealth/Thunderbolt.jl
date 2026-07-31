@@ -1,7 +1,12 @@
-using Thunderbolt, SHA
+using Test, Thunderbolt, SHA
 
+# Every writer here goes into a fresh temporary directory. These used to write to a cwd-relative
+# `testdata/`, which (a) put the artifacts wherever the suite happened to be started from — the repo
+# has picked up both `./testdata/` and `./test/testdata/` that way — and (b) would collide between
+# workers once the suite runs in parallel.
 @testset "IO" begin
     @testset "ParaViewWriter" begin
+        testdata = mktempdir()
         grid = generate_grid(Hexahedron, (2, 2, 2))
         gip = Ferrite.geometric_interpolation(typeof(grid.cells[1]))
         dh = DofHandler(grid)
@@ -17,7 +22,7 @@ using Thunderbolt, SHA
         apply_analytical!(coordinate_data, dh, :rotational, x->0.5(x[3]^3+1))
         apply_analytical!(coordinate_data, dh, :transventricular, x->0.5(x[3]+1)^2)
 
-        pvd = ParaViewWriter(joinpath("testdata", "cobivec"))
+        pvd = ParaViewWriter(joinpath(testdata, "cobivec"))
 
         store_timestep!(pvd, 0.0, grid) do vtk
             store_timestep_field!(vtk, 0.0, dh, coordinate_data, :apicobasal)
@@ -26,13 +31,14 @@ using Thunderbolt, SHA
             store_timestep_field!(vtk, 0.0, dh, coordinate_data, :transventricular)
         end
 
-        @test bytes2hex(open(SHA.sha1, joinpath("testdata", "cobivec.pvd"))) ==
+        @test bytes2hex(open(SHA.sha1, joinpath(testdata, "cobivec.pvd"))) ==
               "957f820ffedfd8e3486643dc76c0231d4a836d61"
-        @test bytes2hex(open(SHA.sha1, joinpath("testdata", "cobivec", "0.0.vtu"))) ==
+        @test bytes2hex(open(SHA.sha1, joinpath(testdata, "cobivec", "0.0.vtu"))) ==
               "858e79d126521b815c486ddfca79e422493215bd"
     end
 
     @testset "CoBiVeC" begin
+        testdata = mktempdir()
         grid = generate_grid(Hexahedron, (2, 2, 2))
         gip = Ferrite.geometric_interpolation(typeof(grid.cells[1]))
         dh = DofHandler(grid)
@@ -49,12 +55,12 @@ using Thunderbolt, SHA
         apply_analytical!(coordinate_data, dh, :transventricular, x->0.5(x[3]+1)^2)
 
         filename = "cobivec.vtu"
-        VTKGridFile(joinpath("testdata", filename), grid) do vtk
+        VTKGridFile(joinpath(testdata, filename), grid) do vtk
             Ferrite.write_solution(vtk, dh, coordinate_data)
         end
 
         cobivec = Thunderbolt.read_vtk_cobivec(
-            joinpath("testdata", filename),
+            joinpath(testdata, filename),
             "transmural",
             "apicobasal",
             "rotational",

@@ -1,3 +1,4 @@
+using Test, Thunderbolt
 import LinearSolve: KrylovJL_GMRES, LinearProblem
 using BlockArrays
 

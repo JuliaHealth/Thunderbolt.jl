@@ -2,6 +2,7 @@ using Test, Thunderbolt, OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 using LinearSolve
 using OrdinaryDiffEqNonlinearSolve
 using ModelingToolkit
+using SciCompDSL
 using DynamicQuantities
 
 function test_solve_contractile_ideal_lv_3D0D(
@@ -133,12 +134,12 @@ end
         false,
     )
 
-    @mtkcompile rsafdq2022mtk_init = Thunderbolt.MTKModels.RSAFDQ2022CircuitMTK()
+    @mtkcompile rsafdq2022mtk_init = Thunderbolt.mtk_models().RSAFDQ2022CircuitMTK()
     τ = 800.0# TODO query ...?
     prob = ODEProblem(rsafdq2022mtk_init, [], (0.0, 10*τ))
     sol = solve(prob, Tsit5())
     @mtkcompile rsafdq2022mtk =
-        Thunderbolt.MTKModels.RSAFDQ2022CircuitMTK(; lv_pressure_given = false)
+        Thunderbolt.mtk_models().RSAFDQ2022CircuitMTK(; lv_pressure_given = false)
     test_solve_contractile_ideal_lv_3D0D(
         mesh,
         ActiveStressModel(

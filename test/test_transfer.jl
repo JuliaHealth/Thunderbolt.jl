@@ -1,3 +1,5 @@
+using Test, Thunderbolt, Tensors
+import Thunderbolt: to_mesh
 @testset "Transfer Opeartors" begin
     source_mesh = Thunderbolt.generate_simple_disc_mesh(Quadrilateral, 40)
 
