@@ -47,6 +47,12 @@ SciMLBase.get_sol(integrator::ThunderboltTimeIntegrator) = integrator.sol
 function SciMLBase.set_proposed_dt!(integrator::ThunderboltTimeIntegrator, dt)
     if integrator.dtchangeable == true
         integrator.dt = dt
+        # `dtcache` is what `modify_dt_for_tstops!` restores `dt` from at every header, so
+        # writing only `dt` here loses the proposal at the next step -- an *increase* would
+        # never survive, while a decrease appears to work because tstop clipping shrinks
+        # `dt` anyway. Upstream writes both (`integrator_interface.jl:180-182`).
+        integrator.dtpropose = dt
+        integrator.dtcache = dt
     elseif integrator.dt != dt
         error("Trying to change dt on constant time step integrator.")
     end
@@ -183,8 +189,11 @@ function should_accept_step(
     return !(integrator.force_stepfail)
 end
 
+# `stats.naccept` is counted in `step_footer!`, which sees every accepted attempt --
+# including the last one. Counting it here would miss exactly that step, because
+# acceptance is registered in the *next* step's header and the final accepted step never
+# gets one. This header-side hook only prepares the next step.
 function accept_step!(integrator::ThunderboltTimeIntegrator)
-    OrdinaryDiffEqCore.increment_accept!(integrator.stats)
     accept_step!(integrator, integrator.cache, integrator.controller_cache)
 end
 function accept_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
@@ -352,6 +361,7 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
 
     accepted = should_accept_step(integrator)
     if accepted
+        OrdinaryDiffEqCore.increment_accept!(integrator.stats)
         integrator.last_step_failed = false
         integrator.tprev = t_start
         integrator.t = OrdinaryDiffEqCore.fixed_t_for_tstop_error!(integrator, ttmp)
@@ -375,7 +385,28 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
     return nothing
 end
 
-notify_integrator_hit_tstop!(integrator) = integrator.just_hit_tstop = true
+# The tstop contract of the upstream helpers we call. `modify_dt_for_tstops!` decides,
+# *before* the step, whether this step ends exactly on a tstop; `fixed_t_for_tstop_error!`
+# then sets `t` to the recorded target instead of the accumulated `t + dt`. The generic
+# fallbacks are `_set_tstop_flag!(integrator, …) = nothing` and
+# `_get_next_step_tstop(integrator) = false`, so without these three methods the mechanism
+# runs half-on: `dt` gets clipped to the tstop but `t` still lands on `t + dt`, a rounding
+# error short of it -- and the leftover gap is then closed by a step of a few eps.
+@inline function OrdinaryDiffEqCore._set_tstop_flag!(
+    integrator::ThunderboltTimeIntegrator,
+    is_tstop::Bool,
+    target = nothing,
+)
+    integrator.next_step_tstop = is_tstop
+    if is_tstop && target !== nothing
+        integrator.tstop_target = target
+    end
+    return nothing
+end
+@inline OrdinaryDiffEqCore._get_next_step_tstop(integrator::ThunderboltTimeIntegrator) =
+    integrator.next_step_tstop
+@inline OrdinaryDiffEqCore._get_tstop_target(integrator::ThunderboltTimeIntegrator) =
+    integrator.tstop_target
 
 is_first_iteration(integrator) = integrator.iter == 0
 increment_iteration(integrator) = integrator.iter += 1
@@ -405,6 +436,12 @@ function finalize_integration_monitor(integrator)
     end
 end
 
+# Deliberately a no-op, not an oversight: the only consumer of `just_hit_tstop` is
+# SciMLBase's iterator `done`, which reads `opts.stop_at_next_tstop` right after -- a
+# field `IntegratorOptions` does not have. Setting the flag would turn a hit tstop into a
+# `FieldError` on the iterator path. Implementing stop-at-tstop means adding that option
+# together with `advance_to_tstop` (accepted by `__init` and read nowhere); until then the
+# flag stays false, which is the behaviour every caller in this package already relies on.
 notify_integrator_hit_tstop!(integrator::ThunderboltTimeIntegrator) = nothing
 
 # TODO upstream into OrdinaryDiffEqCore
@@ -505,5 +542,7 @@ function OrdinaryDiffEqCore.post_newton_controller!(
     integrator::ThunderboltTimeIntegrator,
     alg::AbstractSolver,
 )
-    integrator.dt = integrator.dt / 4
+    # Same shrink law as OrdinaryDiffEqCore's generic (`controllers.jl:481-484`), but
+    # reading the option instead of hardcoding its default.
+    integrator.dt = integrator.dt / integrator.opts.failfactor
 end

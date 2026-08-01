@@ -216,9 +216,9 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
         end
 
         for substep ∈ 2:cache.substeps
-            tₛ = t + substep*Δtₛ
+            tₛ = t + (substep - 1)*Δtₛ
             #TODO Cₘ
-            cell_rhs!(du_local, u_local, x, t, cell_model)
+            cell_rhs!(du_local, u_local, x, tₛ, cell_model)
 
             for j = 1:length(u_local)
                 u_local[j] += Δtₛ*du_local[j]

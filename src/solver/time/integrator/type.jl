@@ -106,6 +106,12 @@ mutable struct ThunderboltTimeIntegrator{
     saveiter::Int
     saveiter_dense::Int
     just_hit_tstop::Bool
+    # The tstop contract of `OrdinaryDiffEqCore.modify_dt_for_tstops!` /
+    # `fixed_t_for_tstop_error!`, both of which we call. Without these two fields the
+    # upstream accessors fall back to "no tstop ahead" and the step lands on `t + dt`
+    # instead of the tstop itself, leaving a rounding-sized gap that costs an extra step.
+    next_step_tstop::Bool
+    tstop_target::tType
 end
 
 function init_cache(prob, alg; dt, kwargs...)
@@ -313,6 +319,8 @@ function SciMLBase.__init(
         0,
         0,
         false,
+        false,
+        tType(t0),
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
     DiffEqBase.initialize!(integrator, integrator.cache)
@@ -385,7 +393,7 @@ end
 adapt_dt!(integrator::ThunderboltTimeIntegrator) =
     adapt_dt!(integrator, integrator.cache, integrator.controller_cache)
 function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, controller)
-    error("Step size control not implemented for $(alg).")
+    error("Step size control not implemented for $(integrator.alg).")
 end
 adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, ::Union{Nothing, DummyControllerCache}) =
     nothing

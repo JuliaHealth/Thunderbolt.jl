@@ -206,6 +206,8 @@ function OS._build_child(
         0,
         0,
         false,
+        false,
+        tType(t0),
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
 
