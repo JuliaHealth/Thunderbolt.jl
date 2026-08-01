@@ -4,7 +4,7 @@ import KernelAbstractions as KA
 
 using TimerOutputs: @timeit_debug
 
-import SciMLLogging: Standard
+import SciMLLogging: Standard, AbstractVerbosityPreset, @SciMLMessage
 
 # These two must be imported *before* anything that pulls in Tensors (which `FerriteOperators` does,
 # via Ferrite). Loading Tensors first makes parts of Symbolics'/ModelingToolkit's precompiled images

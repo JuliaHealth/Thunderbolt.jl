@@ -260,21 +260,21 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
     # This implementation is intended to be used for ODEIntegrator and
     # SDEIntegrator.
     if isnan(integrator.dt)
-        if verbose
-            @warn(
-                "NaN dt detected. Likely a NaN value in the state, parameters, or derivative value caused this outcome."
-            )
-        end
+        @SciMLMessage(
+            "NaN dt detected. Likely a NaN value in the state, parameters, or derivative value caused this outcome.",
+            verbose,
+            :dt_NaN
+        )
         return SciMLBase.ReturnCode.DtNaN
     end
     if hasproperty(integrator, :iter) &&
        hasproperty(opts, :maxiters) &&
        integrator.iter > opts.maxiters
-        if verbose
-            @warn(
-                "Interrupted. Larger maxiters is needed. If you are using an integrator for non-stiff ODEs or an automatic switching algorithm (the default), you may want to consider using a method for stiff equations. See the solver pages for more details (e.g. https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/#Stiff-Problems)."
-            )
-        end
+        @SciMLMessage(
+            "Interrupted. Larger maxiters is needed. If you are using an integrator for non-stiff ODEs or an automatic switching algorithm (the default), you may want to consider using a method for stiff equations. See the solver pages for more details (e.g. https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/#Stiff-Problems).",
+            verbose,
+            :max_iters
+        )
         return SciMLBase.ReturnCode.MaxIters
     end
 
@@ -291,22 +291,20 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
         dt_below_min      = abs(integrator.dt) ≤ abs(opts.dtmin)
         before_next_tstop = SciMLBase.has_tstop(integrator) ? integrator.t + integrator.dt < integrator.tdir * SciMLBase.first_tstop(integrator) : true
         if dt_below_min && (step_rejected || before_next_tstop)
-            if verbose
-                controller_string = controller_message_on_dtmin_error(integrator)
-                @warn(
-                    "dt($(integrator.dt)) <= dtmin($(opts.dtmin)) at t=$(integrator.t)$(controller_string). Aborting. There is either an error in your model specification or the true solution is unstable."
-                )
-            end
+            @SciMLMessage(
+                lazy"dt($(integrator.dt)) <= dtmin($(opts.dtmin)) at t=$(integrator.t)$(controller_message_on_dtmin_error(integrator)). Aborting. There is either an error in your model specification or the true solution is unstable.",
+                verbose,
+                :dt_min_unstable
+            )
             return SciMLBase.ReturnCode.DtLessThanMin
         elseif step_rejected &&
                integrator.t isa AbstractFloat &&
                abs(integrator.dt) <= abs(eps(integrator.t)) # = DiffEqBase.timedepentdtmin(integrator)
-            if verbose
-                controller_string = controller_message_on_dtmin_error(integrator)
-                @warn(
-                    "At t=$(integrator.t), dt was forced below floating point epsilon $(integrator.dt)$(controller_string). Aborting. There is either an error in your model specification or the true solution is unstable (or the true solution can not be represented in the precision of $(eltype(integrator.u)))."
-                )
-            end
+            @SciMLMessage(
+                lazy"At t=$(integrator.t), dt was forced below floating point epsilon $(integrator.dt)$(controller_message_on_dtmin_error(integrator)). Aborting. There is either an error in your model specification or the true solution is unstable (or the true solution can not be represented in the precision of $(eltype(integrator.u))).",
+                verbose,
+                :dt_epsilon
+            )
             return SciMLBase.ReturnCode.Unstable
         end
     end
@@ -314,15 +312,15 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
         hasproperty(opts, :unstable_check) &&
         opts.unstable_check(integrator.dt, integrator.u, integrator.p, integrator.t)
     )
-        if verbose
-            @warn("Instability detected. Aborting")
-        end
+        @SciMLMessage("Instability detected. Aborting", verbose, :instability)
         return SciMLBase.ReturnCode.Unstable
     end
     if SciMLBase.last_step_failed(integrator) && !SciMLBase.isadaptive(integrator)
-        if verbose
-            @warn("Newton steps could not converge and algorithm is not adaptive. Use a lower dt.")
-        end
+        @SciMLMessage(
+            "Newton steps could not converge and algorithm is not adaptive. Use a lower dt.",
+            verbose,
+            :newton_convergence
+        )
         return SciMLBase.ReturnCode.ConvergenceFailure
     end
     return SciMLBase.ReturnCode.Success

@@ -21,6 +21,9 @@ OrdinaryDiffEqCore.default_controller(QT, ::BackwardEulerSolver) =
 mutable struct BackwardEulerSolverCache{
     T,
     SolutionType <: AbstractVector{T},
+    # On the operator splitting path uₙ views the outer solution vector while uₙ₋₁ is the
+    # integrator's own rollback buffer, so the two types differ.
+    PrevSolutionType <: AbstractVector{T},
     TmpType <: AbstractVector{T},
     StageType,
     MonitorType,
@@ -28,7 +31,7 @@ mutable struct BackwardEulerSolverCache{
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
-    uₙ₋₁::SolutionType
+    uₙ₋₁::PrevSolutionType
     # # Temporary buffer for interpolations and stuff
     tmp::TmpType
     # Utility to decide what kind of stage we solve (i.e. linear problem, full DAE or mass-matrix ODE)
@@ -128,10 +131,13 @@ function setup_solver_cache(
     @assert length(dh.field_names) == 1 # TODO relax this assumption
     field_name = dh.field_names[1]
 
-    A     = create_system_matrix(solver.system_matrix_type, f)
-    b     = create_system_vector(solver.solution_vector_type, f)
-    u0    = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
-    uprev = uprev === nothing ? create_system_vector(solver.solution_vector_type, f) : uprev
+    A  = create_system_matrix(solver.system_matrix_type, f)
+    b  = create_system_vector(solver.solution_vector_type, f)
+    u0 = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
+    # `uprev === nothing` means "allocate your own rollback buffer", and it has to start out at u₀ --
+    # the first step evaluates b = M uₙ₋₁, so a zeroed buffer silently discards the initial condition.
+    # This matches what the generic and homotopy cache setups do.
+    uprev = uprev === nothing ? copy(u0) : uprev
 
     T = eltype(u0)
 

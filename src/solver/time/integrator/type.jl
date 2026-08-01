@@ -112,6 +112,13 @@ function init_cache(prob, alg; dt, kwargs...)
     return setup_solver_cache(prob.f, alg, prob.tspan[1]; kwargs...)
 end
 
+# `@SciMLMessage` dispatches on `Bool` (what the operator splitting parent hands its children) and on
+# `AbstractVerbositySpecifier` (what `DiffEqBase.init` passes), but not on the bare `SciMLLogging`
+# presets, which are what our own default and a `verbose = Standard()` from user code are. Lower
+# those to a `DEVerbosity` so every entry point ends up with something `@SciMLMessage` understands.
+normalize_verbosity(verbose) = verbose
+normalize_verbosity(verbose::AbstractVerbosityPreset) = DiffEqBase.DEVerbosity(verbose)
+
 # Interpolation
 function (integrator::ThunderboltTimeIntegrator)(tmp, t)
     OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
@@ -284,7 +291,7 @@ function SciMLBase.__init(
         IntegratorOptions(
             dtmin = dtmin,
             dtmax = dtmax,
-            verbose = verbose,
+            verbose = normalize_verbosity(verbose),
             adaptive = adaptive,
             maxiters = maxiters,
             callback = callbacks_internal,

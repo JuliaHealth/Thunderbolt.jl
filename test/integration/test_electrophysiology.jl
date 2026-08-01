@@ -59,13 +59,15 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
 
         @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
         @test integrator.u ≉ u₀
-        return integrator.u
+        return integrator
     end
 
     timestepper = LieTrotterGodunov((BackwardEulerSolver(), ForwardEulerCellSolver()))
     timestepper_adaptive =
         LieTrotterGodunov((BackwardEulerSolver(), AdaptiveForwardEulerSubstepper()))
-    timestepper_rtc = Thunderbolt.ReactionTangentController(timestepper, 0.5, 1.0, (0.98, 1.02))
+    # Bounds well apart from the base dt = 1.0, so a controller that silently runs at
+    # constant dt fails the step-count assertions below (F2 regression).
+    timestepper_rtc = Thunderbolt.ReactionTangentController(timestepper, 0.5, 1.0, (0.5, 2.0))
 
     @testset "Single subdomain" begin
         grid = generate_grid(Quadrilateral, (8, 8), Vec{2}((-2.5, -2.5)), Vec{2}((2.5, 2.5)))
@@ -85,11 +87,13 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
             :φₘ,
             :s1,
         )
-        u = solve_waveprop(mesh, model, timestepper)
-        u_adaptive = solve_waveprop(mesh, model, timestepper_adaptive)
-        @test u ≈ u_adaptive rtol = 1e-2
-        u_adaptive = solve_waveprop(mesh, model, timestepper_rtc)
-        @test u ≈ u_adaptive rtol = 1e-3
+        integ = solve_waveprop(mesh, model, timestepper)
+        integ_adaptive = solve_waveprop(mesh, model, timestepper_adaptive)
+        @test integ.u ≈ integ_adaptive.u rtol = 1e-2
+        integ_rtc = solve_waveprop(mesh, model, timestepper_rtc)
+        @test integ.u ≈ integ_rtc.u rtol = 1e-2
+        # The reaction tangent controller must actually move dt away from dt = 1.0.
+        @test integ_rtc.stats.naccept != integ.stats.naccept
 
         mesh = generate_ideal_lv_mesh(4, 1, 1)
         cs = CartesianCoordinateSystem(mesh)
@@ -109,9 +113,9 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
             :φₘ,
             :s1,
         )
-        u = solve_waveprop(mesh, model, timestepper)
-        u_adaptive = solve_waveprop(mesh, model, timestepper_adaptive)
-        @test u ≈ u_adaptive rtol = 1e-4
+        integ = solve_waveprop(mesh, model, timestepper)
+        integ_adaptive = solve_waveprop(mesh, model, timestepper_adaptive)
+        @test integ.u ≈ integ_adaptive.u rtol = 1e-4
     end
 
     @testset "Pacemaker subdomain" begin
@@ -156,11 +160,14 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
             # FIXME explicit name
             "interfaces" => InterfaceDiffusionModel(ConstantCoefficient(1.0), :φₘ, :φₘi),
         )
-        u = solve_waveprop(mesh2, models, timestepper)
-        u_adaptive = solve_waveprop(mesh2, models, timestepper_adaptive)
-        @test u ≈ u_adaptive rtol = 1e-3
-        u_adaptive = solve_waveprop(mesh2, models, timestepper_rtc)
-        @test u ≈ u_adaptive rtol = 1e-3
+        integ = solve_waveprop(mesh2, models, timestepper)
+        integ_adaptive = solve_waveprop(mesh2, models, timestepper_adaptive)
+        @test integ.u ≈ integ_adaptive.u rtol = 1e-3
+        integ_rtc = solve_waveprop(mesh2, models, timestepper_rtc)
+        # Loose sanity bound: the adapted trajectory (dt in [0.5, 2.0] vs fixed 1.0)
+        # legitimately drifts a few percent; corruption would be O(1).
+        @test integ.u ≈ integ_rtc.u rtol = 5e-2
+        @test integ_rtc.stats.naccept != integ.stats.naccept
 
         coeff = ConstantCoefficient(SymmetricTensor{2, 2, Float64}((4.5e-4, 0, 2.0e-4)))
         models = Dict(
@@ -174,11 +181,14 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
                 :s1,
             ),
         )
-        u = solve_waveprop(mesh2, models, timestepper)
-        u_adaptive = solve_waveprop(mesh2, models, timestepper_adaptive)
-        @test u ≈ u_adaptive rtol = 1e-3
-        u_adaptive = solve_waveprop(mesh2, models, timestepper_rtc)
-        @test u ≈ u_adaptive rtol = 1e-3
+        integ = solve_waveprop(mesh2, models, timestepper)
+        integ_adaptive = solve_waveprop(mesh2, models, timestepper_adaptive)
+        @test integ.u ≈ integ_adaptive.u rtol = 1e-3
+        integ_rtc = solve_waveprop(mesh2, models, timestepper_rtc)
+        # Loose sanity bound: the adapted trajectory (dt in [0.5, 2.0] vs fixed 1.0)
+        # legitimately drifts a few percent; corruption would be O(1).
+        @test integ.u ≈ integ_rtc.u rtol = 5e-2
+        @test integ_rtc.stats.naccept != integ.stats.naccept
     end
 
     # TODO revive

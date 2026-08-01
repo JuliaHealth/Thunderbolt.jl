@@ -8,6 +8,24 @@ function SciMLBase.solution_new_retcode(sol::DummyODESolution, retcode)
 end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
+# After an outer rollback the child has not "just failed" anymore. Clearing the branded
+# retcode alone is not enough: our `check_error` would re-derive ConvergenceFailure from
+# the sticky `last_step_failed` flag on the very next attempt and turn the whole retry
+# into an abort.
+#
+# This method is NOT redundant with the upstream generic for `DEIntegrator`, which reaches
+# the flag through `hasfield(typeof(child), :last_stepfail)` -- `OrdinaryDiffEqCore`'s
+# spelling. Ours is `last_step_failed`, so the generic would silently do nothing for this
+# integrator. Do not delete this method on the assumption that upstream covers it.
+function OS._reset_child_failure!(child::ThunderboltTimeIntegrator)
+    if child.sol.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+        child.sol = SciMLBase.solution_new_retcode(child.sol, SciMLBase.ReturnCode.Default)
+    end
+    child.last_step_failed = false
+    child.force_stepfail = false
+    return nothing
+end
+
 function OS._build_child(
     prob::OS.OperatorSplittingProblem,
     alg::AbstractSolver,
@@ -18,31 +36,44 @@ function OS._build_child(
     u_master::S,
     solution_indices,
     t0::T,
-    dt::T,
     tf::T,
     tstops,
     saveat,
     d_discontinuities,
     callback,
-    adaptive,
-    verbose,
-    save_end = false,
-    save_everystep = false,
-    controller = nothing,
-    internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
+    config::OS.ConfigTree,
 ) where {S, T, P, F}
 
     (; tspan) = prob
 
+    # This node's own settings live in `config.values`; everything else the caller passed
+    # to `init` travels to the leaves untouched via `inner_values`.
+    tdir = tf > t0 ? one(T) : -one(T)
+    # `signed_dt_tree` gave the configured dt the integration direction; this integrator
+    # keeps dt as a magnitude and carries the direction in `tdir`.
+    dt = abs(config.values.dt)
     # Since we do not have control over the adaptivity setting yet, this toggles adaptivity off for inner algs.
-    adaptive &= SciMLBase.isadaptive(alg)
+    adaptive = config.values.adaptive & SciMLBase.isadaptive(alg)
+    verbose = normalize_verbosity(config.values.verbose)
+    controller = config.values.controller
+    inner = OS.inner_values(config.values)
+    internalnorm = get(inner, :internalnorm, OrdinaryDiffEqCore.ODE_DEFAULT_NORM)
+    save_end = get(inner, :save_end, false)
+    save_everystep = get(inner, :save_everystep, false)
+    maxiters = get(inner, :maxiters, 1000000)
 
-    uprev = @view uprevouter[solution_indices]
+    # The child's solution ALIASES the parent's solution vector -- no copies on the hot
+    # path; this shared-solution wiring is the point of this integrator. Its rollback
+    # buffer must NOT: the integrator loop refreshes `uprev` from `u` on every internal
+    # step (`update_uprev!` in `step_header!`), and through a view that write would land
+    # in the parent's rollback anchor, which has to survive the whole outer step
+    # untouched. `forward_sync_internal!` refreshes this buffer at the start of every
+    # sub-solve. (Upstream's leaf builder copies `u` as well; we deviate only for `u`.)
+    uprev = uprevouter[solution_indices]
     u = @view uouter[solution_indices]
 
     dt > zero(dt) || error("dt must be positive")
     _dt = dt
-    tdir = tf > t0 ? one(dt) : -one(dt)
     tType = typeof(dt)
     tTypeNoUnits = typeof(one(tType))
 
@@ -152,11 +183,11 @@ function OS._build_child(
         controller_cache,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = zero(tType),
-            dtmax = tType(tf - t0),
+            dtmin = tType(get(inner, :dtmin, zero(tType))),
+            dtmax = tType(get(inner, :dtmax, tf - t0)),
             verbose = verbose,
             adaptive = adaptive,
-            # maxiters = maxiters,
+            maxiters = maxiters,
             callback = callbacks_internal,
             save_end = save_end,
             tstops = tstops_internal,
