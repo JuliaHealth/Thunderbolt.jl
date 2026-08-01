@@ -88,6 +88,16 @@ mutable struct NewtonRaphsonSolverCache{
     iter::Int
 end
 
+"""
+    global_newton_cache(cache)
+
+The Newton cache carrying the global convergence history (`Θks`) and the Newton
+parameters. A plain Newton cache is its own; a wrapping cache (multi-level) returns the
+cache it wraps. The Deuflhard continuation controllers go through this instead of reaching
+for `cache.Θks` directly, which is a layout only one of the two cache types has.
+"""
+global_newton_cache(cache) = cache
+
 function Base.show(io::IO, cache::NewtonRaphsonSolverCache)
     println(io, "NewtonRaphsonSolverCache:")
     Base.show(io, cache.parameters)

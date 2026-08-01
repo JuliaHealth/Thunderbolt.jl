@@ -90,6 +90,13 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
         integ = solve_waveprop(mesh, model, timestepper)
         integ_adaptive = solve_waveprop(mesh, model, timestepper_adaptive)
         @test integ.u ≈ integ_adaptive.u rtol = 1e-2
+        # Non-vacuity guard. If `reaction_threshold` never trips, the substepper is
+        # bitwise a plain forward Euler step and the comparison above passes while testing
+        # nothing. Measured on this mesh: 104 of 918 pointwise evaluations exceed the
+        # threshold (max |du[φₘ]| = 0.118 against a threshold of 0.1), so the branch does
+        # fire -- but with little margin, which is exactly why this is asserted rather
+        # than assumed.
+        @test !isapprox(integ.u, integ_adaptive.u; rtol = 1e-8)
         integ_rtc = solve_waveprop(mesh, model, timestepper_rtc)
         @test integ.u ≈ integ_rtc.u rtol = 1e-2
         # The reaction tangent controller must actually move dt away from dt = 1.0.

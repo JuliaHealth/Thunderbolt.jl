@@ -111,16 +111,39 @@ function DiffEqBase.reinit!(
     integrator.iter = 0
     integrator.derivative_discontinuity = false
 
+    # A reinit'd integrator has not failed and is not mid-tstop. Leaving these set makes
+    # `check_error` re-derive the previous run's failure on the first new step, so the
+    # reinit silently produces a dead integrator.
+    integrator.force_stepfail = false
+    integrator.last_step_failed = false
+    integrator.isout = false
+    integrator.just_hit_tstop = false
+    integrator.next_step_tstop = false
+    integrator.tstop_target = integrator.t
+
     integrator.stats.naccept = 0
     integrator.stats.nreject = 0
 
-    if erase_sol
-        resize!(integrator.sol.t, 0)
-        resize!(integrator.sol.u, 0)
+    # `saveiter`/`saveiter_dense` index into the solution buffers, so they have to follow
+    # whatever happens to those. Upstream resets them inside `erase_sol`; leaving them
+    # stale makes the next postamble index past the end of an emptied `sol.t`.
+    # Operator splitting children carry a `DummyODESolution`, which has no buffers at all.
+    if hasproperty(integrator.sol, :t)
+        if erase_sol
+            resize!(integrator.sol.t, 0)
+            resize!(integrator.sol.u, 0)
+            integrator.saveiter = 0
+            integrator.saveiter_dense = 0
+        else
+            integrator.saveiter = min(integrator.saveiter, length(integrator.sol.t))
+            integrator.saveiter_dense = min(integrator.saveiter_dense, integrator.saveiter)
+        end
     end
+
     if reinit_callbacks
         DiffEqBase.initialize!(integrator.opts.callback, u0, t0, integrator)
-    else # always reinit the saving callback so that t0 can be saved if needed
+    elseif !isempty(integrator.opts.callback.discrete_callbacks)
+        # always reinit the saving callback so that t0 can be saved if needed
         saving_callback = integrator.opts.callback.discrete_callbacks[end]
         DiffEqBase.initialize!(saving_callback, u0, t0, integrator)
     end
@@ -293,8 +316,14 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
     # We also exit if the ODE is unstable according to a user chosen callback
     # but only if we accepted the step to prevent from bailing out as unstable
     # when we just took way too big a step)
+    # `check_error` runs at the top of the retry loop, i.e. *after* `step_header!` has
+    # already cleared `force_stepfail` for the attempt about to be made. Deriving
+    # "was the previous step rejected?" from `should_accept_step` therefore always answers
+    # "accepted", which disables both the `step_rejected` branches below -- exactly the
+    # ones meant to stop a solve that is shrinking dt without making progress. The
+    # persistent flag is the one that survives the header.
+    step_rejected = SciMLBase.last_step_failed(integrator)
     step_accepted = should_accept_step(integrator)
-    step_rejected = !step_accepted
     force_dtmin   = hasproperty(integrator, :force_dtmin) && integrator.force_dtmin
     if !force_dtmin && SciMLBase.isadaptive(integrator)
         dt_below_min      = abs(integrator.dt) ≤ abs(opts.dtmin)
@@ -436,13 +465,8 @@ function finalize_integration_monitor(integrator)
     end
 end
 
-# Deliberately a no-op, not an oversight: the only consumer of `just_hit_tstop` is
-# SciMLBase's iterator `done`, which reads `opts.stop_at_next_tstop` right after -- a
-# field `IntegratorOptions` does not have. Setting the flag would turn a hit tstop into a
-# `FieldError` on the iterator path. Implementing stop-at-tstop means adding that option
-# together with `advance_to_tstop` (accepted by `__init` and read nowhere); until then the
-# flag stays false, which is the behaviour every caller in this package already relies on.
-notify_integrator_hit_tstop!(integrator::ThunderboltTimeIntegrator) = nothing
+notify_integrator_hit_tstop!(integrator::ThunderboltTimeIntegrator) =
+    integrator.just_hit_tstop = true
 
 # TODO upstream into OrdinaryDiffEqCore
 function compute_rate_prototype(prob)

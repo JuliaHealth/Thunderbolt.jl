@@ -159,6 +159,7 @@ function OS._build_child(
         nothing
     end
 
+    save_end_user = save_end
     save_end =
         save_end === nothing ?
         save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
@@ -190,6 +191,7 @@ function OS._build_child(
             maxiters = maxiters,
             callback = callbacks_internal,
             save_end = save_end,
+            save_end_user = save_end_user,
             tstops = tstops_internal,
             saveat = saveat_internal,
             d_discontinuities = d_discontinuities_internal,

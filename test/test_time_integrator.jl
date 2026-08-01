@@ -321,3 +321,223 @@ end
     @test length(PROBED_TIMES) == substeps
     @test PROBED_TIMES ≈ [t + (s - 1) * Δtₛ for s = 1:substeps]
 end
+
+@testset "reinit! produces a usable integrator" begin
+    # F10: `reinit!` left the failure flags and the save counters from the previous run in
+    # place, so the reinit'd integrator could re-derive the old failure on its first step.
+    λ, tf, dt = 0.7, 1.0, 0.1
+    integrator = init(scalar_decay_problem(λ, (0.0, tf), 2.0), ScalarForwardEuler(), dt = dt)
+    SciMLBase.solve!(integrator)
+    @test integrator.t == tf
+
+    DiffEqBase.reinit!(integrator, [2.0])
+    @test integrator.t == 0.0
+    @test integrator.u ≈ [2.0]
+    @test integrator.uprev ≈ [2.0]
+    @test integrator.stats.naccept == 0
+    @test integrator.stats.nreject == 0
+    @test !integrator.last_step_failed
+    @test !integrator.force_stepfail
+
+    SciMLBase.solve!(integrator)
+    @test integrator.t == tf
+    @test integrator.u[1] ≈ 2.0 * exp(-λ * tf) rtol = 0.1
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+    @test integrator.stats.naccept == round(Int, tf / dt)
+end
+
+@testset "reinit! after a failed run clears the failure" begin
+    λ, tf, dt = 0.7, 1.0, 0.1
+    integrator = init(
+        scalar_decay_problem(λ, (0.0, tf), 2.0),
+        ScalarForwardEuler(),
+        dt = dt,
+        verbose = false,
+    )
+    integrator.cache.fail_at_iter = 3
+    with_logger(NullLogger()) do
+        SciMLBase.solve!(integrator)
+    end
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.ConvergenceFailure
+
+    integrator.cache.fail_at_iter = 0 # the cause is gone; the integrator must recover
+    DiffEqBase.reinit!(integrator, [2.0])
+    SciMLBase.solve!(integrator)
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+    @test integrator.t == tf
+end
+
+@testset "Unsupported options are refused at construction" begin
+    # The common defect these guard against is accepting input and then quietly
+    # misbehaving. Refusing loudly is the documented scope statement.
+    prob() = scalar_decay_problem(0.7, (0.0, 1.0), 2.0)
+
+    @testset "saving and dense output" begin
+        # F6: these used to be accepted and ignored -- `saveat = 0:0.2:1` produced a
+        # single saved point, with `ReturnCode.Success`.
+        @test_throws ErrorException init(
+            prob(),
+            ScalarForwardEuler(),
+            dt = 0.1,
+            saveat = 0.0:0.2:1.0,
+        )
+        @test_throws ErrorException init(prob(), ScalarForwardEuler(), dt = 0.1, saveat = 0.2)
+        @test_throws ErrorException init(
+            prob(),
+            ScalarForwardEuler(),
+            dt = 0.1,
+            save_everystep = true,
+        )
+        @test_throws ErrorException init(prob(), ScalarForwardEuler(), dt = 0.1, dense = true)
+        @test_throws ErrorException init(prob(), ScalarForwardEuler(), dt = 0.1, save_idxs = [1])
+        # The defaults must still construct.
+        @test init(prob(), ScalarForwardEuler(), dt = 0.1) isa ThunderboltTimeIntegrator
+    end
+
+    @testset "callbacks" begin
+        # F7: a callback used to die with `FieldError: type Nothing has no field ncondition`
+        # on the first step, because the solution is built without a stats object.
+        cb = SciMLBase.DiscreteCallback((u, t, integrator) -> false, integrator -> nothing)
+        @test_throws ErrorException init(prob(), ScalarForwardEuler(), dt = 0.1, callback = cb)
+        # An empty CallbackSet is what `init` passes internally and must stay accepted.
+        @test init(prob(), ScalarForwardEuler(), dt = 0.1, callback = SciMLBase.CallbackSet()) isa
+              ThunderboltTimeIntegrator
+    end
+
+    @testset "backward integration" begin
+        # F11: `tdir = -1` with a magnitude `dt` made every upstream helper we call
+        # disagree with us; the solve micro-stepped to MaxIters instead of failing.
+        @test_throws ErrorException init(
+            scalar_decay_problem(0.7, (1.0, 0.0), 2.0),
+            ScalarForwardEuler(),
+            dt = 0.1,
+        )
+    end
+end
+
+@testset "advance_to_tstop steps to the next tstop" begin
+    dt, tf = 0.1, 1.0
+    integrator = init(
+        scalar_decay_problem(0.7, (0.0, tf), 2.0),
+        ScalarForwardEuler(),
+        dt = dt,
+        tstops = [0.5],
+        advance_to_tstop = true,
+    )
+    SciMLBase.step!(integrator)
+    @test integrator.t == 0.5           # one `step!`, five steps of work
+    @test integrator.stats.naccept == 5
+    @test integrator.just_hit_tstop     # F9: the flag is now actually set
+
+    SciMLBase.step!(integrator)
+    @test integrator.t == tf
+    @test integrator.stats.naccept == round(Int, tf / dt)
+end
+
+# ---------------------------------------------------------------------------
+# The Deuflhard continuation controllers. Two of the three variants had no coverage of any
+# kind, and all three reached `cache.inner_solver_cache.Θks` directly -- a layout the
+# multi-level Newton cache does not have, which is what kept adaptive MLNR + homotopy from
+# running at all. They are pure functions of the convergence history, so a stub cache with
+# prescribed `Θks` tests them exactly.
+# ---------------------------------------------------------------------------
+struct StubNewtonCache
+    Θks::Vector{Float64}
+    parameters::NamedTuple{(:enforce_monotonic_convergence,), Tuple{Bool}}
+end
+StubNewtonCache(Θks; enforce = true) =
+    StubNewtonCache(Θks, (; enforce_monotonic_convergence = enforce))
+
+stub_homotopy_cache(Θks; enforce = true) =
+    Thunderbolt.HomotopyPathSolverCache(StubNewtonCache(Θks; enforce), [0.0], [0.0], [0.0])
+
+g_deuflhard(x) = √(1 + 4x) - 1
+
+@testset "Deuflhard continuation controllers" begin
+    dummy(dt) = init(scalar_decay_problem(0.7, (0.0, 10.0), 1.0), ScalarForwardEuler(), dt = dt)
+
+    controllers = (
+        Thunderbolt.Deuflhard2004DiscreteContinuationController(Θmin = 1 / 8, p = 1),
+        Thunderbolt.Deuflhard2004_B_DiscreteContinuationControllerVariant(Θmin = 1 / 8, p = 1),
+        Thunderbolt.ExperimentalDiscreteContinuationController(Θmin = 1 / 8, p = 1),
+    )
+
+    @testset "$(nameof(typeof(controller))): acceptance" for controller in controllers
+        Θreject = controller.Θreject
+        # Monotonic convergence enforced: every rate must be at or below the threshold.
+        @test Thunderbolt.should_accept_step(
+            dummy(0.1),
+            stub_homotopy_cache([0.1, 0.2]),
+            controller,
+        )
+        @test !Thunderbolt.should_accept_step(
+            dummy(0.1),
+            stub_homotopy_cache([0.1, Θreject + 0.01]),
+            controller,
+        )
+        # Not enforced: only finiteness matters, so a diverging-but-finite run is accepted.
+        @test Thunderbolt.should_accept_step(
+            dummy(0.1),
+            stub_homotopy_cache([10.0]; enforce = false),
+            controller,
+        )
+        @test !Thunderbolt.should_accept_step(
+            dummy(0.1),
+            stub_homotopy_cache([0.1, NaN]; enforce = false),
+            controller,
+        )
+    end
+
+    @testset "Deuflhard2004: rejection shrinks dt and rolls u back" begin
+        controller = controllers[1]
+        (; Θbar, γ, qmin, qmax, p) = controller
+        Θk = 2.0 # > Θreject
+        integrator = dummy(0.4)
+        integrator.u .= 5.0 # a half-written attempt
+        Thunderbolt.reject_step!(integrator, stub_homotopy_cache([0.1, Θk]), controller)
+        q = clamp(γ * (g_deuflhard(Θbar) / g_deuflhard(Θk))^(1 / p), qmin, qmax)
+        @test integrator.dt ≈ q * 0.4
+        @test integrator.dt < 0.4                 # it must actually shrink
+        @test integrator.u ≈ integrator.uprev     # and roll back
+    end
+
+    @testset "A rejection with every Θk below the threshold leaves dt alone" begin
+        # The loop falls through without touching dt. Worth pinning: it is the shape that
+        # makes a NaN Θk livelock, since `NaN > Θreject` is false.
+        controller = controllers[1]
+        integrator = dummy(0.4)
+        Thunderbolt.reject_step!(integrator, stub_homotopy_cache([0.1, 0.2]), controller)
+        @test integrator.dt == 0.4
+    end
+
+    @testset "adapt_dt! matches the published step size law" begin
+        (; Θbar, γ, Θmin, qmin, qmax, p) = controllers[1]
+        Θks = [0.3, 0.4]
+
+        # Variant A uses 2Θ₀ in the denominator ...
+        integrator = dummy(0.4)
+        Thunderbolt.adapt_dt!(integrator, stub_homotopy_cache(Θks), controllers[1])
+        Θ₀ = max(first(Θks), Θmin)
+        @test integrator.dt ≈ clamp(γ * (g_deuflhard(Θbar) / (2Θ₀))^(1 / p), qmin, qmax) * 0.4
+
+        # ... variant B uses g(Θ₀), which is the whole difference between them.
+        integrator = dummy(0.4)
+        Thunderbolt.adapt_dt!(integrator, stub_homotopy_cache(Θks), controllers[2])
+        @test integrator.dt ≈
+              clamp(γ * (g_deuflhard(Θbar) / g_deuflhard(Θ₀))^(1 / p), qmin, qmax) * 0.4
+
+        # ... and the experimental one averages the history instead of taking the first.
+        (; Θbar, γ, Θmin, qmin, qmax, p) = controllers[3]
+        integrator = dummy(0.4)
+        Thunderbolt.adapt_dt!(integrator, stub_homotopy_cache(Θks), controllers[3])
+        Θ₀exp = max(sum(Θks) / length(Θks), Θmin)
+        @test integrator.dt ≈ clamp(γ * (g_deuflhard(Θbar) / (2Θ₀exp))^(1 / p), qmin, qmax) * 0.4
+    end
+
+    @testset "An empty history falls back to Θmin" begin
+        (; Θbar, γ, Θmin, qmin, qmax, p) = controllers[1]
+        integrator = dummy(0.4)
+        Thunderbolt.adapt_dt!(integrator, stub_homotopy_cache(Float64[]), controllers[1])
+        @test integrator.dt ≈ clamp(γ * (g_deuflhard(Θbar) / (2Θmin))^(1 / p), qmin, qmax) * 0.4
+    end
+end
