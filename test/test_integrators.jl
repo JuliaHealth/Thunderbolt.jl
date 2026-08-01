@@ -511,3 +511,48 @@ end
         end
     end
 end
+
+@testset "Nested split with view-wired leaves addresses the right dofs" begin
+    # Regression guard for a silent wrong answer that lived in
+    # OrdinaryDiffEqOperatorSplitting until v0.4.0 (`d8cdb56`). Solution indices are
+    # node-local, but the intermediate node used to hand its children the *root* solution
+    # vector, so a leaf that wires itself as a view -- which is exactly what Thunderbolt's
+    # `_build_child` does, and the reason this integrator exists -- aliased the wrong root
+    # slots. Upstream's own leaves copy instead of viewing, so their tests could not see
+    # it, and the nested tests here compare nested against flat, which were wrong together.
+    #
+    # dof 2 is touched *only* by the outer decay operator, so its value is a closed form.
+    decay(du, u, p, t) = (@. du = -0.1 * u; nothing)
+    couple_a(du, u, p, t) = (du[1] = 0.01u[2]; du[2] = 0.01u[1]; nothing)
+    couple_b(du, u, p, t) = (du[1] = 0.005u[2]; du[2] = 0.005u[1]; nothing)
+
+    f_inner = GenericSplitFunction(
+        (ODEFunction(couple_a), ODEFunction(couple_b)),
+        ([1, 2], [1, 2]), # node-local: these index into the node's slice [1, 3]
+    )
+    f_outer = GenericSplitFunction((ODEFunction(decay), f_inner), ([1, 2, 3], [1, 3]))
+
+    u0 = [0.7611944793397108, 0.9059606424982555, 0.5755174199139956]
+    tf, dt = 100.0, 0.1π
+    integrator = DiffEqBase.init(
+        OperatorSplittingProblem(f_outer, copy(u0), (0.0, tf)),
+        LieTrotterGodunov((
+            DummyForwardEuler(),
+            LieTrotterGodunov((DummyForwardEuler(), DummyForwardEuler())),
+        )),
+        dt = dt,
+        verbose = true,
+        alias_u0 = false,
+    )
+    DiffEqBase.solve!(integrator)
+
+    # Forward Euler on pure decay, with the final step clipped by the tf tstop.
+    nfull = floor(Int, tf / dt)
+    u2_exact = (1 - 0.1dt)^nfull * (1 - 0.1 * (tf - nfull * dt)) * u0[2]
+
+    @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
+    @test integrator.u[2] ≈ u2_exact rtol = 1e-12
+    # The pre-fix symptom was specifically `u[2] == u[3]`: the nested leaves wrote dof 2
+    # where they meant dof 3.
+    @test integrator.u[2] != integrator.u[3]
+end
