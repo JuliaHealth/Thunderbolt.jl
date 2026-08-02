@@ -65,8 +65,8 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
     timestepper = LieTrotterGodunov((BackwardEulerSolver(), ForwardEulerCellSolver()))
     timestepper_adaptive =
         LieTrotterGodunov((BackwardEulerSolver(), AdaptiveForwardEulerSubstepper()))
-    # Bounds well apart from the base dt = 1.0, so a controller that silently runs at
-    # constant dt fails the step-count assertions below (F2 regression).
+    # Bounds well apart from the base dt = 1.0, so a controller that silently ran at
+    # constant dt would fail the step count assertions below.
     timestepper_rtc = Thunderbolt.ReactionTangentController(timestepper, 0.5, 1.0, (0.5, 2.0))
 
     @testset "Single subdomain" begin
@@ -90,12 +90,8 @@ using FerriteInterfaceElements, OrderedCollections, StaticArrays
         integ = solve_waveprop(mesh, model, timestepper)
         integ_adaptive = solve_waveprop(mesh, model, timestepper_adaptive)
         @test integ.u ≈ integ_adaptive.u rtol = 1e-2
-        # Non-vacuity guard. If `reaction_threshold` never trips, the substepper is
-        # bitwise a plain forward Euler step and the comparison above passes while testing
-        # nothing. Measured on this mesh: 104 of 918 pointwise evaluations exceed the
-        # threshold (max |du[φₘ]| = 0.118 against a threshold of 0.1), so the branch does
-        # fire -- but with little margin, which is exactly why this is asserted rather
-        # than assumed.
+        # If `reaction_threshold` never trips, the substepper is bitwise a plain forward
+        # Euler step and the comparison above tests nothing.
         @test !isapprox(integ.u, integ_adaptive.u; rtol = 1e-8)
         integ_rtc = solve_waveprop(mesh, model, timestepper_rtc)
         @test integ.u ≈ integ_rtc.u rtol = 1e-2

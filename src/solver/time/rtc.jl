@@ -28,8 +28,6 @@ struct ReactionTangentController{AlgTupleType <: Tuple, T <: Real} <:
     Δt_bounds::NTuple{2, T}
 end
 
-# Convenience constructor: RTC is "LieTrotterGodunov plus a step size controller", so
-# also accept the wrapped LTG that call sites historically passed.
 ReactionTangentController(ltg::OS.LieTrotterGodunov, σ_s, σ_c, Δt_bounds) =
     ReactionTangentController(ltg.inner_algs, σ_s, σ_c, Δt_bounds)
 

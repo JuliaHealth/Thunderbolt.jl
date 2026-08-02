@@ -17,6 +17,8 @@ mutable struct DummyForwardEulerCache{duType, uType, uprevType, duMatType} <:
     dumat::duMatType
     uₙ::uType
     uₙ₋₁::uprevType
+    fail_at_iter::Int # 0 = never fail; there is no public transient-failure injection
+    nfails::Int
 end
 
 # Dispatch for leaf construction
@@ -36,7 +38,7 @@ function Thunderbolt.setup_solver_cache(
     uₙ₋₁ = uprev === nothing ? zeros(n) : uprev
     dumat = reshape(du, (:, 1))
 
-    return DummyForwardEulerCache(du, dumat, uₙ, uₙ₋₁)
+    return DummyForwardEulerCache(du, dumat, uₙ, uₙ₋₁, 0, 0)
 end
 
 # Dispatch innermost solve
@@ -44,55 +46,9 @@ function Thunderbolt.OrdinaryDiffEqCore.perform_step!(
     integ::ThunderboltTimeIntegrator,
     cache::DummyForwardEulerCache,
 )
-    (; f, dt, u, p, t) = integ
-    (; du) = cache
-
-    f isa Thunderbolt.PointwiseODEFunction ? f.ode(du, u, p, t) : f(du, u, p, t)
-    @. u += dt * du
-    cache.dumat[:, 1] .= du
-
-    return true
-end
-
-# Forward Euler whose inner solve fails transiently on one prescribed internal step.
-# Used to exercise the failure-escalation protocol: reject, roll the children back and
-# retry the outer step on a shrunken interval.
-struct FlakyForwardEuler <: Thunderbolt.AbstractSolver end
-DiffEqBase.isadaptive(::FlakyForwardEuler) = false
-
-mutable struct FlakyForwardEulerCache{duType, uType, uprevType, duMatType} <:
-               Thunderbolt.AbstractTimeSolverCache
-    du::duType
-    dumat::duMatType
-    uₙ::uType
-    uₙ₋₁::uprevType
-    fail_at_iter::Int # 0 = never fail
-    nfails::Int
-end
-
-function Thunderbolt.setup_solver_cache(
-    f::Any,
-    solver::FlakyForwardEuler,
-    t₀;
-    u = nothing,
-    uprev = nothing,
-)
-    n = u === nothing ? Thunderbolt.num_states(f) : length(u)
-    du = zeros(n)
-    uₙ = u === nothing ? zeros(n) : u
-    uₙ₋₁ = uprev === nothing ? zeros(n) : uprev
-    dumat = reshape(du, (:, 1))
-
-    return FlakyForwardEulerCache(du, dumat, uₙ, uₙ₋₁, 0, 0)
-end
-
-function Thunderbolt.OrdinaryDiffEqCore.perform_step!(
-    integ::ThunderboltTimeIntegrator,
-    cache::FlakyForwardEulerCache,
-)
     if cache.fail_at_iter != 0 && integ.iter == cache.fail_at_iter && cache.nfails == 0
         cache.nfails += 1
-        integ.force_stepfail = true # what the production wrapper does when the inner solve fails
+        integ.force_stepfail = true # what the production wrapper does on an inner failure
         return false
     end
     (; f, dt, u, p, t) = integ
@@ -292,7 +248,7 @@ end
             # estimator and never rejects on accuracy. These tests pin that the accepted
             # step size actually follows σ(R). Regression tests for the controller having
             # silently degenerated to constant dt.
-            @testset "RTC adaptivity (F2 regression)" begin
+            @testset "RTC adaptivity" begin
                 Δt_bounds = adaptive_tstep_range
 
                 # prob_force_half forces du = 0.5 on the pointwise operator, so R = 0.5
@@ -387,7 +343,7 @@ end
             # accepted step), branded retcode and last_step_failed cleared.
             @testset "Transient child failure is retried" begin
                 flaky = Thunderbolt.ReactionTangentController(
-                    LieTrotterGodunov((FlakyForwardEuler(), DummyForwardEuler())),
+                    LieTrotterGodunov((DummyForwardEuler(), DummyForwardEuler())),
                     0.5,
                     1.0,
                     adaptive_tstep_range,
@@ -407,7 +363,7 @@ end
                 integ_reference = DiffEqBase.init(
                     prob1,
                     Thunderbolt.ReactionTangentController(
-                        LieTrotterGodunov((FlakyForwardEuler(), DummyForwardEuler())),
+                        LieTrotterGodunov((DummyForwardEuler(), DummyForwardEuler())),
                         0.5,
                         1.0,
                         adaptive_tstep_range,
@@ -513,15 +469,11 @@ end
 end
 
 @testset "Nested split with view-wired leaves addresses the right dofs" begin
-    # Regression guard for a silent wrong answer that lived in
-    # OrdinaryDiffEqOperatorSplitting until v0.4.0 (`d8cdb56`). Solution indices are
-    # node-local, but the intermediate node used to hand its children the *root* solution
-    # vector, so a leaf that wires itself as a view -- which is exactly what Thunderbolt's
-    # `_build_child` does, and the reason this integrator exists -- aliased the wrong root
-    # slots. Upstream's own leaves copy instead of viewing, so their tests could not see
-    # it, and the nested tests here compare nested against flat, which were wrong together.
-    #
-    # dof 2 is touched *only* by the outer decay operator, so its value is a closed form.
+    # Solution indices are node-local, so a leaf wired as a view into the root solution
+    # vector must still address the node's slice. Guards a bug fixed in
+    # OrdinaryDiffEqOperatorSplitting 0.4.0; the nested-vs-flat tests above cannot see it,
+    # since both sides were wrong together. dof 2 is touched only by the outer decay
+    # operator, so it has a closed form.
     decay(du, u, p, t) = (@. du = -0.1 * u; nothing)
     couple_a(du, u, p, t) = (du[1] = 0.01u[2]; du[2] = 0.01u[1]; nothing)
     couple_b(du, u, p, t) = (du[1] = 0.005u[2]; du[2] = 0.005u[1]; nothing)
@@ -552,7 +504,5 @@ end
 
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
     @test integrator.u[2] ≈ u2_exact rtol = 1e-12
-    # The pre-fix symptom was specifically `u[2] == u[3]`: the nested leaves wrote dof 2
-    # where they meant dof 3.
     @test integrator.u[2] != integrator.u[3]
 end

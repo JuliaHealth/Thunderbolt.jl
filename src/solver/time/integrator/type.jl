@@ -43,9 +43,8 @@ Base.@kwdef mutable struct IntegratorOptions{
     progress_steps::Int = 1
     progress_monitor::progressMonitorType = DefaultProgressMonitor()
     save_idxs::SType = nothing
-    # `step!` advances to the next tstop rather than taking a single step; `done` (the
-    # SciMLBase iterator interface) stops the iteration once a tstop has been hit. Both
-    # are read by code we call, so they have to live here rather than only in `__init`.
+    # `advance_to_tstop` is read by `step!` below, `stop_at_next_tstop` by
+    # `SciMLBase.done`. Both are read after `__init` returns, so they live here.
     advance_to_tstop::Bool = false
     stop_at_next_tstop::Bool = false
     save_end::Bool = true
@@ -115,10 +114,8 @@ mutable struct ThunderboltTimeIntegrator{
     saveiter::Int
     saveiter_dense::Int
     just_hit_tstop::Bool
-    # The tstop contract of `OrdinaryDiffEqCore.modify_dt_for_tstops!` /
-    # `fixed_t_for_tstop_error!`, both of which we call. Without these two fields the
-    # upstream accessors fall back to "no tstop ahead" and the step lands on `t + dt`
-    # instead of the tstop itself, leaving a rounding-sized gap that costs an extra step.
+    # Tstop bookkeeping for `OrdinaryDiffEqCore.modify_dt_for_tstops!` /
+    # `fixed_t_for_tstop_error!`; see the accessors in `diffeq-interface.jl`.
     next_step_tstop::Bool
     tstop_target::tType
 end
@@ -141,10 +138,8 @@ end
 
 # CommonSolve interface
 @inline function SciMLBase.step!(integrator::ThunderboltTimeIntegrator)
-    # `advance_to_tstop` makes one `step!` run all the way to the next tstop instead of
-    # taking a single step. The target is captured *before* the loop: `handle_tstop!` pops
-    # the tstop on arrival, so re-reading the heap each iteration would silently carry on
-    # to the tstop after it.
+    # The target is captured before the loop: `handle_tstop!` pops the tstop on arrival,
+    # so re-reading the heap would carry on to the next one.
     if integrator.opts.advance_to_tstop && SciMLBase.has_tstop(integrator)
         tdir_tstop = SciMLBase.first_tstop(integrator)
         @inbounds while integrator.tdir * integrator.t < tdir_tstop
@@ -173,13 +168,13 @@ end
     return true
 end
 
-# Dense output and intermediate saving are not implemented: `opts.save_on` is false and
-# only the endpoint reaches `sol`. Accepting these keywords and ignoring them means a user
-# can ask for output and silently receive none, so refuse instead. Whoever implements
-# saving deletes this function and wires up `save_on`/`save_everystep`.
+_is_empty_saveat(::Nothing) = true
 _is_empty_saveat(saveat::Number) = false
 _is_empty_saveat(saveat) = isempty(saveat)
 
+# Dense output and intermediate saving are not implemented -- only the endpoint reaches
+# `sol` -- so refuse the keywords rather than ignore them. Whoever implements saving
+# deletes this and wires up `save_on`/`save_everystep`.
 function _reject_unsupported_saving(saveat, save_everystep, dense, save_idxs)
     requested = String[]
     _is_empty_saveat(saveat) || push!(requested, "saveat")
@@ -194,10 +189,8 @@ function _reject_unsupported_saving(saveat, save_everystep, dense, save_idxs)
     )
 end
 
-# Callbacks reach `apply_discrete_callback!`, which increments `sol.stats` -- a field the
-# solution built here does not have -- and `ContinuousCallback` additionally needs event
-# bookkeeping fields the integrator does not carry. Both fail at depth with a `FieldError`
-# on the first step, so refuse at construction instead.
+# Callbacks are not implemented: the solution and integrator lack the stats and event
+# state they need. Refuse at construction rather than fail mid-step.
 function _reject_callbacks(callback)
     callback === nothing && return nothing
     cbs = SciMLBase.CallbackSet(callback)
@@ -246,9 +239,8 @@ function SciMLBase.__init(
     _reject_callbacks(callback)
 
     dt > zero(dt) || error("dt must be positive")
-    # Backward integration is not supported: `dt` is a magnitude here and the direction
-    # lives in `tdir`, but every upstream helper we call assumes a *signed* dt. Rather
-    # than pretend via `tdir = -1` and then micro-step to `MaxIters`, refuse up front.
+    # `dt` is a magnitude here and the direction lives in `tdir`, but the upstream
+    # helpers we call assume a *signed* dt.
     tf ≥ t0 || error(
         "Backward integration is not supported: got tspan = ($t0, $tf). " *
         "Integrate forward and reverse the solution instead.",
@@ -258,9 +250,8 @@ function SciMLBase.__init(
 
     dtchangeable = OrdinaryDiffEqCore.isdtchangeable(alg)
 
-    # Zero would make `ReturnCode.DtLessThanMin` unreachable, so a solve that stagnates
-    # burns `maxiters` implicit solves instead of reporting that it cannot make progress.
-    # `prob2dtmin` is the same default the SciML integrators use.
+    # `prob2dtmin` is the SciML integrator default; zero would make `DtLessThanMin`
+    # unreachable.
     dtmin = dtmin === nothing ? tType(DiffEqBase.prob2dtmin(prob)) : tType(dtmin)
     dtmax = dtmax === nothing ? tType(tf - t0) : tType(dtmax)
 
@@ -469,6 +460,7 @@ function reject_step!(
     if length(integrator.uprev) == 0
         error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
     end
+    integrator.u .= integrator.uprev
 end
 
 adapt_dt!(integrator::ThunderboltTimeIntegrator) =

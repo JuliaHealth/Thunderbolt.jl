@@ -76,10 +76,7 @@ struct MultiLevelNewtonRaphsonSolverCache{gCacheType, lCacheType} <: AbstractNon
     local_solver_cache::lCacheType
 end
 
-# `Θks` and the Newton parameters live on the *global* Newton cache, which this one wraps.
-# Without this the Deuflhard controllers hit a `FieldError` on any multi-level solve, which
-# is why adaptive MLNR + homotopy could not run. Forwarding `getproperty` would work too,
-# but it answers for every field name, including typos.
+# `Θks` and the Newton parameters live on the global cache this one wraps.
 global_newton_cache(cache::MultiLevelNewtonRaphsonSolverCache) = cache.global_solver_cache
 
 function Base.show(io::IO, cache::MultiLevelNewtonRaphsonSolverCache)

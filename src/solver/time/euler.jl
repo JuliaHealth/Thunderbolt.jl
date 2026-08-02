@@ -134,10 +134,8 @@ function setup_solver_cache(
     A  = create_system_matrix(solver.system_matrix_type, f)
     b  = create_system_vector(solver.solution_vector_type, f)
     u0 = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
-    # `uprev === nothing` means "allocate your own rollback buffer", and it has to start out at u₀ --
-    # the first step evaluates b = M uₙ₋₁, so a zeroed buffer silently discards the initial condition.
-    # This matches what the generic and homotopy cache setups do.
-    uprev = uprev === nothing ? copy(u0) : uprev
+    uprev = uprev === nothing ? create_system_vector(solver.solution_vector_type, f) : uprev
+    uprev .= u0
 
     T = eltype(u0)
 

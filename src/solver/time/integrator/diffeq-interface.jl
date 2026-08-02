@@ -47,10 +47,9 @@ SciMLBase.get_sol(integrator::ThunderboltTimeIntegrator) = integrator.sol
 function SciMLBase.set_proposed_dt!(integrator::ThunderboltTimeIntegrator, dt)
     if integrator.dtchangeable == true
         integrator.dt = dt
-        # `dtcache` is what `modify_dt_for_tstops!` restores `dt` from at every header, so
-        # writing only `dt` here loses the proposal at the next step -- an *increase* would
-        # never survive, while a decrease appears to work because tstop clipping shrinks
-        # `dt` anyway. Upstream writes both (`integrator_interface.jl:180-182`).
+        # `modify_dt_for_tstops!` restores `dt` from `dtcache` at every header, so writing
+        # only `dt` loses the proposal after one step. Upstream writes both
+        # (OrdinaryDiffEqCore `integrator_interface.jl:180-182`).
         integrator.dtpropose = dt
         integrator.dtcache = dt
     elseif integrator.dt != dt
@@ -111,9 +110,7 @@ function DiffEqBase.reinit!(
     integrator.iter = 0
     integrator.derivative_discontinuity = false
 
-    # A reinit'd integrator has not failed and is not mid-tstop. Leaving these set makes
-    # `check_error` re-derive the previous run's failure on the first new step, so the
-    # reinit silently produces a dead integrator.
+    # A reinit'd integrator has not failed and is not mid-tstop.
     integrator.force_stepfail = false
     integrator.last_step_failed = false
     integrator.isout = false
@@ -124,10 +121,9 @@ function DiffEqBase.reinit!(
     integrator.stats.naccept = 0
     integrator.stats.nreject = 0
 
-    # `saveiter`/`saveiter_dense` index into the solution buffers, so they have to follow
-    # whatever happens to those. Upstream resets them inside `erase_sol`; leaving them
-    # stale makes the next postamble index past the end of an emptied `sol.t`.
-    # Operator splitting children carry a `DummyODESolution`, which has no buffers at all.
+    # `saveiter`/`saveiter_dense` index into the solution buffers, so they follow whatever
+    # happens to those. Operator splitting children carry a `DummyODESolution`, which has
+    # no buffers at all.
     if hasproperty(integrator.sol, :t)
         if erase_sol
             resize!(integrator.sol.t, 0)
@@ -212,10 +208,8 @@ function should_accept_step(
     return !(integrator.force_stepfail)
 end
 
-# `stats.naccept` is counted in `step_footer!`, which sees every accepted attempt --
-# including the last one. Counting it here would miss exactly that step, because
-# acceptance is registered in the *next* step's header and the final accepted step never
-# gets one. This header-side hook only prepares the next step.
+# `stats.naccept` is counted in `step_footer!`, which sees every accepted attempt
+# including the last one; this header-side hook only prepares the next step.
 function accept_step!(integrator::ThunderboltTimeIntegrator)
     accept_step!(integrator, integrator.cache, integrator.controller_cache)
 end
@@ -316,12 +310,9 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
     # We also exit if the ODE is unstable according to a user chosen callback
     # but only if we accepted the step to prevent from bailing out as unstable
     # when we just took way too big a step)
-    # `check_error` runs at the top of the retry loop, i.e. *after* `step_header!` has
-    # already cleared `force_stepfail` for the attempt about to be made. Deriving
-    # "was the previous step rejected?" from `should_accept_step` therefore always answers
-    # "accepted", which disables both the `step_rejected` branches below -- exactly the
-    # ones meant to stop a solve that is shrinking dt without making progress. The
-    # persistent flag is the one that survives the header.
+    # `step_header!` has already cleared `force_stepfail` for the attempt about to be
+    # made, so `should_accept_step` cannot see a rejection here; `last_step_failed`
+    # survives the header.
     step_rejected = SciMLBase.last_step_failed(integrator)
     step_accepted = should_accept_step(integrator)
     force_dtmin   = hasproperty(integrator, :force_dtmin) && integrator.force_dtmin
@@ -414,13 +405,10 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
     return nothing
 end
 
-# The tstop contract of the upstream helpers we call. `modify_dt_for_tstops!` decides,
-# *before* the step, whether this step ends exactly on a tstop; `fixed_t_for_tstop_error!`
-# then sets `t` to the recorded target instead of the accumulated `t + dt`. The generic
-# fallbacks are `_set_tstop_flag!(integrator, …) = nothing` and
-# `_get_next_step_tstop(integrator) = false`, so without these three methods the mechanism
-# runs half-on: `dt` gets clipped to the tstop but `t` still lands on `t + dt`, a rounding
-# error short of it -- and the leftover gap is then closed by a step of a few eps.
+# `modify_dt_for_tstops!` decides, before the step, whether it ends exactly on a tstop;
+# `fixed_t_for_tstop_error!` then sets `t` to the recorded target rather than to the
+# accumulated `t + dt`. The upstream fallbacks are `nothing`/`false`, so without these
+# three methods the mechanism only half runs.
 @inline function OrdinaryDiffEqCore._set_tstop_flag!(
     integrator::ThunderboltTimeIntegrator,
     is_tstop::Bool,

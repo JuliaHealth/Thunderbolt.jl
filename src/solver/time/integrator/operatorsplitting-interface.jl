@@ -8,15 +8,9 @@ function SciMLBase.solution_new_retcode(sol::DummyODESolution, retcode)
 end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
-# After an outer rollback the child has not "just failed" anymore. Clearing the branded
-# retcode alone is not enough: our `check_error` would re-derive ConvergenceFailure from
-# the sticky `last_step_failed` flag on the very next attempt and turn the whole retry
-# into an abort.
-#
-# This method is NOT redundant with the upstream generic for `DEIntegrator`, which reaches
-# the flag through `hasfield(typeof(child), :last_stepfail)` -- `OrdinaryDiffEqCore`'s
-# spelling. Ours is `last_step_failed`, so the generic would silently do nothing for this
-# integrator. Do not delete this method on the assumption that upstream covers it.
+# Upstream's generic clears the branded retcode and probes the failure flags by field
+# name -- `last_stepfail`, OrdinaryDiffEqCore's spelling. Ours is `last_step_failed`,
+# which it misses, and a sticky flag turns the retry after a rollback into an abort.
 function OS._reset_child_failure!(child::ThunderboltTimeIntegrator)
     if child.sol.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
         child.sol = SciMLBase.solution_new_retcode(child.sol, SciMLBase.ReturnCode.Default)
@@ -48,7 +42,10 @@ function OS._build_child(
 
     # This node's own settings live in `config.values`; everything else the caller passed
     # to `init` travels to the leaves untouched via `inner_values`.
-    tdir = tf > t0 ? one(T) : -one(T)
+    # Same restriction as `__init`: `dt` is a magnitude and the direction lives in `tdir`,
+    # but the upstream helpers we call assume a signed `dt`.
+    tf ≥ t0 || error("Backward integration is not supported: got tspan = ($t0, $tf).")
+    tdir = one(T)
     # `signed_dt_tree` gave the configured dt the integration direction; this integrator
     # keeps dt as a magnitude and carries the direction in `tdir`.
     dt = abs(config.values.dt)
@@ -62,13 +59,10 @@ function OS._build_child(
     save_everystep = get(inner, :save_everystep, false)
     maxiters = get(inner, :maxiters, 1000000)
 
-    # The child's solution ALIASES the parent's solution vector -- no copies on the hot
-    # path; this shared-solution wiring is the point of this integrator. Its rollback
-    # buffer must NOT: the integrator loop refreshes `uprev` from `u` on every internal
-    # step (`update_uprev!` in `step_header!`), and through a view that write would land
-    # in the parent's rollback anchor, which has to survive the whole outer step
-    # untouched. `forward_sync_internal!` refreshes this buffer at the start of every
-    # sub-solve. (Upstream's leaf builder copies `u` as well; we deviate only for `u`.)
+    # `u` aliases the parent's solution slice -- the point of this integrator. `uprev`
+    # must be a private copy: `update_uprev!` writes it from `u` on every internal step,
+    # and through a view that write would corrupt the parent's rollback anchor mid-step.
+    # `forward_sync_internal!` refreshes the copy at the start of every sub-solve.
     uprev = uprevouter[solution_indices]
     u = @view uouter[solution_indices]
 
@@ -184,7 +178,9 @@ function OS._build_child(
         controller_cache,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = tType(get(inner, :dtmin, zero(tType))),
+            dtmin = tType(
+                get(inner, :dtmin, DiffEqBase.prob2dtmin((t0, tf), oneunit(tType), true)),
+            ),
             dtmax = tType(get(inner, :dtmax, tf - t0)),
             verbose = verbose,
             adaptive = adaptive,
