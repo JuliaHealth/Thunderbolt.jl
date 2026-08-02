@@ -8,6 +8,18 @@ function SciMLBase.solution_new_retcode(sol::DummyODESolution, retcode)
 end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
+# Upstream's generic clears the branded retcode and probes the failure flags by field
+# name -- `last_stepfail`, OrdinaryDiffEqCore's spelling. Ours is `last_step_failed`,
+# which it misses, and a sticky flag turns the retry after a rollback into an abort.
+function OS._reset_child_failure!(child::ThunderboltTimeIntegrator)
+    if child.sol.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+        child.sol = SciMLBase.solution_new_retcode(child.sol, SciMLBase.ReturnCode.Default)
+    end
+    child.last_step_failed = false
+    child.force_stepfail = false
+    return nothing
+end
+
 function OS._build_child(
     prob::OS.OperatorSplittingProblem,
     alg::AbstractSolver,
@@ -18,31 +30,44 @@ function OS._build_child(
     u_master::S,
     solution_indices,
     t0::T,
-    dt::T,
     tf::T,
     tstops,
     saveat,
     d_discontinuities,
     callback,
-    adaptive,
-    verbose,
-    save_end = false,
-    save_everystep = false,
-    controller = nothing,
-    internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
+    config::OS.ConfigTree,
 ) where {S, T, P, F}
 
     (; tspan) = prob
 
+    # This node's own settings live in `config.values`; everything else the caller passed
+    # to `init` travels to the leaves untouched via `inner_values`.
+    # Same restriction as `__init`: `dt` is a magnitude and the direction lives in `tdir`,
+    # but the upstream helpers we call assume a signed `dt`.
+    tf ≥ t0 || error("Backward integration is not supported: got tspan = ($t0, $tf).")
+    tdir = one(T)
+    # `signed_dt_tree` gave the configured dt the integration direction; this integrator
+    # keeps dt as a magnitude and carries the direction in `tdir`.
+    dt = abs(config.values.dt)
     # Since we do not have control over the adaptivity setting yet, this toggles adaptivity off for inner algs.
-    adaptive &= SciMLBase.isadaptive(alg)
+    adaptive = config.values.adaptive & SciMLBase.isadaptive(alg)
+    verbose = normalize_verbosity(config.values.verbose)
+    controller = config.values.controller
+    inner = OS.inner_values(config.values)
+    internalnorm = get(inner, :internalnorm, OrdinaryDiffEqCore.ODE_DEFAULT_NORM)
+    save_end = get(inner, :save_end, false)
+    save_everystep = get(inner, :save_everystep, false)
+    maxiters = get(inner, :maxiters, 1000000)
 
-    uprev = @view uprevouter[solution_indices]
+    # `u` aliases the parent's solution slice -- the point of this integrator. `uprev`
+    # must be a private copy: `update_uprev!` writes it from `u` on every internal step,
+    # and through a view that write would corrupt the parent's rollback anchor mid-step.
+    # `forward_sync_internal!` refreshes the copy at the start of every sub-solve.
+    uprev = uprevouter[solution_indices]
     u = @view uouter[solution_indices]
 
     dt > zero(dt) || error("dt must be positive")
     _dt = dt
-    tdir = tf > t0 ? one(dt) : -one(dt)
     tType = typeof(dt)
     tTypeNoUnits = typeof(one(tType))
 
@@ -128,6 +153,7 @@ function OS._build_child(
         nothing
     end
 
+    save_end_user = save_end
     save_end =
         save_end === nothing ?
         save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
@@ -152,13 +178,16 @@ function OS._build_child(
         controller_cache,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = zero(tType),
-            dtmax = tType(tf - t0),
+            dtmin = tType(
+                get(inner, :dtmin, DiffEqBase.prob2dtmin((t0, tf), oneunit(tType), true)),
+            ),
+            dtmax = tType(get(inner, :dtmax, tf - t0)),
             verbose = verbose,
             adaptive = adaptive,
-            # maxiters = maxiters,
+            maxiters = maxiters,
             callback = callbacks_internal,
             save_end = save_end,
+            save_end_user = save_end_user,
             tstops = tstops_internal,
             saveat = saveat_internal,
             d_discontinuities = d_discontinuities_internal,
@@ -175,6 +204,8 @@ function OS._build_child(
         0,
         0,
         false,
+        false,
+        tType(t0),
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
 

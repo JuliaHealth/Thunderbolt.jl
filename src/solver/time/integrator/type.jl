@@ -43,7 +43,15 @@ Base.@kwdef mutable struct IntegratorOptions{
     progress_steps::Int = 1
     progress_monitor::progressMonitorType = DefaultProgressMonitor()
     save_idxs::SType = nothing
+    # `advance_to_tstop` is read by `step!` below, `stop_at_next_tstop` by
+    # `SciMLBase.done`. Both are read after `__init` returns, so they live here.
+    advance_to_tstop::Bool = false
+    stop_at_next_tstop::Bool = false
     save_end::Bool = true
+    # The *raw* user-supplied `save_end`, before the `nothing` default is resolved into
+    # `save_end`. `solution_endpoint_match_cur_integrator!` distinguishes "the user asked
+    # for the endpoint" from "we defaulted to saving it", so it needs both.
+    save_end_user::Union{Nothing, Bool} = nothing
     dense::Bool = false
     save_on::Bool = false
     # TODO vvv factor these into some event management data type vvv
@@ -106,11 +114,22 @@ mutable struct ThunderboltTimeIntegrator{
     saveiter::Int
     saveiter_dense::Int
     just_hit_tstop::Bool
+    # Tstop bookkeeping for `OrdinaryDiffEqCore.modify_dt_for_tstops!` /
+    # `fixed_t_for_tstop_error!`; see the accessors in `diffeq-interface.jl`.
+    next_step_tstop::Bool
+    tstop_target::tType
 end
 
 function init_cache(prob, alg; dt, kwargs...)
     return setup_solver_cache(prob.f, alg, prob.tspan[1]; kwargs...)
 end
+
+# `@SciMLMessage` dispatches on `Bool` (what the operator splitting parent hands its children) and on
+# `AbstractVerbositySpecifier` (what `DiffEqBase.init` passes), but not on the bare `SciMLLogging`
+# presets, which are what our own default and a `verbose = Standard()` from user code are. Lower
+# those to a `DEVerbosity` so every entry point ends up with something `@SciMLMessage` understands.
+normalize_verbosity(verbose) = verbose
+normalize_verbosity(verbose::AbstractVerbosityPreset) = DiffEqBase.DEVerbosity(verbose)
 
 # Interpolation
 function (integrator::ThunderboltTimeIntegrator)(tmp, t)
@@ -119,10 +138,26 @@ end
 
 # CommonSolve interface
 @inline function SciMLBase.step!(integrator::ThunderboltTimeIntegrator)
+    # The target is captured before the loop: `handle_tstop!` pops the tstop on arrival,
+    # so re-reading the heap would carry on to the next one.
+    if integrator.opts.advance_to_tstop && SciMLBase.has_tstop(integrator)
+        tdir_tstop = SciMLBase.first_tstop(integrator)
+        @inbounds while integrator.tdir * integrator.t < tdir_tstop
+            _step_once!(integrator) || return
+        end
+        return
+    end
+    @inbounds _step_once!(integrator)
+    return
+end
+
+# One accepted step, retrying on rejection. Returns whether the step succeeded, so the
+# `advance_to_tstop` loop above stops on an error instead of spinning.
+@inline function _step_once!(integrator::ThunderboltTimeIntegrator)
     @inbounds while true # Emulate do-while
         step_header!(integrator)
         if SciMLBase.check_error!(integrator) != SciMLBase.ReturnCode.Success
-            return
+            return false
         end
         OrdinaryDiffEqCore.perform_step!(integrator, integrator.cache)
         step_footer!(integrator)
@@ -130,6 +165,40 @@ end
         should_accept_step(integrator) && break
     end
     @inbounds OrdinaryDiffEqCore.handle_tstop!(integrator)
+    return true
+end
+
+_is_empty_saveat(::Nothing) = true
+_is_empty_saveat(saveat::Number) = false
+_is_empty_saveat(saveat) = isempty(saveat)
+
+# Dense output and intermediate saving are not implemented -- only the endpoint reaches
+# `sol` -- so refuse the keywords rather than ignore them. Whoever implements saving
+# deletes this and wires up `save_on`/`save_everystep`.
+function _reject_unsupported_saving(saveat, save_everystep, dense, save_idxs)
+    requested = String[]
+    _is_empty_saveat(saveat) || push!(requested, "saveat")
+    save_everystep && push!(requested, "save_everystep")
+    dense && push!(requested, "dense")
+    save_idxs === nothing || push!(requested, "save_idxs")
+    isempty(requested) && return nothing
+    return error(
+        "ThunderboltTimeIntegrator does not implement intermediate saving or dense " *
+        "output, but was given $(join(requested, ", ")). Only the solution endpoint is " *
+        "stored. Drop the keyword(s), or read the state from the integrator directly.",
+    )
+end
+
+# Callbacks are not implemented: the solution and integrator lack the stats and event
+# state they need. Refuse at construction rather than fail mid-step.
+function _reject_callbacks(callback)
+    callback === nothing && return nothing
+    cbs = SciMLBase.CallbackSet(callback)
+    (isempty(cbs.continuous_callbacks) && isempty(cbs.discrete_callbacks)) && return nothing
+    return error(
+        "ThunderboltTimeIntegrator does not implement callbacks. Pass `callback = nothing` " *
+        "and drive the integrator with `step!` if you need to act between steps.",
+    )
 end
 
 function SciMLBase.__init(
@@ -147,13 +216,14 @@ function SciMLBase.__init(
     save_idxs = nothing,
     callback = nothing,
     advance_to_tstop = false,
+    stop_at_next_tstop = false,
     adaptive = SciMLBase.isadaptive(alg),
     verbose = Standard(),
     alias_u0 = true,
     # alias_du0 = false,
     controller = nothing,
     maxiters = 1000000,
-    dense = save_everystep && !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem),
+    dense = false,
     dtmin = nothing,
     dtmax = nothing,
     internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
@@ -165,13 +235,24 @@ function SciMLBase.__init(
     tType = eltype(tspan)
     tTypeNoUnits = typeof(one(tType))
 
+    _reject_unsupported_saving(saveat, save_everystep, dense, save_idxs)
+    _reject_callbacks(callback)
+
     dt > zero(dt) || error("dt must be positive")
+    # `dt` is a magnitude here and the direction lives in `tdir`, but the upstream
+    # helpers we call assume a *signed* dt.
+    tf ≥ t0 || error(
+        "Backward integration is not supported: got tspan = ($t0, $tf). " *
+        "Integrate forward and reverse the solution instead.",
+    )
     _dt = dt
-    tdir = tf > t0 ? 1.0 : -1.0
+    tdir = one(tType)
 
     dtchangeable = OrdinaryDiffEqCore.isdtchangeable(alg)
 
-    dtmin = dtmin === nothing ? tType(0.0) : tType(dtmin)
+    # `prob2dtmin` is the SciML integrator default; zero would make `DtLessThanMin`
+    # unreachable.
+    dtmin = dtmin === nothing ? tType(DiffEqBase.prob2dtmin(prob)) : tType(dtmin)
     dtmax = dtmax === nothing ? tType(tf - t0) : tType(dtmax)
 
     if tstops isa AbstractArray || tstops isa Tuple || tstops isa Number
@@ -187,6 +268,7 @@ function SciMLBase.__init(
     d_discontinuities_internal =
         OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, tspan)
 
+    save_end_user = save_end
     save_end =
         save_end === nothing ?
         save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
@@ -284,11 +366,14 @@ function SciMLBase.__init(
         IntegratorOptions(
             dtmin = dtmin,
             dtmax = dtmax,
-            verbose = verbose,
+            verbose = normalize_verbosity(verbose),
             adaptive = adaptive,
             maxiters = maxiters,
             callback = callbacks_internal,
+            advance_to_tstop = advance_to_tstop,
+            stop_at_next_tstop = stop_at_next_tstop,
             save_end = save_end,
+            save_end_user = save_end_user,
             tstops = tstops_internal,
             saveat = saveat_internal,
             d_discontinuities = d_discontinuities_internal,
@@ -306,6 +391,8 @@ function SciMLBase.__init(
         0,
         0,
         false,
+        false,
+        tType(t0),
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
     DiffEqBase.initialize!(integrator, integrator.cache)
@@ -373,12 +460,13 @@ function reject_step!(
     if length(integrator.uprev) == 0
         error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
     end
+    integrator.u .= integrator.uprev
 end
 
 adapt_dt!(integrator::ThunderboltTimeIntegrator) =
     adapt_dt!(integrator, integrator.cache, integrator.controller_cache)
 function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, controller)
-    error("Step size control not implemented for $(alg).")
+    error("Step size control not implemented for $(integrator.alg).")
 end
 adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, ::Union{Nothing, DummyControllerCache}) =
     nothing

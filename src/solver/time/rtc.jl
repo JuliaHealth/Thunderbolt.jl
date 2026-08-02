@@ -1,57 +1,55 @@
 """
-    ReactionTangentController{LTG <: OS.LieTrotterGodunov, T <: Real} <: OS.AbstractOperatorSplittingAlgorithm
-A timestep length controller for [`LieTrotterGodunov`](@ref) [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite)
-operator splitting using the reaction tangent as proposed in [OgiBalPer:2023:seats](@cite)
+    ReactionTangentController{AlgTupleType <: Tuple, T <: Real} <: OS.AbstractOperatorSplittingAlgorithm
+
+An adaptive [`LieTrotterGodunov`](@ref) [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite)
+operator splitting algorithm whose timestep length is controlled by the reaction tangent
+as proposed in [OgiBalPer:2023:seats](@cite).
 The next timestep length is calculated as
 ```math
 \\sigma\\left(R_{\\max }\\right):=\\left(1.0-\\frac{1}{1+\\exp \\left(\\left(\\sigma_{\\mathrm{c}}-R_{\\max }\\right) \\cdot \\sigma_{\\mathrm{s}}\\right)}\\right) \\cdot\\left(\\Delta t_{\\max }-\\Delta t_{\\min }\\right)+\\Delta t_{\\min }
 ```
+Note that this is a pure heuristic: the controller has no error estimator and never
+rejects a step on accuracy grounds.
+
 # Fields
-- `ltg`::`LTG`: `LieTrotterGodunov` algorithm
+- `inner_algs::AlgTupleType`: the timesteppers for the inner problems, as in [`LieTrotterGodunov`](@ref)
 - `σ_s::T`: steepness
 - `σ_c::T`: offset in R axis
 - `Δt_bounds::NTuple{2,T}`: lower and upper timestep length bounds
+
+A `LieTrotterGodunov` algorithm may be passed in place of `inner_algs`; its inner
+timesteppers are then unwrapped.
 """
-struct ReactionTangentController{LTG <: OS.LieTrotterGodunov, T <: Real} <:
+struct ReactionTangentController{AlgTupleType <: Tuple, T <: Real} <:
        OS.AbstractOperatorSplittingAlgorithm
-    ltg::LTG
+    inner_algs::AlgTupleType
     σ_s::T
     σ_c::T
     Δt_bounds::NTuple{2, T}
 end
 
-mutable struct ReactionTangentControllerCache{
-    T <: Real,
-    LTGCache <: OS.LieTrotterGodunovCache,
-    uType,
-} <: OS.AbstractOperatorSplittingCache
-    const ltg_cache::LTGCache
-    u::uType
-    uprev::uType # True previous solution
-    R::T
-    function ReactionTangentControllerCache(
-        ltg_cache::LTGCache,
-        R::T,
-    ) where {T, LTGCache <: OS.LieTrotterGodunovCache}
-        uType = typeof(ltg_cache.u)
-        return new{T, LTGCache, uType}(ltg_cache, ltg_cache.u, ltg_cache.uprev, R)
-    end
-end
+ReactionTangentController(ltg::OS.LieTrotterGodunov, σ_s, σ_c, Δt_bounds) =
+    ReactionTangentController(ltg.inner_algs, σ_s, σ_c, Δt_bounds)
 
-@inline DiffEqBase.get_tmp_cache(
-    integrator::OS.OperatorSplittingIntegrator,
-    alg::OS.AbstractOperatorSplittingAlgorithm,
-    cache::ReactionTangentControllerCache,
-) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
+@inline SciMLBase.isadaptive(::ReactionTangentController) = true
 
-@inline DiffEqBase.isadaptive(::ReactionTangentController) = true
+# Required by the adaptive-algorithm interface. RTC has no error estimator (see below),
+# so this order never enters a step size law; 1 matches the underlying first-order
+# Lie-Trotter-Godunov sequence.
+OS.alg_adaptive_order(::ReactionTangentController) = 1
+
+# RTC steps exactly like LieTrotterGodunov -- only the step size selection differs, and
+# that lives in the controller cache below. Reusing the LTG cache also reuses its
+# `_perform_step!`, which dispatches on the cache type.
+OS.init_cache(f::GenericSplitFunction, alg::ReactionTangentController; uprev, u) =
+    OS.init_cache(f, OS.LieTrotterGodunov(alg.inner_algs); uprev, u)
 
 """
-    get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
+    get_reaction_tangent(integrator::OS.AnySplitIntegrator)
 Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) of an operator splitting integrator that uses [`LieTrotterGodunov`](@ref) [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite).
 It is assumed that the problem containing the reaction tangent is a [`PointwiseODEFunction`](@ref).
 """
-@inline function get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
+@inline function get_reaction_tangent(integrator::OS.AnySplitIntegrator)
     R, _ = _get_reaction_tangent(integrator.child_subintegrators)
     return R
 end
@@ -59,8 +57,10 @@ end
 @inline @unroll function _get_reaction_tangent(subintegrators, n_reaction_tangents::Int = 0)
     R = 0.0
     @unroll for subintegrator in subintegrators
-        if subintegrator isa Tuple
-            R, n_reaction_tangents = _get_reaction_tangent(subintegrator, n_reaction_tangents)
+        if subintegrator isa Tuple || subintegrator isa OS.SplitSubIntegrator
+            children = subintegrator isa Tuple ? subintegrator : subintegrator.child_subintegrators
+            Rinner, n_reaction_tangents = _get_reaction_tangent(children, n_reaction_tangents)
+            R = max(R, Rinner)
         elseif subintegrator.f isa PointwiseODEFunction
             n_reaction_tangents += 1
             φₘidx = transmembranepotential_index(subintegrator.f.ode)
@@ -77,92 +77,89 @@ end
     return (R, n_reaction_tangents)
 end
 
+# The controller half of the algorithm. The controller object itself is stateless (all
+# parameters live on the algorithm); the cache carries the reaction tangent of the last
+# attempted step.
+struct ReactionTangentStepsizeController <: OrdinaryDiffEqCore.AbstractController end
+
+mutable struct ReactionTangentControllerCache{T <: Real} <:
+               OrdinaryDiffEqCore.AbstractControllerCache
+    R::T
+end
+
+# An adaptive splitting node without an explicit `controller` runs this controller.
+OS.default_controller(::ReactionTangentController, ::NamedTuple) =
+    ReactionTangentStepsizeController()
+
+OrdinaryDiffEqCore.setup_controller_cache(
+    alg::ReactionTangentController,
+    cache,
+    ::ReactionTangentStepsizeController,
+    ::Type{EEstT},
+    disco_probs,
+) where {EEstT} = ReactionTangentControllerCache(zero(EEstT))
+
+# Controller protocol. RTC ignores the error estimate (`integrator.EEst`) entirely -- it
+# is a heuristic dt = σ(R) map, so do not look for an error estimator here.
 @inline function OS.stepsize_controller!(
-    integrator::OS.OperatorSplittingIntegrator,
+    integrator::OS.AnySplitIntegrator,
+    controller_cache::ReactionTangentControllerCache,
     alg::ReactionTangentController,
 )
-    integrator.cache.R = get_reaction_tangent(integrator)
+    controller_cache.R = get_reaction_tangent(integrator)
+    # There is no dt ratio q; σ(R) below maps R directly to the next dt.
     return nothing
 end
 
 @inline function OS.step_accept_controller!(
-    integrator::OS.OperatorSplittingIntegrator,
+    integrator::OS.AnySplitIntegrator,
+    controller_cache::ReactionTangentControllerCache,
     alg::ReactionTangentController,
     q,
 )
-    @unpack R = integrator.cache
     @unpack σ_s, σ_c, Δt_bounds = alg
-
-    if isinf(σ_s)
-        integrator.dt = R > σ_c ? Δt_bounds[1] : Δt_bounds[2]
+    @unpack R = controller_cache
+    dtnew = if isinf(σ_s)
+        R > σ_c ? Δt_bounds[1] : Δt_bounds[2]
     else
-        integrator.dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
+        (1 - 1 / (1 + exp((σ_c - R) * σ_s))) * (Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
+    end
+    # The caller assigns integrator.dt and integrator.dtcache from the returned value.
+    return integrator.tdir * dtnew
+end
+
+@inline function OS.step_reject_controller!(
+    integrator::OS.AnySplitIntegrator,
+    controller_cache::ReactionTangentControllerCache,
+    alg::ReactionTangentController,
+)
+    # Unreachable through the error-estimate path, since `accept_step_controller` below
+    # never rejects; kept because it is part of the controller protocol. Unlike the
+    # accept hook, this one sets dt itself.
+    if abs(integrator.dt) ≤ alg.Δt_bounds[1] # Check for "≤" to also handle the boundary cases
+        error("RTC cannot recover from step rejection below Δt min") # Force failure
+    else
+        integrator.dt = integrator.tdir * alg.Δt_bounds[1]
     end
     return nothing
 end
 
-@inline function OS.step_reject_controller!(
-    integrator::OS.OperatorSplittingIntegrator,
-    alg::ReactionTangentController,
-    q,
+# No error estimator: every step whose inner solves succeeded is accepted.
+@inline OrdinaryDiffEqCore.accept_step_controller(
+    integrator,
+    ::ReactionTangentControllerCache,
+    alg,
+) = true
+
+# The force_stepfail retry path divides dt by this factor. RTC has no controller knobs to
+# store it in, so fall back to the algorithm default.
+@inline OrdinaryDiffEqCore.get_failfactor(integrator, ::ReactionTangentControllerCache) =
+    OrdinaryDiffEqCore.failfactor_default(integrator.alg)
+
+function OrdinaryDiffEqCore.reinit_controller!(
+    integrator::SciMLBase.DEIntegrator,
+    cache::ReactionTangentControllerCache,
 )
-    if integrator.dt ≤ alg.Δt_bounds[1] # Check for "≤" to also handle the boundary cases
-        error("RTC cannot recover from step rejection below Δt min") # Force failure
-    else
-        integrator.dt = alg.Δt_bounds[1]
-    end
-    return nothing # Do nothing
-end
-
-function OS.init_cache(
-    f::GenericSplitFunction,
-    alg::ReactionTangentController;
-    uprev::AbstractArray,
-    u::AbstractVector,
-)
-    inner_cache = OS.init_cache(f, alg.ltg; uprev, u)
-    return ReactionTangentControllerCache(inner_cache, zero(eltype(u)))
-end
-
-function OS._perform_step!(parent, children::Tuple, cache::ReactionTangentControllerCache, dt)
-    OS._perform_step!(parent, children, cache.ltg_cache, dt)
-end
-
-OS.isdtchangeable(rtc::ReactionTangentController) = OS.isdtchangeable(rtc.ltg)
-
-# FIXME RTC should be a real controller with OrdinaryDiffEq v7.
-function OS.build_subintegrators(
-    prob::OS.OperatorSplittingProblem,
-    alg::ReactionTangentController,
-    uprevouter::AbstractVector,
-    uouter::AbstractVector,
-    u_master::AbstractVector,
-    solution_indices,
-    t0,
-    dt,
-    tf,
-    tstops,
-    saveat,
-    d_discontinuities,
-    callback,
-    adaptive,
-    verbose,
-)
-    return OS.build_subintegrators(
-        prob,
-        alg.ltg,
-        uprevouter,
-        uouter,
-        u_master,
-        solution_indices,
-        t0,
-        dt,
-        tf,
-        tstops,
-        saveat,
-        d_discontinuities,
-        callback,
-        adaptive,
-        verbose,
-    )
+    cache.R = zero(cache.R)
+    return nothing
 end

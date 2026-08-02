@@ -60,12 +60,13 @@ Base.@kwdef struct ForwardEulerCellSolver{SolutionVectorType} <: AbstractPointwi
 end
 
 # Fully accelerator compatible
-struct ForwardEulerCellSolverCache{duType, uType, dumType, umType, xType} <:
+struct ForwardEulerCellSolverCache{duType, uType, uprevType, dumType, umType, xType} <:
        AbstractPointwiseSolverCache
     du::duType
-    # These vectors hold the data
+    # These vectors hold the data. uₙ may view an outer solution vector while uₙ₋₁ is
+    # either aliased to uₙ or a separate rollback buffer, so the types may differ.
     uₙ::uType
-    uₙ₋₁::uType
+    uₙ₋₁::uprevType
     # These array view the data above to give easy indices of the form [ode index, local state index]
     dumat::dumType
     uₙmat::umType
@@ -170,12 +171,13 @@ Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: Abstr
 end
 
 # Fully accelerator compatible
-struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, dumType, umType, xType} <:
+struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, uprevType, dumType, umType, xType} <:
        AbstractPointwiseSolverCache
     du::duType
-    # These vectors hold the data
+    # These vectors hold the data. uₙ may view an outer solution vector while uₙ₋₁ is
+    # either aliased to uₙ or a separate rollback buffer, so the types may differ.
     uₙ::uType
-    uₙ₋₁::uType
+    uₙ₋₁::uprevType
     # These array view the data above to give easy indices of the form [ode index, local state index]
     dumat::dumType
     uₙmat::umType
@@ -214,9 +216,9 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
         end
 
         for substep ∈ 2:cache.substeps
-            tₛ = t + substep*Δtₛ
+            tₛ = t + (substep - 1)*Δtₛ
             #TODO Cₘ
-            cell_rhs!(du_local, u_local, x, t, cell_model)
+            cell_rhs!(du_local, u_local, x, tₛ, cell_model)
 
             for j = 1:length(u_local)
                 u_local[j] += Δtₛ*du_local[j]

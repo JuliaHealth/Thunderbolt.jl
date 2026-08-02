@@ -47,6 +47,11 @@ SciMLBase.get_sol(integrator::ThunderboltTimeIntegrator) = integrator.sol
 function SciMLBase.set_proposed_dt!(integrator::ThunderboltTimeIntegrator, dt)
     if integrator.dtchangeable == true
         integrator.dt = dt
+        # `modify_dt_for_tstops!` restores `dt` from `dtcache` at every header, so writing
+        # only `dt` loses the proposal after one step. Upstream writes both
+        # (OrdinaryDiffEqCore `integrator_interface.jl:180-182`).
+        integrator.dtpropose = dt
+        integrator.dtcache = dt
     elseif integrator.dt != dt
         error("Trying to change dt on constant time step integrator.")
     end
@@ -105,16 +110,36 @@ function DiffEqBase.reinit!(
     integrator.iter = 0
     integrator.derivative_discontinuity = false
 
+    # A reinit'd integrator has not failed and is not mid-tstop.
+    integrator.force_stepfail = false
+    integrator.last_step_failed = false
+    integrator.isout = false
+    integrator.just_hit_tstop = false
+    integrator.next_step_tstop = false
+    integrator.tstop_target = integrator.t
+
     integrator.stats.naccept = 0
     integrator.stats.nreject = 0
 
-    if erase_sol
-        resize!(integrator.sol.t, 0)
-        resize!(integrator.sol.u, 0)
+    # `saveiter`/`saveiter_dense` index into the solution buffers, so they follow whatever
+    # happens to those. Operator splitting children carry a `DummyODESolution`, which has
+    # no buffers at all.
+    if hasproperty(integrator.sol, :t)
+        if erase_sol
+            resize!(integrator.sol.t, 0)
+            resize!(integrator.sol.u, 0)
+            integrator.saveiter = 0
+            integrator.saveiter_dense = 0
+        else
+            integrator.saveiter = min(integrator.saveiter, length(integrator.sol.t))
+            integrator.saveiter_dense = min(integrator.saveiter_dense, integrator.saveiter)
+        end
     end
+
     if reinit_callbacks
         DiffEqBase.initialize!(integrator.opts.callback, u0, t0, integrator)
-    else # always reinit the saving callback so that t0 can be saved if needed
+    elseif !isempty(integrator.opts.callback.discrete_callbacks)
+        # always reinit the saving callback so that t0 can be saved if needed
         saving_callback = integrator.opts.callback.discrete_callbacks[end]
         DiffEqBase.initialize!(saving_callback, u0, t0, integrator)
     end
@@ -183,8 +208,9 @@ function should_accept_step(
     return !(integrator.force_stepfail)
 end
 
+# `stats.naccept` is counted in `step_footer!`, which sees every accepted attempt
+# including the last one; this header-side hook only prepares the next step.
 function accept_step!(integrator::ThunderboltTimeIntegrator)
-    OrdinaryDiffEqCore.increment_accept!(integrator.stats)
     accept_step!(integrator, integrator.cache, integrator.controller_cache)
 end
 function accept_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
@@ -260,21 +286,21 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
     # This implementation is intended to be used for ODEIntegrator and
     # SDEIntegrator.
     if isnan(integrator.dt)
-        if verbose
-            @warn(
-                "NaN dt detected. Likely a NaN value in the state, parameters, or derivative value caused this outcome."
-            )
-        end
+        @SciMLMessage(
+            "NaN dt detected. Likely a NaN value in the state, parameters, or derivative value caused this outcome.",
+            verbose,
+            :dt_NaN
+        )
         return SciMLBase.ReturnCode.DtNaN
     end
     if hasproperty(integrator, :iter) &&
        hasproperty(opts, :maxiters) &&
        integrator.iter > opts.maxiters
-        if verbose
-            @warn(
-                "Interrupted. Larger maxiters is needed. If you are using an integrator for non-stiff ODEs or an automatic switching algorithm (the default), you may want to consider using a method for stiff equations. See the solver pages for more details (e.g. https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/#Stiff-Problems)."
-            )
-        end
+        @SciMLMessage(
+            "Interrupted. Larger maxiters is needed. If you are using an integrator for non-stiff ODEs or an automatic switching algorithm (the default), you may want to consider using a method for stiff equations. See the solver pages for more details (e.g. https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/#Stiff-Problems).",
+            verbose,
+            :max_iters
+        )
         return SciMLBase.ReturnCode.MaxIters
     end
 
@@ -284,29 +310,30 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
     # We also exit if the ODE is unstable according to a user chosen callback
     # but only if we accepted the step to prevent from bailing out as unstable
     # when we just took way too big a step)
+    # `step_header!` has already cleared `force_stepfail` for the attempt about to be
+    # made, so `should_accept_step` cannot see a rejection here; `last_step_failed`
+    # survives the header.
+    step_rejected = SciMLBase.last_step_failed(integrator)
     step_accepted = should_accept_step(integrator)
-    step_rejected = !step_accepted
     force_dtmin   = hasproperty(integrator, :force_dtmin) && integrator.force_dtmin
     if !force_dtmin && SciMLBase.isadaptive(integrator)
         dt_below_min      = abs(integrator.dt) ≤ abs(opts.dtmin)
         before_next_tstop = SciMLBase.has_tstop(integrator) ? integrator.t + integrator.dt < integrator.tdir * SciMLBase.first_tstop(integrator) : true
         if dt_below_min && (step_rejected || before_next_tstop)
-            if verbose
-                controller_string = controller_message_on_dtmin_error(integrator)
-                @warn(
-                    "dt($(integrator.dt)) <= dtmin($(opts.dtmin)) at t=$(integrator.t)$(controller_string). Aborting. There is either an error in your model specification or the true solution is unstable."
-                )
-            end
+            @SciMLMessage(
+                lazy"dt($(integrator.dt)) <= dtmin($(opts.dtmin)) at t=$(integrator.t)$(controller_message_on_dtmin_error(integrator)). Aborting. There is either an error in your model specification or the true solution is unstable.",
+                verbose,
+                :dt_min_unstable
+            )
             return SciMLBase.ReturnCode.DtLessThanMin
         elseif step_rejected &&
                integrator.t isa AbstractFloat &&
                abs(integrator.dt) <= abs(eps(integrator.t)) # = DiffEqBase.timedepentdtmin(integrator)
-            if verbose
-                controller_string = controller_message_on_dtmin_error(integrator)
-                @warn(
-                    "At t=$(integrator.t), dt was forced below floating point epsilon $(integrator.dt)$(controller_string). Aborting. There is either an error in your model specification or the true solution is unstable (or the true solution can not be represented in the precision of $(eltype(integrator.u)))."
-                )
-            end
+            @SciMLMessage(
+                lazy"At t=$(integrator.t), dt was forced below floating point epsilon $(integrator.dt)$(controller_message_on_dtmin_error(integrator)). Aborting. There is either an error in your model specification or the true solution is unstable (or the true solution can not be represented in the precision of $(eltype(integrator.u))).",
+                verbose,
+                :dt_epsilon
+            )
             return SciMLBase.ReturnCode.Unstable
         end
     end
@@ -314,15 +341,15 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
         hasproperty(opts, :unstable_check) &&
         opts.unstable_check(integrator.dt, integrator.u, integrator.p, integrator.t)
     )
-        if verbose
-            @warn("Instability detected. Aborting")
-        end
+        @SciMLMessage("Instability detected. Aborting", verbose, :instability)
         return SciMLBase.ReturnCode.Unstable
     end
     if SciMLBase.last_step_failed(integrator) && !SciMLBase.isadaptive(integrator)
-        if verbose
-            @warn("Newton steps could not converge and algorithm is not adaptive. Use a lower dt.")
-        end
+        @SciMLMessage(
+            "Newton steps could not converge and algorithm is not adaptive. Use a lower dt.",
+            verbose,
+            :newton_convergence
+        )
         return SciMLBase.ReturnCode.ConvergenceFailure
     end
     return SciMLBase.ReturnCode.Success
@@ -354,6 +381,7 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
 
     accepted = should_accept_step(integrator)
     if accepted
+        OrdinaryDiffEqCore.increment_accept!(integrator.stats)
         integrator.last_step_failed = false
         integrator.tprev = t_start
         integrator.t = OrdinaryDiffEqCore.fixed_t_for_tstop_error!(integrator, ttmp)
@@ -377,7 +405,25 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
     return nothing
 end
 
-notify_integrator_hit_tstop!(integrator) = integrator.just_hit_tstop = true
+# `modify_dt_for_tstops!` decides, before the step, whether it ends exactly on a tstop;
+# `fixed_t_for_tstop_error!` then sets `t` to the recorded target rather than to the
+# accumulated `t + dt`. The upstream fallbacks are `nothing`/`false`, so without these
+# three methods the mechanism only half runs.
+@inline function OrdinaryDiffEqCore._set_tstop_flag!(
+    integrator::ThunderboltTimeIntegrator,
+    is_tstop::Bool,
+    target = nothing,
+)
+    integrator.next_step_tstop = is_tstop
+    if is_tstop && target !== nothing
+        integrator.tstop_target = target
+    end
+    return nothing
+end
+@inline OrdinaryDiffEqCore._get_next_step_tstop(integrator::ThunderboltTimeIntegrator) =
+    integrator.next_step_tstop
+@inline OrdinaryDiffEqCore._get_tstop_target(integrator::ThunderboltTimeIntegrator) =
+    integrator.tstop_target
 
 is_first_iteration(integrator) = integrator.iter == 0
 increment_iteration(integrator) = integrator.iter += 1
@@ -407,7 +453,8 @@ function finalize_integration_monitor(integrator)
     end
 end
 
-notify_integrator_hit_tstop!(integrator::ThunderboltTimeIntegrator) = nothing
+notify_integrator_hit_tstop!(integrator::ThunderboltTimeIntegrator) =
+    integrator.just_hit_tstop = true
 
 # TODO upstream into OrdinaryDiffEqCore
 function compute_rate_prototype(prob)
@@ -507,5 +554,7 @@ function OrdinaryDiffEqCore.post_newton_controller!(
     integrator::ThunderboltTimeIntegrator,
     alg::AbstractSolver,
 )
-    integrator.dt = integrator.dt / 4
+    # Same shrink law as OrdinaryDiffEqCore's generic (`controllers.jl:481-484`), but
+    # reading the option instead of hardcoding its default.
+    integrator.dt = integrator.dt / integrator.opts.failfactor
 end

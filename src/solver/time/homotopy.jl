@@ -147,9 +147,9 @@ function should_accept_step(
     cache::HomotopyPathSolverCache,
     controller::Deuflhard2004DiscreteContinuationController,
 )
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θreject) = controller
-    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -167,7 +167,7 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
         if Θk > Θreject
@@ -186,7 +186,7 @@ function adapt_dt!(
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
@@ -209,9 +209,9 @@ function should_accept_step(
     cache::HomotopyPathSolverCache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θreject) = controller
-    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -229,7 +229,7 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
         if Θk > Θreject
@@ -248,7 +248,7 @@ function adapt_dt!(
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
@@ -274,9 +274,9 @@ function should_accept_step(
     cache::HomotopyPathSolverCache,
     controller::ExperimentalDiscreteContinuationController,
 )
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θreject) = controller
-    if cache.inner_solver_cache.parameters.enforce_monotonic_convergence
+    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -294,7 +294,7 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θk = maximum(Θks)
     q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
@@ -309,7 +309,7 @@ function adapt_dt!(
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = cache.inner_solver_cache
+    (; Θks) = global_newton_cache(cache.inner_solver_cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θ₀ = length(Θks) > 0 ? max(mean(Θks), Θmin) : Θmin
     q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
