@@ -41,12 +41,8 @@ end
 
 @testset "Failures surface as retcodes, verbose = $verbose" for verbose in (true, false, Standard())
     with_logger(NullLogger()) do
-        integrator = init(
-            transient_diffusion_problem(),
-            BackwardEulerSolver(),
-            dt = 0.1,
-            verbose = verbose,
-        )
+        integrator =
+            init(transient_diffusion_problem(), BackwardEulerSolver(), dt = 0.1, verbose = verbose)
         integrator.dt = NaN
         @test SciMLBase.check_error(integrator) == SciMLBase.ReturnCode.DtNaN
 

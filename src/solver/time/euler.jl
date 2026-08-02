@@ -131,8 +131,8 @@ function setup_solver_cache(
     @assert length(dh.field_names) == 1 # TODO relax this assumption
     field_name = dh.field_names[1]
 
-    A  = create_system_matrix(solver.system_matrix_type, f)
-    b  = create_system_vector(solver.solution_vector_type, f)
+    A = create_system_matrix(solver.system_matrix_type, f)
+    b = create_system_vector(solver.solution_vector_type, f)
     u0 = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
     uprev = uprev === nothing ? create_system_vector(solver.solution_vector_type, f) : uprev
     uprev .= u0
