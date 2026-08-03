@@ -16,6 +16,41 @@ mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}, VTprev} 
     tmp::VT
 end
 
+"""
+    check_internal_variables_are_rate_free(f)
+
+Reject a model whose internal variable carries its own evolution law, which continuation cannot
+integrate along a load path.
+
+`HomotopyPathSolver` is load stepping, not a time scheme: it has neither a previous solution nor a
+timestep, so `dₜQ = L(F, Q)` has nothing to be discretized against. The combination is rejected here,
+during setup, so that it is reported once with a name and a remedy instead of surfacing per element
+from the assembly loop.
+"""
+check_internal_variables_are_rate_free(f) = nothing
+check_internal_variables_are_rate_free(f::AbstractSemidiscreteBlockedFunction) =
+    foreach(check_internal_variables_are_rate_free, blocks(f))
+check_internal_variables_are_rate_free(f::QuasiStaticFunction) =
+    foreach(_check_model_is_rate_free, _volume_models(f.integrator))
+
+# Unknown integrator types deliberately have no fallback here: silently skipping the check would be
+# worse than the `MethodError`.
+_volume_models(integrator::NonlinearIntegrator) = (integrator.volume_model,)
+_volume_models(integrator::NonlinearMultiDomainIntegrator2) =
+    (subintegrator.volume_model for subintegrator in values(integrator.subintegrators))
+
+function _check_model_is_rate_free(model)
+    evolution = internal_variable_evolution(model.material_model)
+    evolution isa NoEvolution && return nothing
+    error(
+        "$(typeof(model.material_model).name.name) carries an internal variable with its own " *
+        "evolution law ($(typeof(evolution).name.name)), which `HomotopyPathSolver` cannot " *
+        "integrate: continuation supplies neither a previous solution nor a timestep. Either use a " *
+        "time integrator, or wrap the internal model in `AsRateIndependent` to state that its " *
+        "evolution may be ignored.",
+    )
+end
+
 function setup_solver_cache(
     f::AbstractSemidiscreteFunction,
     solver::HomotopyPathSolver,
@@ -25,6 +60,7 @@ function setup_solver_cache(
     alias_uprev = true,
     alias_u     = false,
 )
+    check_internal_variables_are_rate_free(f)
     inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -62,6 +98,7 @@ function setup_solver_cache(
     alias_uprev = true,
     alias_u     = false,
 )
+    check_internal_variables_are_rate_free(f)
     inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
 
     vtype = Vector{Float64}

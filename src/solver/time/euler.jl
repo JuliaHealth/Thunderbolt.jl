@@ -307,7 +307,7 @@ end
     # call via `GenericFirstOrderTimeParameters`. Only the local solver cache still has to reach the
     # element.
     op = setup_operator(
-        SequentialAssemblyStrategy(SequentialCPUDevice()), # FIXME f.assembly_strategy,
+        f.assembly_strategy,
         _annotate_with_local_solver_cache(integrator, local_solver_cache),
         dh,
     )

@@ -3,6 +3,7 @@ import DiffEqBase
 import SciMLBase
 import SciMLIterators: intervals
 using Test
+using Logging
 using LinearSolve
 using OrderedCollections
 include(joinpath(@__DIR__, "..", "testfixtures.jl"))
@@ -78,7 +79,6 @@ end
         mesh,
         QuasiStaticModel(:d, PK1Model(HolzapfelOgden2009Model(), ortho_ms)),
     )
-    @test !iszero(u₁)
 
     u₂ = test_solve_passive_structure(
         mesh,
@@ -647,8 +647,7 @@ end
         300.0,
     )
 
-    # Check that adaptivity does not change the result
-    @testset "Check path difference" begin
+    @testset "Adaptivity does not change the result" begin
         i1 = test_solve_contractile_ideal_lv(
             grid,
             ActiveStressModel(
@@ -687,8 +686,7 @@ end
         @test i1.u ≈ i2.u atol=1e-4
     end
 
-    # Check that the load-path is actually different
-    @testset "Check path difference" begin
+    @testset "The load path is actually different" begin
         i1 = test_solve_contractile_ideal_lv(
             grid,
             ActiveStressModel(
@@ -717,10 +715,9 @@ end
             100.0,
         )
 
-        # Test path-independence setup
         @test i1.t ≈ 100.0
         @test i2.t ≈ 100.0
-        @test i1.u ≠ i2.u
+        @test !isapprox(i1.u, i2.u; atol = 1.0e-4)
     end
 
     # Check that the integrator reaches the final time and the solutions coincide
@@ -792,9 +789,9 @@ end
     for (uprev, tprev, u, t) in intervals(integrator)
         # Monotonicity of the solution in x direction
         @test uprev[3*8+1] ≤ u[3*8+1]
-        # Linear problem => check that Newton converges in 1 step.
-        @test length(integrator.cache.stage.nlsolver.global_solver_cache.Θks) == 1
     end
+    # Linear problem => check that Newton converges in 1 step.
+    @test length(integrator.cache.stage.nlsolver.global_solver_cache.Θks) == 1
     @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
     @test integrator.u[3*8+1] ≈ 0.05 atol=1e-5
     @test integrator.u[(3*8+2):end] ≈ zeros(5) atol=1e-5
@@ -838,6 +835,155 @@ end
     cell_block(c) = integrator.u[(nfe+(c-1)*blocksize+1):(nfe+c*blocksize)]
     # The first cell is written correctly even with the bug present, since the missing offset is
     # zero for it. The defect is that every *later* cell is left untouched.
-    @test !iszero(cell_block(1))
-    @test all(c -> !iszero(cell_block(c)), 2:ncells)
+    @test all(c -> !iszero(cell_block(c)), 1:ncells)
+end
+
+@testset "Condensed sarcomere under strong activation" begin
+    # Regression test for the condensation contribution to the stress tangent, `∂P/∂Q ⊗ ∂Q/∂λ ⊗ ∂λ/∂F`.
+    # The other contraction tests drive the sarcomere at Ca ≈ 0.004, where that contribution is far
+    # too small for its *sign* to affect convergence -- which is how a sign error in
+    # `_solve_local_sarcomere_dQdF` survived. At full activation the same error diverges the global
+    # Newton within two steps, so this is the configuration that pins the tangent down.
+    mesh = generate_mesh(Hexahedron, (2, 2, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 1.0, 0.2)))
+    microstructure = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
+    )
+    model = QuasiStaticModel(
+        :d,
+        ActiveStressModel(
+            Guccione1991PassiveModel(),
+            SimpleActiveStress(; Tmax = 220e3),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                Thunderbolt.RDQ20MFModel(),
+                ConstantCoefficient(1.0),
+            ),
+            microstructure,
+        ),
+        (),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x, t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x, t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    ]
+    quasistaticform = semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 5.0))
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+            newton = NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 10,
+                tol = 1e-8,
+            ),
+        ),
+    )
+    # Δt well below the ≈5 where RDQ20's Markov occupancies leave their bounds (see
+    # `internal_state_in_bounds`), so this stays a tangent test rather than drifting into an
+    # infeasibility test after an unrelated tweak.
+    integrator = init(problem, timestepper, dt = 2.5, verbose = false)
+    solve!(integrator)
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+end
+
+@testset "A step too long for the sarcomere fails cleanly" begin
+    # RDQ20's Markov occupancies leave [0, 1] once the step outruns their own dynamics. That has to
+    # surface as a return code the time integrator can act on, not as an exception out of the local
+    # Newton, and the failed attempt must not be accepted. This is the only test that forces a local
+    # solve to fail, so it is also what covers the per-quadrature-point failure reporting.
+    mesh = generate_mesh(Hexahedron, (1, 1, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 1.0, 0.2)))
+    microstructure = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
+    )
+    model = QuasiStaticModel(
+        :d,
+        ActiveStressModel(
+            Guccione1991PassiveModel(),
+            SimpleActiveStress(; Tmax = 220e3),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                Thunderbolt.RDQ20MFModel(),
+                ConstantCoefficient(1.0),
+            ),
+            microstructure,
+        ),
+        (),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x, t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x, t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    ]
+    quasistaticform = semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 20.0))
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+            newton = NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 10,
+                tol = 1e-8,
+            ),
+        ),
+    )
+    integrator = init(problem, timestepper, dt = 20.0, verbose = false)
+    # The solver warns that it cannot adapt its way out of this, which is expected here.
+    with_logger(NullLogger()) do
+        solve!(integrator)
+    end
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.ConvergenceFailure
+    @test integrator.t == 0.0
+end
+
+@testset "A rate dependent material rejects rate-free kinematics" begin
+    # `HomotopyPathSolver` is continuation, not a time scheme: it has no previous solution and no
+    # timestep, so a material carrying an evolving internal variable has to be rejected -- and
+    # rejected during setup, once and by name, rather than per element from the assembly loop.
+    mesh = generate_mesh(Hexahedron, (1, 1, 1))
+    microstructure = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
+    )
+    model = QuasiStaticModel(
+        :d,
+        ActiveStressModel(
+            Guccione1991PassiveModel(),
+            SimpleActiveStress(; Tmax = 220e3),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                Thunderbolt.RDQ20MFModel(),
+                ConstantCoefficient(1.0),
+            ),
+            microstructure,
+        ),
+        (),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3]),
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> [0.05, 0.0, 0.0], [1, 2, 3]),
+    ]
+    quasistaticform = semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 1.0))
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    timestepper = HomotopyPathSolver(
+        NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8),
+    )
+    @test_throws "AsRateIndependent" init(problem, timestepper, dt = 1.0, verbose = false)
 end

@@ -1343,8 +1343,9 @@ function solve_internal_timestep(
         ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
         local_residual!(R, Q, λ, dλdt)
         residualnorm = norm(R)
-        # A singular local Jacobian is a failure the time integrator can act on by shortening the
-        # step, so it must not escape as an exception -- `J \ R` would throw.
+        # A singular local Jacobian must be reported as a failure rather than escape as an exception
+        # -- `J \ R` would throw -- so that the step is rejected and an adaptive integrator can retry
+        # it at a shorter `dt`.
         Jfac = lu(J; check = false)
         if !issuccess(Jfac)
             record_local_solve!(
@@ -1381,8 +1382,9 @@ function solve_internal_timestep(
     end
     ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
     residualnorm = norm(R)
-    # A converged but inadmissible state is still a failure, and one the time integrator can act on:
-    # the usual cause is a step too long for the internal variable's own dynamics.
+    # A converged but inadmissible state is still a failure: the usual cause is a step too long for
+    # the internal variable's own dynamics, so it is reported as one an adaptive integrator could
+    # act on by shortening `dt`.
     if !internal_state_in_bounds(material_model.contraction_model, Q)
         record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Infeasible, residualnorm)
         @debug "Local Newton converged to an inadmissible state at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =

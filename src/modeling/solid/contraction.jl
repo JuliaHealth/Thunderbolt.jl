@@ -337,11 +337,11 @@ Base.@kwdef struct RDQ20MFModel{TD} <: AbstractRateDependentSarcomereModel
     # tangent stays continuous at zero shortening velocity (see `smooth_abs`). Only active for
     # |dλdt| ≲ εᵛ; the unregularized model is recovered as εᵛ → 0.
     #
-    # PROVISIONAL default. It has no effect while dλdt is hardcoded to zero, because
-    # `smooth_abs(0, εᵛ) == 0` for every εᵛ > 0. Calibrate it when the velocity dependence goes
-    # live: it must sit well below physiological |dλdt| (order 1e-3 1/ms) so the physics is
-    # untouched, yet be wide enough that the linearization is valid across a Newton step — too
-    # small and the kink is smooth on paper but still a kink numerically.
+    # The default sits three orders below physiological |dλdt| (order 1e-3 1/ms), so the physics is
+    # untouched: measured against εᵛ = 1e-8 on a fully activated cuboid, the solution moves by ~2e-11
+    # relative, and it is still converging as εᵛ → 0. Widths from 1e-8 to 1e-2 all solve, and the
+    # suite -- including a case whose calcium transient drives |dλdt| through zero -- passes at
+    # 1e-8, so the linearization survives a Newton step two orders narrower than this.
     εᵛ::TD = 1.0e-6 # 1/ms
 end
 

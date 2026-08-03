@@ -132,11 +132,8 @@ end
 """
     describe_local_solve_failures(local_solver_cache)
 
-The failing quadrature points of the last assembly pass, as `cell`/`qp` pairs with their local
+Every failing quadrature point of the last assembly pass, as `cell`/`qp` pairs with their local
 residual norm and return code. Empty when nothing failed.
-
-Reports the first failure *per assembly worker*, not every failing point: the condensation entry
-points stop solving once a worker has seen a failure, since the pass is discarded either way.
 """
 function describe_local_solve_failures(local_solver_cache::GenericLocalNonlinearSolverCache)
     reports = local_solver_cache.reports
@@ -160,9 +157,12 @@ end
 Clear the recorded outcomes before an assembly pass, so `check_local_solve_covergence` reports on
 *that* pass alone.
 
-Without this the failures latch, and the first one would poison every later assembly — including the
-retry after the time integrator shortens `dt`, which is exactly the mechanism meant to recover
-from it.
+Without this the failures latch, and the first one would poison every later assembly — including any
+retry of the step, which is the only way a local failure can ever be recovered from.
+
+Note that recovering additionally requires the time integrator to actually retry at a shorter `dt`.
+`BackwardEulerSolver` does not: it is not adaptive, so a local failure currently ends the solve with
+`ConvergenceFailure`.
 """
 function reset_local_solve_status!(local_solver_cache::GenericLocalNonlinearSolverCache)
     reports = local_solver_cache.reports

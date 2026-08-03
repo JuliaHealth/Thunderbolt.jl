@@ -141,6 +141,19 @@ using Thunderbolt, DelimitedFiles, Test
               Thunderbolt.compute_active_tension(inner, u, λ)
         @test Thunderbolt.compute_active_stiffness(wrapped, u, λ) ==
               Thunderbolt.compute_active_stiffness(inner, u, λ)
+
+        # The admissibility predicate has to survive the wrappers. A missing forwarding method does
+        # not error -- it falls through to the `true` default, which silently disables the whole
+        # `ReturnCode.Infeasible` path for that model.
+        Qbad = copy(u)
+        Qbad[3] = -1.0e-3
+        @test Thunderbolt.internal_state_in_bounds(inner, u)
+        @test !Thunderbolt.internal_state_in_bounds(inner, Qbad)
+        @test !Thunderbolt.internal_state_in_bounds(wrapped, Qbad)
+        @test !Thunderbolt.internal_state_in_bounds(
+            Thunderbolt.CaDrivenInternalSarcomereModel(inner, ConstantCoefficient(1.0)),
+            Qbad,
+        )
     end
 end
 #! format: on
