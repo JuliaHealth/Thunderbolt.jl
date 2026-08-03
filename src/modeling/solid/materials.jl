@@ -606,6 +606,54 @@ function reduced_material_routine(
     return stress_function(material_model, F, coefficients, Q)
 end
 
+# Rate-coupled residual. This method is what keeps the residual and the tangent posing the same local
+# problem: without it the generic kinematics forwarding would unpack `F` and drop `Ḟ`, so the
+# residual-only assembly would freeze the sarcomere while `material_routine` linearizes a moving one.
+function reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradientWithRate,
+    coefficient_cache,
+    state_cache::RateDependentCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+)
+    F = deformation_gradient(kinematics)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    Q = solve_local_constraint_state_only(
+        F,
+        deformation_rate(kinematics),
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    return stress_function(material_model, F, coefficients, Q)
+end
+
+# See the `material_routine` counterpart: a rate dependent material may not be served rate-free
+# kinematics, and the message should name the call the element actually made.
+reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradient,
+    coefficient_cache,
+    state_cache::RateDependentCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) = deformation_rate(kinematics)
+
 reduced_material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
@@ -1231,6 +1279,10 @@ function _solve_local_sarcomere_dQdF(
     )
 end
 
+# Contribution of an internal-variable chain to the stress tangent,
+# `∂P/∂Q ⊗ ∂Q/∂X ⊗ ∂X/∂Y`, for the active part `P = (Q₁₈ + Q₂₀)·fso(λ)·active_stress(F)`. `dQdX` comes
+# from a corrector solve and is already `+∂Q/∂X` by the implicit function theorem, so the result is
+# added to `∂P∂F` as-is.
 function _solve_local_sarcomere_dQdF(
     dQdλ,
     dλdF,
@@ -1242,7 +1294,7 @@ function _solve_local_sarcomere_dQdF(
 )
     dfgdQ = active_stress(active_term_model, F, coefficients) * fraction_single_overlap(sacromere_model, λ)
     dQdF  = (dQdλ[18] + dQdλ[20]) * dfgdQ ⊗ dλdF
-    return -dQdF
+    return dQdF
 end
 
 # Local solve
@@ -1253,6 +1305,8 @@ end
 function solve_internal_timestep(
     material_model::ActiveStressModel,
     state_cache::GenericFirstOrderCondensationMaterialStateCache,
+    geometry_cache,
+    qp,
     λ,
     dλdt,
     Q,
@@ -1275,39 +1329,192 @@ function solve_internal_timestep(
         return local_residual!(R, Q, λ, dλdt)
     end
 
-    R = state_cache.local_solver_cache.residual
-    J = state_cache.local_solver_cache.J
-    rtol = min(state_cache.local_solver_cache.params.tol, state_cache.local_solver_cache.outer_tol)
-    for newton_iter = 1:state_cache.local_solver_cache.params.max_iters
+    lcache = state_cache.local_solver_cache
+    cid = cellid(geometry_cache)
+    R = lcache.residual
+    J = lcache.J
+    # Inexact Newton: the outer solve writes the square of its own residual norm into `outer_tol`, so
+    # the local problems are solved loosely while the global iterate is far from the solution and at
+    # full accuracy once it is close. `params.tol` is the floor -- the local residual is an absolute
+    # quantity on a scale unrelated to the global one, so demanding more than `params.tol` is neither
+    # useful nor reachable within `max_iters`. `outer_tol = 0` means "no relaxation".
+    rtol = max(lcache.params.tol, lcache.outer_tol)
+    for newton_iter = 1:lcache.params.max_iters
         ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
         local_residual!(R, Q, λ, dλdt)
         ΔQ = J \ R
         Q .-= ΔQ
         residualnorm = norm(R)
-        if residualnorm < state_cache.local_solver_cache.params.tol
+        if residualnorm < rtol
             break
-        elseif newton_iter == state_cache.local_solver_cache.params.max_iters
-            state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.MaxIters
-            @debug "Reached maximum local Newton iterations at cell $(cellid(geometry_cache)) qp $(qp.i). Aborting. ||r|| = $(residualnorm)" _group=:nlsolve
+        elseif newton_iter == lcache.params.max_iters
+            lcache.retcode = SciMLBase.ReturnCode.MaxIters
+            @debug "Local Newton hit max iterations at cell $cid qp $(qp.i). ||r|| = $residualnorm (rtol = $rtol)" _group =
+                :nlsolve
             return Q, J
         elseif isnan(residualnorm)
-            state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.ConvergenceFailure
-            @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
+            lcache.retcode = SciMLBase.ReturnCode.ConvergenceFailure
+            @debug "Local Newton diverged at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
+                :nlsolve
             return Q, J
         end
     end
     ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
-    state_cache.local_solver_cache.retcode = SciMLBase.ReturnCode.Success
+    # A converged but inadmissible state is still a failure, and one the time integrator can act on:
+    # the usual cause is a step too long for the internal variable's own dynamics.
+    if !internal_state_in_bounds(material_model.contraction_model, Q)
+        lcache.retcode = SciMLBase.ReturnCode.Infeasible
+        @debug "Local Newton converged to an inadmissible state at cell $cid qp $(qp.i). ||r|| = $(norm(R))" _group =
+            :nlsolve
+        return Q, J
+    end
+    lcache.retcode = SciMLBase.ReturnCode.Success
     return Q, J
 end
 
-# Rate dependent form. `Ḟ` is threaded in so the kinematics contract is enforced all the way down: a
-# rate-free scheme reaching a rate dependent material now fails at `deformation_rate`, loudly, instead
-# of silently assembling a frozen sarcomere.
-#
-# The rate sensitivity is zero rather than unimplemented — the shared implementation below still
-# freezes `dλdt = 0.0`, so the internal variable genuinely does not respond to `Ḟ` yet. This is where
-# `dλdt = dλdF ⊡ Ḟ` and the second corrector solve for `∂Q/∂(dλdt)` land.
+# Fiber stretch `λ = |F ⋅ f₀|`. Takes the fiber direction rather than the whole coefficient bundle so
+# that the AD closures below capture a leaf -- see the closure-specialization note in CLAUDE.md.
+@inline function _fiber_stretch(F, f₀)
+    f = F ⋅ f₀
+    return √(f ⋅ f)
+end
+
+"""
+    _solve_local_sarcomere(model, state_cache, geometry_cache, qp, time, λ, dλdt, Qflat, Qknownflat, Δt)
+
+Newton solve of the sarcomere's local problem, shared by the rate-free and rate-coupled entry points.
+
+The stretch and its rate are computed by the *caller*, because the two paths need different
+derivatives of `λ`: the rate-free one only its gradient, the rate-coupled one also its Hessian.
+"""
+function _solve_local_sarcomere(
+    material_model::ActiveStressModel,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
+    geometry_cache,
+    qp,
+    time,
+    λ,
+    dλdt,
+    Qflat,
+    Qknownflat,
+    Δt,
+)
+    Ca = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
+    Q, J = solve_internal_timestep(
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        λ,
+        dλdt,
+        Qflat,
+        Qknownflat,
+        Ca,
+        time,
+        Δt,
+    )
+    return Q, J, Ca
+end
+
+# One corrector solve `∂Q/∂x` for a frozen scalar `x`, given the converged state and its Jacobian.
+# `rhs_corrector` is scratch that the linear solve consumes immediately, so successive corrector
+# solves may reuse it.
+@inline function _sarcomere_corrector(state_cache, J, local_residual_rhs_wrap!, x)
+    R     = state_cache.local_solver_cache.residual
+    ∂fₗ∂x = state_cache.local_solver_cache.rhs_corrector
+    ForwardDiff.derivative!(∂fₗ∂x, local_residual_rhs_wrap!, R, x)
+    return J \ -∂fₗ∂x
+end
+
+@inline _local_solve_ok(state_cache) =
+    state_cache.local_solver_cache.retcode ∈
+    (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+
+function solve_local_constraint(
+    F::Tensor{2, dim},
+    coefficients,
+    material_model::ActiveStressModel,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) where {dim}
+    # Early out if any of the previous local solves failed
+    _local_solve_ok(state_cache) || return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
+
+    f₀ = coefficients.f
+    dλdF, λ = Tensors.gradient(F -> _fiber_stretch(F, f₀), F, :all)
+    # A zero rate poses the rate-free local problem, `dₜQ = L(F, Q)`.
+    dλdt = zero(λ)
+
+    Q, J, Ca = _solve_local_sarcomere(
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        λ,
+        dλdt,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    # Abort if local solve failed
+    _local_solve_ok(state_cache) || return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
+
+    # Reached outside the closures so they capture the leaf models rather than all of
+    # `material_model` -- see the closure-specialization note in CLAUDE.md.
+    contraction_model   = material_model.contraction_model
+    active_stress_model = material_model.active_stress_model
+
+    function local_residual_rhs_wrap!(R, λ)
+        dQ = zeros(eltype(λ), length(Q)) # TODO preallocate during setup
+        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, contraction_model)
+        @.. R = (Q - Qknownflat) / Δt - dQ
+        return nothing
+    end
+    dQdλ = _sarcomere_corrector(state_cache, J, local_residual_rhs_wrap!, λ)
+
+    return Q,
+    _solve_local_sarcomere_dQdF(
+        dQdλ,
+        dλdF,
+        λ,
+        F,
+        coefficients,
+        active_stress_model,
+        contraction_model,
+    )
+end
+
+@doc raw"""
+Rate-coupled form of the sarcomere local solve, `dₜQ = L(F, dₜF, Q)`.
+
+The internal variable now responds to the stretch *and* to its rate, so there are two corrector
+solves, ``\partial Q/\partial\lambda`` and ``\partial Q/\partial\dot\lambda``. They combine into the
+two sensitivities the element asks for by the chain rule through
+``\dot\lambda = (\partial\lambda/\partial F) : \dot F``:
+```math
+\frac{\partial Q}{\partial \dot F} = \frac{\partial Q}{\partial \dot\lambda}\otimes\frac{\partial \lambda}{\partial F}
+```
+```math
+\frac{\partial Q}{\partial F} =
+  \frac{\partial Q}{\partial \lambda}\otimes\frac{\partial \lambda}{\partial F}
++ \frac{\partial Q}{\partial \dot\lambda}\otimes\left(\frac{\partial^2 \lambda}{\partial F^2} : \dot F\right)
+```
+`∂Q/∂Ḟ` is exact because ``\lambda`` is a function of ``F`` alone, so ``\dot\lambda`` is *linear* in
+``\dot F`` with coefficient ``\partial\lambda/\partial F``.
+
+**The second term of `∂Q/∂F` is not optional.** ``\dot\lambda`` varies with ``F`` too, through the
+curvature of ``\lambda``, and that term is the same order as the first. Dropping it leaves a
+descent direction rather than a Newton direction: measured on the contracting cuboid, the global
+residual then falls by a factor of only ~0.6 per iteration and stalls six orders short of the
+tolerance. It is why this method takes the Hessian of ``\lambda`` where the rate-free one takes only
+its gradient.
+"""
 function solve_local_constraint(
     F::Tensor{2, dim},
     Ḟ::Tensor{2, dim},
@@ -1321,90 +1528,85 @@ function solve_local_constraint(
     Qknownflat,
     Δt,
 ) where {dim}
-    Q, ∂P∂QdQdF = solve_local_constraint(
-        F,
-        coefficients,
+    Z = zero(Tensor{4, dim, Float64, 4^dim})
+    _local_solve_ok(state_cache) || return Qflat, Z, Z
+
+    f₀ = coefficients.f
+    ∂²λ∂F², dλdF, λ = Tensors.hessian(F -> _fiber_stretch(F, f₀), F, :all)
+    dλdt = dλdF ⊡ Ḟ
+    ∂dλdt∂F = ∂²λ∂F² ⊡ Ḟ
+
+    Q, J, Ca = _solve_local_sarcomere(
         material_model,
         state_cache,
         geometry_cache,
         qp,
         time,
-        Qflat,
-        Qknownflat,
-        Δt,
-    )
-    return Q, ∂P∂QdQdF, zero(∂P∂QdQdF)
-end
-
-function solve_local_constraint(
-    F::Tensor{2, dim},
-    coefficients,
-    material_model::ActiveStressModel,
-    state_cache::GenericFirstOrderCondensationMaterialStateCache,
-    geometry_cache,
-    qp,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-) where {dim}
-    # Early out if any of the previous local solves failed
-    if state_cache.local_solver_cache.retcode ∉
-       (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-        return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
-    end
-
-    function computeλ(F)
-        f = F ⋅ coefficients.f
-        return √(f ⋅ f)
-    end
-
-    # Frozen variables
-    dλdF, λ = Tensors.gradient(computeλ, F, :all)
-    dλdt = 0.0 # TODO query
-    Ca = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
-
-    Q, J = solve_internal_timestep(
-        material_model,
-        state_cache,
         λ,
         dλdt,
         Qflat,
         Qknownflat,
-        Ca,
-        time,
         Δt,
     )
-    # Abort if local solve failed
-    if state_cache.local_solver_cache.retcode ∉
-       (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-        return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
-    end
+    _local_solve_ok(state_cache) || return Qflat, Z, Z
 
-    # Solve corrector problem
+    contraction_model   = material_model.contraction_model
+    active_stress_model = material_model.active_stress_model
+
     function local_residual_rhs_wrap!(R, λ)
         dQ = zeros(eltype(λ), length(Q)) # TODO preallocate during setup
-        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
+        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, contraction_model)
         @.. R = (Q - Qknownflat) / Δt - dQ
         return nothing
     end
-    R = state_cache.local_solver_cache.residual
-    ∂fₗ∂λ = state_cache.local_solver_cache.rhs_corrector
-    ForwardDiff.derivative!(∂fₗ∂λ, local_residual_rhs_wrap!, R, λ)
-    dQdλ = J \ -∂fₗ∂λ
+    dQdλ = _sarcomere_corrector(state_cache, J, local_residual_rhs_wrap!, λ)
 
-    return Q,
-    _solve_local_sarcomere_dQdF(
-        dQdλ,
+    function local_residual_rate_wrap!(R, dλdt)
+        dQ = zeros(eltype(dλdt), length(Q)) # TODO preallocate during setup
+        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, contraction_model)
+        @.. R = (Q - Qknownflat) / Δt - dQ
+        return nothing
+    end
+    dQddλdt = _sarcomere_corrector(state_cache, J, local_residual_rate_wrap!, dλdt)
+
+    # `_solve_local_sarcomere_dQdF(dQdX, dXdY, …)` is the contribution of the `X` chain to `∂P/∂Y`,
+    # so the three chain-rule terms are three calls differing only in their first two arguments, all
+    # entering with the same sign.
+    ∂P∂QdQdF =
+        _solve_local_sarcomere_dQdF(
+            dQdλ,
+            dλdF,
+            λ,
+            F,
+            coefficients,
+            active_stress_model,
+            contraction_model,
+        ) + _solve_local_sarcomere_dQdF(
+            dQddλdt,
+            ∂dλdt∂F,
+            λ,
+            F,
+            coefficients,
+            active_stress_model,
+            contraction_model,
+        )
+    ∂P∂QdQdḞ = _solve_local_sarcomere_dQdF(
+        dQddλdt,
         dλdF,
         λ,
         F,
         coefficients,
-        material_model.active_stress_model,
-        material_model.contraction_model,
+        active_stress_model,
+        contraction_model,
     )
+    return Q, ∂P∂QdQdF, ∂P∂QdQdḞ
 end
 
+# Residual-only counterpart: the same local problem, without the corrector solves.
+#
+# It must pose the *identical* problem to `solve_local_constraint`, rate included. A residual that
+# freezes `dλdt` while the tangent linearizes a moving one is not a slower Newton, it is a Newton on
+# two different problems.
 function solve_local_constraint_state_only(
     F::Tensor{2, dim},
     coefficients,
@@ -1417,38 +1619,56 @@ function solve_local_constraint_state_only(
     Qknownflat,
     Δt,
 ) where {dim}
-    # Early out if any of the previous local solves failed
-    if state_cache.local_solver_cache.retcode ∉
-       (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-        return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
-    end
-
-    function computeλ(F)
-        f = F ⋅ coefficients.f
-        return √(f ⋅ f)
-    end
-
-    # Frozen variables
-    dλdF, λ = Tensors.gradient(computeλ, F, :all)
-    dλdt = 0.0 # TODO query
-    Ca = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
-
-    Q, J = solve_internal_timestep(
+    return solve_local_constraint_state_only(
+        F,
+        zero(F),
+        coefficients,
         material_model,
         state_cache,
-        λ,
-        dλdt,
+        geometry_cache,
+        qp,
+        time,
         Qflat,
         Qknownflat,
-        Ca,
+        Δt,
+    )
+end
+
+function solve_local_constraint_state_only(
+    F::Tensor{2, dim},
+    Ḟ::Tensor{2, dim},
+    coefficients,
+    material_model::ActiveStressModel,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) where {dim}
+    # Early out if any of the previous local solves failed
+    _local_solve_ok(state_cache) || return Qflat
+
+    # Only the gradient is needed here: no tangent is requested, so the curvature term that the
+    # rate-coupled `solve_local_constraint` needs never arises.
+    f₀ = coefficients.f
+    dλdF, λ = Tensors.gradient(F -> _fiber_stretch(F, f₀), F, :all)
+
+    Q, _, _ = _solve_local_sarcomere(
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
         time,
+        λ,
+        dλdF ⊡ Ḟ,
+        Qflat,
+        Qknownflat,
         Δt,
     )
     # Abort if local solve failed
-    if state_cache.local_solver_cache.retcode ∉
-       (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-        return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
-    end
+    _local_solve_ok(state_cache) || return Qflat
 
     return Q
 end

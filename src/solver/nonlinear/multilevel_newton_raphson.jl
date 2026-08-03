@@ -12,7 +12,7 @@ Base.@kwdef mutable struct GenericLocalNonlinearSolverCache{
     const J::JacobianType
     const residual::ResidualType
     const rhs_corrector::CorrectorRhsType
-    outer_tol::Float64 = Inf
+    outer_tol::Float64 = 0.0
     retcode::SciMLBase.ReturnCode.T = SciMLBase.ReturnCode.Default
 end
 
@@ -27,17 +27,6 @@ function duplicate_for_device(device, cache::GenericLocalNonlinearSolverCache)
     )
 end
 
-
-function Base.show(io::IO, cache::GenericLocalNonlinearSolverCache)
-    println(io, "NewtonRaphsonSolverCache:")
-    Base.show(io, cache.params)
-    println(io, "J=$(typeof(cache.J)) with size $(size(cache.J))")
-    println(io, "R=$(typeof(cache.residual)) with size $(size(cache.residual))")
-    println(io, "C=$(typeof(cache.rhs_corrector)) with size $(size(cache.rhs_corrector))")
-    println(io, "outer_tol=$(cache.outer_tol)")
-    println(io, "status=$(cache.retcode)")
-end
-
 function check_local_solve_covergence(local_solver_cache::GenericLocalNonlinearSolverCache)
     return local_solver_cache.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
 end
@@ -46,6 +35,28 @@ function check_local_solve_covergence(local_solver_cache::Tuple)
 end
 function check_local_solve_covergence(local_solver_cache::AbstractVector)
     return any(check_local_solve_covergence.(local_solver_cache))
+end
+
+"""
+    reset_local_solve_retcode!(local_solver_cache)
+
+Clear the local solvers' failure flag before an assembly pass, so `check_local_solve_covergence`
+reports on *that* pass alone.
+
+Without this the flag latches: a failed local solve is only ever written by the local Newton, and the
+condensation entry points skip that Newton entirely once the flag is set. The first local failure
+would therefore poison every later assembly — including the retry after the time integrator shortens
+`dt`, which is exactly the mechanism meant to recover from it.
+"""
+function reset_local_solve_retcode!(local_solver_cache::GenericLocalNonlinearSolverCache)
+    local_solver_cache.retcode = SciMLBase.ReturnCode.Default
+    return nothing
+end
+function reset_local_solve_retcode!(local_solver_cache::Tuple)
+    foreach(reset_local_solve_retcode!, local_solver_cache)
+end
+function reset_local_solve_retcode!(local_solver_cache::AbstractVector)
+    foreach(reset_local_solve_retcode!, local_solver_cache)
 end
 
 function set_local_solver_tol(local_solver_cache::GenericLocalNonlinearSolverCache, tol)
@@ -107,14 +118,18 @@ function nlsolve!(
     residualnormprev = 0.0
     Θ1prev = length(Θks) > 0 ? first(Θks) : 0.0
     resize!(Θks, 0)
-    set_local_solver_tol(mlcache.local_solver_cache, Inf)
+    set_local_solver_tol(mlcache.local_solver_cache, 0.0)
     while true
         cache.iter += 1
         residual .= 0.0
+        reset_local_solve_retcode!(mlcache.local_solver_cache)
         @timeit_debug "update operator" update_linearization!(op, residual, u, p)
-        # Check if local solve failed
+        # Check if local solve failed. The global residual is reported alongside, because a local
+        # failure at a small global residual points somewhere very different than one far from the
+        # solution.
         if check_local_solve_covergence(mlcache.local_solver_cache)
-            @debug "Some local newton did not converge. Aborting. ||r|| = $residualnorm" _group=:nlsolve
+            @debug "Some local newton did not converge. Aborting. ||r|| = $(residual_norm(cache, f))" _group =
+                :nlsolve
             return false
         end
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)

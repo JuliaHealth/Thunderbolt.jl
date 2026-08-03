@@ -8,6 +8,18 @@ internal_variable_evolution(::AbstractSteadyStateSarcomereModel) = NoEvolution()
 internal_variable_evolution(::AbstractRateIndependentSarcomereModel) = FirstOrderEvolution()
 internal_variable_evolution(::AbstractRateDependentSarcomereModel) = RateCoupledEvolution()
 
+"""
+    internal_state_in_bounds(model, Q) -> Bool
+
+Whether `Q` lies in the admissible set of `model`'s internal variable. Checked after a local solve
+converges: a converged but inadmissible state is reported as `ReturnCode.Infeasible`, which the time
+integrator can act on by shortening the step.
+
+Defaults to `true` — a model without a bounded state need not implement it. Implement it wherever the
+state has a *physical* meaning that a large step can violate, e.g. Markov occupancies.
+"""
+internal_state_in_bounds(model, Q) = true
+
 abstract type AbstractCondensationMaterialStateCache end
 
 # Material states without evolution equations. I.e. the states variables are at most a function of space (reference) and time.
@@ -99,6 +111,7 @@ end
 sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, t, wrapper::AsRateIndependent) =
     sarcomere_rhs!(dQ, Q, λ, zero(dλdt), Ca, t, wrapper.model)
 num_states(wrapper::AsRateIndependent) = num_states(wrapper.model)
+internal_state_in_bounds(wrapper::AsRateIndependent, Q) = internal_state_in_bounds(wrapper.model, Q)
 𝓝(state, F, coefficients, wrapper::AsRateIndependent) = 𝓝(state, F, coefficients, wrapper.model)
 compute_λᵃ(state, wrapper::AsRateIndependent) = compute_λᵃ(state, wrapper.model)
 gather_internal_variable_infos(wrapper::AsRateIndependent) =
@@ -133,6 +146,8 @@ Base.@kwdef struct CaDrivenInternalSarcomereModel{ModelType, CalciumFieldType} <
     calcium_field::CalciumFieldType
 end
 num_states(wrapper::CaDrivenInternalSarcomereModel) = num_states(wrapper.model)
+internal_state_in_bounds(wrapper::CaDrivenInternalSarcomereModel, Q) =
+    internal_state_in_bounds(wrapper.model, Q)
 𝓝(state, F, coefficients, wrapper::CaDrivenInternalSarcomereModel) =
     𝓝(state, F, coefficients, wrapper.model)
 compute_λᵃ(state, wrapper::CaDrivenInternalSarcomereModel) = compute_λᵃ(state, wrapper.model)
@@ -537,6 +552,19 @@ function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
     dXB[1] += p.μ₀_fP * permissivity
     dXB[2] += p.μ₁_fP * permissivity
 end
+
+"""
+Occupancies of the regulatory-unit Markov chain, `Q[1:16]`, are probabilities.
+
+Only the non-negativity half is checked: the normalisation `Σ Q[1:16] = 1` holds by construction,
+because the chain's right-hand side is exactly conservative (`Σ dQ[1:16] = 0` to machine precision)
+and backward Euler inherits that. So a violated bound is always a component that went negative,
+and given the sum is pinned at one that also caps every component at one.
+
+Measured onset: components stay non-negative up to `Δt ≈ 5` in the model's own time units and reach
+`≈ -0.25` by `Δt = 20`, so this is a large-step failure mode.
+"""
+internal_state_in_bounds(::RDQ20MFModel, Q) = all(≥(0), view(Q, 1:16))
 
 function fraction_single_overlap(model::RDQ20MFModel, λ)
     SL = λ*model.SL₀

@@ -418,8 +418,8 @@ end
                     facemodels,
                 ),
                 # `AsRateIndependent` routes the sarcomere onto the condensed *ODE* element cache,
-                # where the unwrapped model above uses the DAE one. Both must give the same answer
-                # as long as `dλdt` is still hardcoded to zero in the local solve.
+                # where the unwrapped model above uses the DAE one. The two no longer agree: the DAE
+                # path feeds `dλdt = dλdF ⊡ Ḟ` into the local solve, the wrapped one drops it.
                 "back" => QuasiStaticModel(
                     :d,
                     ActiveStressModel(

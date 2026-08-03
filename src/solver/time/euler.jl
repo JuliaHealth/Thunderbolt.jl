@@ -221,17 +221,11 @@ function _setup_local_solver_cache(
 )
     singleQsize = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
     @debug "Setting up local nonlinear solver with size(Q)=$(singleQsize) for material $(material_model)" _group=:nlsolve
-    return GenericLocalNonlinearSolverCache(
-        # Solver parameters
-        local_solver,
-        # Buffers
-        zeros(singleQsize, singleQsize),
-        zeros(singleQsize),
-        zeros(singleQsize),
-        # Globally requested tolerance
-        Inf,
-        # Local convergence
-        SciMLBase.ReturnCode.Default,
+    return GenericLocalNonlinearSolverCache(;
+        params = local_solver,
+        J = zeros(singleQsize, singleQsize),
+        residual = zeros(singleQsize),
+        rhs_corrector = zeros(singleQsize),
     )
 end
 function _setup_local_solver_cache(
