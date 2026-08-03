@@ -1348,27 +1348,34 @@ function solve_internal_timestep(
         if residualnorm < rtol
             break
         elseif newton_iter == lcache.params.max_iters
-            lcache.retcode = SciMLBase.ReturnCode.MaxIters
+            record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.MaxIters, residualnorm)
             @debug "Local Newton hit max iterations at cell $cid qp $(qp.i). ||r|| = $residualnorm (rtol = $rtol)" _group =
                 :nlsolve
             return Q, J
         elseif isnan(residualnorm)
-            lcache.retcode = SciMLBase.ReturnCode.ConvergenceFailure
+            record_local_solve!(
+                lcache,
+                cid,
+                qp.i,
+                SciMLBase.ReturnCode.ConvergenceFailure,
+                residualnorm,
+            )
             @debug "Local Newton diverged at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
                 :nlsolve
             return Q, J
         end
     end
     ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
+    residualnorm = norm(R)
     # A converged but inadmissible state is still a failure, and one the time integrator can act on:
     # the usual cause is a step too long for the internal variable's own dynamics.
     if !internal_state_in_bounds(material_model.contraction_model, Q)
-        lcache.retcode = SciMLBase.ReturnCode.Infeasible
-        @debug "Local Newton converged to an inadmissible state at cell $cid qp $(qp.i). ||r|| = $(norm(R))" _group =
+        record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Infeasible, residualnorm)
+        @debug "Local Newton converged to an inadmissible state at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
             :nlsolve
         return Q, J
     end
-    lcache.retcode = SciMLBase.ReturnCode.Success
+    record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Success, residualnorm)
     return Q, J
 end
 

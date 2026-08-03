@@ -218,6 +218,9 @@ end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     material_model::AbstractMaterialModel,
+    dh,
+    lvh,
+    cellset,
 )
     singleQsize = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
     @debug "Setting up local nonlinear solver with size(Q)=$(singleQsize) for material $(material_model)" _group=:nlsolve
@@ -226,28 +229,44 @@ function _setup_local_solver_cache(
         J = zeros(singleQsize, singleQsize),
         residual = zeros(singleQsize),
         rhs_corrector = zeros(singleQsize),
+        reports = setup_local_solve_reports(dh, lvh, singleQsize, cellset),
     )
 end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     model::QuasiStaticModel,
+    dh,
+    lvh,
+    cellset,
 )
-    return _setup_local_solver_cache(local_solver, model.material_model)
+    return _setup_local_solver_cache(local_solver, model.material_model, dh, lvh, cellset)
 end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     integrator::NonlinearIntegrator,
+    dh,
+    lvh,
 )
-    return _setup_local_solver_cache(local_solver, integrator.volume_model)
+    return _setup_local_solver_cache(local_solver, integrator.volume_model, dh, lvh, nothing)
 end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     integrator::NonlinearMultiDomainIntegrator2,
+    dh,
+    lvh,
 )
-    return map(
-        subintegrator -> _setup_local_solver_cache(local_solver, subintegrator.volume_model),
-        values(integrator.subintegrators),
-    )
+    grid = get_grid(dh)
+    return map(collect(integrator.subintegrators)) do (name, subintegrator)
+        # Each subdomain reports into its own store, since the number of condensed unknowns per
+        # quadrature point -- and hence the layout -- is a property of that subdomain's material.
+        _setup_local_solver_cache(
+            local_solver,
+            subintegrator.volume_model,
+            dh,
+            lvh,
+            getcellset(grid, name),
+        )
+    end
 end
 
 function _annotate_with_local_solver_cache(integrator::NonlinearIntegrator, local_solver_cache)
@@ -282,7 +301,7 @@ end
     (; integrator, dh, lvh) = f
     (; local_solver, newton) = solver
 
-    local_solver_cache = _setup_local_solver_cache(solver.local_solver, integrator)
+    local_solver_cache = _setup_local_solver_cache(solver.local_solver, integrator, dh, lvh)
 
     # The previous solution and the timestep are no longer threaded in here: `gto1` supplies them per
     # call via `GenericFirstOrderTimeParameters`. Only the local solver cache still has to reach the
