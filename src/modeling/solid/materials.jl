@@ -5,6 +5,392 @@ abstract type AbstractMaterialModel end
 default_initial_state!(uq, ::AbstractMaterialModel) =
     error("Initial condition setup not implemented yet.")
 
+"""
+    RateDependence
+
+Whether a material's stress depends on the deformation *rate* `Ḟ` in addition to `F`.
+
+A [`RateDependent`](@ref) material implements the five-argument
+`stress_and_tangent(model, F, Ḟ, coefficients, state)`, returning `(P, ∂P∂F, ∂P∂Ḟ)`. The element
+assembles
+
+    dP/du = ∂P/∂F ⋅ ∂F/∂u + ∂P/∂Ḟ ⋅ ∂Ḟ/∂u
+
+where `∂Ḟ/∂u` comes from the *time scheme* (`1/Δt` for backward Euler, `γ/(βΔt)` for Newmark), so a
+material never learns how the rate was formed. A material must not difference `F` against a previous
+value itself: that bakes one time discretization into the constitutive law.
+
+A [`RateIndependent`](@ref) material implements only the four-argument form; the uniform entry point
+answers for it with a zero rate tangent.
+"""
+abstract type RateDependence end
+
+"""
+    RateIndependent <: RateDependence
+
+`P = P(F, Q)`. The default for every material.
+"""
+struct RateIndependent <: RateDependence end
+
+"""
+    RateDependent <: RateDependence
+
+`P = P(F, Ḟ, Q)`. Implements the five-argument `stress_and_tangent`.
+"""
+struct RateDependent <: RateDependence end
+
+"""
+    rate_dependence(model::AbstractMaterialModel)
+
+The [`RateDependence`](@ref) of `model`. Defaults to [`RateIndependent`](@ref); override for a
+material whose stress reads `Ḟ`.
+"""
+rate_dependence(::AbstractMaterialModel) = RateIndependent()
+
+"""
+    AbstractKinematics
+
+What the time scheme offers a material at a quadrature point. The scheme builds it -- backward Euler
+from `(F - Fprev)/Δt`, Newmark from `γ/(βΔt)`, an energy-momentum scheme from two configurations --
+so a material never learns how the rate was formed.
+
+This is the argument `material_routine` takes in place of a bare `F`. Below that seam the material
+functions (`stress_and_tangent`, `stress_function`, `Ψ`) keep taking bare tensors, so the automatic
+differentiation closures still capture leaves rather than a container.
+
+Offering more than a material reads is fine: a [`RateIndependent`](@ref) material accepts
+[`DeformationGradientWithRate`](@ref) and ignores the rate. Offering less is a `MethodError`, which is the
+point of having two types rather than one with an optional field.
+"""
+abstract type AbstractKinematics end
+
+"""
+    DeformationGradient(F)
+
+Deformation gradient only. What a rate-free scheme offers.
+"""
+struct DeformationGradient{TF <: Tensor{2}} <: AbstractKinematics
+    F::TF
+end
+
+"""
+    DeformationGradientWithRate(F, Ḟ)
+
+Deformation gradient and its rate. What a first-order-in-time scheme offers.
+"""
+struct DeformationGradientWithRate{TF <: Tensor{2}, TḞ <: Tensor{2}} <: AbstractKinematics
+    F::TF
+    Ḟ::TḞ
+end
+
+@inline deformation_gradient(kinematics::AbstractKinematics) = kinematics.F
+
+@inline deformation_rate(kinematics::DeformationGradientWithRate) = kinematics.Ḟ
+@inline deformation_rate(::DeformationGradient) = error(
+    "A rate dependent material was assembled by a time scheme that offers no deformation rate. " *
+    "Either wrap its internal model in `AsRateIndependent`, or use a scheme that supplies `Ḟ`.",
+)
+
+"""
+    AbstractKinematicSensitivities
+
+What `material_routine` returns alongside the stress: one sensitivity per kinematic quantity the
+scheme offered. The type is the conjugate of the [`AbstractKinematics`](@ref) that went in, so
+`material_routine` answers in the same currency it was asked in and the element cannot silently
+receive a sensitivity it has no `∂·/∂u` for.
+
+The element turns these into the single tangent modulus its assembly loop contracts with
+[`consistent_tangent`](@ref).
+"""
+abstract type AbstractKinematicSensitivities end
+
+"""
+    KinematicSensitivities(∂P∂F)
+
+Conjugate to [`DeformationGradient`](@ref).
+"""
+struct KinematicSensitivities{T∂P∂F} <: AbstractKinematicSensitivities
+    ∂P∂F::T∂P∂F
+end
+
+"""
+    KinematicSensitivitiesWithRate(∂P∂F, ∂P∂Ḟ)
+
+Conjugate to [`DeformationGradientWithRate`](@ref). A material that does not read the rate still
+answers in this currency, with a zero `∂P∂Ḟ`.
+"""
+struct KinematicSensitivitiesWithRate{T∂P∂F, T∂P∂Ḟ} <: AbstractKinematicSensitivities
+    ∂P∂F::T∂P∂F
+    ∂P∂Ḟ::T∂P∂Ḟ
+end
+
+@doc raw"""
+    KinematicLinearization(∂F∂u, ∂Ḟ∂u)
+    KinematicLinearization(∂F∂u)
+
+How a variation of the quantity the *global solver* iterates on reaches each kinematic slot. One
+factor per slot, supplied by the time scheme:
+
+| scheme | unknown | `∂F∂u` | `∂Ḟ∂u` |
+| :----- | :------ | :----- | :----- |
+| backward Euler | ``u_{n+1}`` | ``1`` | ``1/\Delta t`` |
+| Newmark | ``u_{n+1}`` | ``1`` | ``\gamma/(\beta \Delta t)`` |
+| BDF-``k`` | ``u_{n+1}`` | ``1`` | ``\alpha_0/\Delta t`` |
+| SDIRK stage ``i``, rate form | ``k_i`` | ``\Delta t\, a_{ii}`` | ``1`` |
+
+The SDIRK row is why both factors are carried rather than just the rate one: solving for the stage
+*derivative* moves the timestep onto `∂F∂u` and leaves `∂Ḟ∂u` at unity. A scheme that offers no rate
+uses the single-argument form.
+"""
+struct KinematicLinearization{T∂F∂u, T∂Ḟ∂u}
+    ∂F∂u::T∂F∂u
+    ∂Ḟ∂u::T∂Ḟ∂u
+end
+
+KinematicLinearization(∂F∂u) = KinematicLinearization(∂F∂u, nothing)
+
+@doc raw"""
+    consistent_tangent(sensitivities, linearization)
+
+Fold the material's sensitivities into the tangent modulus the element's assembly loop contracts,
+```math
+\mathrm{d}P/\mathrm{d}u_j = \left(\frac{\partial P}{\partial F}\frac{\partial F}{\partial u} + \frac{\partial P}{\partial \dot{F}}\frac{\partial \dot{F}}{\partial u}\right) : \nabla \delta u_j
+```
+Both factors come from [`KinematicLinearization`](@ref), so the material never learns how the rate
+was formed. They are scalars, so this collapses to one tensor add per quadrature point, outside the
+test function loops.
+
+Folding here is right for a single-stage scheme, which needs one matrix. A fully implicit
+Runge-Kutta scheme must **not** fold: it recombines the same two contributions with ``s^2`` different
+weights ``\Delta t\, a_{ij}``, so it consumes the [`AbstractKinematicSensitivities`](@ref) directly
+and assembles the two parts separately. That is why `material_routine` returns them unfolded.
+"""
+@inline consistent_tangent(
+    sensitivities::KinematicSensitivities,
+    linearization::KinematicLinearization,
+) = sensitivities.∂P∂F * linearization.∂F∂u
+
+@inline consistent_tangent(
+    sensitivities::KinematicSensitivitiesWithRate,
+    linearization::KinematicLinearization,
+) = sensitivities.∂P∂F * linearization.∂F∂u + sensitivities.∂P∂Ḟ * linearization.∂Ḟ∂u
+
+# A rate-free scheme has no `∂Ḟ/∂u` to offer, so it may only consume rate-free sensitivities. The
+# missing `KinematicSensitivitiesWithRate` method is the counterpart of `deformation_rate` erroring on
+# a `DeformationGradient`: neither direction of the seam degrades silently.
+@inline consistent_tangent(sensitivities::KinematicSensitivities) = sensitivities.∂P∂F
+
+@doc raw"""
+    RateTypeCondensationMaterialStateCache
+
+Every condensation cache whose local problem carries a time derivative, i.e. `dₜQ = L(F, Q)` or
+`dₜQ = L(F, dₜF, Q)`. Both need a timestep and a known state, which is what separates them from
+the rate-free caches used by continuation solvers.
+
+## The `(Qknownflat, Δt)` contract
+
+Every local solve below poses the same problem,
+```math
+(Q - Q_{\textrm{known}}) / \Delta t = L(F, Q)
+```
+and **both arguments are effective quantities the caller normalizes**. `Qknownflat` is deliberately
+not called `Qprev`: for anything past backward Euler it is a linear combination of history, not a
+previous value.
+
+| scheme | ``Q_{\textrm{known}}`` | ``\Delta t`` |
+| :----- | :--------------------- | :----------- |
+| backward Euler | ``Q_n`` | ``\Delta t`` |
+| BDF-``k`` | ``-\frac{1}{\alpha_0}\sum_{j\geq 1}\alpha_j Q_{n+1-j}`` | ``\Delta t/\alpha_0`` |
+| DIRK stage ``i`` | ``Q_n + \Delta t \sum_{j<i} a_{ij} L_j`` | ``a_{ii}\Delta t`` |
+| Newmark | ``Q_n`` | ``\Delta t`` |
+
+So one local solver serves all four: the scheme's order and stage structure live entirely in how the
+caller computes these two values, exactly as the kinematics seam keeps the rate's provenance out of
+the material. A fully implicit Runge-Kutta scheme is the exception — its stages are genuinely
+coupled, so it needs a local solver over all ``s`` stages at once rather than this one.
+"""
+const RateTypeCondensationMaterialStateCache = Union{
+    RateIndependentCondensationMaterialStateCache,
+    RateDependentCondensationMaterialStateCache,
+}
+
+# Uniform five-argument entry point. A rate-independent material answers through its existing
+# four-argument method with a zero rate tangent, so the element assembles one expression either way.
+@inline stress_and_tangent(
+    model::AbstractMaterialModel,
+    F::Tensor{2},
+    Ḟ::Tensor{2},
+    coefficients,
+    state,
+) = _stress_and_tangent_rate(rate_dependence(model), model, F, Ḟ, coefficients, state)
+
+@inline function _stress_and_tangent_rate(
+    ::RateIndependent,
+    model,
+    F::Tensor{2},
+    Ḟ::Tensor{2},
+    coefficients,
+    state,
+)
+    P, ∂P∂F = stress_and_tangent(model, F, coefficients, state)
+    return P, ∂P∂F, zero(∂P∂F)
+end
+
+@inline _stress_and_tangent_rate(
+    ::RateDependent,
+    model,
+    F::Tensor{2},
+    Ḟ::Tensor{2},
+    coefficients,
+    state,
+) = error(
+    "$(typeof(model)) declares `rate_dependence(...) = RateDependent()` but does not implement " *
+    "`stress_and_tangent(model, F, Ḟ, coefficients, state) -> (P, ∂P∂F, ∂P∂Ḟ)`.",
+)
+
+# The kinematics seam. A material that does not read the deformation rate is served by unpacking `F`
+# and calling its existing method, so introducing kinematics costs the rate-independent path nothing.
+# A rate dependent material overrides these on its own cache type and reaches for `deformation_rate`.
+@inline function material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradient,
+    coefficient_cache,
+    state_cache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+)
+    P, ∂P∂F = material_routine(
+        material_model,
+        deformation_gradient(kinematics),
+        coefficient_cache,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+    )
+    return P, KinematicSensitivities(∂P∂F)
+end
+
+@inline function material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradientWithRate,
+    coefficient_cache,
+    state_cache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+)
+    P, ∂P∂F = material_routine(
+        material_model,
+        deformation_gradient(kinematics),
+        coefficient_cache,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+    )
+    return P, KinematicSensitivitiesWithRate(∂P∂F, zero(∂P∂F))
+end
+
+@inline function material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradient,
+    coefficient_cache,
+    state_cache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+)
+    P, ∂P∂F = material_routine(
+        material_model,
+        deformation_gradient(kinematics),
+        coefficient_cache,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    return P, KinematicSensitivities(∂P∂F)
+end
+
+# A material that does not read the rate answers the rate-carrying question with a zero rate
+# sensitivity — offering more than a material reads must stay free.
+@inline function material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradientWithRate,
+    coefficient_cache,
+    state_cache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+)
+    P, ∂P∂F = material_routine(
+        material_model,
+        deformation_gradient(kinematics),
+        coefficient_cache,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    return P, KinematicSensitivitiesWithRate(∂P∂F, zero(∂P∂F))
+end
+
+@inline reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::AbstractKinematics,
+    coefficient_cache,
+    state_cache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+) = reduced_material_routine(
+    material_model,
+    deformation_gradient(kinematics),
+    coefficient_cache,
+    state_cache,
+    geometry_cache,
+    qp,
+    time,
+)
+
+@inline reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::AbstractKinematics,
+    coefficient_cache,
+    state_cache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) = reduced_material_routine(
+    material_model,
+    deformation_gradient(kinematics),
+    coefficient_cache,
+    state_cache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+)
+
 function material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
@@ -39,12 +425,12 @@ function material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
     coefficient_cache,
-    state_cache::RateIndependentCondensationMaterialStateCache,
+    state_cache::RateTypeCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
     Qflat,
-    Qprevflat,
+    Qknownflat,
     Δt,
 )
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
@@ -57,12 +443,61 @@ function material_routine(
         qp,
         time,
         Qflat,
-        Qprevflat,
+        Qknownflat,
         Δt,
     )
     P, ∂P∂F = stress_and_tangent(material_model, F, coefficients, Q)
     return P, ∂P∂F + ∂P∂QdQdF
 end
+
+# Rate dependent condensation. The stress itself has no explicit rate dependence — `P = P(F, Q)` — so
+# `∂P/∂Ḟ` is entirely mediated by the internal variable, `∂P/∂Q · ∂Q/∂Ḟ`, and comes out of the local
+# solve rather than out of `stress_and_tangent`.
+function material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradientWithRate,
+    coefficient_cache,
+    state_cache::RateDependentCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+)
+    F = deformation_gradient(kinematics)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    Q, ∂P∂QdQdF, ∂P∂QdQdḞ = solve_local_constraint(
+        F,
+        deformation_rate(kinematics),
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    P, ∂P∂F = stress_and_tangent(material_model, F, coefficients, Q)
+    return P, KinematicSensitivitiesWithRate(∂P∂F + ∂P∂QdQdF, ∂P∂QdQdḞ)
+end
+
+# A rate dependent material cannot be served rate-free kinematics. `deformation_rate` is what says so;
+# this method exists only so the message arrives from the call the element actually made.
+material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradient,
+    coefficient_cache,
+    state_cache::RateDependentCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) = deformation_rate(kinematics)
 
 # A condensation material reached the bare-`time` assembly path, which is used by
 # `HomotopyPathSolver` — a load-stepping continuation with no timestep and no previous solution. Such
@@ -74,7 +509,7 @@ material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
     coefficient_cache,
-    state_cache::RateIndependentCondensationMaterialStateCache,
+    state_cache::RateTypeCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
@@ -95,7 +530,7 @@ material_routine(
     qp::QuadraturePoint,
     time,
     Qflat,
-    Qprevflat,
+    Qknownflat,
     Δt,
 ) = material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
 
@@ -131,7 +566,7 @@ reduced_material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
     coefficient_cache,
-    state_cache::RateIndependentCondensationMaterialStateCache,
+    state_cache::RateTypeCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
@@ -145,12 +580,12 @@ function reduced_material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
     coefficient_cache,
-    state_cache::RateIndependentCondensationMaterialStateCache,
+    state_cache::RateTypeCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
     Qflat,
-    Qprevflat,
+    Qknownflat,
     Δt,
 )
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
@@ -163,7 +598,7 @@ function reduced_material_routine(
         qp,
         time,
         Qflat,
-        Qprevflat,
+        Qknownflat,
         Δt,
     )
     # Residual-only variant: no tangent is requested here, matching the other
@@ -180,7 +615,7 @@ reduced_material_routine(
     qp::QuadraturePoint,
     time,
     Qflat,
-    Qprevflat,
+    Qknownflat,
     Δt,
 ) = reduced_material_routine(
     material_model,
@@ -268,7 +703,7 @@ material_routine(
     material_model::PrestressedMechanicalModel,
     F::Tensor{2},
     coefficient_cache,
-    state_cache::RateIndependentCondensationMaterialStateCache,
+    state_cache::RateTypeCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
@@ -349,7 +784,7 @@ reduced_material_routine(
     material_model::PrestressedMechanicalModel,
     F::Tensor{2},
     coefficient_cache,
-    state_cache::RateIndependentCondensationMaterialStateCache,
+    state_cache::RateTypeCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
@@ -614,6 +1049,13 @@ struct ActiveStressModel{Mat, ASMod, CMod, MS} <: AbstractMaterialModel
     microstructure_model::MS
 end
 
+# An active stress model is rate dependent exactly when its sarcomere is, so the material's
+# capability reads straight off the internal variable model rather than being declared twice.
+rate_dependence(model::ActiveStressModel) =
+    _rate_dependence(internal_variable_evolution(model.contraction_model))
+_rate_dependence(::RateCoupledEvolution) = RateDependent()
+_rate_dependence(::InternalVariableEvolution) = RateIndependent()
+
 default_initial_state!(
     uq,
     model::Union{GeneralizedHillModel, ExtendedHillModel, ActiveStressModel},
@@ -724,6 +1166,51 @@ function duplicate_for_device(
     )
 end
 
+"""
+    GenericFirstOrderRateDependentCondensationMaterialStateCache
+
+The `RateCoupledEvolution` counterpart of
+[`GenericFirstOrderRateIndependentCondensationMaterialStateCache`](@ref): same data, but its local
+problem is `dₜQ = L(F, dₜF, Q)`, so it needs the deformation rate on top of `F`.
+
+The two carry identical fields and differ only in their supertype. That is the point: the supertype
+is what tells `solve_local_constraint` which local problem to pose, and Julia's single inheritance
+gives a struct exactly one. Wrapping a rate dependent sarcomere in `AsRateIndependent` selects the
+other cache, and with it the other local problem.
+"""
+struct GenericFirstOrderRateDependentCondensationMaterialStateCache{
+    LocalModelType,
+    LocalModelCacheType,
+    LocalSolverType,
+} <: RateDependentCondensationMaterialStateCache
+    model::LocalModelType
+    model_cache::LocalModelCacheType
+    local_solver_cache::LocalSolverType
+end
+
+function duplicate_for_device(
+    device,
+    cache::GenericFirstOrderRateDependentCondensationMaterialStateCache,
+)
+    return GenericFirstOrderRateDependentCondensationMaterialStateCache(
+        cache.model,
+        duplicate_for_device(device, cache.model_cache),
+        duplicate_for_device(device, cache.local_solver_cache),
+    )
+end
+
+"""
+    GenericFirstOrderCondensationMaterialStateCache
+
+Either generic condensation cache. Used by the parts of the local solve that are genuinely shared —
+the Newton loop, the state-only solve — so that only the methods where the deformation rate actually
+enters have to be written twice.
+"""
+const GenericFirstOrderCondensationMaterialStateCache = Union{
+    GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+    GenericFirstOrderRateDependentCondensationMaterialStateCache,
+}
+
 function _solve_local_sarcomere_dQdF(
     dQdλ,
     dλdF,
@@ -765,7 +1252,7 @@ end
 # not depend on time data baked into the cache at setup.
 function solve_internal_timestep(
     material_model::ActiveStressModel,
-    state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
     λ,
     dλdt,
     Q,
@@ -814,16 +1301,51 @@ function solve_internal_timestep(
     return Q, J
 end
 
+# Rate dependent form. `Ḟ` is threaded in so the kinematics contract is enforced all the way down: a
+# rate-free scheme reaching a rate dependent material now fails at `deformation_rate`, loudly, instead
+# of silently assembling a frozen sarcomere.
+#
+# The rate sensitivity is zero rather than unimplemented — the shared implementation below still
+# freezes `dλdt = 0.0`, so the internal variable genuinely does not respond to `Ḟ` yet. This is where
+# `dλdt = dλdF ⊡ Ḟ` and the second corrector solve for `∂Q/∂(dλdt)` land.
 function solve_local_constraint(
     F::Tensor{2, dim},
+    Ḟ::Tensor{2, dim},
     coefficients,
     material_model::ActiveStressModel,
-    state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+    state_cache::GenericFirstOrderRateDependentCondensationMaterialStateCache,
     geometry_cache,
     qp,
     time,
     Qflat,
-    Qprevflat,
+    Qknownflat,
+    Δt,
+) where {dim}
+    Q, ∂P∂QdQdF = solve_local_constraint(
+        F,
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    return Q, ∂P∂QdQdF, zero(∂P∂QdQdF)
+end
+
+function solve_local_constraint(
+    F::Tensor{2, dim},
+    coefficients,
+    material_model::ActiveStressModel,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+    Qknownflat,
     Δt,
 ) where {dim}
     # Early out if any of the previous local solves failed
@@ -848,7 +1370,7 @@ function solve_local_constraint(
         λ,
         dλdt,
         Qflat,
-        Qprevflat,
+        Qknownflat,
         Ca,
         time,
         Δt,
@@ -863,7 +1385,7 @@ function solve_local_constraint(
     function local_residual_rhs_wrap!(R, λ)
         dQ = zeros(eltype(λ), length(Q)) # TODO preallocate during setup
         sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, material_model.contraction_model)
-        @.. R = (Q - Qprevflat) / Δt - dQ
+        @.. R = (Q - Qknownflat) / Δt - dQ
         return nothing
     end
     R = state_cache.local_solver_cache.residual
@@ -887,12 +1409,12 @@ function solve_local_constraint_state_only(
     F::Tensor{2, dim},
     coefficients,
     material_model::ActiveStressModel,
-    state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
     geometry_cache,
     qp,
     time,
     Qflat,
-    Qprevflat,
+    Qknownflat,
     Δt,
 ) where {dim}
     # Early out if any of the previous local solves failed
@@ -917,7 +1439,7 @@ function solve_local_constraint_state_only(
         λ,
         dλdt,
         Qflat,
-        Qprevflat,
+        Qknownflat,
         Ca,
         time,
         Δt,
@@ -961,7 +1483,7 @@ end
 
 function solve_internal_timestep(
     material::LinearMaxwellMaterial,
-    state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
     ε::SymmetricTensor{2, dim},
     εᵛflat,
     εᵛprevflat,
@@ -990,22 +1512,22 @@ function solve_local_constraint(
     F::Tensor{2, dim},
     coefficients,
     material_model::LinearMaxwellMaterial,
-    state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
     geometry_cache,
     qp,
     time,
     Qflat,
-    Qprevflat,
+    Qknownflat,
     Δt,
 ) where {dim}
     ε = symmetric(F - one(F))
-    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat, Δt)
+    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qknownflat, Δt)
     Qflat .= Q.data
 
     # Corrector
     function solve_internal_timestep_corrector(
         material::LinearMaxwellMaterial,
-        state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+        state_cache::GenericFirstOrderCondensationMaterialStateCache,
         ε,
         εᵛflat,
         εᵛprevflat,
@@ -1034,7 +1556,7 @@ function solve_local_constraint(
         state_cache,
         ε,
         Qflat,
-        Qprevflat,
+        Qknownflat,
         coefficients,
         Δt,
     )
@@ -1047,16 +1569,16 @@ function solve_local_constraint_state_only(
     F::Tensor{2, dim},
     coefficients,
     material_model::LinearMaxwellMaterial,
-    state_cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
     geometry_cache,
     qp,
     time,
     Qflat,
-    Qprevflat,
+    Qknownflat,
     Δt,
 ) where {dim}
     ε = symmetric(F - one(F))
-    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat, Δt)
+    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qknownflat, Δt)
     Qflat .= Q.data
 
     return Q

@@ -75,6 +75,29 @@ fallback implementations — and implement `stress_and_tangent(model, F, coeffic
 `setup_coefficient_cache(model, qr, sdh)`. Materials carrying internal state additionally implement
 the three functions listed under [Internal variables](@ref).
 
+### Kinematics: how the deformation reaches a material
+
+The element does not hand a material a bare `F`. It hands it an `AbstractKinematics`, which is what
+the *time scheme* is able to offer at that quadrature point:
+
+| type | carries | offered by |
+| :--- | :------ | :--------- |
+| `DeformationGradient(F)` | `F` | rate-free schemes, e.g. `HomotopyPathSolver` |
+| `DeformationGradientWithRate(F, Ḟ)` | `F` and `Ḟ` | first-order-in-time schemes |
+
+Read them with `deformation_gradient(kinematics)` and `deformation_rate(kinematics)`. Offering more
+than a material reads is fine — a rate-independent material accepts `DeformationGradientWithRate` and
+ignores the rate. Offering *less* raises an error naming the two ways out, because a material that
+needs `Ḟ` cannot silently be given a wrong one.
+
+The seam stops at `material_routine`: `stress_and_tangent`, `stress_function` and `Ψ` keep taking
+bare tensors, so automatic differentiation closures still capture leaf values rather than a container.
+
+A material whose stress reads the rate declares `rate_dependence(model) = RateDependent()` and
+implements the five-argument `stress_and_tangent(model, F, Ḟ, coefficients, state)` returning
+`(P, ∂P∂F, ∂P∂Ḟ)`. It never learns how the rate was formed — the element multiplies in the `∂Ḟ/∂u`
+its scheme dictates (`1/Δt` for backward Euler, `γ/(βΔt)` for Newmark).
+
 ## Naming: three distinct "initial state" concepts
 
 These are easily confused. They are *not* variants of one function:

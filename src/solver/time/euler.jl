@@ -441,11 +441,28 @@ function _setup_internal_cache_annotation_unwrap(
     wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
     material_model::AbstractMaterialModel,
     internal_cache,
-    ::Union{FirstOrderEvolution, RateCoupledEvolution},
+    ::FirstOrderEvolution,
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
+        # Pass the model
+        material_model,
+        # And some cache to speed up evaluation of f and associated coefficients
+        internal_cache,
+        # Local nonlinear solver cache
+        wrapper.local_solver_cache,
+    )
+end
+function _setup_internal_cache_annotation_unwrap(
+    wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
+    material_model::AbstractMaterialModel,
+    internal_cache,
+    ::RateCoupledEvolution,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
+    return GenericFirstOrderRateDependentCondensationMaterialStateCache(
         # Pass the model
         material_model,
         # And some cache to speed up evaluation of f and associated coefficients
