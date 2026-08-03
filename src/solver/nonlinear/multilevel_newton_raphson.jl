@@ -192,6 +192,12 @@ end
 Multilevel Newton-Raphson solver [RabSanHsu:1979:mna](@ref) for nonlinear problems of the form `F(u,v) = 0; G(u,v) = 0`.
 To use the Multilevel solver you have to dispatch on
 * [update_linearization!](@ref)
+* [`residual!`](@ref), if the global Newton runs with `simplified_newton = true`
+
+The global Newton's `simplified_newton` and `forcing` settings apply here as they do to the plain
+[`NewtonRaphsonSolver`](@ref). Note what a simplified step does *not* skip: the local problems are
+re-solved on every residual evaluation, because the residual is a function of the condensed state.
+What is reused is the global Jacobian, so the local sensitivities are the part that is saved.
 """
 Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType} <:
                    AbstractNonlinearSolver
@@ -230,6 +236,7 @@ function nlsolve!(
 
     @unpack op, residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
+    simplified = cache.parameters.simplified_newton
     cache.iter = -1
     Δu = linear_solver_cache.u
     residualnormprev = 0.0
@@ -240,7 +247,14 @@ function nlsolve!(
         cache.iter += 1
         residual .= 0.0
         reset_local_solve_status!(mlcache.local_solver_cache)
-        @timeit_debug "update operator" update_linearization!(op, residual, u, p)
+        if simplified && cache.iter > 0
+            # Simplified Newton: reuse the Jacobian and preconditioner from iteration 0. The local
+            # problems are still solved -- the condensed state is what the residual is a function of
+            # -- only their sensitivities are not, since no tangent is requested.
+            @timeit_debug "update residual" residual!(op, residual, u, p)
+        else
+            @timeit_debug "update operator" update_linearization!(op, residual, u, p)
+        end
         # Check if local solve failed. The global residual is reported alongside, because a local
         # failure at a small global residual points somewhere very different than one far from the
         # solution.
@@ -249,8 +263,13 @@ function nlsolve!(
                 :nlsolve
             return false
         end
-        @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
-        linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
+        if simplified && cache.iter > 0
+            @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, f)
+            # Leave isfresh / precsisfresh false → reuse the existing factorization.
+        else
+            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
+            linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
+        end
 
         residualnorm = residual_norm(cache, f)
         set_local_solver_tol(mlcache.local_solver_cache, residualnorm^2)
@@ -264,6 +283,10 @@ function nlsolve!(
             return false
         end
 
+        _ew_prestep!(cache.forcing_cache, linear_solver_cache, residualnorm, cache.iter)
+        # See the note in the plain Newton: the Eisenstat-Walker criterion is relative to ‖r₀‖, so a
+        # warm-started increment would satisfy it trivially.
+        cache.forcing_cache !== nothing && fill!(Δu, zero(eltype(Δu)))
         @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
         nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
         solve_succeeded =
@@ -283,7 +306,9 @@ function nlsolve!(
             end
             Θk = residualnorm/residualnormprev
             push!(Θks, isnan(Θk) ? 0.0 : Θk)
-            if Θk ≥ 1.0
+            # A simplified Newton converges linearly, so a rate close to one is expected rather than
+            # a symptom -- hence the same opt-out the plain Newton has.
+            if cache.parameters.enforce_monotonic_convergence && Θk ≥ 1.0
                 @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
                 return false
             end

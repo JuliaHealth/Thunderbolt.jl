@@ -948,6 +948,180 @@ end
     @test integrator.t == 0.0
 end
 
+"""
+The condensed cuboid of the two testsets above, solved with whichever global Newton is handed in.
+Fully activated, so the local problems are genuinely nonlinear at every quadrature point.
+"""
+function solve_condensed_cuboid(sarcomere, newton, Δt, tend)
+    mesh = generate_mesh(Hexahedron, (2, 2, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 1.0, 0.2)))
+    microstructure = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
+    )
+    model = QuasiStaticModel(
+        :d,
+        ActiveStressModel(
+            Guccione1991PassiveModel(),
+            SimpleActiveStress(; Tmax = 220e3),
+            Thunderbolt.CaDrivenInternalSarcomereModel(sarcomere, ConstantCoefficient(1.0)),
+            microstructure,
+        ),
+        (),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x, t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x, t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    ]
+    quasistaticform = semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, tend))
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(newton = newton),
+    )
+    integrator = init(problem, timestepper, dt = Δt, verbose = false)
+    solve!(integrator)
+    return integrator
+end
+
+function solve_viscoelastic_creep(newton)
+    mesh = generate_mesh(Hexahedron, (2, 1, 1))
+    material = Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> (0.1, 0.0, 0.0), [1, 2, 3]),
+    ]
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(:d, material, ()),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 0.3))
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(newton = newton),
+    )
+    integrator = init(problem, timestepper, dt = 0.1, verbose = false)
+    solve!(integrator)
+    return integrator
+end
+
+function solve_prestressed_sheet(newton)
+    grid = generate_grid(Hexahedron, (3, 3, 1), Vec((-1.0, -1.0, -0.2)), Vec((1.0, 1.0, 0.2)))
+    addcellset!(grid, "myocardium", x->true)
+    mesh = to_mesh(grid)
+    ortho_ms = ConstantCoefficient(
+        OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x, t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x, t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> [0.01t], [1])
+        Dirichlet(:d, getfacetset(mesh, "top"), (x, t) -> [0.02t], [2])
+        Dirichlet(:d, getfacetset(mesh, "back"), (x, t) -> [0.03t], [3])
+    ]
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(
+            :d,
+            PrestressedMechanicalModel(
+                PK1Model(HolzapfelOgden2009Model(), ortho_ms),
+                ConstantCoefficient(Tensor{2, 3}((1.1, 0.1, 0.0, 0.2, 0.9, 0.1, -0.1, 0.0, 1.0))),
+            ),
+        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 1.0))
+    integrator = init(problem, HomotopyPathSolver(newton), dt = 1.0, verbose = false)
+    solve!(integrator)
+    return integrator
+end
+
+@testset "Simplified Newton and Eisenstat-Walker forcing" begin
+    # Both change how the iteration is run, not what it converges to, so the assertion throughout is
+    # that the solution is the one the ordinary Newton finds.
+    #
+    # They are also the only thing that exercises the residual-only assembly path: with a full Newton
+    # `nlsolve!` never asks for a residual without a tangent. That path is not a subset of the
+    # linearization -- it re-solves the local problems and it reaches the materials through
+    # `stress_function` rather than `stress_and_tangent`.
+    direct = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 20, tol = 1e-8)
+
+    # Both sarcomere variants, because the rate-coupled and the rate-free local problem reach the
+    # residual through different entry points. The wrapped one needs the shorter step: dropping the
+    # velocity coupling makes its local problem stiffer, and it fails to converge at Δt = 2.5 with
+    # the ordinary Newton too.
+    @testset "Condensed sarcomere, $(nameof(typeof(sarcomere)))" for (sarcomere, Δt, tend) in (
+        (Thunderbolt.RDQ20MFModel(), 2.5, 5.0),
+        (Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()), 0.1, 0.3),
+    )
+        reference = solve_condensed_cuboid(sarcomere, direct, Δt, tend)
+        @test reference.sol.retcode == SciMLBase.ReturnCode.Success
+
+        # A simplified Newton converges linearly, so it needs a far more generous iteration budget
+        # than the quadratic one it is compared against.
+        simplified = solve_condensed_cuboid(
+            sarcomere,
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 200,
+                tol = 1e-8,
+                simplified_newton = true,
+            ),
+            Δt,
+            tend,
+        )
+        @test simplified.sol.retcode == SciMLBase.ReturnCode.Success
+        @test simplified.u ≈ reference.u rtol=1e-6
+    end
+
+    # The activated sarcomere problem is too ill-conditioned for unpreconditioned GMRES, so the
+    # forcing term is exercised on the linear viscoelastic one, where GMRES is the default anyway.
+    @testset "Viscoelastic creep" begin
+        reference = solve_viscoelastic_creep(direct)
+        @test reference.sol.retcode == SciMLBase.ReturnCode.Success
+
+        for newton in (
+            NewtonRaphsonSolver(tol = 1e-8, simplified_newton = true),
+            NewtonRaphsonSolver(tol = 1e-8, forcing = EisenstatWalkerForcing()),
+            NewtonRaphsonSolver(
+                tol = 1e-8,
+                forcing = EisenstatWalkerForcing(),
+                simplified_newton = true,
+            ),
+        )
+            integrator = solve_viscoelastic_creep(newton)
+            @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+            @test integrator.u ≈ reference.u rtol=1e-8
+        end
+    end
+
+    # `PrestressedMechanicalModel` has its own residual-only entry point, which pulls the stress back
+    # from the intermediate configuration without ever forming a tangent.
+    @testset "Prestressed sheet" begin
+        reference = solve_prestressed_sheet(direct)
+        @test reference.sol.retcode == SciMLBase.ReturnCode.Success
+
+        simplified = solve_prestressed_sheet(
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 100,
+                tol = 1e-8,
+                simplified_newton = true,
+            ),
+        )
+        @test simplified.sol.retcode == SciMLBase.ReturnCode.Success
+        @test simplified.u ≈ reference.u rtol=1e-6
+    end
+end
+
 @testset "A rate dependent material rejects rate-free kinematics" begin
     # `HomotopyPathSolver` is continuation, not a time scheme: it has no previous solution and no
     # timestep, so a material carrying an evolving internal variable has to be rejected -- and

@@ -1800,7 +1800,7 @@ function solve_local_constraint(
         coefficients,
         Δt,
     )
-    ∂P∂Q = Tensors.gradient(εᵛ->stress_function(material_model, ε, coefficients, εᵛ), Q)
+    ∂P∂Q = Tensors.gradient(εᵛ->_maxwell_stress(material_model, ε, εᵛ), Q)
 
     return Q, ∂P∂Q ⊡ dQdF
 end
@@ -1824,7 +1824,10 @@ function solve_local_constraint_state_only(
     return Q
 end
 
-function stress_function(material::LinearMaxwellMaterial, ε, coefficients, εᵛ)
+# Small strain material: everything it computes is a function of `ε`, so the routines below take it
+# directly. The *interface* method `stress_function` takes `F` like every other material's, because
+# the element hands out kinematics and does not know which strain measure a material works in.
+function _maxwell_stress(material::LinearMaxwellMaterial, ε, εᵛ)
     (; E₀, E₁, μ, η₁, ν) = material
     I = one(ε)
     c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
@@ -1833,6 +1836,13 @@ function stress_function(material::LinearMaxwellMaterial, ε, coefficients, ε�
     return E₀ * ℂ ⊡ ε + E₁ * ℂ ⊡ (ε - εᵛ)
 end
 
+stress_function(
+    material_model::LinearMaxwellMaterial,
+    F::Tensor{2},
+    coefficients,
+    εᵛ::SymmetricTensor{2},
+) = _maxwell_stress(material_model, symmetric(F - one(F)), εᵛ)
+
 function stress_and_tangent(
     material_model::LinearMaxwellMaterial,
     F::Tensor{2},
@@ -1840,7 +1850,7 @@ function stress_and_tangent(
     εᵛ::SymmetricTensor{2},
 )
     ε = symmetric(F - one(F))
-    ∂σ∂ε, σ = Tensors.gradient(ε->stress_function(material_model, ε, coefficients, εᵛ), ε, :all)
+    ∂σ∂ε, σ = Tensors.gradient(ε->_maxwell_stress(material_model, ε, εᵛ), ε, :all)
     return σ, ∂σ∂ε
 end
 
