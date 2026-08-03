@@ -1338,13 +1338,27 @@ function solve_internal_timestep(
     # full accuracy once it is close. `params.tol` is the floor -- the local residual is an absolute
     # quantity on a scale unrelated to the global one, so demanding more than `params.tol` is neither
     # useful nor reachable within `max_iters`. `outer_tol = 0` means "no relaxation".
-    rtol = max(lcache.params.tol, lcache.outer_tol)
+    rtol = max(lcache.params.tol, lcache.outer_tol[1])
     for newton_iter = 1:lcache.params.max_iters
         ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
         local_residual!(R, Q, λ, dλdt)
-        ΔQ = J \ R
-        Q .-= ΔQ
         residualnorm = norm(R)
+        # A singular local Jacobian is a failure the time integrator can act on by shortening the
+        # step, so it must not escape as an exception -- `J \ R` would throw.
+        Jfac = lu(J; check = false)
+        if !issuccess(Jfac)
+            record_local_solve!(
+                lcache,
+                cid,
+                qp.i,
+                SciMLBase.ReturnCode.InternalLinearSolveFailed,
+                residualnorm,
+            )
+            @debug "Local Newton hit a singular Jacobian at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
+                :nlsolve
+            return Q, J
+        end
+        Q .-= Jfac \ R
         if residualnorm < rtol
             break
         elseif newton_iter == lcache.params.max_iters
@@ -1433,9 +1447,12 @@ end
     return J \ -∂fₗ∂x
 end
 
-@inline _local_solve_ok(state_cache) =
-    state_cache.local_solver_cache.retcode ∈
-    (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+# Whether the local solve at *this* quadrature point succeeded. The sensitivity solves below it
+# operate on the Jacobian it left behind, so they must not run on a point that failed.
+@inline _local_solve_ok(state_cache, geometry_cache, qp) =
+    !_local_solve_failed(
+        local_solve_report(state_cache.local_solver_cache, cellid(geometry_cache), qp.i),
+    )
 
 function solve_local_constraint(
     F::Tensor{2, dim},
@@ -1449,9 +1466,6 @@ function solve_local_constraint(
     Qknownflat,
     Δt,
 ) where {dim}
-    # Early out if any of the previous local solves failed
-    _local_solve_ok(state_cache) || return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
-
     f₀ = coefficients.f
     dλdF, λ = Tensors.gradient(F -> _fiber_stretch(F, f₀), F, :all)
     # A zero rate poses the rate-free local problem, `dₜQ = L(F, Q)`.
@@ -1470,7 +1484,8 @@ function solve_local_constraint(
         Δt,
     )
     # Abort if local solve failed
-    _local_solve_ok(state_cache) || return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
+    _local_solve_ok(state_cache, geometry_cache, qp) ||
+        return Qflat, zero(Tensor{4, dim, Float64, 4^dim})
 
     # Reached outside the closures so they capture the leaf models rather than all of
     # `material_model` -- see the closure-specialization note in CLAUDE.md.
@@ -1536,7 +1551,6 @@ function solve_local_constraint(
     Δt,
 ) where {dim}
     Z = zero(Tensor{4, dim, Float64, 4^dim})
-    _local_solve_ok(state_cache) || return Qflat, Z, Z
 
     f₀ = coefficients.f
     ∂²λ∂F², dλdF, λ = Tensors.hessian(F -> _fiber_stretch(F, f₀), F, :all)
@@ -1555,7 +1569,7 @@ function solve_local_constraint(
         Qknownflat,
         Δt,
     )
-    _local_solve_ok(state_cache) || return Qflat, Z, Z
+    _local_solve_ok(state_cache, geometry_cache, qp) || return Qflat, Z, Z
 
     contraction_model   = material_model.contraction_model
     active_stress_model = material_model.active_stress_model
@@ -1654,9 +1668,6 @@ function solve_local_constraint_state_only(
     Qknownflat,
     Δt,
 ) where {dim}
-    # Early out if any of the previous local solves failed
-    _local_solve_ok(state_cache) || return Qflat
-
     # Only the gradient is needed here: no tangent is requested, so the curvature term that the
     # rate-coupled `solve_local_constraint` needs never arises.
     f₀ = coefficients.f
@@ -1675,7 +1686,7 @@ function solve_local_constraint_state_only(
         Δt,
     )
     # Abort if local solve failed
-    _local_solve_ok(state_cache) || return Qflat
+    _local_solve_ok(state_cache, geometry_cache, qp) || return Qflat
 
     return Q
 end

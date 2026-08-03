@@ -48,19 +48,26 @@ function setup_local_solve_reports(dh, lvh, ndofs_per_quadrature_point::Int, cel
     return DenseDataRange(fill(LocalSolveReport(), offsets[end]-1), offsets)
 end
 
-Base.@kwdef mutable struct GenericLocalNonlinearSolverCache{
+"""
+    GenericLocalNonlinearSolverCache
+
+Immutable, so that it can be passed to a device kernel by value. Everything that changes during a
+solve lives in the arrays it holds: the outer solver's current tolerance in `outer_tol`, and the
+per-quadrature-point outcomes in `reports`.
+"""
+Base.@kwdef struct GenericLocalNonlinearSolverCache{
     JacobianType,
     ResidualType,
     CorrectorRhsType,
     ReportsType,
+    TolType,
 }
-    const params::GenericLocalNonlinearSolver
-    const J::JacobianType
-    const residual::ResidualType
-    const rhs_corrector::CorrectorRhsType
-    const reports::ReportsType = nothing
-    outer_tol::Float64 = 0.0
-    retcode::SciMLBase.ReturnCode.T = SciMLBase.ReturnCode.Default
+    params::GenericLocalNonlinearSolver
+    J::JacobianType
+    residual::ResidualType
+    rhs_corrector::CorrectorRhsType
+    reports::ReportsType = nothing
+    outer_tol::TolType = [0.0]
 end
 
 function duplicate_for_device(device, cache::GenericLocalNonlinearSolverCache)
@@ -69,18 +76,18 @@ function duplicate_for_device(device, cache::GenericLocalNonlinearSolverCache)
         J             = duplicate_for_device(device, cache.J),
         residual      = duplicate_for_device(device, cache.residual),
         rhs_corrector = duplicate_for_device(device, cache.rhs_corrector),
-        # Deliberately shared: workers write disjoint slots, and a failure must survive the worker.
+        # Both are deliberately shared rather than copied: workers write disjoint report slots and a
+        # failure must survive the worker, and the tolerance is written once per outer iteration and
+        # has to reach every worker.
         reports   = cache.reports,
         outer_tol = cache.outer_tol,
-        retcode   = cache.retcode,
     )
 end
 
 """
     record_local_solve!(local_solver_cache, cellid, qpi, retcode, residualnorm)
 
-Record the outcome of one local solve, both on the cache -- where the material routine reads it back
-to skip the sensitivity solves of a failed point -- and in the shared per-quadrature-point store.
+Record the outcome of one local solve in the shared per-quadrature-point store.
 """
 @inline function record_local_solve!(
     local_solver_cache::GenericLocalNonlinearSolverCache,
@@ -89,19 +96,30 @@ to skip the sensitivity solves of a failed point -- and in the shared per-quadra
     retcode,
     residualnorm,
 )
-    local_solver_cache.retcode = retcode
     reports = local_solver_cache.reports
     reports === nothing && return nothing
     get_data_for_index(reports, cellid)[qpi] = LocalSolveReport(retcode, residualnorm)
     return nothing
 end
 
-# The scalar `retcode` lives on the cache, which `duplicate_for_device` copies per worker, so it only
-# ever reports what *this* worker last did. The store is shared, hence authoritative.
+"""
+    local_solve_report(local_solver_cache, cellid, qpi)
+
+The outcome recorded for one quadrature point of the current assembly pass.
+"""
+@inline function local_solve_report(
+    local_solver_cache::GenericLocalNonlinearSolverCache,
+    cellid,
+    qpi,
+)
+    reports = local_solver_cache.reports
+    reports === nothing && return LocalSolveReport()
+    return get_data_for_index(reports, cellid)[qpi]
+end
+
 function check_local_solve_covergence(local_solver_cache::GenericLocalNonlinearSolverCache)
     reports = local_solver_cache.reports
-    reports === nothing && return local_solver_cache.retcode ∉
-           (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+    reports === nothing && return false
     return any(_local_solve_failed, reports.data)
 end
 function check_local_solve_covergence(local_solver_cache::Tuple)
@@ -139,16 +157,14 @@ end
 """
     reset_local_solve_status!(local_solver_cache)
 
-Clear the local solvers' failure flag and reports before an assembly pass, so
-`check_local_solve_covergence` reports on *that* pass alone.
+Clear the recorded outcomes before an assembly pass, so `check_local_solve_covergence` reports on
+*that* pass alone.
 
-Without this the flag latches: a failed local solve is only ever written by the local Newton, and the
-condensation entry points skip that Newton entirely once the flag is set. The first local failure
-would therefore poison every later assembly — including the retry after the time integrator shortens
-`dt`, which is exactly the mechanism meant to recover from it.
+Without this the failures latch, and the first one would poison every later assembly — including the
+retry after the time integrator shortens `dt`, which is exactly the mechanism meant to recover
+from it.
 """
 function reset_local_solve_status!(local_solver_cache::GenericLocalNonlinearSolverCache)
-    local_solver_cache.retcode = SciMLBase.ReturnCode.Default
     reports = local_solver_cache.reports
     reports === nothing || fill!(reports.data, LocalSolveReport())
     return nothing
@@ -161,7 +177,7 @@ function reset_local_solve_status!(local_solver_cache::AbstractVector)
 end
 
 function set_local_solver_tol(local_solver_cache::GenericLocalNonlinearSolverCache, tol)
-    local_solver_cache.outer_tol = tol
+    local_solver_cache.outer_tol[1] = tol
 end
 function set_local_solver_tol(local_solver_cache::Tuple, tol)
     set_local_solver_tol.(local_solver_cache, tol)
