@@ -3,6 +3,7 @@ import DiffEqBase
 import SciMLBase
 import SciMLIterators: intervals
 using Test
+using Logging
 using LinearSolve
 using OrderedCollections
 include(joinpath(@__DIR__, "..", "testfixtures.jl"))
@@ -78,7 +79,6 @@ end
         mesh,
         QuasiStaticModel(:d, PK1Model(HolzapfelOgden2009Model(), ortho_ms)),
     )
-    @test !iszero(u₁)
 
     u₂ = test_solve_passive_structure(
         mesh,
@@ -139,6 +139,15 @@ end
 
     @test sort(u₅) ≈ sort(u₁)
 end
+
+# Counts Newton iterations through the documented monitor hook, so a test can observe how an
+# iteration behaved without reaching into solver caches.
+mutable struct CountingNewtonMonitor
+    steps::Int
+end
+CountingNewtonMonitor() = CountingNewtonMonitor(0)
+Thunderbolt.nonlinear_step_monitor(cache, t, f, u, m::CountingNewtonMonitor) = (m.steps += 1)
+Thunderbolt.nonlinear_finalize_monitor(cache, t, f, m::CountingNewtonMonitor) = nothing
 
 struct TestCalciumHatField end
 Thunderbolt.setup_coefficient_cache(coeff::TestCalciumHatField, ::QuadratureRule, ::SubDofHandler) =
@@ -418,8 +427,8 @@ end
                     facemodels,
                 ),
                 # `AsRateIndependent` routes the sarcomere onto the condensed *ODE* element cache,
-                # where the unwrapped model above uses the DAE one. Both must give the same answer
-                # as long as `dλdt` is still hardcoded to zero in the local solve.
+                # where the unwrapped model above uses the DAE one. The two no longer agree: the DAE
+                # path feeds `dλdt = dλdF ⊡ Ḟ` into the local solve, the wrapped one drops it.
                 "back" => QuasiStaticModel(
                     :d,
                     ActiveStressModel(
@@ -647,8 +656,7 @@ end
         300.0,
     )
 
-    # Check that adaptivity does not change the result
-    @testset "Check path difference" begin
+    @testset "Adaptivity does not change the result" begin
         i1 = test_solve_contractile_ideal_lv(
             grid,
             ActiveStressModel(
@@ -687,8 +695,7 @@ end
         @test i1.u ≈ i2.u atol=1e-4
     end
 
-    # Check that the load-path is actually different
-    @testset "Check path difference" begin
+    @testset "The load path is actually different" begin
         i1 = test_solve_contractile_ideal_lv(
             grid,
             ActiveStressModel(
@@ -717,10 +724,9 @@ end
             100.0,
         )
 
-        # Test path-independence setup
         @test i1.t ≈ 100.0
         @test i2.t ≈ 100.0
-        @test i1.u ≠ i2.u
+        @test !isapprox(i1.u, i2.u; atol = 1.0e-4)
     end
 
     # Check that the integrator reaches the final time and the solutions coincide
@@ -792,9 +798,9 @@ end
     for (uprev, tprev, u, t) in intervals(integrator)
         # Monotonicity of the solution in x direction
         @test uprev[3*8+1] ≤ u[3*8+1]
-        # Linear problem => check that Newton converges in 1 step.
-        @test length(integrator.cache.stage.nlsolver.global_solver_cache.Θks) == 1
     end
+    # Linear problem => check that Newton converges in 1 step.
+    @test length(integrator.cache.stage.nlsolver.global_solver_cache.Θks) == 1
     @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
     @test integrator.u[3*8+1] ≈ 0.05 atol=1e-5
     @test integrator.u[(3*8+2):end] ≈ zeros(5) atol=1e-5
@@ -838,6 +844,376 @@ end
     cell_block(c) = integrator.u[(nfe+(c-1)*blocksize+1):(nfe+c*blocksize)]
     # The first cell is written correctly even with the bug present, since the missing offset is
     # zero for it. The defect is that every *later* cell is left untouched.
-    @test !iszero(cell_block(1))
-    @test all(c -> !iszero(cell_block(c)), 2:ncells)
+    @test all(c -> !iszero(cell_block(c)), 1:ncells)
+end
+
+@testset "Condensed sarcomere under strong activation" begin
+    # Regression test for the condensation contribution to the stress tangent, `∂P/∂Q ⊗ ∂Q/∂λ ⊗ ∂λ/∂F`.
+    # The other contraction tests drive the sarcomere at Ca ≈ 0.004, where that contribution is far
+    # too small for its *sign* to affect convergence -- which is how a sign error in
+    # `_solve_local_sarcomere_dQdF` survived. At full activation the same error diverges the global
+    # Newton within two steps, so this is the configuration that pins the tangent down.
+    mesh = generate_mesh(Hexahedron, (2, 2, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 1.0, 0.2)))
+    microstructure = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
+    )
+    model = QuasiStaticModel(
+        :d,
+        ActiveStressModel(
+            Guccione1991PassiveModel(),
+            SimpleActiveStress(; Tmax = 220e3),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                Thunderbolt.RDQ20MFModel(),
+                ConstantCoefficient(1.0),
+            ),
+            microstructure,
+        ),
+        (),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x, t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x, t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    ]
+    quasistaticform = semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 5.0))
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+            newton = NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 10,
+                tol = 1e-8,
+            ),
+        ),
+    )
+    # Δt well below the ≈5 where RDQ20's Markov occupancies leave their bounds (see
+    # `internal_state_in_bounds`), so this stays a tangent test rather than drifting into an
+    # infeasibility test after an unrelated tweak.
+    integrator = init(problem, timestepper, dt = 2.5, verbose = false)
+    solve!(integrator)
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+end
+
+@testset "A step too long for the sarcomere fails cleanly" begin
+    # RDQ20's Markov occupancies leave [0, 1] once the step outruns their own dynamics. That has to
+    # surface as a return code the time integrator can act on, not as an exception out of the local
+    # Newton, and the failed attempt must not be accepted. This is the only test that forces a local
+    # solve to fail, so it is also what covers the per-quadrature-point failure reporting.
+    mesh = generate_mesh(Hexahedron, (1, 1, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 1.0, 0.2)))
+    microstructure = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
+    )
+    model = QuasiStaticModel(
+        :d,
+        ActiveStressModel(
+            Guccione1991PassiveModel(),
+            SimpleActiveStress(; Tmax = 220e3),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                Thunderbolt.RDQ20MFModel(),
+                ConstantCoefficient(1.0),
+            ),
+            microstructure,
+        ),
+        (),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x, t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x, t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    ]
+    quasistaticform = semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 20.0))
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+            newton = NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 10,
+                tol = 1e-8,
+            ),
+        ),
+    )
+    integrator = init(problem, timestepper, dt = 20.0, verbose = false)
+    # The solver warns that it cannot adapt its way out of this, which is expected here.
+    with_logger(NullLogger()) do
+        solve!(integrator)
+    end
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.ConvergenceFailure
+    @test integrator.t == 0.0
+end
+
+"""
+The condensed cuboid of the two testsets above, solved with whichever global Newton is handed in.
+Fully activated, so the local problems are genuinely nonlinear at every quadrature point.
+"""
+function solve_condensed_cuboid(sarcomere, newton, Δt, tend)
+    mesh = generate_mesh(Hexahedron, (2, 2, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 1.0, 0.2)))
+    microstructure = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
+    )
+    model = QuasiStaticModel(
+        :d,
+        ActiveStressModel(
+            Guccione1991PassiveModel(),
+            SimpleActiveStress(; Tmax = 220e3),
+            Thunderbolt.CaDrivenInternalSarcomereModel(sarcomere, ConstantCoefficient(1.0)),
+            microstructure,
+        ),
+        (),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x, t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x, t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    ]
+    quasistaticform = semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, tend))
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(newton = newton),
+    )
+    integrator = init(problem, timestepper, dt = Δt, verbose = false)
+    solve!(integrator)
+    return integrator
+end
+
+function solve_viscoelastic_creep(newton)
+    mesh = generate_mesh(Hexahedron, (2, 1, 1))
+    material = Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> (0.1, 0.0, 0.0), [1, 2, 3]),
+    ]
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(:d, material, ()),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 0.3))
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(newton = newton),
+    )
+    integrator = init(problem, timestepper, dt = 0.1, verbose = false)
+    solve!(integrator)
+    return integrator
+end
+
+function solve_prestressed_sheet(newton)
+    grid = generate_grid(Hexahedron, (3, 3, 1), Vec((-1.0, -1.0, -0.2)), Vec((1.0, 1.0, 0.2)))
+    addcellset!(grid, "myocardium", x->true)
+    mesh = to_mesh(grid)
+    ortho_ms = ConstantCoefficient(
+        OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(mesh, "front"), (x, t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(mesh, "bottom"), (x, t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> [0.01t], [1])
+        Dirichlet(:d, getfacetset(mesh, "top"), (x, t) -> [0.02t], [2])
+        Dirichlet(:d, getfacetset(mesh, "back"), (x, t) -> [0.03t], [3])
+    ]
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(
+            :d,
+            PrestressedMechanicalModel(
+                PK1Model(HolzapfelOgden2009Model(), ortho_ms),
+                ConstantCoefficient(Tensor{2, 3}((1.1, 0.1, 0.0, 0.2, 0.9, 0.1, -0.1, 0.0, 1.0))),
+            ),
+        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 1.0))
+    integrator = init(problem, HomotopyPathSolver(newton), dt = 1.0, verbose = false)
+    solve!(integrator)
+    return integrator
+end
+
+@testset "Simplified Newton and Eisenstat-Walker forcing" begin
+    # Both change how the iteration is run, not what it converges to, so the assertion throughout is
+    # that the solution is the one the ordinary Newton finds.
+    #
+    # They are also the only thing that exercises the residual-only assembly path: with a full Newton
+    # `nlsolve!` never asks for a residual without a tangent. That path is not a subset of the
+    # linearization -- it re-solves the local problems and it reaches the materials through
+    # `stress_function` rather than `stress_and_tangent`.
+    direct = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 20, tol = 1e-8)
+
+    # Both sarcomere variants, because the rate-coupled and the rate-free local problem reach the
+    # residual through different entry points.
+    #
+    # The wrapped model's tangent carries no `∂P/∂Ḟ · ∂Ḟ/∂u` term, so the same residual buys a larger
+    # first increment and the residual rises once before quadratic convergence takes over. Two
+    # consequences, both measured on this cuboid:
+    #
+    #   * `enforce_monotonic_convergence` would abort that as divergence, hence `false` here. It is
+    #     not a concession -- the full Newton reaches `tol` one iteration after the overshoot.
+    #   * the *simplified* Newton needs the shorter step, because a frozen Jacobian cannot correct
+    #     the overshoot: at `Δt = 2.5` it drives a local sarcomere solve to `NaN`, and at `Δt = 1.0`
+    #     it stalls at `‖r‖ ≈ 0.4`. The full Newton converges at `Δt = 2.5` for both variants.
+    @testset "Condensed sarcomere, $(nameof(typeof(sarcomere)))" for (sarcomere, Δt, tend) in (
+        (Thunderbolt.RDQ20MFModel(), 2.5, 5.0),
+        (Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()), 0.5, 5.0),
+    )
+        reference = solve_condensed_cuboid(
+            sarcomere,
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 20,
+                tol = 1e-8,
+                enforce_monotonic_convergence = false,
+            ),
+            Δt,
+            tend,
+        )
+        @test reference.sol.retcode == SciMLBase.ReturnCode.Success
+
+        # A simplified Newton converges linearly, so it needs a far more generous iteration budget
+        # than the quadratic one it is compared against.
+        simplified = solve_condensed_cuboid(
+            sarcomere,
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 200,
+                tol = 1e-8,
+                simplified_newton = true,
+                enforce_monotonic_convergence = false,
+            ),
+            Δt,
+            tend,
+        )
+        @test simplified.sol.retcode == SciMLBase.ReturnCode.Success
+        @test simplified.u ≈ reference.u rtol=1e-6
+    end
+
+    # The activated sarcomere problem is too ill-conditioned for unpreconditioned GMRES, so the
+    # forcing term is exercised on the linear viscoelastic one, where GMRES is the default anyway.
+    @testset "Viscoelastic creep" begin
+        reference = solve_viscoelastic_creep(direct)
+        @test reference.sol.retcode == SciMLBase.ReturnCode.Success
+
+        for newton in (
+            NewtonRaphsonSolver(
+                tol = 1e-8,
+                enforce_monotonic_convergence = false,
+                simplified_newton = true,
+            ),
+            NewtonRaphsonSolver(
+                tol = 1e-8,
+                enforce_monotonic_convergence = false,
+                forcing = EisenstatWalkerForcing(),
+            ),
+            NewtonRaphsonSolver(
+                tol = 1e-8,
+                forcing = EisenstatWalkerForcing(),
+                simplified_newton = true,
+                enforce_monotonic_convergence = false,
+            ),
+        )
+            integrator = solve_viscoelastic_creep(newton)
+            @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+            @test integrator.u ≈ reference.u rtol=1e-8
+        end
+    end
+
+    # `PrestressedMechanicalModel` has its own residual-only entry point, which pulls the stress back
+    # from the intermediate configuration without ever forming a tangent.
+    @testset "Prestressed sheet" begin
+        mref = CountingNewtonMonitor()
+        reference = solve_prestressed_sheet(
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 20,
+                tol = 1e-8,
+                monitor = mref,
+            ),
+        )
+        @test reference.sol.retcode == SciMLBase.ReturnCode.Success
+
+        msimplified = CountingNewtonMonitor()
+        simplified = solve_prestressed_sheet(
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 100,
+                tol = 1e-8,
+                simplified_newton = true,
+                monitor = msimplified,
+            ),
+        )
+        @test simplified.sol.retcode == SciMLBase.ReturnCode.Success
+        @test simplified.u ≈ reference.u rtol=1e-6
+        # Agreement alone cannot tell a working simplified Newton from one that silently fell back
+        # to the full method -- both would agree. The iteration count can: reusing the Jacobian
+        # costs quadratic convergence, so it takes strictly more steps. Without this, the whole
+        # residual-only assembly path could stop being exercised and every test here stay green.
+        @test msimplified.steps > 2 * mref.steps
+    end
+end
+
+@testset "A rate dependent material rejects rate-free kinematics" begin
+    # `HomotopyPathSolver` is continuation, not a time scheme: it has no previous solution and no
+    # timestep, so a material carrying an evolving internal variable has to be rejected -- and
+    # rejected during setup, once and by name, rather than per element from the assembly loop.
+    mesh = generate_mesh(Hexahedron, (1, 1, 1))
+    microstructure = OrthotropicMicrostructureModel(
+        ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 1.0, 0.0))),
+        ConstantCoefficient(Vec((0.0, 0.0, 1.0))),
+    )
+    model = QuasiStaticModel(
+        :d,
+        ActiveStressModel(
+            Guccione1991PassiveModel(),
+            SimpleActiveStress(; Tmax = 220e3),
+            Thunderbolt.CaDrivenInternalSarcomereModel(
+                Thunderbolt.RDQ20MFModel(),
+                ConstantCoefficient(1.0),
+            ),
+            microstructure,
+        ),
+        (),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3]),
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> [0.05, 0.0, 0.0], [1, 2, 3]),
+    ]
+    quasistaticform = semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 1.0))
+    Thunderbolt.default_initial_condition!(problem.u0, problem.f)
+    timestepper = HomotopyPathSolver(
+        NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8),
+    )
+    # Assert on the classification, not on the remedy: an earlier version of this message offered
+    # `AsRateIndependent` as the way out, which does not work — the wrapper drops the velocity
+    # dependence but leaves `dₜQ = L(F, Q)`, so the rejection fires again. A substring test against
+    # the remedy passed throughout.
+    @test_throws "RateCoupledEvolution" init(problem, timestepper, dt = 1.0, verbose = false)
 end

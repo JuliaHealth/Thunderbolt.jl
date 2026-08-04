@@ -16,23 +16,47 @@ setup_internal_cache(::EmptyInternalModel, ::QuadratureRule, ::SubDofHandler) = 
 Holy trait classifying the evolution law of a condensed internal variable `Q`, and with it the class
 of the resulting system:
 
-| trait                 | local problem per quadrature point | resulting system        |
-| :-------------------- | :--------------------------------- | :---------------------- |
-| `NoEvolution`         | none, or algebraic `L(F, Q) = 0`    | rate free               |
-| `FirstOrderEvolution` | `dₜQ = L(F, Q)`                     | ODE in mass matrix form |
-| `RateCoupledEvolution`| `dₜQ = L(F, dₜF, Q)`                | true DAE                |
+| trait                  | local problem per quadrature point | resulting system        |
+| :--------------------- | :--------------------------------- | :---------------------- |
+| `NoEvolution`          | none — no condensed unknown at all  | rate free               |
+| `SteadyStateEvolution` | algebraic `0 = L(F, Q)`             | rate free               |
+| `FirstOrderEvolution`  | `dₜQ = L(F, Q)`                     | ODE in mass matrix form |
+| `RateCoupledEvolution` | `dₜQ = L(F, dₜF, Q)`                | true DAE                |
+
+The first two rows are both rate free but are *not* interchangeable: `NoEvolution` means there is
+nothing to condense, `SteadyStateEvolution` means there is a local problem to solve that happens to
+carry no time derivative. They therefore select different element caches, and only the second needs a
+local solver.
+
+Note what separates `SteadyStateEvolution` from `FirstOrderEvolution`, since the names in the cache
+hierarchy invite the opposite reading: `RateIndependentCondensationMaterialStateCache` means "`L`
+does not read `dₜF`", not "no rate at all", and its local problem still needs a timestep.
 
 This is a property of the *model*, deliberately not of the state cache it is lowered into. The
 `Empty…CondensationMaterialStateCache` types say only that a model needs no extra scratch space for
 its evaluation; they say nothing about whether it carries an internal variable or how that variable
 evolves. Reading the classification off them conflates the two questions.
 
-It is also askable before a mesh exists, which the cache-based answer is not.
+It is also askable before a mesh exists, which the cache-based answer is not — and that is what lets
+a solver reject an incompatible model during setup rather than from the assembly loop.
 """
 abstract type InternalVariableEvolution end
 struct NoEvolution <: InternalVariableEvolution end
+struct SteadyStateEvolution <: InternalVariableEvolution end
 struct FirstOrderEvolution <: InternalVariableEvolution end
 struct RateCoupledEvolution <: InternalVariableEvolution end
+
+"""
+    is_rate_free(evolution) -> Bool
+
+Whether a local problem of this class can be posed without a timestep and a known previous state.
+
+This is the question a continuation solver asks, and it is deliberately not `evolution isa
+NoEvolution`: an algebraic constraint is condensed but rate free.
+"""
+is_rate_free(::InternalVariableEvolution) = false
+is_rate_free(::NoEvolution) = true
+is_rate_free(::SteadyStateEvolution) = true
 
 """
     internal_variable_evolution(model) -> InternalVariableEvolution
@@ -43,7 +67,8 @@ model they carry, mirroring `setup_internal_cache`.
 internal_variable_evolution(model) = error(
     "$(typeof(model)) does not declare how its internal variable evolves. Add a method " *
     "`Thunderbolt.internal_variable_evolution(::$(typeof(model)))` returning `NoEvolution()`, " *
-    "`FirstOrderEvolution()` or `RateCoupledEvolution()`, or delegate to the internal model it wraps.",
+    "`SteadyStateEvolution()`, `FirstOrderEvolution()` or `RateCoupledEvolution()`, or delegate to " *
+    "the internal model it wraps.",
 )
 internal_variable_evolution(::EmptyInternalModel) = NoEvolution()
 

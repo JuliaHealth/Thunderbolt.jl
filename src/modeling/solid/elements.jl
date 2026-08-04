@@ -180,20 +180,21 @@ function assemble_element!(
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        # Compute deformation gradient F
+        # A rate-free scheme has no previous configuration to form a rate from.
         ∇u = function_gradient(cv, qp, dₑ)
-        F = one(∇u) + ∇u
+        kinematics = DeformationGradient(one(∇u) + ∇u)
 
         # Compute stress and tangent
-        P, ∂P∂F = material_routine(
+        P, sensitivities = material_routine(
             constitutive_model,
-            F,
+            kinematics,
             coefficient_cache,
             internal_cache,
             geometry_cache,
             qp,
             time,
         )
+        tangent = consistent_tangent(sensitivities)
 
         # Loop over test functions
         for i = 1:ndofs
@@ -202,11 +203,11 @@ function assemble_element!(
             # Add contribution to the residual from this test function
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
-            ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
+            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
             for j = 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΩ
+                Kₑ[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
             end
         end
     end
@@ -228,20 +229,20 @@ function assemble_element!(
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        # Compute deformation gradient F
         ∇u = function_gradient(cv, qp, dₑ)
-        F = one(∇u) + ∇u
+        kinematics = DeformationGradient(one(∇u) + ∇u)
 
         # Compute "tangent only"
-        _, ∂P∂F = material_routine(
+        _, sensitivities = material_routine(
             constitutive_model,
-            F,
+            kinematics,
             coefficient_cache,
             internal_cache,
             geometry_cache,
             qp,
             time,
         )
+        tangent = consistent_tangent(sensitivities)
 
         # Loop over test functions
         for i = 1:ndofs
@@ -250,11 +251,11 @@ function assemble_element!(
             # Add contribution to the residual from this test function
             # residualₑ[i] += ∇δui ⊡ P * dΩ
 
-            ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
+            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
             for j = 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΩ
+                Kₑ[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
             end
         end
     end
@@ -276,14 +277,13 @@ function assemble_element!(
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        # Compute deformation gradient F
         ∇u = function_gradient(cv, qp, dₑ)
-        F = one(∇u) + ∇u
+        kinematics = DeformationGradient(one(∇u) + ∇u)
 
         # Compute stress only
         P = reduced_material_routine(
             constitutive_model,
-            F,
+            kinematics,
             coefficient_cache,
             internal_cache,
             geometry_cache,
@@ -314,6 +314,47 @@ end
 # into. The local solve writes its result back into the `Qₑ` view; `store_condensed_element_unknowns!`
 # is what copies that tail back into the global solution vector.
 
+# Forming the rate and stating how it linearizes are the *scheme's* two contributions, and these are
+# the only places in the element layer that know which scheme is running. Within `gto1` the rate is
+# the backward difference `Ḟ = dₜ(I + ∇u)`, hence `∂Ḟ/∂u = 1/Δt`.
+#
+# The two are defined side by side deliberately: a scheme that changes how the rate is formed must
+# change its linearization in the same breath, and splitting them across the file is how a `1/Δt`
+# quietly outlives the difference quotient it belongs to. Newmark replaces both with `γ/(βΔt)`;
+# an SDIRK stage in rate form moves the timestep onto `∂F∂u` instead (see `KinematicLinearization`).
+#
+# Dispatching on the cache means the ODE cache does not pay for the second gradient evaluation: its
+# local problem `dₜQ = L(F, Q)` cannot read a rate, so offering one would be dead work — and its
+# linearization correspondingly has no rate slot.
+@inline function compute_kinematic_quantities(
+    e::QuasiStaticCondensedODEElementCache,
+    qp,
+    dₑ,
+    dₑprev,
+    Δt,
+)
+    ∇u = function_gradient(e.cv, qp, dₑ)
+    return DeformationGradient(one(∇u) + ∇u)
+end
+
+@inline function compute_kinematic_quantities(
+    e::QuasiStaticCondensedDAEElementCache,
+    qp,
+    dₑ,
+    dₑprev,
+    Δt,
+)
+    ∇u     = function_gradient(e.cv, qp, dₑ)
+    ∇uprev = function_gradient(e.cv, qp, dₑprev)
+    return DeformationGradientWithRate(one(∇u) + ∇u, (∇u - ∇uprev) / Δt)
+end
+
+@inline compute_kinematic_linearization(::QuasiStaticCondensedODEElementCache, Δt) =
+    KinematicLinearization(one(Δt))
+
+@inline compute_kinematic_linearization(::QuasiStaticCondensedDAEElementCache, Δt) =
+    KinematicLinearization(one(Δt), inv(Δt))
+
 function FerriteOperators.assemble_element_gto1!(
     Kₑ::AbstractMatrix,
     residualₑ::AbstractVector,
@@ -328,19 +369,18 @@ function FerriteOperators.assemble_element_gto1!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    dₑprev, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
 
     reinit!(cv, geometry_cache)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        ∇u = function_gradient(cv, qp, dₑ)
-        F = one(∇u) + ∇u
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, dₑprev, Δt)
 
-        P, ∂P∂F = material_routine(
+        P, sensitivities = material_routine(
             constitutive_model,
-            F,
+            kinematics,
             coefficient_cache,
             internal_cache,
             geometry_cache,
@@ -350,15 +390,17 @@ function FerriteOperators.assemble_element_gto1!(
             @view(Qₑprev[:, qp.i]),
             Δt,
         )
+        tangent =
+            consistent_tangent(sensitivities, compute_kinematic_linearization(element_cache, Δt))
 
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
-            ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
+            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
             for j = 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
-                Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΩ
+                Kₑ[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
             end
         end
     end
@@ -377,20 +419,19 @@ function FerriteOperators.assemble_element_gto1!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    dₑprev, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
 
     reinit!(cv, geometry_cache)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        ∇u = function_gradient(cv, qp, dₑ)
-        F = one(∇u) + ∇u
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, dₑprev, Δt)
 
         # Tangent only
-        _, ∂P∂F = material_routine(
+        _, sensitivities = material_routine(
             constitutive_model,
-            F,
+            kinematics,
             coefficient_cache,
             internal_cache,
             geometry_cache,
@@ -400,13 +441,15 @@ function FerriteOperators.assemble_element_gto1!(
             @view(Qₑprev[:, qp.i]),
             Δt,
         )
+        tangent =
+            consistent_tangent(sensitivities, compute_kinematic_linearization(element_cache, Δt))
 
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
-            ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
+            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
             for j = 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
-                Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΩ
+                Kₑ[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
             end
         end
     end
@@ -425,20 +468,19 @@ function FerriteOperators.assemble_element_gto1!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    dₑprev, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
 
     reinit!(cv, geometry_cache)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        ∇u = function_gradient(cv, qp, dₑ)
-        F = one(∇u) + ∇u
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, dₑprev, Δt)
 
         # Stress only
         P = reduced_material_routine(
             constitutive_model,
-            F,
+            kinematics,
             coefficient_cache,
             internal_cache,
             geometry_cache,
@@ -556,6 +598,11 @@ scratch space, which is a different question and gives the wrong answer for an u
 dependent model.
 """
 quasistatic_element_cache_type(::NoEvolution) = QuasiStaticElementCache
+# A steady state material condenses, but its local problem carries no time derivative, so it
+# assembles through the rate-free element cache. Whether a cell carries condensed unknowns is decided
+# by `internal_variable_size` of the model, not by the element cache type, so this cache serves both
+# rows of the rate-free half of the table.
+quasistatic_element_cache_type(::SteadyStateEvolution) = QuasiStaticElementCache
 quasistatic_element_cache_type(::FirstOrderEvolution) = QuasiStaticCondensedODEElementCache
 quasistatic_element_cache_type(::RateCoupledEvolution) = QuasiStaticCondensedDAEElementCache
 

@@ -718,19 +718,21 @@ version = "1.4.0"
 
 [[deps.Ferrite]]
 deps = ["EnumX", "ForwardDiff", "LinearAlgebra", "NearestNeighbors", "OrderedCollections", "Preferences", "Reexport", "SparseArrays", "Tensors", "WriteVTK"]
-git-tree-sha1 = "f6f82e13de587341d28bd267a705f0a3dba5b1aa"
+git-tree-sha1 = "ba6bba814bb9dcf6518f66b541d5c3cedf094ef3"
 uuid = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
-version = "1.5.0"
+version = "1.6.0"
 
     [deps.Ferrite.extensions]
     FerriteBlockArrays = "BlockArrays"
     FerriteMetis = "Metis"
     FerriteSparseMatrixCSR = "SparseMatricesCSR"
+    FerriteVTKHDF = "VTKHDF"
 
     [deps.Ferrite.weakdeps]
     BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
     Metis = "2679e427-3c69-5b7f-982b-ece356f1e94b"
     SparseMatricesCSR = "a0a7dd2c-ebf4-11e9-1f05-cf50bc540ca1"
+    VTKHDF = "45d8cf6f-ab5f-45bc-ab92-77e36ab192e6"
 
 [[deps.FerriteGmsh]]
 deps = ["Ferrite", "Gmsh"]
@@ -752,9 +754,9 @@ version = "0.2.0"
 
 [[deps.FerriteOperators]]
 deps = ["Adapt", "Atomix", "ConcreteStructs", "Ferrite", "LinearAlgebra", "Reexport", "SparseArrays", "StaticArrays", "TimerOutputs", "Unrolled", "VTKBase", "WriteVTK"]
-git-tree-sha1 = "7acf6244ef557f1291a0e3240ac76a052299ca8c"
+git-tree-sha1 = "f91221157dd304030a94461a6573a8ee8cd85306"
 uuid = "27d9367a-5072-424e-9c5f-fe582399bac3"
-version = "0.3.4"
+version = "0.3.6"
 weakdeps = ["Polyester"]
 
     [deps.FerriteOperators.extensions]
@@ -817,9 +819,9 @@ version = "1.3.7"
 
 [[deps.ForwardDiff]]
 deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions"]
-git-tree-sha1 = "73d5084cae45f9d0857776ad78cf303fec09eb02"
+git-tree-sha1 = "0cb6c10c4faf76da01ddcd5b9307d4af5285c488"
 uuid = "f6369f11-7733-5829-9624-2563aa707210"
-version = "1.4.3"
+version = "1.4.4"
 weakdeps = ["StaticArrays"]
 
     [deps.ForwardDiff.extensions]
@@ -1148,9 +1150,9 @@ weakdeps = ["EnzymeCore", "LinearAlgebra", "SparseArrays"]
 
 [[deps.Krylov]]
 deps = ["LinearAlgebra", "Printf", "SparseArrays"]
-git-tree-sha1 = "fc2e5bc665dfa1be33fac60b5762d462bccfae7b"
+git-tree-sha1 = "71e740d00d71cdb15145d7fe0d6000ec70534598"
 uuid = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
-version = "0.10.8"
+version = "0.10.9"
 
 [[deps.LAME_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1964,9 +1966,9 @@ version = "1.2.0"
 
 [[deps.RuntimeGeneratedFunctions]]
 deps = ["ExprTools", "SHA", "Serialization"]
-git-tree-sha1 = "6368773b8b433a5c6d9f8b9427c5fbded65fc8c0"
+git-tree-sha1 = "65c9e1142f0372bfc16ba14b9edd57737fe0039f"
 uuid = "7e49a35a-f44a-4d26-94aa-eba1b4ca6b47"
-version = "0.5.23"
+version = "0.5.24"
 
 [[deps.SCOTCH_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Zlib_jll"]
@@ -2062,9 +2064,9 @@ version = "2.0.3"
 
 [[deps.SciMLOperators]]
 deps = ["Accessors", "Adapt", "ArrayInterface", "DocStringExtensions", "LinearAlgebra"]
-git-tree-sha1 = "c92b87cd04563954537c4e832fb894b00f1b407e"
+git-tree-sha1 = "1507c577ae6dd34acd559039da79c214216d94f3"
 uuid = "c0aeaf25-5076-4817-a8d5-81caf7dfa961"
-version = "1.25.2"
+version = "1.26.0"
 
     [deps.SciMLOperators.extensions]
     SciMLOperatorsLoopVectorizationExt = "LoopVectorization"

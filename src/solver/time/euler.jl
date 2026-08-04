@@ -218,42 +218,55 @@ end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     material_model::AbstractMaterialModel,
+    dh,
+    lvh,
+    cellset,
 )
     singleQsize = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
     @debug "Setting up local nonlinear solver with size(Q)=$(singleQsize) for material $(material_model)" _group=:nlsolve
-    return GenericLocalNonlinearSolverCache(
-        # Solver parameters
-        local_solver,
-        # Buffers
-        zeros(singleQsize, singleQsize),
-        zeros(singleQsize),
-        zeros(singleQsize),
-        # Globally requested tolerance
-        Inf,
-        # Local convergence
-        SciMLBase.ReturnCode.Default,
+    return GenericLocalNonlinearSolverCache(;
+        params = local_solver,
+        J = zeros(singleQsize, singleQsize),
+        residual = zeros(singleQsize),
+        rhs_corrector = zeros(singleQsize),
+        reports = setup_local_solve_reports(dh, lvh, singleQsize, cellset),
     )
 end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     model::QuasiStaticModel,
+    dh,
+    lvh,
+    cellset,
 )
-    return _setup_local_solver_cache(local_solver, model.material_model)
+    return _setup_local_solver_cache(local_solver, model.material_model, dh, lvh, cellset)
 end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     integrator::NonlinearIntegrator,
+    dh,
+    lvh,
 )
-    return _setup_local_solver_cache(local_solver, integrator.volume_model)
+    return _setup_local_solver_cache(local_solver, integrator.volume_model, dh, lvh, nothing)
 end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     integrator::NonlinearMultiDomainIntegrator2,
+    dh,
+    lvh,
 )
-    return map(
-        subintegrator -> _setup_local_solver_cache(local_solver, subintegrator.volume_model),
-        values(integrator.subintegrators),
-    )
+    grid = get_grid(dh)
+    return map(collect(integrator.subintegrators)) do (name, subintegrator)
+        # Each subdomain reports into its own store, since the number of condensed unknowns per
+        # quadrature point -- and hence the layout -- is a property of that subdomain's material.
+        _setup_local_solver_cache(
+            local_solver,
+            subintegrator.volume_model,
+            dh,
+            lvh,
+            getcellset(grid, name),
+        )
+    end
 end
 
 function _annotate_with_local_solver_cache(integrator::NonlinearIntegrator, local_solver_cache)
@@ -288,13 +301,13 @@ end
     (; integrator, dh, lvh) = f
     (; local_solver, newton) = solver
 
-    local_solver_cache = _setup_local_solver_cache(solver.local_solver, integrator)
+    local_solver_cache = _setup_local_solver_cache(solver.local_solver, integrator, dh, lvh)
 
     # The previous solution and the timestep are no longer threaded in here: `gto1` supplies them per
     # call via `GenericFirstOrderTimeParameters`. Only the local solver cache still has to reach the
     # element.
     op = setup_operator(
-        SequentialAssemblyStrategy(SequentialCPUDevice()), # FIXME f.assembly_strategy,
+        f.assembly_strategy,
         _annotate_with_local_solver_cache(integrator, local_solver_cache),
         dh,
     )
@@ -302,12 +315,17 @@ end
     residual = Vector{T}(undef, ndofs(dh))#solution_size(G))
     Δu = Vector{T}(undef, ndofs(dh))#solution_size(G))
 
-    # Connect both solver caches
+    # Connect both solver caches. Same materialization as the plain Newton's `setup_solver_cache`:
+    # `KrylovMGSolver` reaches `init` as a description and has to be built into a LinearSolve
+    # algorithm with its `precs` callable first, and it carries its own iteration budget.
     inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    maxiters = _linear_maxiters(newton.inner_solver)
+    init_kw = maxiters === nothing ? (;) : (; maxiters = maxiters)
     inner_cache = init(
         inner_prob,
-        newton.inner_solver;
+        _materialize_inner_solver(f, newton.inner_solver);
         alias = LinearAliasSpecifier(alias_A = true, alias_b = true),
+        init_kw...,
     )
     @assert inner_cache.b === residual
     @assert inner_cache.A === op.J
@@ -441,11 +459,28 @@ function _setup_internal_cache_annotation_unwrap(
     wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
     material_model::AbstractMaterialModel,
     internal_cache,
-    ::Union{FirstOrderEvolution, RateCoupledEvolution},
+    ::FirstOrderEvolution,
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
+        # Pass the model
+        material_model,
+        # And some cache to speed up evaluation of f and associated coefficients
+        internal_cache,
+        # Local nonlinear solver cache
+        wrapper.local_solver_cache,
+    )
+end
+function _setup_internal_cache_annotation_unwrap(
+    wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
+    material_model::AbstractMaterialModel,
+    internal_cache,
+    ::RateCoupledEvolution,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
+    return GenericFirstOrderRateDependentCondensationMaterialStateCache(
         # Pass the model
         material_model,
         # And some cache to speed up evaluation of f and associated coefficients

@@ -8,11 +8,46 @@ internal_variable_evolution(::AbstractSteadyStateSarcomereModel) = NoEvolution()
 internal_variable_evolution(::AbstractRateIndependentSarcomereModel) = FirstOrderEvolution()
 internal_variable_evolution(::AbstractRateDependentSarcomereModel) = RateCoupledEvolution()
 
+"""
+    internal_state_in_bounds(model, Q) -> Bool
+
+Whether `Q` lies in the admissible set of `model`'s internal variable. Checked after a local solve
+converges: a converged but inadmissible state is reported as `ReturnCode.Infeasible`, which the time
+integrator can act on by shortening the step.
+
+Defaults to `true` — a model without a bounded state need not implement it. Implement it wherever the
+state has a *physical* meaning that a large step can violate, e.g. Markov occupancies.
+"""
+internal_state_in_bounds(model, Q) = true
+
 abstract type AbstractCondensationMaterialStateCache end
 
 # Material states without evolution equations. I.e. the states variables are at most a function of space (reference) and time.
 abstract type TrivialCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
 struct EmptyTrivialCondensationMaterialStateCache <: TrivialCondensationMaterialStateCache end
+
+"""
+    SteadyStateCondensationMaterialStateCache
+
+Local problem `0 = L(F, Q)`: an algebraic constraint per quadrature point, with no time derivative.
+
+This is the category that separates *rate free* from
+[`RateIndependentCondensationMaterialStateCache`](@ref), whose name means only that `L` does not read
+`dₜF` — it still poses `dₜQ = L(F, Q)` and therefore still needs a timestep and a known state. A
+steady state material needs neither, which is what makes it the one kind of condensation a
+continuation solver such as [`HomotopyPathSolver`](@ref) can carry: growth and remodelling, where the
+trajectory does not matter and only the final state does.
+
+No such material exists in this package yet, so the local solver for the category is deliberately
+unwritten. What exists is the type, the [`SteadyStateEvolution`](@ref) trait value that selects it,
+and `material_routine`/`reduced_material_routine` arities that take the current `Q` alone and report
+the missing piece by name.
+"""
+abstract type SteadyStateCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
+struct EmptySteadyStateCondensationMaterialStateCache <: SteadyStateCondensationMaterialStateCache end
+function duplicate_for_device(device, cache::EmptySteadyStateCondensationMaterialStateCache)
+    return EmptySteadyStateCondensationMaterialStateCache()
+end
 
 
 abstract type RateIndependentCondensationMaterialStateCache <:
@@ -99,6 +134,7 @@ end
 sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, t, wrapper::AsRateIndependent) =
     sarcomere_rhs!(dQ, Q, λ, zero(dλdt), Ca, t, wrapper.model)
 num_states(wrapper::AsRateIndependent) = num_states(wrapper.model)
+internal_state_in_bounds(wrapper::AsRateIndependent, Q) = internal_state_in_bounds(wrapper.model, Q)
 𝓝(state, F, coefficients, wrapper::AsRateIndependent) = 𝓝(state, F, coefficients, wrapper.model)
 compute_λᵃ(state, wrapper::AsRateIndependent) = compute_λᵃ(state, wrapper.model)
 gather_internal_variable_infos(wrapper::AsRateIndependent) =
@@ -133,6 +169,8 @@ Base.@kwdef struct CaDrivenInternalSarcomereModel{ModelType, CalciumFieldType} <
     calcium_field::CalciumFieldType
 end
 num_states(wrapper::CaDrivenInternalSarcomereModel) = num_states(wrapper.model)
+internal_state_in_bounds(wrapper::CaDrivenInternalSarcomereModel, Q) =
+    internal_state_in_bounds(wrapper.model, Q)
 𝓝(state, F, coefficients, wrapper::CaDrivenInternalSarcomereModel) =
     𝓝(state, F, coefficients, wrapper.model)
 compute_λᵃ(state, wrapper::CaDrivenInternalSarcomereModel) = compute_λᵃ(state, wrapper.model)
@@ -322,11 +360,11 @@ Base.@kwdef struct RDQ20MFModel{TD} <: AbstractRateDependentSarcomereModel
     # tangent stays continuous at zero shortening velocity (see `smooth_abs`). Only active for
     # |dλdt| ≲ εᵛ; the unregularized model is recovered as εᵛ → 0.
     #
-    # PROVISIONAL default. It has no effect while dλdt is hardcoded to zero, because
-    # `smooth_abs(0, εᵛ) == 0` for every εᵛ > 0. Calibrate it when the velocity dependence goes
-    # live: it must sit well below physiological |dλdt| (order 1e-3 1/ms) so the physics is
-    # untouched, yet be wide enough that the linearization is valid across a Newton step — too
-    # small and the kink is smooth on paper but still a kink numerically.
+    # The default sits three orders below physiological |dλdt| (order 1e-3 1/ms), so the physics is
+    # untouched: measured against εᵛ = 1e-8 on a fully activated cuboid, the solution moves by ~2e-11
+    # relative, and it is still converging as εᵛ → 0. Widths from 1e-8 to 1e-2 all solve, and the
+    # suite -- including a case whose calcium transient drives |dλdt| through zero -- passes at
+    # 1e-8, so the linearization survives a Newton step two orders narrower than this.
     εᵛ::TD = 1.0e-6 # 1/ms
 end
 
@@ -537,6 +575,19 @@ function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
     dXB[1] += p.μ₀_fP * permissivity
     dXB[2] += p.μ₁_fP * permissivity
 end
+
+"""
+Occupancies of the regulatory-unit Markov chain, `Q[1:16]`, are probabilities.
+
+Only the non-negativity half is checked: the normalisation `Σ Q[1:16] = 1` holds by construction,
+because the chain's right-hand side is exactly conservative (`Σ dQ[1:16] = 0` to machine precision)
+and backward Euler inherits that. So a violated bound is always a component that went negative,
+and given the sum is pinned at one that also caps every component at one.
+
+Measured onset: components stay non-negative up to `Δt ≈ 5` in the model's own time units and reach
+`≈ -0.25` by `Δt = 20`, so this is a large-step failure mode.
+"""
+internal_state_in_bounds(::RDQ20MFModel, Q) = all(≥(0), view(Q, 1:16))
 
 function fraction_single_overlap(model::RDQ20MFModel, λ)
     SL = λ*model.SL₀
