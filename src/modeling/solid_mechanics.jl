@@ -31,8 +31,22 @@ function structural_displacement_symbol(models::Dict{String, <:QuasiStaticModel}
     return first(symbols)
 end
 
-"""
-    ElastodynamicsModel(displacement_sym, velocity_symbol, material_model::AbstractMaterialModel, facet_model, ρ::Coefficient)
+@doc raw"""
+    ElastodynamicsModel(displacement_sym, velocity_symbol, material_model, facet_models, ρ)
+
+Balance of momentum including the inertia term,
+```math
+\int_\Omega \rho\, \delta u \cdot \ddot{u} \,\mathrm{d}\Omega
++ \int_\Omega \mathrm{grad}(\delta u) : P(u) \,\mathrm{d}\Omega = \text{(facet terms)} ,
+```
+i.e. the [`QuasiStaticModel`](@ref) with a mass term on top.
+
+!!! note "The velocity is not a degree of freedom"
+    `velocity_symbol` names the velocity for output only. Time integrators for this model
+    (see [`NewmarkSolver`](@ref)) discretize in displacement form: the global unknown is the
+    displacement field alone, and velocity and acceleration are reconstructed by the scheme and
+    kept in the solver cache. A formulation carrying the velocity as a genuine unknown would be a
+    different model with two field variables.
 """
 struct ElastodynamicsModel{RHSModel#= <: AbstractMaterialModel =#, FM, CoefficientType}
     displacement_symbol::Symbol
@@ -41,6 +55,16 @@ struct ElastodynamicsModel{RHSModel#= <: AbstractMaterialModel =#, FM, Coefficie
     facet_models::FM
     ρ::CoefficientType
 end
+
+ElastodynamicsModel(displacement_symbol, velocity_symbol, material_model, ρ) =
+    ElastodynamicsModel(displacement_symbol, velocity_symbol, material_model, (), ρ)
+
+# Only the displacement is discretized, hence a single field variable -- see the note above.
+get_field_variable_names(model::ElastodynamicsModel) = (model.displacement_symbol,)
+
+get_volumetric_weak_form_names(model::ElastodynamicsModel) = (model.displacement_symbol,)
+
+structural_displacement_symbol(model::ElastodynamicsModel) = model.displacement_symbol
 
 include("solid/energies.jl")
 include("solid/contraction.jl")

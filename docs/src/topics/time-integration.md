@@ -132,6 +132,101 @@ $n \in \mathbb{N}$ the following bound
 
 which implies stability of the scheme.
 
+## [Newmark-$\beta$ for second order systems](@id theory_newmark)
+
+Dropping the assumption that inertial terms are negligible, which the homotopy path methods above
+rest on, leaves the balance of momentum in its second order form. Semi-discretized in space it reads
+
+```math
+M \, d^2_t u + f^{\mathrm{int}}(u) = f^{\mathrm{ext}}(t) \, ,
+```
+
+with the mass matrix $M_{ij} = \int_\Omega \rho \, N_i \cdot N_j \, \mathrm{d}\Omega$. Note that
+$f^{\mathrm{int}}$ is in general nonlinear in $u$ -- this is where the presentation below departs
+from the linear elasticity textbook case.
+
+The Newmark-$\beta$ family [New:1959:amc](@cite) advances the triple $(u_n, v_n, a_n)$ of
+displacement, velocity and acceleration by
+
+```math
+\begin{aligned}
+u_{n+1} &= u_n + \Delta t \, v_n + \Delta t^2 \left[ \left( \tfrac{1}{2} - \beta \right) a_n + \beta \, a_{n+1} \right] \\
+v_{n+1} &= v_n + \Delta t \left[ (1 - \gamma) a_n + \gamma \, a_{n+1} \right] \, .
+\end{aligned}
+```
+
+The parameter $\gamma$ controls dissipation and $\beta$ controls stability. The choice
+$\beta = 1/4, \gamma = 1/2$ -- the *average acceleration* rule -- is unconditionally stable, second
+order accurate and conserves energy. Any $\gamma > 1/2$ introduces numerical damping and reduces the
+scheme to first order.
+
+### Displacement form
+
+It is convenient to split off the parts of the update that are known before the step,
+
+```math
+\tilde{u} = u_n + \Delta t \, v_n + \left( \tfrac{1}{2} - \beta \right) \Delta t^2 a_n \, , \qquad
+\tilde{v} = v_n + (1 - \gamma) \Delta t \, a_n \, ,
+```
+
+so that the update formulas become $u_{n+1} = \tilde{u} + \beta \Delta t^2 a_{n+1}$ and
+$v_{n+1} = \tilde{v} + \gamma \Delta t \, a_{n+1}$.
+
+Textbook presentations now solve for the acceleration, inserting these into the balance of momentum
+to obtain a linear system with the *effective mass matrix*
+$M_{\mathrm{eff}} = M + \beta \Delta t^2 K$. Its appeal is that $M_{\mathrm{eff}}$ is constant and can
+be factorized once outside the time loop -- but that rests on $K$ being constant, which holds for
+linear elasticity and for none of the material models in this package.
+
+We therefore solve for the **displacement**, which is the quantity the constitutive model is a
+function of. Inverting the first update formula expresses the acceleration in terms of the unknown,
+
+```math
+a(u) = \frac{u - \tilde{u}}{\beta \Delta t^2} \, ,
+```
+
+and the nonlinear problem of one step is
+
+```math
+r(u) = M \, a(u) + f^{\mathrm{int}}(u) - f^{\mathrm{ext}}(t_{n+1}) = 0 \, , \qquad
+\frac{\partial r}{\partial u} = K(u) + \frac{1}{\beta \Delta t^2} M \, .
+```
+
+For a linear material this is the acceleration form scaled by $\beta \Delta t^2$, so nothing is lost.
+Once $u_{n+1}$ is found, $a_{n+1}$ and $v_{n+1}$ follow from the formulas above.
+
+### What a rate dependent material sees
+
+Materials whose internal variables follow $d_t Q = L(F, d_t F, Q)$ -- the sarcomere models are the
+motivating case -- need the deformation rate, and its linearization with respect to the unknown. Under
+Newmark the velocity is *not* the backward difference $(u - u_n)/\Delta t$. Substituting $a(u)$ into
+the second update formula gives
+
+```math
+v(u) = \tilde{v} + \frac{\gamma}{\beta \Delta t} \left( u - \tilde{u} \right) \, ,
+```
+
+which is affine in the unknown. Writing any affine function as a slope times a displacement from its
+root,
+
+```math
+v(u) = \frac{\partial v}{\partial u} \left( u - u_v \right) \, , \qquad
+\frac{\partial v}{\partial u} = \frac{\gamma}{\beta \Delta t} \, , \qquad
+u_v = \tilde{u} - \tilde{v} \left/ \frac{\partial v}{\partial u} \right. \, ,
+```
+
+gives the two quantities an element needs in order to form $\dot{F} = \mathrm{grad}(v)$ and to
+contribute $\partial P / \partial \dot{F} \cdot \partial \dot{F} / \partial u$ to the tangent. Backward
+Euler is the same statement with $\partial v / \partial u = 1/\Delta t$ and $u_v = u_n$, which is why
+that scheme never needed the concept: its root *is* the previous solution.
+
+!!! note "Two time quantities, not one"
+    A scheme hands the element the reconstruction above **and**, separately, the timestep $\Delta t$
+    that the internal variable integrates over -- the local problem $(Q - Q_n)/\Delta t = L(F, \dot{F}, Q)$
+    is first order in $Q$ regardless of what the global scheme does with $u$. Under backward Euler the
+    slope happens to equal $1/\Delta t$ and the two collapse into one number; under Newmark they differ
+    by $\gamma/\beta$. Conflating them silently linearizes a different problem than the residual poses.
+
 ## References
 
 ```@bibliography

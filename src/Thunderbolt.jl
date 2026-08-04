@@ -223,6 +223,9 @@ export
     QuasiStaticModel,
     QuasiStaticProblem,
     QuasiStaticFunction,
+    ElastodynamicsModel,
+    ElastodynamicsProblem,
+    ElastodynamicsFunction,
     PK1Model,
     PrestressedMechanicalModel,
     # Passive material models
@@ -306,6 +309,7 @@ export
     MultiLevelNewtonRaphsonSolver,
     HomotopyPathSolver,
     BackwardEulerSolver,
+    NewmarkSolver,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,
     # Integrator

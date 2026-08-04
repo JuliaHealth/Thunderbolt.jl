@@ -1,14 +1,16 @@
 residual_norm(cache::AbstractNonlinearSolverCache, f::AbstractSemidiscreteFunction) =
     norm(cache.residual)
-residual_norm(cache::AbstractNonlinearSolverCache, f::AbstractQuasiStaticFunction) =
+residual_norm(cache::AbstractNonlinearSolverCache, f::AbstractSolidMechanicsFunction) =
     norm(cache.residual[Ferrite.free_dofs(getch(f))])
 residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction, i::Block) = 0.0
 residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction) = 0.0
 
+# Through `getJ` rather than `cache.op.J`, so that an operator which contributes terms of its own --
+# `NewmarkStageOperator` adds the inertia -- can forward to the matrix it shares with the assembly.
 eliminate_constraints_from_linearization!(
     cache::AbstractNonlinearSolverCache,
     f::AbstractSemidiscreteFunction,
-) = apply_zero!(cache.op.J, cache.residual, getch(f))
+) = apply_zero!(getJ(cache.op), cache.residual, getch(f))
 
 eliminate_constraints_from_residual!(
     cache::AbstractNonlinearSolverCache,

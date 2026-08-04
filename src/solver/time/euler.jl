@@ -311,14 +311,29 @@ end
         _annotate_with_local_solver_cache(integrator, local_solver_cache),
         dh,
     )
+
+    return _setup_multilevel_newton_cache(f, op, local_solver_cache, newton, ndofs(dh))
+end
+
+"""
+    _setup_multilevel_newton_cache(f, op, local_solver_cache, newton, ndofs)
+
+Wrap an already built operator into a [`MultiLevelNewtonRaphsonSolverCache`](@ref).
+
+Split out from the stage setup because the operator is the only thing that differs between time
+schemes: backward Euler hands over the assembled linearization directly, Newmark hands over the same
+operator wrapped in a [`NewmarkStageOperator`](@ref) that adds the inertia contribution.
+"""
+function _setup_multilevel_newton_cache(f, op, local_solver_cache, newton, ndofs)
     T = Float64
-    residual = Vector{T}(undef, ndofs(dh))#solution_size(G))
-    Δu = Vector{T}(undef, ndofs(dh))#solution_size(G))
+    residual = Vector{T}(undef, ndofs)
+    Δu = Vector{T}(undef, ndofs)
 
     # Connect both solver caches. Same materialization as the plain Newton's `setup_solver_cache`:
     # `KrylovMGSolver` reaches `init` as a description and has to be built into a LinearSolve
     # algorithm with its `precs` callable first, and it carries its own iteration budget.
-    inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    J = getJ(op)
+    inner_prob = LinearSolve.LinearProblem(J, residual; u0 = Δu)
     maxiters = _linear_maxiters(newton.inner_solver)
     init_kw = maxiters === nothing ? (;) : (; maxiters = maxiters)
     inner_cache = init(
@@ -328,7 +343,7 @@ end
         init_kw...,
     )
     @assert inner_cache.b === residual
-    @assert inner_cache.A === op.J
+    @assert inner_cache.A === J
 
     newton_cache = NewtonRaphsonSolverCache(
         op,

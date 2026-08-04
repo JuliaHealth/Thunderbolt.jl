@@ -95,7 +95,7 @@ function setup_assembled_operator(
 end
 
 # Nonlinear
-function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+function setup_operator(f::AbstractSolidMechanicsFunction, solver::AbstractNonlinearSolver)
     return setup_operator(get_strategy(f), f.integrator, f.dh)
 end
 

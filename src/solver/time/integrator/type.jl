@@ -124,6 +124,12 @@ function init_cache(prob, alg; dt, kwargs...)
     return setup_solver_cache(prob.f, alg, prob.tspan[1]; kwargs...)
 end
 
+# The initial velocity is state of the *problem*, but only the function reaches `setup_solver_cache`
+# through the generic path above, so it is forwarded here.
+function init_cache(prob::ElastodynamicsProblem, alg; dt, kwargs...)
+    return setup_solver_cache(prob.f, alg, prob.tspan[1]; v0 = prob.v0, kwargs...)
+end
+
 # `@SciMLMessage` dispatches on `Bool` (what the operator splitting parent hands its children) and on
 # `AbstractVerbositySpecifier` (what `DiffEqBase.init` passes), but not on the bare `SciMLLogging`
 # presets, which are what our own default and a `verbose = Standard()` from user code are. Lower
@@ -189,6 +195,20 @@ function _reject_unsupported_saving(saveat, save_everystep, dense, save_idxs)
     )
 end
 
+# Error tolerances live on the algorithm, not on `init`, because `IntegratorOptions` has no slot for
+# them and the schemes that are adaptive scale their estimate where they compute it. Passing them here
+# would otherwise be swallowed by the trailing `kwargs...` and silently ignored.
+function _reject_solve_tolerances(reltol, abstol)
+    given = String[]
+    reltol === nothing || push!(given, "reltol")
+    abstol === nothing || push!(given, "abstol")
+    isempty(given) && return nothing
+    return error(
+        "Tolerances are set on the algorithm rather than on `init`, but $(join(given, " and ")) " *
+        "was passed. Use e.g. `NewmarkSolver(; reltol = 1e-4, abstol = 1e-7)`.",
+    )
+end
+
 # Callbacks are not implemented: the solution and integrator lack the stats and event
 # state they need. Refuse at construction rather than fail mid-step.
 function _reject_callbacks(callback)
@@ -226,6 +246,8 @@ function SciMLBase.__init(
     dense = false,
     dtmin = nothing,
     dtmax = nothing,
+    reltol = nothing,
+    abstol = nothing,
     internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
     kwargs...,
 )
@@ -237,6 +259,7 @@ function SciMLBase.__init(
 
     _reject_unsupported_saving(saveat, save_everystep, dense, save_idxs)
     _reject_callbacks(callback)
+    _reject_solve_tolerances(reltol, abstol)
 
     dt > zero(dt) || error("dt must be positive")
     # `dt` is a magnitude here and the direction lives in `tdir`, but the upstream
