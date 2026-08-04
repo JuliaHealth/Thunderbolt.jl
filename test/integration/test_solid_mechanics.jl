@@ -1063,11 +1063,33 @@ end
     # `stress_function` rather than `stress_and_tangent`.
     direct = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 20, tol = 1e-8)
 
+    # Both sarcomere variants, because the rate-coupled and the rate-free local problem reach the
+    # residual through different entry points.
+    #
+    # The wrapped model's tangent carries no `∂P/∂Ḟ · ∂Ḟ/∂u` term, so the same residual buys a larger
+    # first increment and the residual rises once before quadratic convergence takes over. Two
+    # consequences, both measured on this cuboid:
+    #
+    #   * `enforce_monotonic_convergence` would abort that as divergence, hence `false` here. It is
+    #     not a concession -- the full Newton reaches `tol` one iteration after the overshoot.
+    #   * the *simplified* Newton needs the shorter step, because a frozen Jacobian cannot correct
+    #     the overshoot: at `Δt = 2.5` it drives a local sarcomere solve to `NaN`, and at `Δt = 1.0`
+    #     it stalls at `‖r‖ ≈ 0.4`. The full Newton converges at `Δt = 2.5` for both variants.
     @testset "Condensed sarcomere, $(nameof(typeof(sarcomere)))" for (sarcomere, Δt, tend) in (
         (Thunderbolt.RDQ20MFModel(), 2.5, 5.0),
-        (Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()), 2.5, 5.0),
+        (Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()), 0.5, 5.0),
     )
-        reference = solve_condensed_cuboid(sarcomere, direct, Δt, tend)
+        reference = solve_condensed_cuboid(
+            sarcomere,
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 20,
+                tol = 1e-8,
+                enforce_monotonic_convergence = false,
+            ),
+            Δt,
+            tend,
+        )
         @test reference.sol.retcode == SciMLBase.ReturnCode.Success
 
         # A simplified Newton converges linearly, so it needs a far more generous iteration budget
@@ -1079,6 +1101,7 @@ end
                 max_iter = 200,
                 tol = 1e-8,
                 simplified_newton = true,
+                enforce_monotonic_convergence = false,
             ),
             Δt,
             tend,
