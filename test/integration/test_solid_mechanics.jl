@@ -1063,13 +1063,9 @@ end
     # `stress_function` rather than `stress_and_tangent`.
     direct = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 20, tol = 1e-8)
 
-    # Both sarcomere variants, because the rate-coupled and the rate-free local problem reach the
-    # residual through different entry points. The wrapped one needs the shorter step: dropping the
-    # velocity coupling makes its local problem stiffer, and it fails to converge at Δt = 2.5 with
-    # the ordinary Newton too.
     @testset "Condensed sarcomere, $(nameof(typeof(sarcomere)))" for (sarcomere, Δt, tend) in (
         (Thunderbolt.RDQ20MFModel(), 2.5, 5.0),
-        (Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()), 0.1, 0.3),
+        (Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()), 2.5, 5.0),
     )
         reference = solve_condensed_cuboid(sarcomere, direct, Δt, tend)
         @test reference.sol.retcode == SciMLBase.ReturnCode.Success
@@ -1098,12 +1094,21 @@ end
         @test reference.sol.retcode == SciMLBase.ReturnCode.Success
 
         for newton in (
-            NewtonRaphsonSolver(tol = 1e-8, simplified_newton = true),
-            NewtonRaphsonSolver(tol = 1e-8, forcing = EisenstatWalkerForcing()),
+            NewtonRaphsonSolver(
+                tol = 1e-8,
+                enforce_monotonic_convergence = false,
+                simplified_newton = true,
+            ),
+            NewtonRaphsonSolver(
+                tol = 1e-8,
+                enforce_monotonic_convergence = false,
+                forcing = EisenstatWalkerForcing(),
+            ),
             NewtonRaphsonSolver(
                 tol = 1e-8,
                 forcing = EisenstatWalkerForcing(),
                 simplified_newton = true,
+                enforce_monotonic_convergence = false,
             ),
         )
             integrator = solve_viscoelastic_creep(newton)
