@@ -23,9 +23,12 @@ _local_solve_failed(report::LocalSolveReport) =
 One report slot per quadrature point, in a single contiguous vector addressed per cell.
 
 Each local solve writes exactly its own slot, so the store needs no counter and never grows -- which
-is what makes it safe under threaded assembly and adaptable to a device. `duplicate_for_device`
-shares it rather than copying it, so failures recorded by a worker remain visible to the global
-solver.
+is what makes it safe under threaded assembly. `duplicate_for_device` shares it rather than copying
+it, so failures recorded by a worker remain visible to the global solver.
+
+The flat layout is chosen with a device port in mind, but this is **not** GPU ready: nothing adapts
+`DenseDataRange`, and a shared host vector is exactly what an `Adapt.adapt_structure` would have to
+replace.
 
 The per-cell quadrature point count is recovered from the [`InternalVariableHandler`](@ref), which
 lays out `nqp * ndofs_per_quadrature_point` condensed unknowns per cell. `cellset` restricts the
@@ -51,9 +54,12 @@ end
 """
     GenericLocalNonlinearSolverCache
 
-Immutable, so that it can be passed to a device kernel by value. Everything that changes during a
-solve lives in the arrays it holds: the outer solver's current tolerance in `outer_tol`, and the
-per-quadrature-point outcomes in `reports`.
+Immutable: everything that changes during a solve lives in the arrays it holds, the outer solver's
+current tolerance in `outer_tol` and the per-quadrature-point outcomes in `reports`.
+
+Immutability is a precondition for a device port, not a sufficient one -- the struct holds `Vector`s
+and so is not `isbits`, and no `Adapt.adapt_structure` exists for it. What it buys today is that
+`duplicate_for_device` can hand a worker a value rather than aliasing mutable solver state.
 """
 Base.@kwdef struct GenericLocalNonlinearSolverCache{
     JacobianType,
@@ -268,7 +274,12 @@ function nlsolve!(
             # Leave isfresh / precsisfresh false → reuse the existing factorization.
         else
             @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
-            linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
+            # Both flags: the matrix changed, and so must anything built from it. Setting only
+            # `isfresh` left a `precs` preconditioner built once from the numerically empty Jacobian
+            # and never rebuilt, because Thunderbolt mutates `op.J` in place and LinearSolve raises
+            # `precsisfresh` only on a `setproperty!` of `A`.
+            linear_solver_cache.isfresh = true
+            linear_solver_cache.precsisfresh = true
         end
 
         residualnorm = residual_norm(cache, f)

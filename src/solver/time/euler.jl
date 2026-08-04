@@ -315,12 +315,17 @@ end
     residual = Vector{T}(undef, ndofs(dh))#solution_size(G))
     Δu = Vector{T}(undef, ndofs(dh))#solution_size(G))
 
-    # Connect both solver caches
+    # Connect both solver caches. Same materialization as the plain Newton's `setup_solver_cache`:
+    # `KrylovMGSolver` reaches `init` as a description and has to be built into a LinearSolve
+    # algorithm with its `precs` callable first, and it carries its own iteration budget.
     inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    maxiters = _linear_maxiters(newton.inner_solver)
+    init_kw = maxiters === nothing ? (;) : (; maxiters = maxiters)
     inner_cache = init(
         inner_prob,
-        newton.inner_solver;
+        _materialize_inner_solver(f, newton.inner_solver);
         alias = LinearAliasSpecifier(alias_A = true, alias_b = true),
+        init_kw...,
     )
     @assert inner_cache.b === residual
     @assert inner_cache.A === op.J

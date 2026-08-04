@@ -243,9 +243,57 @@ end
     Ḟ::Tensor{2},
     coefficients,
     state,
-) = error(
-    "$(typeof(model)) declares `rate_dependence(...) = RateDependent()` but does not implement " *
-    "`stress_and_tangent(model, F, Ḟ, coefficients, state) -> (P, ∂P∂F, ∂P∂Ḟ)`.",
+) = _missing_rate_dependent_stress(model, "stress_and_tangent", "(P, ∂P∂F, ∂P∂Ḟ)")
+
+# Uniform five-argument residual counterpart of `stress_and_tangent` above. The two must agree on
+# which problem they pose, so they answer through the same trait.
+@inline stress_function(
+    model::AbstractMaterialModel,
+    F::Tensor{2},
+    Ḟ::Tensor{2},
+    coefficients,
+    state,
+) = _stress_function_rate(rate_dependence(model), model, F, Ḟ, coefficients, state)
+
+@inline _stress_function_rate(
+    ::RateIndependent,
+    model,
+    F::Tensor{2},
+    Ḟ::Tensor{2},
+    coefficients,
+    state,
+) = stress_function(model, F, coefficients, state)
+
+@inline _stress_function_rate(
+    ::RateDependent,
+    model,
+    F::Tensor{2},
+    Ḟ::Tensor{2},
+    coefficients,
+    state,
+) = _missing_rate_dependent_stress(model, "stress_function", "P")
+
+@noinline _missing_rate_dependent_stress(model, name, returns) = error(
+    "$(typeof(model).name.name) declares `rate_dependence(...) = RateDependent()` but does not " *
+    "implement `$name(model, F, Ḟ, coefficients, state) -> $returns`.",
+)
+
+"""
+    rate_dependent_material_needs_rate(material_model)
+
+A material whose local problem or stress reads `Ḟ` was assembled by a time scheme that offers none.
+
+Called explicitly from the `material_routine`/`reduced_material_routine` methods that receive
+rate-free kinematics for such a material, so that the report names the material and arrives from the
+call the element actually made. Relying on `deformation_rate(::DeformationGradient)` to raise it
+instead works, but only as a side effect of evaluating an expression for its error, and the message
+cannot name the material.
+"""
+@noinline rate_dependent_material_needs_rate(material_model) = error(
+    "$(typeof(material_model).name.name) carries a rate coupled internal variable, so its local " *
+    "problem needs the deformation rate, but the time scheme offered kinematics without one. " *
+    "Either use a scheme that supplies `Ḟ`, or wrap the internal model in `AsRateIndependent` to " *
+    "state that its velocity dependence may be dropped.",
 )
 
 # The kinematics seam. A material that does not read the deformation rate is served by unpacking `F`
@@ -480,12 +528,15 @@ function material_routine(
         Qknownflat,
         Δt,
     )
-    P, ∂P∂F = stress_and_tangent(material_model, F, coefficients, Q)
-    return P, KinematicSensitivitiesWithRate(∂P∂F + ∂P∂QdQdF, ∂P∂QdQdḞ)
+    # Through the five-argument entry point, so that a material whose stress *also* reads the rate
+    # directly contributes its own `∂P/∂Ḟ` alongside the condensation's. For the rate-independent
+    # stresses in this package that term is zero and this is the four-argument call it replaces.
+    P, ∂P∂F, ∂P∂Ḟ =
+        stress_and_tangent(material_model, F, deformation_rate(kinematics), coefficients, Q)
+    return P, KinematicSensitivitiesWithRate(∂P∂F + ∂P∂QdQdF, ∂P∂Ḟ + ∂P∂QdQdḞ)
 end
 
-# A rate dependent material cannot be served rate-free kinematics. `deformation_rate` is what says so;
-# this method exists only so the message arrives from the call the element actually made.
+# A rate dependent material cannot be served rate-free kinematics.
 material_routine(
     material_model::AbstractMaterialModel,
     kinematics::DeformationGradient,
@@ -497,14 +548,11 @@ material_routine(
     Qflat,
     Qknownflat,
     Δt,
-) = deformation_rate(kinematics)
+) = rate_dependent_material_needs_rate(material_model)
 
-# A condensation material reached the bare-`time` assembly path, which is used by
-# `HomotopyPathSolver` — a load-stepping continuation with no timestep and no previous solution. Such
-# a material must therefore be *rate free*: its local problem has to be the algebraic constraint
-# `L(F, Q) = 0` rather than a time-discretized `(Q - Qprev)/Δt = L(F, Q)`. No rate-free condensation
-# material exists yet, so the local solver for it is deliberately not written; implement a
-# `material_routine` for that cache type taking the current `Q` only.
+# A rate-type condensation material reached the bare-`time` assembly path, which is what
+# `HomotopyPathSolver` uses. This should have been rejected during setup; the method is the safety net
+# for a path that slipped past that check.
 material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
@@ -513,9 +561,76 @@ material_routine(
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
-) = error(
-    "$(typeof(material_model)) carries a rate-type internal variable, so it needs a timestep and a " *
-    "previous state. It cannot be assembled on the rate-free path used by e.g. HomotopyPathSolver.",
+) = rate_type_material_needs_timestep(material_model)
+
+reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    F::Tensor{2},
+    coefficient_cache,
+    state_cache::RateTypeCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+) = rate_type_material_needs_timestep(material_model)
+
+"""
+    rate_type_material_needs_timestep(material_model)
+
+A material whose local problem carries a time derivative reached an assembly path that offers no
+timestep and no known previous state.
+
+`HomotopyPathSolver` is the path in question, and it rejects such a model during
+`setup_solver_cache`, so reaching here means the setup check was bypassed. Kept as a safety net
+rather than removed: the two checks answer the same question from different data (the model tree
+before discretization, the lowered state cache during assembly), and a mismatch between them should
+surface as this message rather than as a wrong answer.
+"""
+@noinline rate_type_material_needs_timestep(material_model) = error(
+    "$(typeof(material_model).name.name) carries an internal variable with a time derivative, so " *
+    "its local problem needs a timestep and a known previous state. It cannot be assembled on the " *
+    "rate-free path used by e.g. `HomotopyPathSolver`. A material that is genuinely steady state " *
+    "declares `internal_variable_evolution(...) = SteadyStateEvolution()` and poses `0 = L(F, Q)`.",
+)
+
+# The steady state category: `0 = L(F, Q)`, condensed but rate free, hence assembled on the bare
+# `time` path. No material in this package poses that problem yet, so the local solver for it is an
+# open extension point rather than a stub that would return something plausible and wrong.
+material_routine(
+    material_model::AbstractMaterialModel,
+    F::Tensor{2},
+    coefficient_cache,
+    state_cache::SteadyStateCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+) = steady_state_local_solver_missing(material_model, "material_routine")
+
+reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    F::Tensor{2},
+    coefficient_cache,
+    state_cache::SteadyStateCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+) = steady_state_local_solver_missing(material_model, "reduced_material_routine")
+
+"""
+    steady_state_local_solver_missing(material_model, entry_point)
+
+Names the one piece a steady state condensation material has to supply.
+
+The category is wired through the rest of the machinery — trait, state cache, element cache, dof
+layout — so that implementing a growth or remodelling model is a matter of writing its local solver
+and this method, not of extending the framework.
+"""
+@noinline steady_state_local_solver_missing(material_model, entry_point) = error(
+    "$(typeof(material_model).name.name) declares `SteadyStateEvolution()`, but no local solver " *
+    "for the algebraic constraint `0 = L(F, Q)` is implemented for it. Add a method " *
+    "`Thunderbolt.$entry_point(model, F, coefficient_cache, state_cache, geometry_cache, qp, " *
+    "time, Qflat)` that solves it for the current `Q` and returns the stress.",
 )
 
 # Materials without condensed state ignore the `gto1` payload. Deliberately restricted to the two
@@ -560,20 +675,6 @@ function reduced_material_routine(
     Q = state(state_cache, geometry_cache, qp, time)
     return stress_function(material_model, F, coefficients, Q)
 end
-
-# See the `material_routine` counterpart above.
-reduced_material_routine(
-    material_model::AbstractMaterialModel,
-    F::Tensor{2},
-    coefficient_cache,
-    state_cache::RateTypeCondensationMaterialStateCache,
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-) = error(
-    "$(typeof(material_model)) carries a rate-type internal variable, so it needs a timestep and a " *
-    "previous state. It cannot be assembled on the rate-free path used by e.g. HomotopyPathSolver.",
-)
 
 # `gto1` form, see the `material_routine` counterpart above.
 function reduced_material_routine(
@@ -622,10 +723,11 @@ function reduced_material_routine(
     Δt,
 )
     F = deformation_gradient(kinematics)
+    Ḟ = deformation_rate(kinematics)
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
     Q = solve_local_constraint_state_only(
         F,
-        deformation_rate(kinematics),
+        Ḟ,
         coefficients,
         material_model,
         state_cache,
@@ -636,11 +738,12 @@ function reduced_material_routine(
         Qknownflat,
         Δt,
     )
-    return stress_function(material_model, F, coefficients, Q)
+    # Five-argument, mirroring the tangent path above: residual and linearization must read the same
+    # stress. A rate-independent stress answers through its four-argument method.
+    return stress_function(material_model, F, Ḟ, coefficients, Q)
 end
 
-# See the `material_routine` counterpart: a rate dependent material may not be served rate-free
-# kinematics, and the message should name the call the element actually made.
+# See the `material_routine` counterpart.
 reduced_material_routine(
     material_model::AbstractMaterialModel,
     kinematics::DeformationGradient,
@@ -652,7 +755,7 @@ reduced_material_routine(
     Qflat,
     Qknownflat,
     Δt,
-) = deformation_rate(kinematics)
+) = rate_dependent_material_needs_rate(material_model)
 
 reduced_material_routine(
     material_model::AbstractMaterialModel,
@@ -1097,12 +1200,15 @@ struct ActiveStressModel{Mat, ASMod, CMod, MS} <: AbstractMaterialModel
     microstructure_model::MS
 end
 
-# An active stress model is rate dependent exactly when its sarcomere is, so the material's
-# capability reads straight off the internal variable model rather than being declared twice.
-rate_dependence(model::ActiveStressModel) =
-    _rate_dependence(internal_variable_evolution(model.contraction_model))
-_rate_dependence(::RateCoupledEvolution) = RateDependent()
-_rate_dependence(::InternalVariableEvolution) = RateIndependent()
+# NOTE: no `rate_dependence` override here, deliberately. An active stress model's *stress* is
+# `P(F, Q)` -- it never reads `Ḟ` -- so it is rate independent in the sense this trait means, even
+# when its sarcomere is rate coupled. That coupling reaches `P` only through `Q`, and
+# `internal_variable_evolution(model.contraction_model)` is what states it.
+#
+# An earlier version read the trait off the sarcomere. That conflated the two questions and was
+# inconsistent: it declared `RateDependent()` while the model implements only the four-argument
+# `stress_and_tangent`, so any call through the five-argument entry point would have hit the
+# not-implemented error. It never fired only because nothing called that entry point.
 
 default_initial_state!(
     uq,

@@ -41,13 +41,16 @@ _volume_models(integrator::NonlinearMultiDomainIntegrator2) =
 
 function _check_model_is_rate_free(model)
     evolution = internal_variable_evolution(model.material_model)
-    evolution isa NoEvolution && return nothing
+    is_rate_free(evolution) && return nothing
     error(
-        "$(typeof(model.material_model).name.name) carries an internal variable with its own " *
-        "evolution law ($(typeof(evolution).name.name)), which `HomotopyPathSolver` cannot " *
-        "integrate: continuation supplies neither a previous solution nor a timestep. Either use a " *
-        "time integrator, or wrap the internal model in `AsRateIndependent` to state that its " *
-        "evolution may be ignored.",
+        "$(typeof(model.material_model).name.name) carries an internal variable with a time " *
+        "derivative ($(typeof(evolution).name.name)), which `HomotopyPathSolver` cannot integrate: " *
+        "continuation supplies neither a previous solution nor a timestep. Use a time integrator " *
+        "instead. A material whose internal variable is genuinely steady state — an algebraic " *
+        "`0 = L(F, Q)`, as in growth and remodelling — declares `SteadyStateEvolution()` and is " *
+        "accepted here.\n" *
+        "Note that `AsRateIndependent` does *not* help: it drops the velocity dependence, leaving " *
+        "`dₜQ = L(F, Q)`, which still needs a timestep.",
     )
 end
 

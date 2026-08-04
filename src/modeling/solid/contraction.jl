@@ -26,6 +26,29 @@ abstract type AbstractCondensationMaterialStateCache end
 abstract type TrivialCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
 struct EmptyTrivialCondensationMaterialStateCache <: TrivialCondensationMaterialStateCache end
 
+"""
+    SteadyStateCondensationMaterialStateCache
+
+Local problem `0 = L(F, Q)`: an algebraic constraint per quadrature point, with no time derivative.
+
+This is the category that separates *rate free* from
+[`RateIndependentCondensationMaterialStateCache`](@ref), whose name means only that `L` does not read
+`dₜF` — it still poses `dₜQ = L(F, Q)` and therefore still needs a timestep and a known state. A
+steady state material needs neither, which is what makes it the one kind of condensation a
+continuation solver such as [`HomotopyPathSolver`](@ref) can carry: growth and remodelling, where the
+trajectory does not matter and only the final state does.
+
+No such material exists in this package yet, so the local solver for the category is deliberately
+unwritten. What exists is the type, the [`SteadyStateEvolution`](@ref) trait value that selects it,
+and `material_routine`/`reduced_material_routine` arities that take the current `Q` alone and report
+the missing piece by name.
+"""
+abstract type SteadyStateCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
+struct EmptySteadyStateCondensationMaterialStateCache <: SteadyStateCondensationMaterialStateCache end
+function duplicate_for_device(device, cache::EmptySteadyStateCondensationMaterialStateCache)
+    return EmptySteadyStateCondensationMaterialStateCache()
+end
+
 
 abstract type RateIndependentCondensationMaterialStateCache <:
               AbstractCondensationMaterialStateCache end

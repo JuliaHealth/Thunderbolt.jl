@@ -140,6 +140,15 @@ end
     @test sort(u₅) ≈ sort(u₁)
 end
 
+# Counts Newton iterations through the documented monitor hook, so a test can observe how an
+# iteration behaved without reaching into solver caches.
+mutable struct CountingNewtonMonitor
+    steps::Int
+end
+CountingNewtonMonitor() = CountingNewtonMonitor(0)
+Thunderbolt.nonlinear_step_monitor(cache, t, f, u, m::CountingNewtonMonitor) = (m.steps += 1)
+Thunderbolt.nonlinear_finalize_monitor(cache, t, f, m::CountingNewtonMonitor) = nothing
+
 struct TestCalciumHatField end
 Thunderbolt.setup_coefficient_cache(coeff::TestCalciumHatField, ::QuadratureRule, ::SubDofHandler) =
     coeff
@@ -1106,19 +1115,34 @@ end
     # `PrestressedMechanicalModel` has its own residual-only entry point, which pulls the stress back
     # from the intermediate configuration without ever forming a tangent.
     @testset "Prestressed sheet" begin
-        reference = solve_prestressed_sheet(direct)
+        mref = CountingNewtonMonitor()
+        reference = solve_prestressed_sheet(
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 20,
+                tol = 1e-8,
+                monitor = mref,
+            ),
+        )
         @test reference.sol.retcode == SciMLBase.ReturnCode.Success
 
+        msimplified = CountingNewtonMonitor()
         simplified = solve_prestressed_sheet(
             NewtonRaphsonSolver(
                 inner_solver = UMFPACKFactorization(),
                 max_iter = 100,
                 tol = 1e-8,
                 simplified_newton = true,
+                monitor = msimplified,
             ),
         )
         @test simplified.sol.retcode == SciMLBase.ReturnCode.Success
         @test simplified.u ≈ reference.u rtol=1e-6
+        # Agreement alone cannot tell a working simplified Newton from one that silently fell back
+        # to the full method -- both would agree. The iteration count can: reusing the Jacobian
+        # costs quadratic convergence, so it takes strictly more steps. Without this, the whole
+        # residual-only assembly path could stop being exercised and every test here stay green.
+        @test msimplified.steps > 2 * mref.steps
     end
 end
 
@@ -1159,5 +1183,9 @@ end
     timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8),
     )
-    @test_throws "AsRateIndependent" init(problem, timestepper, dt = 1.0, verbose = false)
+    # Assert on the classification, not on the remedy: an earlier version of this message offered
+    # `AsRateIndependent` as the way out, which does not work — the wrapper drops the velocity
+    # dependence but leaves `dₜQ = L(F, Q)`, so the rejection fires again. A substring test against
+    # the remedy passed throughout.
+    @test_throws "RateCoupledEvolution" init(problem, timestepper, dt = 1.0, verbose = false)
 end

@@ -598,6 +598,11 @@ scratch space, which is a different question and gives the wrong answer for an u
 dependent model.
 """
 quasistatic_element_cache_type(::NoEvolution) = QuasiStaticElementCache
+# A steady state material condenses, but its local problem carries no time derivative, so it
+# assembles through the rate-free element cache. Whether a cell carries condensed unknowns is decided
+# by `internal_variable_size` of the model, not by the element cache type, so this cache serves both
+# rows of the rate-free half of the table.
+quasistatic_element_cache_type(::SteadyStateEvolution) = QuasiStaticElementCache
 quasistatic_element_cache_type(::FirstOrderEvolution) = QuasiStaticCondensedODEElementCache
 quasistatic_element_cache_type(::RateCoupledEvolution) = QuasiStaticCondensedDAEElementCache
 
