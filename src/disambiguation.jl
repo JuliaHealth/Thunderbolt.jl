@@ -22,3 +22,8 @@
     Q <: DynamicQuantities.UnionAbstractQuantity{T, D},
     V <: AbstractMatrix{T},
 } = mul(A, v)
+
+function Ferrite.start_assemble(strategy::FerriteOperators.AbstractAssemblyStrategy, J::BlockMatrix, residual::AbstractVector; fillzero::Bool=true)
+    FerriteOperators.strategy_needs_atomic(strategy) && @warn "Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted."
+    Ferrite.start_assemble(J, residual; fillzero)
+end
