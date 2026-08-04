@@ -209,7 +209,68 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     #     notify(plv)
     # end
     # TODO plot other chambers
-end</code></pre><div class="admonition is-success" id="Tip-5e3aff734d18349a"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-5e3aff734d18349a" title="Permalink"></a></header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[3]</dt><dd><div>F. Regazzoni, M. Salvador, P. C. Africa, M. Fedele, L. Dedè and A. Quarteroni. <em>A cardiac electromechanical model coupled with a lumped-parameter model for closed-loop blood circulation</em>. <a href="https://doi.org/10.1016/j.jcp.2022.111083">Journal of Computational Physics <strong>457</strong>, 111083</a> (2022).</div></dd></dl></div><h2 id="mechanics-tutorial_3d0dcoupling-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_3d0dcoupling-plain-program">Plain program</a><a id="mechanics-tutorial_3d0dcoupling-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_3d0dcoupling-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="../cm03_3d0d-coupling.jl"><code>cm03_3d0d-coupling.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33
+┌ Warning: Assembling into BlockMatrix without atomics with a strategy that might be not thread-safe. Results might be corrupted.
+└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/disambiguation.jl:33</code></pre><div class="admonition is-success" id="Tip-5e3aff734d18349a"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-5e3aff734d18349a" title="Permalink"></a></header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[3]</dt><dd><div>F. Regazzoni, M. Salvador, P. C. Africa, M. Fedele, L. Dedè and A. Quarteroni. <em>A cardiac electromechanical model coupled with a lumped-parameter model for closed-loop blood circulation</em>. <a href="https://doi.org/10.1016/j.jcp.2022.111083">Journal of Computational Physics <strong>457</strong>, 111083</a> (2022).</div></dd></dl></div><h2 id="mechanics-tutorial_3d0dcoupling-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_3d0dcoupling-plain-program">Plain program</a><a id="mechanics-tutorial_3d0dcoupling-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_3d0dcoupling-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="../cm03_3d0d-coupling.jl"><code>cm03_3d0d-coupling.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
 
 using OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
@@ -374,4 +435,4 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     #     notify(plv)
     # end
     # TODO plot other chambers
-end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../cm02_prestress/">« CM02: Prestressing (WIP)</a><a class="docs-footer-nextpage" href="../cm04_pericardium/">CM04: Pericadium (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Sunday 2 August 2026 20:18">Sunday 2 August 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../cm02_prestress/">« CM02: Prestressing (WIP)</a><a class="docs-footer-nextpage" href="../cm04_pericardium/">CM04: Pericadium (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 4 August 2026 17:49">Tuesday 4 August 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
