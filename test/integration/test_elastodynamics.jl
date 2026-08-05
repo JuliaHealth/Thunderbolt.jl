@@ -50,23 +50,25 @@ end
 
 # A velocity field that is a uniform translation along `dir`.
 function translation_velocity(f, dir::Vec{3})
-    v0 = zeros(ndofs(f.dh))
-    for i = 1:3:ndofs(f.dh)
+    v0 = zeros(length(Thunderbolt.velocity_dofs(f)))
+    for i = 1:3:length(v0)
         v0[i], v0[i+1], v0[i+2] = dir[1], dir[2], dir[3]
     end
     return v0
 end
 
 # Transverse velocity, growing along the bar so that the free end moves fastest.
+# The velocity is given in the displacement field's own numbering, which is the structural problem's.
 function bending_velocity(f, amplitude)
-    v0 = zeros(ndofs(f.dh))
-    for cell in CellIterator(f.dh)
+    dh = f.structural.dh
+    v0 = zeros(ndofs(dh))
+    for cell in CellIterator(dh)
         for (i, node) in enumerate(getcoordinates(cell))
             dofs = celldofs(cell)[(3(i-1)+1):(3i)]
             v0[dofs[2]] = amplitude * node[1]
         end
     end
-    Ferrite.apply_zero!(v0, Thunderbolt.getch(f))
+    Ferrite.apply_zero!(v0, Thunderbolt.getch(f.structural))
     return v0
 end
 
@@ -86,7 +88,7 @@ end
         # residual corresponds to a displacement error of that order — hence the tolerances below are
         # a statement about the Newton, not about Newmark.
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
-        @test integrator.u[Thunderbolt.fe_dof_range(f)]≈tend .* v0 rtol=1e-7
+        @test integrator.u[Thunderbolt.displacement_dofs(f)]≈tend .* v0 rtol=1e-7
         @test velocity(integrator)≈v0 rtol=1e-7
         @test norm(acceleration(integrator)) < 1e-6
     end
@@ -114,13 +116,21 @@ end
         # Reach the static equilibrium of the held boundary first. `γ = 1` is maximal numerical
         # dissipation, which is what drives the free vibration out; the conserving scheme below would
         # oscillate about the equilibrium forever and never settle.
-        settled = solve_elastodynamic(f, zeros(ndofs(f.dh)), 50.0, 1.0; γ = 1.0, β = 1.0)
+        settled = solve_elastodynamic(
+            f,
+            zeros(length(Thunderbolt.velocity_dofs(f))),
+            50.0,
+            1.0;
+            γ = 1.0,
+            β = 1.0,
+        )
         @test settled.sol.retcode == SciMLBase.ReturnCode.Success
         u_eq = copy(settled.u)
         @test norm(u_eq) > 1.0e-3                                   # genuinely nonzero
         @test norm(velocity(settled)) / norm(u_eq) < 1.0e-6         # genuinely at rest
 
-        problem = ElastodynamicsProblem(f, u_eq, zeros(ndofs(f.dh)), (0.0, 5.0))
+        problem =
+            ElastodynamicsProblem(f, u_eq, zeros(length(Thunderbolt.velocity_dofs(f))), (0.0, 5.0))
         integrator = init(problem, NewmarkSolver(), dt = 0.5, verbose = false)
         solve!(integrator)
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
@@ -172,7 +182,7 @@ end
             first_swing, last_swing = 0.0, 0.0
             while integrator.t < tend - 1.0e-12
                 step!(integrator)
-                amplitude = norm(integrator.u[Thunderbolt.fe_dof_range(f)], Inf)
+                amplitude = norm(integrator.u[Thunderbolt.displacement_dofs(f)], Inf)
                 integrator.t < tend / 3 && (first_swing = max(first_swing, amplitude))
                 integrator.t > 2tend / 3 && (last_swing = max(last_swing, amplitude))
             end
@@ -238,7 +248,10 @@ end
             abstol = 1.0e-6,
         )
         @test adaptive.sol.retcode == SciMLBase.ReturnCode.Success
-        @test norm(adaptive.u - reference.u) / norm(reference.u) < 5.0e-3
+        # Compare the displacement, not the state: the velocity block is not small next to it on an
+        # oscillating bar, so a mixed norm would measure something else.
+        d = Thunderbolt.displacement_dofs(f)
+        @test norm(adaptive.u[d] - reference.u[d]) / norm(reference.u[d]) < 5.0e-3
     end
 
     @testset "The step size follows the solution" begin
@@ -264,7 +277,7 @@ end
         u0 = zeros(solution_size(f))
         Thunderbolt.default_initial_condition!(u0, f)
         integrator = init(
-            ElastodynamicsProblem(f, u0, zeros(ndofs(f.dh)), (0.0, 20.0)),
+            ElastodynamicsProblem(f, u0, zeros(length(Thunderbolt.velocity_dofs(f))), (0.0, 20.0)),
             NewmarkSolver(),
             dt = 0.05,
             adaptive = true,
@@ -346,7 +359,7 @@ end
         for _ = 1:4
             step!(integrator)
         end
-        fe = Thunderbolt.fe_dof_range(f)
+        fe = Thunderbolt.displacement_dofs(f)
         tmp = zeros(solution_size(f))
         tprev, t = integrator.tprev, integrator.t
         tmid = (tprev + t) / 2
@@ -464,13 +477,13 @@ end
         )
         function contract(sarcomere)
             f = elastodynamic_bar(ncells = (2, 1, 1), material = active(sarcomere))
-            return solve_elastodynamic(f, zeros(ndofs(f.dh)), 20.0, 1.0)
+            return solve_elastodynamic(f, zeros(length(Thunderbolt.velocity_dofs(f))), 20.0, 1.0)
         end
 
         integrator = contract(Thunderbolt.RDQ20MFModel())
         # Read the layout off the solved function: a bar built with a different material carries a
         # different internal variable block, so it cannot stand in for this one.
-        fe = Thunderbolt.fe_dof_range(integrator.f)
+        fe = Thunderbolt.displacement_dofs(integrator.f)
         iv = Thunderbolt.internal_variable_range(integrator.f)
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
         @test all(isfinite, integrator.u)

@@ -131,10 +131,6 @@ end
 
 # The initial velocity is state of the *problem*, but only the function reaches `setup_solver_cache`
 # through the generic path above, so it is forwarded here.
-function init_cache(prob::ElastodynamicsProblem, alg; dt, kwargs...)
-    return setup_solver_cache(prob.f, alg, prob.tspan[1]; v0 = prob.v0, kwargs...)
-end
-
 # `@SciMLMessage` dispatches on `Bool` (what the operator splitting parent hands its children) and on
 # `AbstractVerbositySpecifier` (what `DiffEqBase.init` passes), but not on the bare `SciMLLogging`
 # presets, which are what our own default and a `verbose = Standard()` from user code are. Lower

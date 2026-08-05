@@ -77,6 +77,89 @@ end
 Base.length(m::SolutionVectorMapping) = length(m.dofs) + length(m.internal_variables)
 
 """
+    field_dof_mapping(target_dh, target_sym, source_dh, source_sym)
+
+The wiring from every dof of field `target_sym` to the dof of `source_sym` at the same place.
+
+Built by walking the cells and matching `celldofs` entry by entry, rather than computed from an
+assumed numbering: the two handlers agree per cell because they carry the same interpolation on the
+same cellset, and that is the *only* premise. A dof reached from two cells must resolve to the same
+source dof, which is checked rather than assumed -- that check is what turns "the interpolations
+match" from a premise into a verified property of the result.
+"""
+function field_dof_mapping(
+    target_dh::Ferrite.AbstractDofHandler,
+    target_sym::Symbol,
+    source_dh::Ferrite.AbstractDofHandler,
+    source_sym::Symbol,
+)
+    dofs = zeros(Int, ndofs(target_dh))
+    target_cdofs = Int[]
+    source_cdofs = Int[]
+    for (sdh_target, sdh_source) ∈ zip(target_dh.subdofhandlers, source_dh.subdofhandlers)
+        @assert sdh_target.cellset == sdh_source.cellset "Subdomain mismatch between the two dof handlers."
+        target_range = dof_range(sdh_target, target_sym)
+        source_range = dof_range(sdh_source, source_sym)
+        @assert length(target_range) == length(source_range) "Fields $(target_sym) and $(source_sym) do not share an interpolation."
+        resize!(target_cdofs, ndofs_per_cell(sdh_target))
+        resize!(source_cdofs, ndofs_per_cell(sdh_source))
+        for cellid ∈ sdh_target.cellset
+            celldofs!(target_cdofs, target_dh, cellid)
+            celldofs!(source_cdofs, source_dh, cellid)
+            for (i, j) ∈ zip(target_range, source_range)
+                d, s = target_cdofs[i], source_cdofs[j]
+                if dofs[d] == 0
+                    dofs[d] = s
+                else
+                    @assert dofs[d] == s "Inconsistent dof wiring at dof $d: $(dofs[d]) and $s."
+                end
+            end
+        end
+    end
+    @assert all(>(0), dofs) "Not every dof of $(target_sym) was reached."
+    @assert allunique(dofs) "The dof wiring is not injective."
+    return dofs
+end
+
+"""
+    internal_variable_mapping(target_dh, target_lvh, source_dh, source_lvh)
+
+The wiring from every condensed internal variable of the target to its counterpart in the source.
+
+Both handlers lay the condensed unknowns out per cell in the same order -- they are built from the
+same integrator over the same grid -- so this matches them cell by cell and errors if a cell carries
+a different number of them on the two sides.
+"""
+function internal_variable_mapping(
+    target_dh::Ferrite.AbstractDofHandler,
+    target_lvh::InternalVariableHandler,
+    source_dh::Ferrite.AbstractDofHandler,
+    source_lvh::InternalVariableHandler,
+)
+    ndofs(target_lvh) == 0 && return Int[]
+    ncells = getncells(get_grid(target_dh))
+    target_last = last(internal_variable_range(target_dh, target_lvh))
+    source_last = last(internal_variable_range(source_dh, source_lvh))
+    ivs = zeros(Int, ndofs(target_lvh))
+    # Offsets are absolute and 0-based: cell `cid` owns `offset(cid)+1 : offset(cid+1)`.
+    for cid = 1:ncells
+        target_from = FerriteOperators.internal_variable_offset(target_lvh, cid)
+        source_from = FerriteOperators.internal_variable_offset(source_lvh, cid)
+        target_to =
+            cid < ncells ? FerriteOperators.internal_variable_offset(target_lvh, cid + 1) :
+            target_last
+        source_to =
+            cid < ncells ? FerriteOperators.internal_variable_offset(source_lvh, cid + 1) :
+            source_last
+        @assert target_to - target_from == source_to - source_from "Cell $cid carries a different number of internal variables on the two sides."
+        for k = 1:(target_to-target_from)
+            ivs[target_from-ndofs(target_dh)+k] = source_from + k
+        end
+    end
+    return ivs
+end
+
+"""
     AbstractStageFunction
 
 The nonlinear problem one *stage* of a time integration scheme poses.

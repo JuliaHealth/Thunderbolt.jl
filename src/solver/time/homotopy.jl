@@ -33,7 +33,7 @@ check_internal_variables_are_rate_free(f) = nothing
 check_internal_variables_are_rate_free(f::AbstractSemidiscreteBlockedFunction) =
     foreach(check_internal_variables_are_rate_free, blocks(f))
 check_internal_variables_are_rate_free(f::QuasiStaticFunction) =
-    foreach(_check_model_is_rate_free, _volume_models(f.integrator))
+    foreach(_check_model_is_rate_free, _volume_models(get_volume_integrator(f)))
 
 # Unknown integrator types deliberately have no fallback here: silently skipping the check would be
 # worse than the `MethodError`.

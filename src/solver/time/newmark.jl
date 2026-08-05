@@ -138,13 +138,56 @@ function FerriteOperators.residual!(
     return nothing
 end
 
+"""
+    NewmarkStage(f, op, mapping, velocity_dofs, p)
+
+The nonlinear problem one Newmark step poses.
+
+Newmark condenses the velocity out: the step solves for the displacement and the condensed internal
+variables against the *structural* problem's dof handler, and the velocity follows from the converged
+displacement. So the stage's unknowns are a strict subset of the state's, wired to it by a
+[`SolutionVectorMapping`](@ref) rather than by an assumed layout.
+
+`update_state!` reconstructs the velocity from the same [`AffineVelocity`](@ref) the element is handed
+to form the deformation rate, so the global corrector and the element's rate cannot drift apart.
+"""
+mutable struct NewmarkStage{FType, OpType, MapType, PType} <: AbstractStageFunction
+    # The structural sub-problem: what the operator assembles against, and whose constraints and
+    # residual norm the Newton uses.
+    const f::FType
+    const op::OpType
+    const mapping::MapType
+    # `velocity_dofs[i]` is the state dof carrying the velocity at structural dof `i`.
+    const velocity_dofs::Vector{Int}
+    p::PType
+end
+
+getoperator(sf::NewmarkStage) = sf.op
+getfunction(sf::NewmarkStage) = sf.f
+stage_mapping(sf::NewmarkStage) = sf.mapping
+stage_parameters(sf::NewmarkStage) = sf.p
+set_stage_parameters!(sf::NewmarkStage, p) = (sf.p = p; sf)
+
+function update_state!(u::AbstractVector, sf::NewmarkStage, z::AbstractVector)
+    scatter!(u, z, stage_mapping(sf))
+    # v = ∂v∂u (u - uᵥ), in the structural numbering, written into the state's velocity block. This is
+    # the same relation the element uses to form the deformation rate -- one statement, not two.
+    (; ∂v∂u, uᵥ) = sf.p.velocity
+    @inbounds for (i, d) in enumerate(sf.velocity_dofs)
+        u[d] = ∂v∂u * (z[i] - uᵥ[i])
+    end
+    return u
+end
+
 struct NewmarkStageCache{StageType, SolverType, StageOpType, T}
-    # Newmark condenses the velocity out, but the velocity is not part of the solution vector yet, so
-    # the stage's unknowns are still the function's. It becomes a stage of its own once the velocity
-    # is a genuine field.
+    # The nonlinear problem one Newmark step poses: solve for the displacement and the condensed
+    # internal variables, then reconstruct the velocity.
     stage_function::StageType
     nlsolver::SolverType
     stage_op::StageOpType
+    # The stage unknowns and the previous state gathered into the stage numbering.
+    z::Vector{Float64}
+    zprev::Vector{Float64}
     β::T
     γ::T
     # The estimator straddles a step, so it is not computable on the first one.
@@ -156,7 +199,8 @@ mutable struct NewmarkSolverCache{
     SolutionType <: AbstractVector{T},
     PrevSolutionType <: AbstractVector{T},
     TmpType <: AbstractVector{T},
-    VelocityType <: AbstractVector{T},
+    VelocityViewType <: AbstractVector{T},
+    AccelerationType <: AbstractVector{T},
     VelocityReferenceType <: AbstractVector{T},
     StageType,
     MonitorType,
@@ -167,19 +211,20 @@ mutable struct NewmarkSolverCache{
     uₙ₋₁::PrevSolutionType
     # Temporary buffer for interpolations and stuff
     tmp::TmpType
-    # Velocity and acceleration of the displacement dofs. Not part of the solution vector: the global
-    # unknown is the displacement alone, see `ElastodynamicsModel`.
-    vₙ::VelocityType
-    aₙ::VelocityType
-    # Rollback buffers, the `uprev` of the velocity and the acceleration. The integrator owns one for
-    # the solution vector and restores it on a rejected step; `v` and `a` are state of the same ODE and
-    # have to be rolled back with it, so they need their own -- see `reject_step!` below.
-    vₙ₋₁::VelocityType
-    aₙ₋₁::VelocityType
+    # The velocity block of the solution vector, and of the previous one. Views rather than buffers:
+    # the velocity is state of this second order system, so the integrator's own `u .= uprev` rollback
+    # covers it and no bespoke restore is needed.
+    vₙ::VelocityViewType
+    vₙ₋₁::VelocityViewType
+    # The acceleration is *not* state -- it is determined by `(u, v)` through the balance of momentum
+    # -- so it stays scheme workspace, kept only to avoid re-solving `M a = f_ext - f_int` each step.
+    # It therefore does need its own rollback buffer; see `rollback_state!` below.
+    aₙ::AccelerationType
+    aₙ₋₁::AccelerationType
     # Scratch for the velocity predictor
-    ṽ::VelocityType
-    # The `uᵥ` of this step's `AffineVelocity`, held at full solution length so that the element query
-    # can slice a cell out of it exactly as it does for the previous solution.
+    ṽ::AccelerationType
+    # The `uᵥ` of this step's `AffineVelocity`, held at the structural problem's length so that the
+    # element query can slice a cell out of it exactly as it does for the previous solution.
     uᵥ::VelocityReferenceType
     stage::StageType
     # DO NOT USE THIS (will be replaced by proper logging system)
@@ -247,32 +292,37 @@ acceleration. The velocity is *exact* at both endpoints by construction; the acc
 interpolant's, which is linear in `θ` and therefore only an approximation of the scheme's own.
 """
 function _newmark_hermite!(out, integrator::ThunderboltTimeIntegrator, cache, t, ::Val{D}) where {D}
-    fe = fe_dof_range(integrator.f)
-    iv = internal_variable_range(integrator.f)
+    f = integrator.f
+    udofs = f.state_mapping.dofs
+    vdofs = f.velocity_dofs
+    iv = internal_variable_range(f)
     Δt = integrator.t - integrator.tprev
     # Before the first step there is no interval to interpolate over. The current state answers any
     # `t` that can be asked at that point, and a zero-width interval would divide by zero.
     if Δt == zero(Δt)
-        _newmark_endpoint!(out, cache, Val(D))
+        _newmark_endpoint!(out, integrator, cache, Val(D))
         return out
     end
     θ = (t - integrator.tprev) / Δt
 
-    uprev = @view integrator.uprev[fe]
-    u = @view integrator.u[fe]
-    vprev, v = cache.vₙ₋₁, cache.vₙ
-
+    uprev, u = integrator.uprev, integrator.u
     c₀, c₁, c₂, c₃ = _hermite_weights(θ, Δt, Val(D))
-    @inbounds @views @.. out[fe] = c₀ * uprev + c₁ * vprev + c₂ * u + c₃ * v
-    # The condensed internal variables have no derivative here, so they stay linear. `out` is only
-    # required to hold the finite element block -- the out-of-place entry points allocate it that
-    # long -- so the tail is filled only when the caller supplied room for it.
-    if D == 0 && !isempty(iv) && lastindex(out) ≥ last(iv)
+    # The displacement block and the velocity block of the *same* interpolant: the velocity written
+    # out is the derivative of the displacement written out, so a consumer reading both at one `t`
+    # sees a consistent pair rather than two independently interpolated fields.
+    d₀, d₁, d₂, d₃ = _hermite_weights(θ, Δt, Val(D + 1))
+    @inbounds for i ∈ eachindex(udofs)
+        du, dv = udofs[i], vdofs[i]
+        out[du] = c₀ * uprev[du] + c₁ * uprev[dv] + c₂ * u[du] + c₃ * u[dv]
+        out[dv] = d₀ * uprev[du] + d₁ * uprev[dv] + d₂ * u[du] + d₃ * u[dv]
+    end
+    # The condensed internal variables have no derivative here, so they stay linear.
+    if D == 0 && !isempty(iv)
         OS.linear_interpolation!(
             @view(out[iv]),
             t,
-            @view(integrator.uprev[iv]),
-            @view(integrator.u[iv]),
+            @view(uprev[iv]),
+            @view(u[iv]),
             integrator.tprev,
             integrator.t,
         )
@@ -281,14 +331,27 @@ function _newmark_hermite!(out, integrator::ThunderboltTimeIntegrator, cache, t,
 end
 
 function _newmark_hermite(integrator::ThunderboltTimeIntegrator, cache, t, ::Val{D}) where {D}
-    out = similar(cache.vₙ)
+    out = zeros(eltype(integrator.u), length(integrator.u))
     _newmark_hermite!(out, integrator, cache, t, Val(D))
-    return out
+    # The `D`-th derivative lives in the *displacement* block whatever `D` is -- the velocity block
+    # carries the next one, so that a state vector filled at `D = 0` is internally consistent. Reading
+    # it here would return the derivative one order too high.
+    return out[displacement_dofs(integrator.f)]
 end
 
-_newmark_endpoint!(out, cache, ::Val{0}) = (out .= 0; nothing)
-_newmark_endpoint!(out, cache, ::Val{1}) = (out .= cache.vₙ; nothing)
-_newmark_endpoint!(out, cache, ::Val{2}) = (out .= cache.aₙ; nothing)
+function _newmark_endpoint!(out, integrator, cache, ::Val{D}) where {D}
+    f = integrator.f
+    if D == 0
+        copyto!(out, integrator.u)
+    else
+        fill!(out, zero(eltype(out)))
+        src = D == 1 ? cache.vₙ : cache.aₙ
+        @inbounds for (i, d) ∈ enumerate(f.velocity_dofs)
+            out[d] = src[i]
+        end
+    end
+    return nothing
+end
 
 # Hermite basis and its first two derivatives with respect to `t`, as the four weights of
 # `(uprev, vprev, u, v)`.
@@ -303,6 +366,9 @@ end
 end
 @inline _hermite_weights(θ, Δt, ::Val{2}) =
     ((12θ - 6) / Δt^2, (6θ - 4) / Δt, (-12θ + 6) / Δt^2, (6θ - 2) / Δt)
+# The cubic's third derivative is constant, and is what the velocity block of an acceleration query
+# carries.
+@inline _hermite_weights(θ, Δt, ::Val{3}) = (12 / Δt^3, 6 / Δt^2, -12 / Δt^3, 6 / Δt^2)
 
 function setup_solver_cache(
     f::ElastodynamicsFunction,
@@ -310,12 +376,14 @@ function setup_solver_cache(
     t₀;
     uprev       = nothing,
     u           = nothing,
-    v0          = nothing,
     alias_uprev = true,
     alias_u     = false,
 )
     vtype = Vector{Float64}
-    nfe   = ndofs(f.dh)
+    # The stage assembles against the structural problem, so its sizes -- not the state's -- are what
+    # the operator, the residual and the acceleration are built from.
+    structural = f.structural
+    nfe = ndofs(structural.dh)
 
     if u === nothing
         _u = vtype(undef, solution_size(f))
@@ -331,10 +399,10 @@ function setup_solver_cache(
         _uprev = alias_uprev ? uprev : recursivecopy(uprev)
     end
 
-    (; integrator, dh) = f
+    (; integrator, dh) = structural
     (; newton, local_solver) = solver.inner_solver
 
-    local_solver_cache = _setup_local_solver_cache(local_solver, integrator, dh, f.lvh)
+    local_solver_cache = _setup_local_solver_cache(local_solver, integrator, dh, structural.lvh)
     op = setup_operator(
         f.assembly_strategy,
         _annotate_with_local_solver_cache(integrator, local_solver_cache),
@@ -350,33 +418,45 @@ function setup_solver_cache(
         zeros(nfe),
         one(Float64), # overwritten by the first step
     )
-    stage_function = FullStateStage(
-        f,
+    stage_function = NewmarkStage(
+        structural,
         stage_op,
+        f.state_mapping,
+        f.velocity_dofs,
         NewmarkTimeParameters(
             nothing,
             t₀,
             zero(t₀),
-            AffineVelocity(one(Float64), zeros(solution_size(f))),
-            _uprev,
+            AffineVelocity(one(Float64), zeros(solution_size(structural))),
+            zeros(solution_size(structural)),
         ),
     )
     nlsolver = _setup_multilevel_newton_cache(stage_function, local_solver_cache, newton, nfe)
 
-    vₙ = v0 === nothing ? zeros(nfe) : recursivecopy(v0)
-    aₙ = _consistent_initial_acceleration(f, stage_op, _u, vₙ, t₀)
+    vₙ   = view(_u, f.velocity_dofs)
+    vₙ₋₁ = view(_uprev, f.velocity_dofs)
+    aₙ   = _consistent_initial_acceleration(f, stage_op, _u, vₙ, t₀)
 
     return NewmarkSolverCache(
         _u,
         _uprev,
         copy(_u),
         vₙ,
+        vₙ₋₁,
         aₙ,
-        copy(vₙ),
         copy(aₙ),
         zeros(nfe),
-        zeros(solution_size(f)),
-        NewmarkStageCache(stage_function, nlsolver, stage_op, solver.β, solver.γ, Ref(true)),
+        zeros(solution_size(structural)),
+        NewmarkStageCache(
+            stage_function,
+            nlsolver,
+            stage_op,
+            zeros(solution_size(structural)),
+            zeros(solution_size(structural)),
+            solver.β,
+            solver.γ,
+            Ref(true),
+        ),
         solver.monitor,
     )
 end
@@ -392,7 +472,12 @@ equilibrium, and is silently wrong otherwise — which is exactly the interestin
 released from a deflected state.
 """
 function _consistent_initial_acceleration(f::ElastodynamicsFunction, stage_op, u₀, v₀, t₀)
-    fe = fe_dof_range(f)
+    # Everything here is in the *structural* numbering: that is what the operator assembles against
+    # and what the mass matrix is sized by.
+    structural = f.structural
+    z = zeros(solution_size(structural))
+    gather!(z, u₀, f.state_mapping)
+    fe = fe_dof_range(structural)
     r = zeros(length(fe))
 
     # Two things have to be right about this evaluation, and the Newmark parameter object is what
@@ -406,24 +491,24 @@ function _consistent_initial_acceleration(f::ElastodynamicsFunction, stage_op, u
     #    `u₀ - v₀`, for which `∂v∂u (u₀ - uᵥ) = v₀` exactly.
     #
     # `u₀` is copied because writing the condensed tail back is what the assembly does with it.
-    uᵥ = copy(u₀)
-    @inbounds @views @.. uᵥ[fe] = u₀[fe] - v₀
+    uᵥ = copy(z)
+    @inbounds @views @.. uᵥ[fe] = z[fe] - v₀
     p = NewmarkTimeParameters(
         nothing,
         t₀,
         eps(Float64),
-        AffineVelocity(one(eltype(u₀)), uᵥ),
-        copy(u₀),
+        AffineVelocity(one(eltype(z)), uᵥ),
+        copy(z),
     )
-    residual!(stage_op.op, r, copy(u₀), p)
+    residual!(stage_op.op, r, copy(z), p)
     r .= .-r
 
     # On a copy of the mass matrix: `apply_zero!` rewrites the constrained rows and columns, and the
     # stage operator keeps using `M` for every step afterwards.
     M = copy(SparseMatrixCSC(stage_op.M.A))
-    apply_zero!(M, r, getch(f))
+    apply_zero!(M, r, getch(structural))
     a₀ = M \ r
-    apply_zero!(a₀, getch(f))
+    apply_zero!(a₀, getch(structural))
     return a₀
 end
 
@@ -461,11 +546,17 @@ end
 function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, Δt)
     (; uₙ, uₙ₋₁, vₙ, aₙ, ṽ, uᵥ, stage) = cache
     (; stage_function, nlsolver, stage_op, β, γ) = stage
-    fe = fe_dof_range(f)
+    # The predictors and the stage unknowns live in the structural numbering.
+    z = stage.z
+    fe = fe_dof_range(f.structural)
 
     update_constraints!(f, cache, t + Δt)
+    init_stage!(z, stage_function, uₙ)
+    zprev = stage.zprev
+    init_stage!(zprev, stage_function, uₙ₋₁)
+
     # Predictors, in the same shape as the Ferrite reference implementation.
-    @inbounds @views @.. stage_op.ũ = uₙ₋₁[fe] + Δt * vₙ + (1 / 2 - β) * Δt^2 * aₙ
+    @inbounds @views @.. stage_op.ũ = zprev[fe] + Δt * vₙ + (1 / 2 - β) * Δt^2 * aₙ
     @inbounds @.. ṽ = vₙ + (1 - γ) * Δt * aₙ
     stage_op.βΔt² = β * Δt^2
 
@@ -476,16 +567,17 @@ function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, 
     _newmark_affine_velocity!(uᵥ, stage_op.ũ, ṽ, ∂v∂u)
     set_stage_parameters!(
         stage_function,
-        NewmarkTimeParameters(nothing, t + Δt, Δt, AffineVelocity(∂v∂u, uᵥ), uₙ₋₁),
+        NewmarkTimeParameters(nothing, t + Δt, Δt, AffineVelocity(∂v∂u, uᵥ), zprev),
     )
-    if !nlsolve!(uₙ, stage_function, nlsolver, t + Δt)
+    if !nlsolve!(z, stage_function, nlsolver, t + Δt)
         return false
     end
 
-    # Correctors
-    a = _newmark_acceleration!(stage_op.aₜₘₚ, stage_op, uₙ)
+    # The acceleration is scheme workspace, so it is corrected here; the velocity is state and is
+    # reconstructed by `update_state!` as the stage writes itself back.
+    a = _newmark_acceleration!(stage_op.aₜₘₚ, stage_op, z)
     @inbounds @.. aₙ = a
-    @inbounds @.. vₙ = ṽ + γ * Δt * aₙ
+    update_state!(uₙ, stage_function, z)
 
     return true
 end
@@ -536,22 +628,23 @@ function _newmark_report_error!(integrator, cache::NewmarkSolverCache, Δt, β)
 
     reltol = integrator.opts.reltol
     abstol = integrator.opts.abstol
-    fe = fe_dof_range(integrator.f)
+    udofs = integrator.f.state_mapping.dofs
     err = zero(eltype(uₙ))
     # The acceleration carries the scheme's own numbering while `uₙ` carries the solution vector's.
     # They coincide today; walking them as a pair rather than with one shared index keeps the estimate
     # correct once a stage solves against a handler of its own.
-    @inbounds for (k, i) in enumerate(fe)
+    @inbounds for (k, i) in enumerate(udofs)
         eᵢ = Δt^2 * (β - 1 / 6) * (aₙ[k] - aₙ₋₁[k])
         tolᵢ = abstol + reltol * max(abs(uₙ[i]), abs(uₙ₋₁[i]))
         err += (eᵢ / tolᵢ)^2
     end
-    set_error_estimate!(controller_cache, sqrt(err / length(fe)))
+    set_error_estimate!(controller_cache, sqrt(err / length(udofs)))
     return nothing
 end
 
+# Only the acceleration: the velocity is part of the solution vector, so the integrator's own
+# `uprev` bookkeeping carries it.
 function _newmark_store_previous!(cache::NewmarkSolverCache)
-    cache.vₙ₋₁ .= cache.vₙ
     cache.aₙ₋₁ .= cache.aₙ
     return nothing
 end
@@ -575,11 +668,11 @@ adaptive_order(::NewmarkSolver) = 2
 OrdinaryDiffEqCore.default_controller(QT, ::NewmarkSolver) =
     PIDController(QT(3 // 5), QT(-1 // 5), QT(0))
 
-# The velocity and the acceleration are state of the same second order ODE as the displacement but
-# are not in the solution vector, so the generic rollback does not cover them.
+# The velocity is state and rides along in the solution vector, so the generic rollback restores it.
+# The acceleration is not state -- it is determined by `(u, v)` -- and is kept only as workspace, so it
+# is the one quantity that still needs a buffer of its own.
 function rollback_state!(integrator::ThunderboltTimeIntegrator, cache::NewmarkSolverCache)
     @invoke rollback_state!(integrator, cache::Any)
-    cache.vₙ .= cache.vₙ₋₁
     cache.aₙ .= cache.aₙ₋₁
     return nothing
 end

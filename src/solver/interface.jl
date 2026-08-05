@@ -96,7 +96,7 @@ end
 
 # Nonlinear
 function setup_operator(f::AbstractSolidMechanicsFunction, solver::AbstractNonlinearSolver)
-    return setup_operator(get_strategy(f), f.integrator, f.dh)
+    return setup_operator(get_strategy(f), get_volume_integrator(f), f.dh)
 end
 
 function update_constraints!(

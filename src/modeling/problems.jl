@@ -121,43 +121,51 @@ QuasiStaticProblem(f::QuasiStaticFunction, u0::AbstractVector, tspan::Tuple{<:Re
 """
     ElastodynamicsProblem(f::ElastodynamicsFunction, [u0, [v0,]] tspan)
 
-Second order in time structural problem. `u0` has the full solution size (displacement dofs followed
-by the condensed internal variables), while `v0` is the initial velocity of the **displacement dofs
-only** — the internal variables have no velocity, and the velocity is not a degree of freedom.
+Second order in time structural problem. `u0` is the full state: the displacement, the velocity and
+the condensed internal variables, laid out by `f.dh` and `f.lvh`.
+
+The three argument form takes a state that already carries its velocity. The four argument form is a
+convenience for the common case of writing a velocity field on its own: `v0` covers the displacement
+dofs and is written into the velocity block of a copy of `u0`.
 
 The initial acceleration is not an input: it is determined by the balance of momentum at `t₀` and is
 computed during solver setup.
 """
-struct ElastodynamicsProblem{fType <: ElastodynamicsFunction, uType, vType, tType, pType} <:
+struct ElastodynamicsProblem{fType <: ElastodynamicsFunction, uType, tType, pType} <:
        AbstractSemidiscreteProblem
     f::fType
     u0::uType
-    v0::vType
     tspan::tType
     p::pType
 
-    function ElastodynamicsProblem(f, u0, v0, tspan, p)
+    function ElastodynamicsProblem(f, u0, tspan, p)
         length(u0) == solution_size(f) || error(
-            "Initial displacement has length $(length(u0)), but the solution size is $(solution_size(f)).",
+            "Initial state has length $(length(u0)), but the solution size is $(solution_size(f)).",
         )
-        length(v0) == ndofs(f.dh) || error(
-            "Initial velocity has length $(length(v0)), but the displacement field has $(ndofs(f.dh)) dofs. " *
-            "The velocity covers the displacement dofs only, not the condensed internal variables.",
-        )
-        return new{typeof(f), typeof(u0), typeof(v0), typeof(tspan), typeof(p)}(f, u0, v0, tspan, p)
+        return new{typeof(f), typeof(u0), typeof(tspan), typeof(p)}(f, u0, tspan, p)
     end
 end
 
 ElastodynamicsProblem(f::ElastodynamicsFunction, tspan::Tuple{<:Real, <:Real}) =
-    ElastodynamicsProblem(f, zeros(solution_size(f)), zeros(ndofs(f.dh)), tspan)
+    ElastodynamicsProblem(f, zeros(solution_size(f)), tspan)
 ElastodynamicsProblem(f::ElastodynamicsFunction, u0::AbstractVector, tspan::Tuple{<:Real, <:Real}) =
-    ElastodynamicsProblem(f, u0, zeros(ndofs(f.dh)), tspan)
-ElastodynamicsProblem(
+    ElastodynamicsProblem(f, u0, tspan, SciMLBase.NullParameters())
+function ElastodynamicsProblem(
     f::ElastodynamicsFunction,
     u0::AbstractVector,
     v0::AbstractVector,
     tspan::Tuple{<:Real, <:Real},
-) = ElastodynamicsProblem(f, u0, v0, tspan, SciMLBase.NullParameters())
+)
+    length(v0) == length(f.velocity_dofs) || error(
+        "Initial velocity has length $(length(v0)), but the displacement field has " *
+        "$(length(f.velocity_dofs)) dofs.",
+    )
+    u = copy(u0)
+    @inbounds for (i, d) in enumerate(f.velocity_dofs)
+        u[d] = v0[i]
+    end
+    return ElastodynamicsProblem(f, u, tspan, SciMLBase.NullParameters())
+end
 
 
 struct PointwiseODEProblem{fType <: AbstractPointwiseFunction, uType, tType, pType} <:

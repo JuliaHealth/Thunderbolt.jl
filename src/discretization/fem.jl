@@ -527,6 +527,27 @@ function _setup_internal_variable_handler(integrator, dh)
     return FerriteOperators.setup_internal_variable_handler(integrator, element_caches, dh)
 end
 
+"""
+    _rebase_internal_variable_handler(lvh, from_dh, to_dh)
+
+The same condensed layout, re-expressed as offsets into a solution vector whose finite element block
+is `to_dh`'s rather than `from_dh`'s.
+
+How many unknowns a cell condenses is a property of its material, so it does not change when a second
+field is added next to the displacement -- only where they start does. Rebuilding the handler from the
+element caches instead would require setting them up against a multi-field `SubDofHandler`, which the
+element layer does not support and does not need to.
+"""
+function _rebase_internal_variable_handler(
+    lvh::InternalVariableHandler,
+    from_dh::Ferrite.AbstractDofHandler,
+    to_dh::Ferrite.AbstractDofHandler,
+)
+    offsets = lvh.internal_variable_offsets
+    offsets === nothing && return lvh # nothing is condensed, so there is nothing to rebase
+    return InternalVariableHandler(offsets .+ (ndofs(to_dh) - ndofs(from_dh)), ndofs(lvh))
+end
+
 # Solid mechanics semidiscretize interface
 function semidiscretize(
     model::QuasiStaticModel,
@@ -583,14 +604,64 @@ function semidiscretize(
         sym,
     )
 
+    # The velocity is a genuine field of the *state*, so that it is interpolated with the
+    # displacement, can be constrained, and can be written out by name. It is deliberately not a
+    # field of the structural problem above: the internal forces have no velocity equation, and a
+    # scheme that reconstructs the velocity would otherwise assemble empty rows for it.
+    vsym = model.velocity_symbol
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    _assert_shared_interpolation(discretization, sym, vsym, ipc)
+
+    dh = DofHandler(mesh)
+    name = single_subdomain_or_error(get_grid(dh))
+    add_subdomain!(
+        dh,
+        name,
+        [ApproximationDescriptor(sym, ipc), ApproximationDescriptor(vsym, ipc)],
+    )
+    close!(dh)
+
+    ch = ConstraintHandler(dh)
+    _add_dirichlet_conditions!(ch, discretization.dbcs)
+    close!(ch)
+
+    lvh = _rebase_internal_variable_handler(quasistaticform.lvh, quasistaticform.dh, dh)
+
+    state_mapping = SolutionVectorMapping(
+        field_dof_mapping(quasistaticform.dh, sym, dh, sym),
+        internal_variable_mapping(quasistaticform.dh, quasistaticform.lvh, dh, lvh),
+    )
+    velocity_dofs = field_dof_mapping(quasistaticform.dh, sym, dh, vsym)
+
     return ElastodynamicsFunction(
-        quasistaticform.dh,
-        quasistaticform.ch,
-        quasistaticform.lvh,
-        quasistaticform.integrator,
+        dh,
+        ch,
+        lvh,
+        quasistaticform,
         mass_term,
+        state_mapping,
+        velocity_dofs,
         quasistaticform.assembly_strategy,
     )
+end
+
+"""
+    _assert_shared_interpolation(discretization, sym, vsym, ipc)
+
+The velocity shares the displacement's interpolation.
+
+This is assumed throughout: the element evaluates the reconstructed velocity with the *displacement*
+`CellValues` (`compute_kinematic_quantities`), and the schemes size velocity vectors by the
+displacement dof count. Nothing checked it until now, so a user supplying a different interpolation
+for the velocity symbol got silent nonsense rather than an error.
+"""
+function _assert_shared_interpolation(discretization, sym, vsym, ipc)
+    haskey(discretization.interpolations, vsym) || return nothing
+    discretization.interpolations[vsym] === ipc || error(
+        "The velocity field $(vsym) must share the interpolation of the displacement field $(sym), " *
+        "got $(discretization.interpolations[vsym]) and $(ipc).",
+    )
+    return nothing
 end
 
 function semidiscretize(

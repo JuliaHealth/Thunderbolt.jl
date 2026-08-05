@@ -139,21 +139,54 @@ The mass term is kept as an *integrator* rather than an assembled matrix, like e
 this package -- the solver decides when and how to materialize it.
 """
 struct ElastodynamicsFunction{
-    I <: AbstractNonlinearIntegrator,
+    QSF <: QuasiStaticFunction,
     MI <: AbstractBilinearIntegrator,
     DH <: Ferrite.AbstractDofHandler,
     CH <: ConstraintHandler,
     LVH <: InternalVariableHandler,
+    MAP,
     AS <: AbstractAssemblyStrategy,
 } <: AbstractSolidMechanicsFunction
+    # The *state*: displacement and velocity, both genuine fields, plus the condensed internal
+    # variables. This is what the solution vector holds.
     dh::DH
     ch::CH
     lvh::LVH
-    integrator::I
+    # The internal force problem, posed on the displacement alone. A scheme that reconstructs the
+    # velocity rather than solving for it assembles against *this*, so its linear system carries no
+    # empty velocity rows.
+    structural::QSF
     mass_term::MI
+    # Wiring from the structural numbering into the state numbering: `state_mapping` for the block a
+    # stage solves for, `velocity_dofs` for the block a scheme reconstructs. `velocity_dofs[i]` is the
+    # state dof carrying the velocity at structural displacement dof `i`.
+    state_mapping::MAP
+    velocity_dofs::Vector{Int}
     assembly_strategy::AS
 end
 get_strategy(f::ElastodynamicsFunction) = f.assembly_strategy
+
+"""
+    get_volume_integrator(f)
+
+The integrator carrying the volumetric weak form. For an [`ElastodynamicsFunction`](@ref) that is
+the internal force term, which lives on the structural sub-problem rather than on the state.
+"""
+get_volume_integrator(f::AbstractSolidMechanicsFunction) = f.integrator
+get_volume_integrator(f::ElastodynamicsFunction) = f.structural.integrator
+
+"""
+    displacement_dofs(f::ElastodynamicsFunction)
+    velocity_dofs(f::ElastodynamicsFunction)
+
+The state dofs carrying the displacement and the velocity, in matching order: entry `i` of both is
+the same place in space, because the two fields share an interpolation.
+
+Neither is a range. Ferrite distributes dofs cell by cell, so a field does not occupy a contiguous
+block of the solution vector, and no consumer may assume one.
+"""
+displacement_dofs(f::ElastodynamicsFunction) = f.state_mapping.dofs
+velocity_dofs(f::ElastodynamicsFunction) = f.velocity_dofs
 
 solution_size(f::AbstractSolidMechanicsFunction) = ndofs(f.dh)+ndofs(f.lvh)
 
@@ -193,7 +226,7 @@ function default_initial_condition!(u::AbstractVector, f::AbstractSolidMechanics
     fill!(u, 0.0)
     ndofs(f.lvh) == 0 && return # no internal variable
     for sdh in f.dh.subdofhandlers
-        default_initial_condition_quasistatic_subdomain!(u, f, f.integrator, sdh)
+        default_initial_condition_quasistatic_subdomain!(u, f, get_volume_integrator(f), sdh)
     end
 end
 
@@ -262,8 +295,11 @@ gather_internal_variable_infos(model::QuasiStaticModel) =
 gather_internal_variable_infos(model::AbstractMaterialModel) = ()
 
 __get_material_model(model::AbstractMaterialModel, cid, qp) = model
-get_material_model(f::AbstractSolidMechanicsFunction, cid, qp) =
-    __get_material_model(_volume_model_for_cell(f, f.integrator, cid).material_model, cid, qp)
+get_material_model(f::AbstractSolidMechanicsFunction, cid, qp) = __get_material_model(
+    _volume_model_for_cell(f, get_volume_integrator(f), cid).material_model,
+    cid,
+    qp,
+)
 
 _volume_model_for_cell(f, integrator::NonlinearIntegrator, cid) = integrator.volume_model
 function _volume_model_for_cell(f, integrator::NonlinearMultiDomainIntegrator2, cid)
