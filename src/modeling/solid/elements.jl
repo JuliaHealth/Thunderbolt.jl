@@ -674,7 +674,7 @@ end
 
 # A rate-free element has no use for any of it and expects the bare time, so it is unwrapped here
 # rather than being handed a parameter object it would pass to `evaluate_coefficient`. The `gto1` path
-# still has this gap (see the parameter system task); it is closed here because a mixed mesh carrying
+# still has this gap; it is closed here because a mixed mesh carrying
 # one rate-free and one condensed subdomain is the ordinary case for this solver.
 FerriteOperators.query_element_parameters(
     ::QuasiStaticElementCache,

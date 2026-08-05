@@ -310,6 +310,7 @@ export
     HomotopyPathSolver,
     BackwardEulerSolver,
     NewmarkSolver,
+    PIDController,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,
     # Integrator
@@ -320,6 +321,8 @@ export
     load_voom2_grid,
     load_mfem_grid,
     solution_size,
+    velocity,
+    acceleration,
     # IO
     ParaViewWriter,
     JLD2Writer,

@@ -201,15 +201,9 @@ function reject_step!(
     cache::HomotopyPathSolverCache,
     controller::Deuflhard2004DiscreteContinuationController,
 )
-    # Reset solution
-    integrator.u .= integrator.uprev
-
-    # A step rejected because the *solve* failed has already had `dt` shortened: the step footer runs
-    # `post_newton_controller!`, which divides by the failure factor. Applying the convergence rate
-    # proposal below on top of it shrinks `dt` twice per failed attempt -- measured at a factor 2e7
-    # over six rejections where one failure factor each is 4^6. Upstream treats the two events as
-    # mutually exclusive, and so do we: this hook proposes a step size only for a rejection that came
-    # from the convergence rate itself.
+    # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
+    # solve-failure case, this hook owns the convergence-rate case. The state restore is
+    # `rollback_state!`'s.
     integrator.force_stepfail && return nothing
 
     @inline g(x) = √(1+4x) - 1
@@ -271,15 +265,9 @@ function reject_step!(
     cache::HomotopyPathSolverCache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
-    # Reset solution
-    integrator.u .= integrator.uprev
-
-    # A step rejected because the *solve* failed has already had `dt` shortened: the step footer runs
-    # `post_newton_controller!`, which divides by the failure factor. Applying the convergence rate
-    # proposal below on top of it shrinks `dt` twice per failed attempt -- measured at a factor 2e7
-    # over six rejections where one failure factor each is 4^6. Upstream treats the two events as
-    # mutually exclusive, and so do we: this hook proposes a step size only for a rejection that came
-    # from the convergence rate itself.
+    # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
+    # solve-failure case, this hook owns the convergence-rate case. The state restore is
+    # `rollback_state!`'s.
     integrator.force_stepfail && return nothing
 
     @inline g(x) = √(1+4x) - 1
@@ -344,15 +332,9 @@ function reject_step!(
     cache::HomotopyPathSolverCache,
     controller::ExperimentalDiscreteContinuationController,
 )
-    # Reset solution
-    integrator.u .= integrator.uprev
-
-    # A step rejected because the *solve* failed has already had `dt` shortened: the step footer runs
-    # `post_newton_controller!`, which divides by the failure factor. Applying the convergence rate
-    # proposal below on top of it shrinks `dt` twice per failed attempt -- measured at a factor 2e7
-    # over six rejections where one failure factor each is 4^6. Upstream treats the two events as
-    # mutually exclusive, and so do we: this hook proposes a step size only for a rejection that came
-    # from the convergence rate itself.
+    # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
+    # solve-failure case, this hook owns the convergence-rate case. The state restore is
+    # `rollback_state!`'s.
     integrator.force_stepfail && return nothing
 
     @inline g(x) = √(1+4x) - 1

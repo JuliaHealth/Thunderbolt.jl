@@ -6,6 +6,7 @@ using Test
 
 import Thunderbolt: solution_size, ThunderboltTimeIntegrator
 import SciMLLogging: Standard
+import OrdinaryDiffEqCore
 
 # Tests for the standalone `ThunderboltTimeIntegrator`.
 
@@ -348,6 +349,10 @@ g_deuflhard(x) = √(1 + 4x) - 1
         Θk = 2.0 # above Θreject
         integrator = dummy(0.4)
         integrator.u .= 5.0
+        # The two halves of a rejection have separate owners: `rollback_state!` restores the state,
+        # which is the scheme's business, and `reject_step!` proposes the next step size, which is the
+        # controller's.
+        Thunderbolt.rollback_state!(integrator, integrator.cache)
         Thunderbolt.reject_step!(integrator, stub_homotopy_cache([0.1, Θk]), controller)
         @test integrator.dt ≈
               clamp(γ * (g_deuflhard(Θbar) / g_deuflhard(Θk))^(1 / p), qmin, qmax) * 0.4
@@ -398,5 +403,73 @@ g_deuflhard(x) = √(1 + 4x) - 1
         )
         cache = Thunderbolt.HomotopyPathSolverCache(mlcache, [0.0], [0.0], [0.0])
         @test Thunderbolt.should_accept_step(dummy(0.1), cache, controllers[1])
+    end
+end
+
+@testset "PID step size controller" begin
+    alg = NewmarkSolver()
+    k = Thunderbolt.adaptive_order(alg) + 1
+    controller = Thunderbolt.PIDController(3 // 5, -1 // 5, 1 // 10)
+    fresh() = OrdinaryDiffEqCore.setup_controller_cache(alg, nothing, controller, Float64, nothing)
+
+    @testset "The history holds three distinct steps" begin
+        # `err` must be (current, previous, previous-previous). Shifting it in both the factor
+        # computation and the accept hook would leave `err[3]` a duplicate of `err[2]`, which the
+        # default `β₃ = 0` hides by raising it to the zeroth power.
+        cache = fresh()
+        estimates = (0.5, 0.8, 0.3)
+        for e in estimates
+            Thunderbolt.set_error_estimate!(cache, e)
+            Thunderbolt._pid_dt_factor!(cache, alg)
+            Thunderbolt._pid_accept!(cache)
+        end
+        Thunderbolt.set_error_estimate!(cache, 0.9)
+        Thunderbolt._pid_dt_factor!(cache, alg)
+        @test cache.err == (1 / 0.9, 1 / 0.3, 1 / 0.8)
+    end
+
+    @testset "A rejected attempt does not consume history" begin
+        cache = fresh()
+        Thunderbolt.set_error_estimate!(cache, 0.5)
+        Thunderbolt._pid_dt_factor!(cache, alg)
+        Thunderbolt._pid_accept!(cache)
+        accepted = cache.err
+
+        Thunderbolt.set_error_estimate!(cache, 4.0)   # over tolerance
+        Thunderbolt._pid_dt_factor!(cache, alg)       # rejected: no `_pid_accept!`
+        Thunderbolt.set_error_estimate!(cache, 0.5)
+        Thunderbolt._pid_dt_factor!(cache, alg)
+        @test cache.err[2] == accepted[2]
+        @test cache.err[3] == accepted[3]
+    end
+
+    @testset "The factor is the Söderlind law" begin
+        cache = fresh()
+        β = controller.β
+        for e in (0.5, 0.8, 0.3, 0.9)
+            Thunderbolt.set_error_estimate!(cache, e)
+            Thunderbolt._pid_dt_factor!(cache, alg)
+            Thunderbolt._pid_accept!(cache)
+        end
+        Thunderbolt.set_error_estimate!(cache, 0.4)
+        factor = Thunderbolt._pid_dt_factor!(cache, alg)
+        ε = cache.err
+        @test factor ≈ controller.limiter(ε[1]^(β[1] / k) * ε[2]^(β[2] / k) * ε[3]^(β[3] / k))
+    end
+
+    @testset "The limiter saturates and a vanishing estimate is finite" begin
+        @test Thunderbolt.default_dt_factor_limiter(0.0)≈1 - π / 4 atol=0.3
+        @test Thunderbolt.default_dt_factor_limiter(1.0e12) < 1 + π / 2
+        cache = fresh()
+        Thunderbolt.set_error_estimate!(cache, 0.0)
+        @test isfinite(Thunderbolt._pid_dt_factor!(cache, alg))
+    end
+
+    @testset "Acceptance is on the factor, not the estimate" begin
+        # `EEst` slightly above one gives a factor near one, which `accept_safety = 0.81` tolerates.
+        # A rule on the estimate itself would discard that step.
+        cache = fresh()
+        Thunderbolt.set_error_estimate!(cache, 1.05)
+        @test Thunderbolt._pid_dt_factor!(cache, alg) ≥ controller.accept_safety
     end
 end

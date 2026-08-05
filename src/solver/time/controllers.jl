@@ -6,12 +6,9 @@
 # continuation controllers in `homotopy.jl` -- a plain struct, a cache, and methods on
 # `should_accept_step` / `adapt_dt!` / `reject_step!`.
 #
-# The alternative was to drive the controllers of `OrdinaryDiffEqCore` directly. They are good, and
-# that path still works for anyone who asks for it explicitly (see the adapters in `newmark.jl`), but
-# it couples the default configuration to a protocol that moves: over one upgrade it grew a fifth
-# argument on `setup_controller_cache`, and it reaches for integrator fields such as `success_iter`
-# that this integrator does not carry. A ~60 line port of an algorithm that has not changed since
-# Söderlind (2003) is cheaper to own than that coupling.
+# The controllers of `OrdinaryDiffEqCore` still work if asked for explicitly, but their protocol is
+# not a stable interface and reads integrator fields (`success_iter`) that this integrator does not
+# carry, so the *default* configuration does not depend on it.
 
 @doc raw"""
     PIDController(β₁, β₂, β₃ = 0; accept_safety = 0.81, limiter = default_dt_factor_limiter)
@@ -37,8 +34,9 @@ Two details do most of the work in practice, and both differ from a textbook I-c
 * the default limiter ``1 + \arctan(x - 1)`` is smooth and saturates around `[0.21, 2.57]`, so no
   separate `qmin`/`qmax` clipping is needed and the response to an outlier is gentle.
 
-Measured against the alternatives on a freely vibrating bar at `reltol = 1e-3` (accepted / rejected
-steps): I-controller 117/33, PI controller 133/14, this controller **101/4**.
+On the smooth structural problems this package solves, it rejects markedly fewer steps than a plain
+integral controller: the error estimate of a second order scheme is noisy, and an accept rule on the
+proposed factor tolerates an outlier that a rule on the estimate itself would discard.
 
 The defaults `(0.6, -0.2, 0)` are Söderlind's, and are what [`NewmarkSolver`](@ref) uses unless a
 controller is passed to `init`.
@@ -109,8 +107,10 @@ size, whether the step is accepted, the history -- belongs to the controller.
 set_error_estimate!(controller_cache::PIDControllerCache, EEst) =
     (controller_cache.EEst = EEst; controller_cache.dt_factor_valid = false; nothing)
 
-# A controller that ignores the estimate still has to tolerate being told one.
-set_error_estimate!(_controller_cache, EEst) = nothing
+# Only the controllers that genuinely have no use for an estimate ignore one. Anything else that
+# reaches here is missing a method, and running open loop would look like a plausible step sequence
+# rather than an error.
+set_error_estimate!(::Union{Nothing, DummyControllerCache}, EEst) = nothing
 
 # `k = order + 1`, i.e. the order of the *local* error the estimate measures.
 _pid_error_order(alg) = adaptive_order(alg) + 1
@@ -137,15 +137,17 @@ function _pid_dt_factor!(cache::PIDControllerCache, alg)
     k = _pid_error_order(alg)
     # Guarded against a vanishing estimate, which would otherwise send the factor to `Inf`/`NaN`.
     EEst = max(cache.EEst, eps(typeof(cache.EEst)))
-    err = (inv(EEst), cache.err[1], cache.err[2])
+    # Only the current slot: `err` already holds (current, previous, previous-previous), and the
+    # shift is `_pid_accept!`'s, which runs once per accepted step. Writing a shift here too would
+    # leave `err[3]` a duplicate of `err[2]` rather than the two-steps-back estimate.
+    err = (inv(EEst), cache.err[2], cache.err[3])
     cache.err = err
     cache.dt_factor = limiter(err[1]^(β[1] / k) * err[2]^(β[2] / k) * err[3]^(β[3] / k))
     cache.dt_factor_valid = true
     return cache.dt_factor
 end
 
-# The history must advance only for a step that is actually taken, so it is shifted here rather than
-# in `_pid_dt_factor!`, which a rejected attempt also runs.
+# Advances the history, so it runs only for a step that is actually taken.
 function _pid_accept!(cache::PIDControllerCache)
     cache.err = (cache.err[1], cache.err[1], cache.err[2])
     return nothing
@@ -175,9 +177,8 @@ function reject_step!(
     _cache,
     controller_cache::PIDControllerCache,
 )
-    # A step rejected because the *solve* failed has already had `dt` shortened by
-    # `post_newton_controller!` in the step footer. Shrinking again here would apply the failure factor
-    # and the controller's proposal to the same attempt.
+    # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
+    # solve-failure case, this hook owns the error-estimate case.
     integrator.force_stepfail && return SciMLBase.set_proposed_dt!(integrator, integrator.dt)
     dt_factor = _pid_dt_factor!(controller_cache, integrator.alg)
     SciMLBase.set_proposed_dt!(integrator, integrator.dt * dt_factor)

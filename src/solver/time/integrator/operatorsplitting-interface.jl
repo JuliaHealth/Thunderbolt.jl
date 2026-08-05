@@ -178,7 +178,6 @@ function OS._build_child(
         dt,
         dt,
         dt,
-        tType(NaN),
         tdir,
         cache,
         callback_cache,

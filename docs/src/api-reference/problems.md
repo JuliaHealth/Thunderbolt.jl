@@ -14,4 +14,5 @@ Thunderbolt.PointwiseODEProblem
 Thunderbolt.QuasiStaticNonlinearProblem
 Thunderbolt.QuasiStaticODEProblem
 Thunderbolt.QuasiStaticDAEProblem
+ElastodynamicsProblem
 ```

@@ -48,10 +48,12 @@ i.e. the [`QuasiStaticModel`](@ref) with a mass term on top.
     kept in the solver cache. A formulation carrying the velocity as a genuine unknown would be a
     different model with two field variables.
 """
-struct ElastodynamicsModel{RHSModel#= <: AbstractMaterialModel =#, FM, CoefficientType}
+# Not an `AbstractMaterialModel`, and it never reaches the material path: `semidiscretize` lowers it
+# to a `QuasiStaticModel`, which is what the element caches are built from.
+struct ElastodynamicsModel{MaterialModel#= <: AbstractMaterialModel =#, FM, CoefficientType}
     displacement_symbol::Symbol
     velocity_symbol::Symbol
-    material_model::RHSModel
+    material_model::MaterialModel
     facet_models::FM
     ρ::CoefficientType
 end

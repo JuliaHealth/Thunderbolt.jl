@@ -3,6 +3,7 @@ import SciMLBase
 using Test
 using LinearAlgebra
 using LinearSolve
+using Logging
 
 const ORTHO_MS = ConstantCoefficient(
     OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
@@ -58,7 +59,6 @@ end
 # Transverse velocity, growing along the bar so that the free end moves fastest.
 function bending_velocity(f, amplitude)
     v0 = zeros(ndofs(f.dh))
-    grid = Ferrite.get_grid(f.dh)
     for cell in CellIterator(f.dh)
         for (i, node) in enumerate(getcoordinates(cell))
             dofs = celldofs(cell)[(3(i-1)+1):(3i)]
@@ -86,47 +86,68 @@ end
         # a statement about the Newton, not about Newmark.
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
         @test integrator.u[1:ndofs(f.dh)]≈tend .* v0 rtol=1e-7
-        @test Thunderbolt.velocity(integrator)≈v0 rtol=1e-7
-        @test norm(Thunderbolt.acceleration(integrator)) < 1e-6
+        @test velocity(integrator)≈v0 rtol=1e-7
+        @test norm(acceleration(integrator)) < 1e-6
     end
 
-    @testset "Equilibrium at rest stays at rest" begin
-        f = elastodynamic_bar()
-        integrator = solve_elastodynamic(f, zeros(ndofs(f.dh)), 0.1, 0.02)
+    @testset "A nonzero equilibrium stays at rest" begin
+        # The equilibrium has to be nonzero to test anything: every operation in the Newmark step is
+        # linear in the state, so an all-zero state is preserved under any value of β, γ or the
+        # velocity slope, and under a sign-flipped predictor.
+        mesh = generate_mesh(Hexahedron, (2, 1, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 0.2, 0.2)))
+        dbcs = [
+            Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3]),
+            Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> [0.05, 0.0, 0.0], [1, 2, 3]),
+        ]
+        f = semidiscretize(
+            ElastodynamicsModel(
+                :d,
+                :v,
+                PK1Model(Guccione1991PassiveModel(), ORTHO_MS),
+                (),
+                ConstantCoefficient(1.0),
+            ),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        )
+        # Reach the static equilibrium of the held boundary first. `γ = 1` is maximal numerical
+        # dissipation, which is what drives the free vibration out; the conserving scheme below would
+        # oscillate about the equilibrium forever and never settle.
+        settled = solve_elastodynamic(f, zeros(ndofs(f.dh)), 50.0, 1.0; γ = 1.0, β = 1.0)
+        @test settled.sol.retcode == SciMLBase.ReturnCode.Success
+        u_eq = copy(settled.u)
+        @test norm(u_eq) > 1.0e-3                                   # genuinely nonzero
+        @test norm(velocity(settled)) / norm(u_eq) < 1.0e-6         # genuinely at rest
 
+        problem = ElastodynamicsProblem(f, u_eq, zeros(ndofs(f.dh)), (0.0, 5.0))
+        integrator = init(problem, NewmarkSolver(), dt = 0.5, verbose = false)
+        solve!(integrator)
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
-        @test norm(integrator.u) < 1e-10
-        @test norm(Thunderbolt.velocity(integrator)) < 1e-10
+        @test integrator.u≈u_eq rtol=1.0e-6
+        @test norm(velocity(integrator)) / norm(u_eq) < 1.0e-4
     end
 
-    # The first convergence order test in the suite. Newmark is second order for γ = 1/2 and drops to
-    # first order for any other γ, which is what makes the comparison worth having: it pins that γ
-    # reaches the scheme at all, rather than only that the scheme converges.
-    @testset "Convergence order" begin
-        tend = 0.02
-        Δt₀ = tend / 4
+    @testset "Convergence order in time" begin
+        tend, Δt₀ = 0.02, 0.02 / 4
+        f = elastodynamic_bar()
+        v0 = bending_velocity(f, 20.0)
+        run(Δt, γ) = copy(solve_elastodynamic(elastodynamic_bar(), v0, tend, Δt; γ).u)
 
+        # One reference for both studies: every member of the Newmark family converges to the same
+        # solution, so the γ = 1/2 run serves the γ = 0.7 study too. Referencing each study against
+        # its own coarse fine-run instead leaves the reference's error in the ratio, which biases the
+        # low order case upward by ~0.2.
+        reference = run(Δt₀ / 64, 1 / 2)
         function observed_order(γ)
-            run(Δt) = solve_elastodynamic(
-                (f = elastodynamic_bar(); f),
-                bending_velocity(elastodynamic_bar(), 20.0),
-                tend,
-                Δt;
-                γ,
-            ).u
-            reference = copy(run(Δt₀ / 16))
-            errors = [norm(run(Δt₀ / refinement) - reference) for refinement in (1, 2, 4)]
+            errors = [norm(run(Δt₀ / refinement, γ) - reference) for refinement in (2, 4)]
             @test all(>(0), errors)
-            return log2(errors[end-1] / errors[end])
+            return log2(errors[1] / errors[2])
         end
 
-        order_conserving = observed_order(1 / 2)
-        order_dissipative = observed_order(0.6)
-
-        @test order_conserving≈2.0 atol=0.3
-        # Only a bound: away from γ = 1/2 the first order term dominates asymptotically, but at a step
-        # size coarse enough to run in a test the measured rate still sits above one.
-        @test order_dissipative < order_conserving - 0.3
+        @test observed_order(1 / 2)≈2.0 atol=0.15
+        # A bound, not an equality: at a step size coarse enough to run in a test, γ = 0.7 has not
+        # reached its asymptotic first order. What is pinned is that γ reaches the scheme at all.
+        @test observed_order(0.7) < 1.5
     end
 
     @testset "Numerical dissipation follows γ" begin
@@ -134,7 +155,7 @@ end
         # three periods of free vibration, so that no strain energy functional has to be
         # reconstructed. The light density is what puts three periods inside a test-sized run.
         tend = 2.2
-        decay = map((1 / 2, 0.7)) do γ
+        decay = map((1 / 2, 0.6, 0.7)) do γ
             f = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
             integrator = init(
                 ElastodynamicsProblem(
@@ -158,20 +179,18 @@ end
             return last_swing / first_swing
         end
 
-        @test decay[1]≈1.0 atol=0.05          # average acceleration: no secular decay
-        @test decay[2] < decay[1] - 0.05      # γ > 1/2: visibly dissipative
+        # The ordering is the statement: dissipation increases with γ. "0.7 dissipates" alone would
+        # also pass for a scheme that dissipates regardless of γ.
+        @test decay[1]≈1.0 atol=0.05                   # average acceleration: no secular decay
+        @test decay[3] < decay[2] < decay[1] - 0.05
     end
 
-    # Zienkiewicz-Xie estimate plus the elementary controller. The sharpest statement available from
-    # outside is the step count: a controller using the right order drives `Δt ∝ tol^(1/3)`, so the
-    # number of steps must grow by `10^(1/3) ≈ 2.15` per decade of tolerance. Getting that exponent
-    # right is exactly what "the estimator is O(Δt³)" means in practice.
-    @testset "Adaptivity controls the error" begin
-        tend = 0.5   # dyadic, so the fixed step reference lands on it without a closing micro-step
+    # The sharpest statement available from outside is the step count: a controller using the right
+    # order drives `Δt ∝ tol^(1/3)`, so the number of steps grows by `10^(1/3) ≈ 2.15` per decade of
+    # tolerance. The window excludes the neighbouring exponents (order 1 → 3.16, order 3 → 1.78).
+    @testset "The step count follows tol^(-1/3)" begin
+        tend = 0.5   # dyadic, so a fixed step run lands on it without a closing micro-step
         bar() = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
-
-        reference = solve_elastodynamic(bar(), bending_velocity(bar(), 0.2), tend, tend / 2^13)
-        @test reference.sol.retcode == SciMLBase.ReturnCode.Success
 
         results = map((1.0e-3, 1.0e-4, 1.0e-5)) do reltol
             f = bar()
@@ -186,19 +205,39 @@ end
             )
             @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
             @test integrator.t == tend
-            return (
-                steps = integrator.stats.naccept,
-                err = norm(integrator.u - reference.u) / norm(reference.u),
-            )
+            # Rejections happen here, so these runs are also the end-to-end cover of the velocity and
+            # acceleration rollback: without it the retried steps build their predictors from the
+            # rejected state and the trajectory drifts with no other symptom.
+            @test integrator.stats.nreject > 0
+            return integrator.stats.naccept
         end
 
-        # Step count follows tol^(-1/3) ...
         for i = 1:(length(results)-1)
-            ratio = results[i+1].steps / results[i].steps
-            @test ratio≈10^(1 / 3) rtol=0.25
+            @test results[i+1] / results[i]≈10^(1 / 3) rtol=0.1
         end
-        # ... and the solution gets closer to the reference.
-        @test results[end].err < results[1].err
+    end
+
+    @testset "An adaptive run lands where a fine fixed step run does" begin
+        # A single tolerance, because the *global* error is not monotone in `reltol` on an oscillatory
+        # problem at fixed `tend` -- it is dominated by phase error, which the local estimate does not
+        # control. Asserting a trend across tolerances would be pinning noise.
+        tend = 0.5
+        bar() = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
+        reference = solve_elastodynamic(bar(), bending_velocity(bar(), 0.2), tend, tend / 2^12)
+        @test reference.sol.retcode == SciMLBase.ReturnCode.Success
+
+        f = bar()
+        adaptive = solve_elastodynamic(
+            f,
+            bending_velocity(f, 0.2),
+            tend,
+            tend / 2^7;
+            adaptive = true,
+            reltol = 1.0e-3,
+            abstol = 1.0e-6,
+        )
+        @test adaptive.sol.retcode == SciMLBase.ReturnCode.Success
+        @test norm(adaptive.u - reference.u) / norm(reference.u) < 5.0e-3
     end
 
     @testset "The step size follows the solution" begin
@@ -231,41 +270,34 @@ end
             dtmax = 5.0,
             verbose = false,
         )
-        dts = Float64[]
+        ts, dts = Float64[], Float64[]
         while integrator.t < 20.0 - 1.0e-10
             step!(integrator)
+            push!(ts, integrator.t)
             push!(dts, integrator.dt)
             integrator.sol.retcode == SciMLBase.ReturnCode.Success || break
         end
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
-        # The step grows by more than an order of magnitude once the transient is over.
-        @test maximum(dts) / minimum(dts) > 10
+        # Not `max/min`: the step size of a *smooth* run wanders by nearly as much, so that ratio does
+        # not separate "responds to the transient" from "wanders". Every step taken while the
+        # crossbridges engage is shorter than every step taken after -- a smooth run does not satisfy
+        # that, its step size minimum lying in the interior.
+        @test maximum(dts[ts .< 2.0]) < minimum(dts[ts .> 10.0])
     end
 
     @testset "The step size controller is Thunderbolt's own" begin
-        # The default has to be the in-package `PIDController`, not one reached through
-        # `OrdinaryDiffEqCore`'s controller protocol -- that protocol moves between versions, and
-        # pinning the default to it is what this port exists to avoid.
-        f = elastodynamic_bar(ncells = (2, 1, 1))
-        integrator = init(
-            ElastodynamicsProblem(f, (0.0, 1.0)),
-            NewmarkSolver(),
-            dt = 0.1,
-            adaptive = true,
-            verbose = false,
-        )
-        @test integrator.controller_cache isa Thunderbolt.PIDControllerCache
-
-        # The exponent is `1/(adaptive_order+1)`, and getting it wrong is the failure that a step
-        # count study would catch only indirectly.
+        # A configuration fact, so it needs no mesh: the default must not silently become a controller
+        # reached through `OrdinaryDiffEqCore`'s protocol, which is what the in-package port exists to
+        # avoid.
+        @test Thunderbolt.default_controller(Float64, NewmarkSolver()) isa Thunderbolt.PIDController
+        # The exponent the controller applies is `1/(adaptive_order+1)`; a wrong value here shows up
+        # in the step count study only indirectly.
         @test Thunderbolt.adaptive_order(NewmarkSolver()) == 2
     end
 
     @testset "A failed solve shrinks dt once, not twice" begin
-        # `post_newton_controller!` applies the failure factor in the step footer, and the controller's
-        # reject hook runs in the next header. Both used to divide, shrinking `dt` by `failfactor²` per
-        # failed attempt — which reaches the floor in a handful of steps and looks like a diverging
-        # solve rather than a bookkeeping mistake.
+        # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
+        # solve-failure case, the controller's reject hook owns the error-estimate case.
         f = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
         integrator = init(
             ElastodynamicsProblem(f, zeros(solution_size(f)), bending_velocity(f, 0.2), (0.0, 0.5)),
@@ -284,13 +316,18 @@ end
             verbose = false,
         )
         dt₀ = integrator.dt
-        try
-            step!(integrator)
-        catch
-            # the solve gives up eventually; what is asserted is how far `dt` fell on the way
+        with_logger(NullLogger()) do
+            try
+                step!(integrator)
+            catch
+                # the solve gives up eventually; what is asserted is how far `dt` fell on the way
+            end
         end
+        ff = integrator.opts.failfactor
         @test integrator.stats.nreject > 1
-        @test dt₀ / integrator.dt ≤ integrator.opts.failfactor^integrator.stats.nreject
+        # Two-sided: `≤` alone is also satisfied by a `dt` that never shrank, which is the opposite
+        # bug.
+        @test ff^(integrator.stats.nreject - 1) ≤ dt₀ / integrator.dt ≤ ff^integrator.stats.nreject
     end
 
     @testset "A rejected step rolls back the velocity and the acceleration" begin
@@ -308,20 +345,18 @@ end
         )
         step!(integrator)
         step!(integrator)
-        u, v, a = copy(integrator.u),
-        copy(Thunderbolt.velocity(integrator)),
-        copy(Thunderbolt.acceleration(integrator))
+        u, v, a = copy(integrator.u), copy(velocity(integrator)), copy(acceleration(integrator))
 
         step!(integrator)
         # The step has to move all three, otherwise the rollback below asserts nothing.
         @test !isapprox(integrator.u, u)
-        @test !isapprox(Thunderbolt.velocity(integrator), v)
-        @test !isapprox(Thunderbolt.acceleration(integrator), a)
+        @test !isapprox(velocity(integrator), v)
+        @test !isapprox(acceleration(integrator), a)
 
         Thunderbolt.reject_step!(integrator)
         @test integrator.u == u
-        @test Thunderbolt.velocity(integrator) == v
-        @test Thunderbolt.acceleration(integrator) == a
+        @test velocity(integrator) == v
+        @test acceleration(integrator) == a
     end
 
     @testset "Condensed internal variables under Newmark" begin
@@ -340,6 +375,9 @@ end
         integrator = solve_elastodynamic(f, bending_velocity(f, 1.0), 0.05, 0.005)
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
         @test all(isfinite, integrator.u)
+        # The viscous strain starts at zero and has to have moved: a material whose internal variable
+        # never advanced would pass every assertion above.
+        @test maximum(abs, integrator.u[(ndofs(f.dh)+1):end]) > 0
     end
 
     # `RDQ20MFModel` is rate coupled (`dₜQ = L(F, dₜF, Q)`), so its local problem reads the deformation
@@ -366,16 +404,15 @@ end
         end
 
         integrator = contract(Thunderbolt.RDQ20MFModel())
-        nfe = ndofs(integrator.sol.prob.f.dh)
+        nfe = ndofs(elastodynamic_bar(ncells = (2, 1, 1)).dh)
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
         @test all(isfinite, integrator.u)
         # The sarcomere activates at Ca = 1 and pulls the bar in.
         @test maximum(integrator.u[(nfe+1):end]) > 0.1
         @test norm(integrator.u[1:nfe]) > 0.1
 
-        # Dropping the velocity coupling has to change the answer, and by a lot: on a contracting bar
-        # the rate term is a double digit fraction of the tangent. If the element fed the material no
-        # rate at all, the two would agree exactly — they differ in nothing else.
+        # Dropping the velocity coupling has to change the answer: if the element fed the material no
+        # rate at all, the two models would agree exactly, since they differ in nothing else.
         wrapped = contract(Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()))
         @test wrapped.sol.retcode == SciMLBase.ReturnCode.Success
         @test norm(wrapped.u[1:nfe] - integrator.u[1:nfe]) / norm(integrator.u[1:nfe]) > 0.05

@@ -958,11 +958,8 @@ end
 end
 
 @testset "A failed homotopy solve shrinks dt once, not twice" begin
-    # `post_newton_controller!` divides `dt` by the failure factor in the step footer, and the
-    # continuation controller's reject hook runs in the next header. Both used to shrink, so a failed
-    # solve cost `failfactor` *times* the controller's own proposal -- measured at 2e7 over six
-    # rejections where one failure factor each is 4^6. The two events are mutually exclusive: this
-    # controller proposes a step size only for a rejection that came from the convergence rate.
+    # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
+    # solve-failure case, the controller's reject hook owns the convergence-rate case.
     mesh = generate_mesh(Hexahedron, (2, 1, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 0.2, 0.2)))
     ms = ConstantCoefficient(
         OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
@@ -993,8 +990,10 @@ end
             # the solve gives up eventually; what is asserted is how far `dt` fell on the way
         end
     end
+    ff = integrator.opts.failfactor
     @test integrator.stats.nreject > 1
-    @test dt₀ / integrator.dt ≤ integrator.opts.failfactor^integrator.stats.nreject
+    # Two-sided: `≤` alone is also satisfied by a `dt` that never shrank, which is the opposite bug.
+    @test ff^(integrator.stats.nreject - 1) ≤ dt₀ / integrator.dt ≤ ff^integrator.stats.nreject
 end
 
 """

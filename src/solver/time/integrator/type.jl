@@ -98,10 +98,6 @@ mutable struct ThunderboltTimeIntegrator{
     dt::tType
     dtcache::tType
     dtpropose::tType
-    # Step size factor the controller proposed for the current attempt, `NaN` until it has been asked.
-    # `stepsize_controller!` mutates the controller's history, so it must run once per attempt, while
-    # `should_accept_step` is a predicate that the step loop calls several times.
-    qpropose::tType
     tdir::tType
     # cache of the time integration algorithm
     cache::cacheType
@@ -382,7 +378,6 @@ function SciMLBase.__init(
         dt,
         dt,
         dt,
-        tType(NaN),
         tdir,
         cache,
         callback_cache,
@@ -476,21 +471,29 @@ end
 # Controller interface
 function reject_step!(integrator::ThunderboltTimeIntegrator)
     OrdinaryDiffEqCore.increment_reject!(integrator.stats)
+    rollback_state!(integrator, integrator.cache)
     reject_step!(integrator, integrator.cache, integrator.controller_cache)
 end
-function reject_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
-    integrator.u .= integrator.uprev
-end
-function reject_step!(
-    integrator::ThunderboltTimeIntegrator,
-    cache,
-    ::Union{Nothing, DummyControllerCache},
-)
+
+"""
+    rollback_state!(integrator, cache)
+
+Restore the state a rejected step advanced. Separate from [`reject_step!`](@ref), which proposes the
+step size for the retry: restoring state is the *scheme's* business and proposing a step size is the
+*controller's*, so expressing both on one generic would make the method count their product.
+
+The fallback restores the solution vector. A scheme whose state is not fully contained in it -- a
+second order scheme carries a velocity and an acceleration -- extends this.
+"""
+function rollback_state!(integrator::ThunderboltTimeIntegrator, cache)
     if length(integrator.uprev) == 0
         error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
     end
     integrator.u .= integrator.uprev
+    return nothing
 end
+
+reject_step!(integrator::ThunderboltTimeIntegrator, cache, controller) = nothing
 
 adapt_dt!(integrator::ThunderboltTimeIntegrator) =
     adapt_dt!(integrator, integrator.cache, integrator.controller_cache)

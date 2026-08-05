@@ -15,6 +15,7 @@ SteadyDiffusionFunction
 PointwiseODEFunction
 QuasiStaticNonlinearFunction
 RSAFDQ20223DFunction
+ElastodynamicsFunction
 ```
 
 ```@docs

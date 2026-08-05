@@ -320,9 +320,9 @@ end
 
 Wrap an already built operator into a [`MultiLevelNewtonRaphsonSolverCache`](@ref).
 
-Split out from the stage setup because the operator is the only thing that differs between time
-schemes: backward Euler hands over the assembled linearization directly, Newmark hands over the same
-operator wrapped in a [`NewmarkStageOperator`](@ref) that adds the inertia contribution.
+The operator is the only thing that differs between time schemes: backward Euler hands over the
+assembled linearization directly, Newmark hands over the same operator wrapped in a
+[`NewmarkStageOperator`](@ref) that adds the inertia contribution.
 """
 function _setup_multilevel_newton_cache(f, op, local_solver_cache, newton, ndofs)
     T = Float64

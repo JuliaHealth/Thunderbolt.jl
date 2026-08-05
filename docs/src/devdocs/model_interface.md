@@ -83,7 +83,7 @@ the *time scheme* is able to offer at that quadrature point:
 | type | carries | offered by |
 | :--- | :------ | :--------- |
 | `DeformationGradient(F)` | `F` | rate-free schemes, e.g. `HomotopyPathSolver` |
-| `DeformationGradientWithRate(F, Ḟ)` | `F` and `Ḟ` | first-order-in-time schemes |
+| `DeformationGradientWithRate(F, Ḟ)` | `F` and `Ḟ` | schemes that reconstruct a velocity |
 
 Read them with `deformation_gradient(kinematics)` and `deformation_rate(kinematics)`. Offering more
 than a material reads is fine — a rate-independent material accepts `DeformationGradientWithRate` and
@@ -95,8 +95,10 @@ bare tensors, so automatic differentiation closures still capture leaf values ra
 
 A material whose stress reads the rate declares `rate_dependence(model) = RateDependent()` and
 implements the five-argument `stress_and_tangent(model, F, Ḟ, coefficients, state)` returning
-`(P, ∂P∂F, ∂P∂Ḟ)`. It never learns how the rate was formed — the element multiplies in the `∂Ḟ/∂u`
-its scheme dictates (`1/Δt` for backward Euler, `γ/(βΔt)` for Newmark).
+`(P, ∂P∂F, ∂P∂Ḟ)`. It never learns how the rate was formed: the scheme hands the element an
+`AffineVelocity`, carrying the slope `∂Ḟ/∂u` and the displacement at which the reconstructed velocity
+vanishes — `1/Δt` with the previous solution for backward Euler, `γ/(βΔt)` with a different reference
+for Newmark (see [Newmark-β for second order systems](@ref theory_newmark)).
 
 ## Naming: three distinct "initial state" concepts
 

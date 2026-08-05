@@ -561,45 +561,35 @@ function semidiscretize(
     mesh::AbstractGrid,
 )
     sym = model.displacement_symbol
-    qrc = _get_quadrature_from_discretization(discretization, sym)
-    fqrc = _get_facet_quadrature_from_discretization(discretization, sym)
-    dh = DofHandler(mesh)
-    name = single_subdomain_or_error(get_grid(dh))
-    add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
-    close!(dh)
 
-    # The internal force contribution of an elastodynamics model *is* the quasi-static one, so it is
-    # lowered to a `QuasiStaticModel` and reuses that whole path unchanged -- element caches, material
-    # routines, and the condensation of quadrature point local internal variables. What is genuinely
-    # new is the mass term next to it.
-    internal_force_model = QuasiStaticModel(sym, model.material_model, model.facet_models)
-    integrator = NonlinearIntegrator(
-        internal_force_model,
-        model.facet_models,
-        get_field_variable_names(model),
-        qrc,
-        fqrc,
+    # The internal force contribution of an elastodynamics model *is* the quasi-static one, so the
+    # model is lowered rather than the path reimplemented: element caches, material routines and the
+    # condensation of quadrature point local internal variables are reused unchanged. What is
+    # genuinely new is the mass term next to it.
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(sym, model.material_model, model.facet_models),
+        discretization,
+        mesh,
     )
-    lvh = _setup_internal_variable_handler(integrator, dh)
 
     # The mass integrand `ρ Nᵢ⋅Nⱼ` is of degree `2p` per direction, where the stiffness terms carrying
-    # gradients are `2(p-1)`, so the mass matrix is the one that decides whether a rule is rich enough.
-    # Sharing the displacement rule is safe rather than merely convenient: `_extract_qrc` gives
-    # `max(2p-1, 2)` points, exact through degree `3` for `p = 1` and `4p-3` for `p ≥ 2`, both of which
-    # cover `2p`. A rule passed explicitly via `qrcs` is the user's to get right.
-    mass_term = BilinearMassIntegrator(model.ρ, qrc, sym)
-
-    ch = ConstraintHandler(dh)
-    _add_dirichlet_conditions!(ch, discretization.dbcs)
-    close!(ch)
+    # gradients are `2(p-1)`, so the mass matrix is the one that decides whether a rule is rich
+    # enough. Sharing the displacement rule is safe rather than merely convenient: `_extract_qrc`
+    # gives `max(2p-1, 2)` points, exact through degree `3` for `p = 1` and `4p-3` for `p ≥ 2`, both
+    # of which cover `2p`. A rule passed explicitly via `qrcs` is the user's to get right.
+    mass_term = BilinearMassIntegrator(
+        model.ρ,
+        _get_quadrature_from_discretization(discretization, sym),
+        sym,
+    )
 
     return ElastodynamicsFunction(
-        dh,
-        ch,
-        lvh,
-        integrator,
+        quasistaticform.dh,
+        quasistaticform.ch,
+        quasistaticform.lvh,
+        quasistaticform.integrator,
         mass_term,
-        discretization.assembly_strategy,
+        quasistaticform.assembly_strategy,
     )
 end
 

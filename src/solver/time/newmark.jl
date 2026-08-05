@@ -62,7 +62,8 @@ nonlinear solver keeps seeing a plain operator.
 the same choice [`BackwardEulerAffineODEStage`](@ref) makes, and it is what keeps a change of `Δt`
 cheap — the mass matrix is constant, only its scalar weight moves.
 """
-mutable struct NewmarkStageOperator{OpType, MassOpType, VectorType, T}
+mutable struct NewmarkStageOperator{OpType, MassOpType, VectorType, T} <:
+               FerriteOperators.AbstractNonlinearOperator
     const op::OpType
     const M::MassOpType
     # Displacement predictor ũ of the current step, written once per step
@@ -74,6 +75,16 @@ mutable struct NewmarkStageOperator{OpType, MassOpType, VectorType, T}
 end
 
 getJ(op::NewmarkStageOperator) = getJ(op.op)
+Base.eltype(sop::NewmarkStageOperator) = eltype(getJ(sop))
+Base.size(sop::NewmarkStageOperator, args...) = size(getJ(sop), args...)
+
+# The inertia is part of the operator, so it is part of its action too. Forwarding to `sop.op` alone
+# would return the internal force product and silently drop `M/(βΔt²)`.
+function LinearAlgebra.mul!(out::AbstractVector, sop::NewmarkStageOperator, x::AbstractVector)
+    mul!(out, sop.op, x)
+    mul!(out, sop.M, x, inv(sop.βΔt²), true)
+    return out
+end
 
 # a(u) = (u - ũ)/(βΔt²), on the displacement dofs. `u` carries the condensed internal variables in its
 # tail, which have no acceleration, so the view is not optional.
@@ -379,10 +390,8 @@ scheme, which is what makes `alg_adaptive_order = 2` correct.
     `M a_{n+1} = f_ext - f_int(u_{n+1})`, so `aₙ` already holds that acceleration to solver tolerance
     and the estimator is free.
 
-    The corollary is worth recording, because it is a trap: in this form the difference between the
-    solved acceleration and a fresh right hand side evaluation at the same state is **zero**, so an
-    estimator built from those two quantities measures nothing but the Newton tolerance. The estimate
-    has to straddle the step.
+    An estimator formed from the solved acceleration and a fresh right hand side evaluation at the
+    same state is identically zero, so the estimate has to straddle the step.
 
 `β = 1/6` makes the estimator vanish identically, which is correct — that is the member of the family
 the estimate is taken against — but it leaves the scheme with no error estimate.
@@ -414,29 +423,9 @@ function _newmark_report_error!(integrator, cache::NewmarkSolverCache, Δt, β)
     return nothing
 end
 
-@doc raw"""
-A second order scheme carries state that the solution vector does not: the balance of momentum is
-`M ü + f_int(u) = f_ext`, so the state of the ODE is the pair `(u, v)` and the scheme additionally
-remembers `a`. The integrator owns a rollback buffer for the solution vector alone, so `v` and `a`
-need theirs here, kept in lockstep with `uprev`.
-
-Without this, a rejected step restores `u` and leaves `v` and `a` at the values the *rejected* step
-produced. The retry then builds its predictors from them and converges to a wrong answer without any
-symptom.
-"""
 function _newmark_store_previous!(cache::NewmarkSolverCache)
     cache.vₙ₋₁ .= cache.vₙ
     cache.aₙ₋₁ .= cache.aₙ
-    return nothing
-end
-
-function _newmark_rollback!(integrator, cache::NewmarkSolverCache)
-    if length(integrator.uprev) == 0
-        error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
-    end
-    integrator.u .= integrator.uprev
-    cache.vₙ .= cache.vₙ₋₁
-    cache.aₙ .= cache.aₙ₋₁
     return nothing
 end
 
@@ -459,42 +448,11 @@ adaptive_order(::NewmarkSolver) = 2
 OrdinaryDiffEqCore.default_controller(QT, ::NewmarkSolver) =
     PIDController(QT(3 // 5), QT(-1 // 5), QT(0))
 
-# Without a controller there is nothing to adapt, but the rollback still has to restore the velocity
-# and the acceleration.
-reject_step!(integrator::ThunderboltTimeIntegrator, cache::NewmarkSolverCache, ::Nothing) =
-    _newmark_rollback!(integrator, cache)
-
-reject_step!(
-    integrator::ThunderboltTimeIntegrator,
-    cache::NewmarkSolverCache,
-    ::DummyControllerCache,
-) = _newmark_rollback!(integrator, cache)
-
-should_accept_step(
-    integrator::ThunderboltTimeIntegrator,
-    cache::NewmarkSolverCache,
-    ::DummyControllerCache,
-) = !integrator.force_stepfail
-
-adapt_dt!(
-    integrator::ThunderboltTimeIntegrator,
-    cache::NewmarkSolverCache,
-    ::DummyControllerCache,
-) = nothing
-
-# The rollback of the scheme's own state has to happen for *every* controller, so it is hooked here
-# and the controller's own `reject_step!` is called afterwards.
-function reject_step!(
-    integrator::ThunderboltTimeIntegrator,
-    cache::NewmarkSolverCache,
-    controller_cache::PIDControllerCache,
-)
-    _newmark_rollback!(integrator, cache)
-    return invoke(
-        reject_step!,
-        Tuple{ThunderboltTimeIntegrator, Any, PIDControllerCache},
-        integrator,
-        cache,
-        controller_cache,
-    )
+# The velocity and the acceleration are state of the same second order ODE as the displacement but
+# are not in the solution vector, so the generic rollback does not cover them.
+function rollback_state!(integrator::ThunderboltTimeIntegrator, cache::NewmarkSolverCache)
+    @invoke rollback_state!(integrator, cache::Any)
+    cache.vₙ .= cache.vₙ₋₁
+    cache.aₙ .= cache.aₙ₋₁
+    return nothing
 end
