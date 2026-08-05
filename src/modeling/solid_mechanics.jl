@@ -38,8 +38,9 @@ i.e. the [`QuasiStaticModel`](@ref) with a mass term on top.
 
 !!! note "The velocity is a field, but not a Newton unknown"
     `velocity_symbol` names a genuine field: it shares the displacement's interpolation, occupies a
-    block of the solution vector, and can be constrained and written out like any other. What it is
-    *not* is an unknown of the nonlinear solve. Time integrators for this model (see
+    block of the solution vector, and can be written out by name. What it is *not* is an unknown of
+    the nonlinear solve, and a `Dirichlet` condition on it is refused -- a scheme that reconstructs
+    the velocity from the displacement would overwrite whatever the constraint wrote. Time integrators for this model (see
     [`NewmarkSolver`](@ref)) discretize in displacement form, so a step solves for the displacement
     and reconstructs the velocity from it. The acceleration is not stored either way: it follows from
     the balance of momentum.

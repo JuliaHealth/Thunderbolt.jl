@@ -69,7 +69,7 @@ function setup_solver_cache(
     # The stage carries the operator, so it is built before the solver cache that works on it. A
     # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
     # pseudo-time.
-    stage_function = FullStateStage(f, setup_operator(f, solver.inner_solver), t₀)
+    stage_function = FullStateStage(f, setup_stage_operator(f, solver.inner_solver), t₀)
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -116,7 +116,7 @@ function setup_solver_cache(
     # The stage carries the operator, so it is built before the solver cache that works on it. A
     # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
     # pseudo-time.
-    stage_function = FullStateStage(f, setup_operator(f, solver.inner_solver), t₀)
+    stage_function = FullStateStage(f, setup_stage_operator(f, solver.inner_solver), t₀)
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}

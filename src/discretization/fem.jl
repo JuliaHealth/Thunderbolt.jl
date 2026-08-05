@@ -582,6 +582,7 @@ function semidiscretize(
     mesh::AbstractGrid,
 )
     sym = model.displacement_symbol
+    _reject_velocity_constraints(discretization, model.velocity_symbol)
 
     # The internal force contribution of an elastodynamics model *is* the quasi-static one, so the
     # model is lowered rather than the path reimplemented: element caches, material routines and the
@@ -616,16 +617,41 @@ function semidiscretize(
 end
 
 """
+    _reject_velocity_constraints(discretization, vsym)
+
+Refuse a Dirichlet condition on the velocity field.
+
+The velocity is a field of the state, but a scheme that reconstructs it -- [`NewmarkSolver`](@ref)
+solves for the displacement and writes the velocity from it -- has no way to honour a prescribed
+value: whatever the constraint wrote would be overwritten by the reconstruction. Left unchecked, the
+condition reaches the structural sub-problem, which carries no velocity field, and reports that the
+handler knows only the displacement -- an internal decomposition surfacing as a user-facing error.
+"""
+function _reject_velocity_constraints(discretization::FiniteElementDiscretization, vsym::Symbol)
+    for dbc in discretization.dbcs
+        dbc.field_name === vsym && error(
+            "Dirichlet conditions on the velocity field $(vsym) are not supported. A time scheme " *
+            "that reconstructs the velocity from the displacement would overwrite them. Constrain " *
+            "the displacement instead, or set the initial velocity through the problem's `u0`.",
+        )
+    end
+    return nothing
+end
+
+"""
     _elastodynamics_function(quasistaticform, mass_term, discretization, mesh, sym, vsym, names)
 
 Wrap a structural problem and a mass term into an [`ElastodynamicsFunction`](@ref).
 
-The velocity is a genuine field of the *state*, so that it is interpolated with the displacement, can
-be constrained, and can be written out by name. It is deliberately not a field of the structural
-problem: the internal forces have no velocity equation, and a scheme that reconstructs the velocity
-would otherwise assemble empty rows for it. The two numberings are wired rather than assumed to
-coincide.
+The velocity is a genuine field of the *state*, so that it is interpolated with the displacement and
+can be written out by name. It is deliberately not a field of the structural problem: the internal
+forces have no velocity equation, and a scheme that reconstructs the velocity would otherwise
+assemble empty rows for it. The two numberings are wired rather than assumed to coincide.
+
+Prescribing the velocity is refused rather than supported -- see
+[`_reject_velocity_constraints`](@ref).
 """
+
 function _elastodynamics_function(
     quasistaticform,
     mass_term,
@@ -735,7 +761,8 @@ function semidiscretize(
     mesh::AbstractGrid,
 )
     sym = structural_displacement_symbol(models)
-    vsym = _velocity_symbol_or_error(models)
+    vsym = _shared_symbol_or_error(models, model -> model.velocity_symbol, "velocity")
+    _reject_velocity_constraints(discretization, vsym)
 
     quasistaticform = semidiscretize(
         Dict{String, QuasiStaticModel}(
@@ -771,16 +798,15 @@ function semidiscretize(
 end
 
 """
-    _velocity_symbol_or_error(models)
+    _shared_symbol_or_error(models, accessor, what)
 
-The velocity symbol shared by every subdomain. Distinct symbols would mean distinct fields, and the
-state carries one velocity field.
+The symbol every model in a domain split agrees on. Distinct symbols would mean distinct fields, and
+the state carries one field per role.
 """
-function _velocity_symbol_or_error(models::Dict{String, <: ElastodynamicsModel})
-    symbols = Set(model.velocity_symbol for model in values(models))
-    length(symbols) == 1 || error(
-        "All elastodynamics models in a domain split must share the same velocity symbol, got $(symbols).",
-    )
+function _shared_symbol_or_error(models::Dict{String}, accessor, what::AbstractString)
+    symbols = Set(accessor(model) for model in values(models))
+    length(symbols) == 1 ||
+        error("All models in a domain split must share the same $what symbol, got $(symbols).")
     return first(symbols)
 end
 

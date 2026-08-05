@@ -179,12 +179,12 @@ function update_state!(u::AbstractVector, sf::NewmarkStage, z::AbstractVector)
     return u
 end
 
-struct NewmarkStageCache{StageType, SolverType, StageOpType, T}
+struct NewmarkStageCache{StageType, SolverType, T}
     # The nonlinear problem one Newmark step poses: solve for the displacement and the condensed
-    # internal variables, then reconstruct the velocity.
+    # internal variables, then reconstruct the velocity. The operator lives on it -- one owner, as for
+    # `NewtonRaphsonSolverCache`.
     stage_function::StageType
     nlsolver::SolverType
-    stage_op::StageOpType
     # The stage unknowns and the previous state gathered into the stage numbering.
     z::Vector{Float64}
     zprev::Vector{Float64}
@@ -211,11 +211,11 @@ mutable struct NewmarkSolverCache{
     uₙ₋₁::PrevSolutionType
     # Temporary buffer for interpolations and stuff
     tmp::TmpType
-    # The velocity block of the solution vector, and of the previous one. Views rather than buffers:
-    # the velocity is state of this second order system, so the integrator's own `u .= uprev` rollback
-    # covers it and no bespoke restore is needed.
+    # The velocity block of the solution vector. A view rather than a buffer: the velocity is state of
+    # this second order system, so the integrator's own `u .= uprev` rollback covers it and no bespoke
+    # restore is needed. The previous step's velocity is read straight out of `uprev` where it is
+    # wanted, so it needs no field here.
     vₙ::VelocityViewType
-    vₙ₋₁::VelocityViewType
     # The acceleration is *not* state -- it is determined by `(u, v)` through the balance of momentum
     # -- so it stays scheme workspace, kept only to avoid re-solving `M a = f_ext - f_int` each step.
     #
@@ -261,18 +261,20 @@ end
 ```
 
 !!! note "Accuracy"
-    All three fields are interpolated linearly between step endpoints, matching the interpolation the
-    integrator already applies to `u`. That is first order, below the scheme's own second order. A
-    Hermite interpolant built from `(u, v)` at both ends would be consistent with the update formulas
-    and second order; it is worth having and is not what this does.
+    The displacement and the velocity come from the cubic Hermite interpolant through `(u, v)` at both
+    step ends, which is second order and consistent with the update formulas -- in particular the
+    velocity returned is the derivative of the displacement returned. The acceleration is that
+    interpolant's second derivative, which is linear in the step and therefore only an approximation
+    of the scheme's own. The condensed internal variables stay linear; they have no derivative here.
 """
 velocity(cache::NewmarkSolverCache) = cache.vₙ
 acceleration(cache::NewmarkSolverCache) = cache.aₙ
 velocity(integrator::ThunderboltTimeIntegrator) = velocity(integrator.cache)
 acceleration(integrator::ThunderboltTimeIntegrator) = acceleration(integrator.cache)
 
-# `vₙ₋₁`/`aₙ₋₁` are written by `accept_step!`, which runs in the header of the *following* step, so
-# after a completed step they hold the previous step's values and pair with `integrator.tprev`.
+# `aₙ₋₁` is written by `accept_step!`, which runs in the header of the *following* step, so after a
+# completed step it holds the previous step's value and pairs with `integrator.tprev`. The previous
+# velocity needs no such care: it is the velocity block of `integrator.uprev`.
 velocity(integrator::ThunderboltTimeIntegrator, t) =
     _newmark_hermite(integrator, integrator.cache, t, Val(1))
 acceleration(integrator::ThunderboltTimeIntegrator, t) =
@@ -289,7 +291,8 @@ interpolate_solution!(out, integrator::ThunderboltTimeIntegrator, cache::Newmark
 @doc raw"""
     _newmark_hermite!(out, integrator, cache, t, ::Val{D})
 
-`D`-th time derivative at `t` of the cubic Hermite interpolant through `(uₙ₋₁, vₙ₋₁)` and `(uₙ, vₙ)`.
+`D`-th time derivative at `t` of the cubic Hermite interpolant through the displacement and
+velocity blocks of `uprev` and `u`.
 
 With ``	heta = (t - t_{n-1})/\Delta t`` the interpolant is
 ```math
@@ -441,16 +444,14 @@ function setup_solver_cache(
     )
     nlsolver = _setup_multilevel_newton_cache(stage_function, local_solver_cache, newton, nfe)
 
-    vₙ   = view(_u, f.velocity_dofs)
-    vₙ₋₁ = view(_uprev, f.velocity_dofs)
-    aₙ   = _consistent_initial_acceleration(f, stage_op, _u, vₙ, t₀)
+    vₙ = view(_u, f.velocity_dofs)
+    aₙ = _consistent_initial_acceleration(f, stage_op, _u, vₙ, t₀)
 
     return NewmarkSolverCache(
         _u,
         _uprev,
         copy(_u),
         vₙ,
-        vₙ₋₁,
         aₙ,
         copy(aₙ),
         zeros(nfe),
@@ -458,7 +459,6 @@ function setup_solver_cache(
         NewmarkStageCache(
             stage_function,
             nlsolver,
-            stage_op,
             zeros(solution_size(structural)),
             zeros(solution_size(structural)),
             solver.β,
@@ -553,7 +553,8 @@ end
 
 function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, Δt)
     (; uₙ, uₙ₋₁, vₙ, aₙ, ṽ, uᵥ, stage) = cache
-    (; stage_function, nlsolver, stage_op, β, γ) = stage
+    (; stage_function, nlsolver, β, γ) = stage
+    stage_op = getoperator(stage_function)
     # The predictors and the stage unknowns live in the structural numbering.
     z = stage.z
     fe = fe_dof_range(f.structural)

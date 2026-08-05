@@ -9,7 +9,7 @@ abstract type AbstractTimeSolverCache end
 getJ(op) = op.J
 
 # Nonlinear
-function setup_operator(f::NullFunction, solver::AbstractSolver)
+function setup_stage_operator(f::NullFunction, solver::AbstractSolver)
     return NullOperator{Float64, solution_size(f), solution_size(f)}()
 end
 
@@ -95,8 +95,22 @@ function setup_assembled_operator(
 end
 
 # Nonlinear
-function setup_operator(f::AbstractSolidMechanicsFunction, solver::AbstractNonlinearSolver)
-    return setup_operator(get_strategy(f), get_volume_integrator(f), f.dh)
+"""
+    setup_stage_operator(f, solver)
+
+The nonlinear operator a solver works on for the function `f`.
+
+Distinct from the `setup_operator(strategy, integrator, dh)` family, which materializes one integrator
+against one handler and knows nothing about who will solve with it. This one answers "what is the
+nonlinear problem posed by `f`", which is what an [`AbstractStageFunction`](@ref) carries -- directly
+for a continuation, wrapped in a scheme's own operator for a time step.
+
+Sharing one name for both was what let the displacement's integrator be paired with the state's dof
+handler for an [`ElastodynamicsFunction`](@ref): a query that guesses two things from one argument has
+nowhere to say that they come from different places.
+"""
+function setup_stage_operator(f::AbstractSolidMechanicsFunction, solver::AbstractNonlinearSolver)
+    return setup_operator(get_strategy(f), get_volume_integrator(f), get_assembly_dh(f))
 end
 
 function update_constraints!(

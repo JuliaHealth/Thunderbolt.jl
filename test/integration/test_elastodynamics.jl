@@ -19,9 +19,10 @@ function elastodynamic_bar(;
     ρ = 1.0e3,
     material = PK1Model(Guccione1991PassiveModel(), ORTHO_MS),
     clamped = true,
+    facet_models = (),
 )
     mesh = generate_mesh(Hexahedron, ncells, Vec((0.0, 0.0, 0.0)), Vec((1.0, 0.2, 0.2)))
-    model = ElastodynamicsModel(:d, :v, material, (), ConstantCoefficient(ρ))
+    model = ElastodynamicsModel(:d, :v, material, facet_models, ConstantCoefficient(ρ))
     dbcs = if clamped
         [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])]
     else
@@ -366,7 +367,7 @@ end
 
         @test integrator(tmp, tprev)[fe] == integrator.uprev[fe]
         @test integrator(tmp, t)[fe] == integrator.u[fe]
-        @test velocity(integrator, tprev) == integrator.cache.vₙ₋₁
+        @test velocity(integrator, tprev) == view(integrator.uprev, Thunderbolt.velocity_dofs(f))
         @test velocity(integrator, t) == integrator.cache.vₙ
 
         # dₜ of the displacement interpolant is the velocity interpolant, and dₜ of that is the
@@ -404,6 +405,61 @@ end
             integrator.t ≈ t || (mismatched |= !(v ≈ velocity(integrator)))
         end
         @test mismatched
+    end
+
+    @testset "Facet models reach the assembly" begin
+        # The internal force weak form is lowered to a quasi-static one, and the facet models ride
+        # along with it. Nothing else in this file passes a non-empty `facet_models`, so without this
+        # a lowering that silently dropped them would look identical to one that did not.
+        # A large enough swing that the spring force -- which scales with the displacement it
+        # sees -- is not lost against the inertia.
+        v0(f) = bending_velocity(f, 5.0)
+        free = elastodynamic_bar(ncells = (2, 1, 1))
+        sprung = elastodynamic_bar(
+            ncells = (2, 1, 1),
+            # `RobinBC`, not `NormalSpringBC`: the latter resists the *normal* displacement, and
+            # the free end's normal is along the bar while the swing is transverse, so it would
+            # barely register. Stiff enough to matter against Guccione, too -- at 1e4 the answer
+            # moves by 3e-7 and the test would pass whether or not the model was ever assembled.
+            facet_models = (RobinBC(1.0e8, "right"),),
+        )
+
+        uf = solve_elastodynamic(free, v0(free), 0.05, 0.005)
+        us = solve_elastodynamic(sprung, v0(sprung), 0.05, 0.005)
+        @test uf.sol.retcode == SciMLBase.ReturnCode.Success
+        @test us.sol.retcode == SciMLBase.ReturnCode.Success
+
+        # A spring on the free end has to change the motion; if the facet model never reached an
+        # element cache the two solves would agree to round-off.
+        d = Thunderbolt.displacement_dofs(free)
+        @test norm(us.u[d] - uf.u[d]) / norm(uf.u[d]) > 0.01
+    end
+
+    @testset "Prescribing the velocity is refused" begin
+        # The velocity is a field of the state, but Newmark writes it from the converged displacement,
+        # so a prescribed value would be overwritten. Refusing says that; without the check the
+        # condition reaches the structural sub-problem, which carries no velocity field, and reports
+        # that the handler knows only :d -- an internal decomposition surfacing as a user error.
+        mesh = generate_mesh(Hexahedron, (2, 1, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 0.2, 0.2)))
+        model = ElastodynamicsModel(
+            :d,
+            :v,
+            PK1Model(Guccione1991PassiveModel(), ORTHO_MS),
+            (),
+            ConstantCoefficient(1.0e3),
+        )
+        discretization = FiniteElementDiscretization(
+            Dict(:d => LagrangeCollection{1}()^3);
+            dbcs = [Dirichlet(:v, getfacetset(mesh, "left"), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
+        )
+        err = try
+            semidiscretize(model, discretization, mesh)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test occursin("velocity", err.msg)
     end
 
     @testset "Two subdomains with different internal variable models" begin

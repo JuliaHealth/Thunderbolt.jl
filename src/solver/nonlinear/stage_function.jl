@@ -50,8 +50,6 @@ struct SolutionVectorMapping{DofMapType, IVMapType} <: AbstractSolutionVectorMap
     internal_variables::IVMapType
 end
 
-SolutionVectorMapping(dofs) = SolutionVectorMapping(dofs, Int[])
-
 function gather!(target::AbstractVector, source::AbstractVector, m::SolutionVectorMapping)
     ndofs = length(m.dofs)
     @inbounds for i ∈ eachindex(m.dofs)
@@ -74,8 +72,6 @@ function scatter!(source::AbstractVector, target::AbstractVector, m::SolutionVec
     return source
 end
 
-Base.length(m::SolutionVectorMapping) = length(m.dofs) + length(m.internal_variables)
-
 """
     field_dof_mapping(target_dh, target_sym, source_dh, source_sym)
 
@@ -94,8 +90,6 @@ function field_dof_mapping(
     source_sym::Symbol,
 )
     dofs = zeros(Int, ndofs(target_dh))
-    target_cdofs = Int[]
-    source_cdofs = Int[]
     for sdh_target ∈ target_dh.subdofhandlers
         # Matched by cellset, not by position: the two handlers are built by separate loops over the
         # same subdomains, and nothing guarantees those loops agree on an order.
@@ -107,11 +101,9 @@ function field_dof_mapping(
         target_range = dof_range(sdh_target, target_sym)
         source_range = dof_range(sdh_source, source_sym)
         @assert length(target_range) == length(source_range) "Fields $(target_sym) and $(source_sym) do not share an interpolation."
-        resize!(target_cdofs, ndofs_per_cell(sdh_target))
-        resize!(source_cdofs, ndofs_per_cell(sdh_source))
         for cellid ∈ sdh_target.cellset
-            celldofs!(target_cdofs, target_dh, cellid)
-            celldofs!(source_cdofs, source_dh, cellid)
+            target_cdofs = celldofsview(target_dh, cellid)
+            source_cdofs = celldofsview(source_dh, cellid)
             for (i, j) ∈ zip(target_range, source_range)
                 d, s = target_cdofs[i], source_cdofs[j]
                 if dofs[d] == 0
@@ -184,14 +176,36 @@ the same object -- and what leaves room for FIRK, whose stage is `s` times large
     stage_mapping(sf)        # bidirectional wiring to the function's numbering
     stage_parameters(sf)     # the element facing `p` of the current step
     stage_size(sf)           # length of the stage unknown vector
+    uncondensed_range(sf)    # the part of it the linear system solves for
     init_stage!(z, sf, u)    # predictor: current state -> stage unknowns
     update_state!(u, sf, z)  # converged stage unknowns -> state, reconstructing what was condensed
 
 The nonlinear solver sees only this. It never learns what time it is -- everything the operator needs
 travels in `stage_parameters` -- which is what lets one solver serve a continuation, a time step and,
 later, a coupled multi-stage solve.
+
+The stage vector is split by [`uncondensed_range`](@ref): the leading part is what the linear solve
+returns an increment for, the rest is condensed at quadrature point level and written by the assembly.
+A scheme whose unknowns are laid out differently -- FIRK stacks `s` blocks of `[dofs | internal
+variables]` -- says so by overriding that query rather than by matching an unwritten convention.
 """
 abstract type AbstractStageFunction end
+
+"""
+    uncondensed_range(sf)
+
+The entries of the stage vector the linear system solves for.
+
+Everything outside it is condensed: eliminated at quadrature point level, present in the stage vector
+because it is state that has to survive the step, but absent from the global system. `nlsolve!`
+subtracts the linear solve's increment over exactly this range.
+
+The default -- a leading block as long as the system -- is the solid mechanics convention, where the
+condensed internal variables are appended after the finite element dofs. It is a query rather than an
+assumption so that a scheme with a different layout has somewhere to say so.
+"""
+uncondensed_range(sf::AbstractStageFunction) = Base.OneTo(size(getJ(getoperator(sf)), 1))
+
 
 stage_mapping(::AbstractStageFunction) = IdentitySolutionVectorMapping()
 stage_size(sf::AbstractStageFunction) = solution_size(getfunction(sf))
@@ -203,7 +217,6 @@ update_state!(u::AbstractVector, sf::AbstractStageFunction, z::AbstractVector) =
 # The constraints, the residual norm and the monitors are properties of the *function*; a stage whose
 # unknowns carry no constraints of their own forwards rather than reimplementing. Override on a stage
 # that constrains its own unknowns differently.
-getch(sf::AbstractStageFunction) = getch(getfunction(sf))
 residual_norm(cache::AbstractNonlinearSolverCache, sf::AbstractStageFunction) =
     residual_norm(cache, getfunction(sf))
 eliminate_constraints_from_linearization!(

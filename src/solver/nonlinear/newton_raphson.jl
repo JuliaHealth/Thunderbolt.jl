@@ -270,7 +270,7 @@ function nlsolve!(
 
         eliminate_constraints_from_increment!(Δu, sf, cache)
 
-        u .-= Δu # Current guess
+        @inbounds @views u[uncondensed_range(sf)] .-= Δu # Current guess
         incrementnorm = norm(Δu)
 
         if cache.iter > 0

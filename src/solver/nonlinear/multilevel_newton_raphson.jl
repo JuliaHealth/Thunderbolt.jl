@@ -309,7 +309,9 @@ function nlsolve!(
 
         eliminate_constraints_from_increment!(Δu, sf, cache)
 
-        u[1:length(Δu)] .-= Δu # Current guess
+        # Only the entries the linear system solves for; the condensed tail is written by the
+        # assembly, not by the increment.
+        @inbounds @views u[uncondensed_range(sf)] .-= Δu
 
         if cache.iter > 0
             # In this case we might be unablet to estimate the convergence rate, because we are too close to the solution
