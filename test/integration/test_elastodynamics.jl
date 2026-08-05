@@ -1,5 +1,6 @@
 using Thunderbolt
 import SciMLBase
+import SciMLIterators: TimeChoiceIterator
 using Test
 using LinearAlgebra
 using LinearSolve
@@ -328,6 +329,29 @@ end
         # Two-sided: `≤` alone is also satisfied by a `dt` that never shrank, which is the opposite
         # bug.
         @test ff^(integrator.stats.nreject - 1) ≤ dt₀ / integrator.dt ≤ ff^integrator.stats.nreject
+    end
+
+    @testset "Velocity and acceleration interpolate to a requested time" begin
+        # `TimeChoiceIterator` interpolates `u` to the requested `t` but leaves the integrator at the
+        # end of the bracketing step, so the no-argument accessors report a *different* time than the
+        # `u` handed to the loop body. Writing both into one output frame would be silently wrong.
+        f = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
+        integrator = init(
+            ElastodynamicsProblem(f, zeros(solution_size(f)), bending_velocity(f, 0.2), (0.0, 1.0)),
+            NewmarkSolver(),
+            dt = 0.3,   # deliberately not a divisor of the requested spacing
+            verbose = false,
+        )
+        mismatched = false
+        for (u, t) in TimeChoiceIterator(integrator, 0.0:0.25:1.0)
+            v = velocity(integrator, t)
+            a = acceleration(integrator, t)
+            @test all(isfinite, v)
+            @test all(isfinite, a)
+            # At a step boundary the two agree; strictly inside a step they must not.
+            integrator.t ≈ t || (mismatched |= !(v ≈ velocity(integrator)))
+        end
+        @test mismatched
     end
 
     @testset "A rejected step rolls back the velocity and the acceleration" begin

@@ -183,16 +183,55 @@ mutable struct NewmarkSolverCache{
 end
 
 """
-    velocity(cache)
-    acceleration(cache)
+    velocity(integrator)      -> v at `integrator.t`
+    acceleration(integrator)  -> a at `integrator.t`
+    velocity(integrator, t)   -> v interpolated to `t`
+    acceleration(integrator, t)
 
-The velocity and acceleration the Newmark scheme reconstructed for the current solution. They are not
-part of the solution vector, so this is how a consumer gets at them.
+The velocity and acceleration the scheme reconstructed. They are not part of the solution vector, so
+this is how a consumer reaches them.
+
+**Pass the time whenever the solution is read at a chosen time rather than at a step boundary.**
+`TimeChoiceIterator` and `intervals` interpolate `u` to the requested `t` but leave the integrator
+sitting at the end of the step that bracketed it, so the no-argument form returns a velocity from a
+*different* time than the `u` handed to the loop body:
+
+```julia
+for (u, t) in TimeChoiceIterator(integrator, 0.0:dtvis:tend)
+    v = velocity(integrator, t)      # matches `u`
+    v_wrong = velocity(integrator)   # the end of the bracketing step
+end
+```
+
+!!! note "Accuracy"
+    All three fields are interpolated linearly between step endpoints, matching the interpolation the
+    integrator already applies to `u`. That is first order, below the scheme's own second order. A
+    Hermite interpolant built from `(u, v)` at both ends would be consistent with the update formulas
+    and second order; it is worth having and is not what this does.
 """
 velocity(cache::NewmarkSolverCache) = cache.vₙ
 acceleration(cache::NewmarkSolverCache) = cache.aₙ
 velocity(integrator::ThunderboltTimeIntegrator) = velocity(integrator.cache)
 acceleration(integrator::ThunderboltTimeIntegrator) = acceleration(integrator.cache)
+
+# `vₙ₋₁`/`aₙ₋₁` are written by `accept_step!`, which runs in the header of the *following* step, so
+# after a completed step they hold the previous step's values and pair with `integrator.tprev`.
+velocity(integrator::ThunderboltTimeIntegrator, t) =
+    _newmark_interpolate(integrator, integrator.cache.vₙ₋₁, integrator.cache.vₙ, t)
+acceleration(integrator::ThunderboltTimeIntegrator, t) =
+    _newmark_interpolate(integrator, integrator.cache.aₙ₋₁, integrator.cache.aₙ, t)
+
+function _newmark_interpolate(integrator::ThunderboltTimeIntegrator, xprev, x, t)
+    out = similar(x)
+    # Before the first step there is no interval to interpolate over, and `tprev == t` would divide
+    # by zero. The initial value is the answer for any `t` that can be asked at that point.
+    if integrator.t == integrator.tprev
+        out .= x
+        return out
+    end
+    OS.linear_interpolation!(out, t, xprev, x, integrator.tprev, integrator.t)
+    return out
+end
 
 function setup_solver_cache(
     f::ElastodynamicsFunction,
