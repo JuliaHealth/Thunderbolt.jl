@@ -215,10 +215,8 @@ solution_size(f::AbstractSolidMechanicsFunction) = ndofs(f.dh)+ndofs(f.lvh)
 
 The finite element dofs of the solution vector, i.e. everything the `DofHandler` distributes.
 
-This is one of the two places the solution vector layout is written down, the other being
-[`internal_variable_range`](@ref). Query them rather than spelling the arithmetic at a call site: a
-consumer that wants *part* of the finite element block -- a stage solver typically solves for a
-subset of the fields -- must say so, and cannot if every site assumes the whole block.
+The whole block, so a consumer that wants only part of it -- a stage solver typically solves for a
+subset of the fields -- must ask for that subset by name instead.
 """
 fe_dof_range(f::AbstractSolidMechanicsFunction) = Base.OneTo(ndofs(f.dh))
 

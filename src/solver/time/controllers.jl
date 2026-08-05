@@ -34,9 +34,8 @@ Two details do most of the work in practice, and both differ from a textbook I-c
 * the default limiter ``1 + \arctan(x - 1)`` is smooth and saturates around `[0.21, 2.57]`, so no
   separate `qmin`/`qmax` clipping is needed and the response to an outlier is gentle.
 
-On the smooth structural problems this package solves, it rejects markedly fewer steps than a plain
-integral controller: the error estimate of a second order scheme is noisy, and an accept rule on the
-proposed factor tolerates an outlier that a rule on the estimate itself would discard.
+`benchmarks/benchmark-newmark-controllers.jl` measures the coefficients against a pure integral and a
+PI setting, and checks the `tol^(-1/3)` step count law that pins the estimate's order.
 
 The defaults `(0.6, -0.2, 0)` are Söderlind's, and are what [`NewmarkSolver`](@ref) uses unless a
 controller is passed to `init`.

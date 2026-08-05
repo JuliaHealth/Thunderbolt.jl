@@ -453,8 +453,8 @@ function perform_backward_euler_step!(
 )
     update_constraints!(f, cache, t + Δt)
     sf = stage_info.stage_function
-    # `gto1`: hand the *stage* the previous solution and the timestep as parameters instead of
-    # mutating them into the element caches beforehand.
+    # `gto1`: the previous solution and the timestep reach the element as *parameters* of the call,
+    # so nothing has to be written into the element caches first.
     #
     # The leading `nothing` is the inner parameter object, which FerriteOperators forwards to the
     # element via `query_element_parameters(element, cell, ivh, p.p)`. It is the slot reserved for the

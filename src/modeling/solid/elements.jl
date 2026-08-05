@@ -673,9 +673,9 @@ function FerriteOperators.query_element_parameters(
 end
 
 # A rate-free element has no use for any of it and expects the bare time, so it is unwrapped here
-# rather than being handed a parameter object it would pass to `evaluate_coefficient`. The `gto1` path
-# still has this gap; it is closed here because a mixed mesh carrying
-# one rate-free and one condensed subdomain is the ordinary case for this solver.
+# rather than being handed a parameter object it would pass to `evaluate_coefficient`. A mixed mesh
+# carrying one rate-free and one condensed subdomain is the ordinary case for this solver; the `gto1`
+# path has no equivalent unwrapping.
 FerriteOperators.query_element_parameters(
     ::QuasiStaticElementCache,
     cell,

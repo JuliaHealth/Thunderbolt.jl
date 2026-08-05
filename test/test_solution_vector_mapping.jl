@@ -28,12 +28,12 @@ function _handlers(; velocity_order = 1)
     return dh_u, dh_uv
 end
 
-# `n` condensed unknowns on every cell, laid out after the finite element block as
-# `offset(cid)+1 : offset(cid+1)` with absolute, 0-based offsets.
+# `n` condensed unknowns on every cell, laid out after the finite element block: the offsets are
+# relative to the start of that block, of which there is one per cell plus a closing one.
 function _ivh(dh, n)
     ncells = getncells(Thunderbolt.get_grid(dh))
-    offsets = [ndofs(dh) + (cid - 1) * n for cid = 1:ncells]
-    return Thunderbolt.InternalVariableHandler(offsets, ncells * n)
+    offsets = [(cid - 1) * n for cid = 1:(ncells+1)]
+    return Thunderbolt.InternalVariableHandler(offsets, ndofs(dh), ncells * n)
 end
 
 @testset "SolutionVectorMapping" begin

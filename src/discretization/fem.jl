@@ -530,13 +530,13 @@ end
 """
     _rebase_internal_variable_handler(lvh, from_dh, to_dh)
 
-The same condensed layout, re-expressed as offsets into a solution vector whose finite element block
-is `to_dh`'s rather than `from_dh`'s.
+The same condensed layout, re-expressed against a solution vector whose finite element block is
+`to_dh`'s rather than `from_dh`'s.
 
 How many unknowns a cell condenses is a property of its material, so it does not change when a second
-field is added next to the displacement -- only where they start does. Rebuilding the handler from the
-element caches instead would require setting them up against a multi-field `SubDofHandler`, which the
-element layer does not support and does not need to.
+field is added next to the displacement -- only where the block starts does. Rebuilding the handler
+from the element caches instead would require setting them up against a multi-field `SubDofHandler`,
+which the element layer does not support and does not need to.
 """
 function _rebase_internal_variable_handler(
     lvh::InternalVariableHandler,
@@ -545,7 +545,8 @@ function _rebase_internal_variable_handler(
 )
     offsets = lvh.internal_variable_offsets
     offsets === nothing && return lvh # nothing is condensed, so there is nothing to rebase
-    return InternalVariableHandler(offsets .+ (ndofs(to_dh) - ndofs(from_dh)), ndofs(lvh))
+    @assert lvh.base_offset == ndofs(from_dh) "The handler was not built for `from_dh`."
+    return InternalVariableHandler(offsets, ndofs(to_dh), ndofs(lvh))
 end
 
 # Solid mechanics semidiscretize interface

@@ -37,13 +37,10 @@ store to the subdomain this solver serves; cells outside it get an empty range.
 function setup_local_solve_reports(dh, lvh, ndofs_per_quadrature_point::Int, cellset)
     ndofs_per_quadrature_point == 0 && return nothing
     ncells     = getncells(get_grid(dh))
-    ndofs_last = last(internal_variable_range(dh, lvh))
     offsets    = Vector{Int}(undef, ncells+1)
     offsets[1] = 1
     for cellid = 1:ncells
-        cell_end =
-            cellid < ncells ? FerriteOperators.internal_variable_offset(lvh, cellid+1) : ndofs_last
-        ndofs_cell = cell_end - FerriteOperators.internal_variable_offset(lvh, cellid)
+        ndofs_cell = length(FerriteOperators.internal_variable_range(lvh, cellid))
         nqp =
             (cellset === nothing || cellid ∈ cellset) ? ndofs_cell ÷ ndofs_per_quadrature_point : 0
         offsets[cellid+1] = offsets[cellid] + nqp

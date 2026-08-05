@@ -4,9 +4,8 @@
 Bidirectional wiring between two solution vectors laid out by different dof handlers and different
 internal variable handlers.
 
-Beyond the stage solves below this is what a domain decomposition method (overlapping Schwarz) or a
-nonlinear preconditioner needs in order to move between a global problem and a local one, which is
-why it is named after what it does rather than after its first consumer.
+A domain decomposition method (overlapping Schwarz) or a nonlinear preconditioner needs the same
+thing to move between a global problem and a local one.
 
 ## Interface
 
@@ -135,24 +134,19 @@ function internal_variable_mapping(
     source_lvh::InternalVariableHandler,
 )
     ndofs(target_lvh) == 0 && return Int[]
+    # Both sides index their own solution vector, so each handler's block must start where its dof
+    # handler ends. Checking it here is what lets the loop below subtract a constant.
+    @assert target_lvh.base_offset == ndofs(target_dh)
+    @assert source_lvh.base_offset == ndofs(source_dh)
     ncells = getncells(get_grid(target_dh))
-    target_last = last(internal_variable_range(target_dh, target_lvh))
-    source_last = last(internal_variable_range(source_dh, source_lvh))
     ivs = zeros(Int, ndofs(target_lvh))
-    # Offsets are absolute and 0-based: cell `cid` owns `offset(cid)+1 : offset(cid+1)`.
+    # The ranges are absolute, i.e. indices into the respective solution vector, while `ivs` is
+    # indexed within the target's internal variable block.
     for cid = 1:ncells
-        target_from = FerriteOperators.internal_variable_offset(target_lvh, cid)
-        source_from = FerriteOperators.internal_variable_offset(source_lvh, cid)
-        target_to =
-            cid < ncells ? FerriteOperators.internal_variable_offset(target_lvh, cid + 1) :
-            target_last
-        source_to =
-            cid < ncells ? FerriteOperators.internal_variable_offset(source_lvh, cid + 1) :
-            source_last
-        @assert target_to - target_from == source_to - source_from "Cell $cid carries a different number of internal variables on the two sides."
-        for k = 1:(target_to-target_from)
-            ivs[target_from-ndofs(target_dh)+k] = source_from + k
-        end
+        target_range = FerriteOperators.internal_variable_range(target_lvh, cid)
+        source_range = FerriteOperators.internal_variable_range(source_lvh, cid)
+        @assert length(target_range) == length(source_range) "Cell $cid carries a different number of internal variables on the two sides."
+        ivs[target_range .- ndofs(target_dh)] .= source_range
     end
     return ivs
 end
@@ -167,7 +161,8 @@ function's unknowns nor to correspond to any part of the solution vector. It kno
 from the current state and how to write the state back once they are solved for. That is the whole
 content of the abstraction, and it is what makes Newmark (which condenses the velocity), an IMEX
 split (which condenses the explicitly advanced block) and backward Euler (which condenses nothing)
-the same object -- and what leaves room for FIRK, whose stage is `s` times larger than the state.
+the same object. A stage may also be *larger* than the state, as a multi-stage scheme's is, which is
+why its size is a query rather than `solution_size` of the function.
 
 ## Interface
 
