@@ -649,9 +649,8 @@ forces have no velocity equation, and a scheme that reconstructs the velocity wo
 assemble empty rows for it. The two numberings are wired rather than assumed to coincide.
 
 Prescribing the velocity is refused rather than supported -- see
-[`_reject_velocity_constraints`](@ref).
+`_reject_velocity_constraints`.
 """
-
 function _elastodynamics_function(
     quasistaticform,
     mass_term,
@@ -734,8 +733,8 @@ The velocity shares the displacement's interpolation.
 
 This is assumed throughout: the element evaluates the reconstructed velocity with the *displacement*
 `CellValues` (`compute_kinematic_quantities`), and the schemes size velocity vectors by the
-displacement dof count. Nothing checked it until now, so a user supplying a different interpolation
-for the velocity symbol got silent nonsense rather than an error.
+displacement dof count. A mismatch is silent nonsense rather than an error, which is what the
+assertion is for.
 """
 function _assert_shared_interpolation(discretization, sym, vsym, ipc)
     haskey(discretization.interpolations, vsym) || return nothing

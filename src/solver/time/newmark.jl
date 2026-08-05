@@ -294,9 +294,9 @@ interpolate_solution!(out, integrator::ThunderboltTimeIntegrator, cache::Newmark
 `D`-th time derivative at `t` of the cubic Hermite interpolant through the displacement and
 velocity blocks of `uprev` and `u`.
 
-With ``	heta = (t - t_{n-1})/\Delta t`` the interpolant is
+With ``\theta = (t - t_{n-1})/\Delta t`` the interpolant is
 ```math
-u(	heta) = h_{00}u_{n-1} + \Delta t\, h_{10} v_{n-1} + h_{01} u_n + \Delta t\, h_{11} v_n
+u(\theta) = h_{00}u_{n-1} + \Delta t\, h_{10} v_{n-1} + h_{01} u_n + \Delta t\, h_{11} v_n
 ```
 with the standard Hermite basis. `D = 0` gives the displacement, `D = 1` the velocity, `D = 2` the
 acceleration. The velocity is *exact* at both endpoints by construction; the acceleration is the
@@ -639,9 +639,8 @@ function _newmark_report_error!(integrator, cache::NewmarkSolverCache, Δt, β)
     abstol = integrator.opts.abstol
     udofs = integrator.f.state_mapping.dofs
     err = zero(eltype(uₙ))
-    # The acceleration carries the scheme's own numbering while `uₙ` carries the solution vector's.
-    # They coincide today; walking them as a pair rather than with one shared index keeps the estimate
-    # correct once a stage solves against a handler of its own.
+    # `aₙ` is in the structural numbering, `uₙ` in the state's: `udofs[k]` is the state dof of
+    # structural dof `k`.
     @inbounds for (k, i) in enumerate(udofs)
         eᵢ = Δt^2 * (β - 1 / 6) * (aₙ[k] - aₙ₋₁[k])
         tolᵢ = abstol + reltol * max(abs(uₙ[i]), abs(uₙ₋₁[i]))

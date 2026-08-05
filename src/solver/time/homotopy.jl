@@ -113,9 +113,6 @@ function setup_solver_cache(
     alias_u     = false,
 )
     check_internal_variables_are_rate_free(f)
-    # The stage carries the operator, so it is built before the solver cache that works on it. A
-    # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
-    # pseudo-time.
     stage_function = FullStateStage(f, setup_stage_operator(f, solver.inner_solver), t₀)
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
@@ -283,9 +280,6 @@ function reject_step!(
     cache::HomotopyPathSolverCache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
-    # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
-    # solve-failure case, this hook owns the convergence-rate case. The state restore is
-    # `rollback_state!`'s.
     integrator.force_stepfail && return nothing
 
     @inline g(x) = √(1+4x) - 1
@@ -350,9 +344,6 @@ function reject_step!(
     cache::HomotopyPathSolverCache,
     controller::ExperimentalDiscreteContinuationController,
 )
-    # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
-    # solve-failure case, this hook owns the convergence-rate case. The state restore is
-    # `rollback_state!`'s.
     integrator.force_stepfail && return nothing
 
     @inline g(x) = √(1+4x) - 1

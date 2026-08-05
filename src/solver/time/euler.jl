@@ -193,15 +193,10 @@ end
 # Marks a model tree rewritten to carry solver-side information down to the element caches.
 abstract type AbstractModelAnnotation{T} end
 
-# This is the wrapper used to communicate solver info into the operator.
-# Carries the *solver-owned* state that has to reach the element caches, and nothing else. Since
-# `gto1` supplies the previous solution and the timestep as call parameters, the only thing left to
-# inject is the local nonlinear solver cache, which the material routine needs for the per-quadrature
-# point Newton (`materials.jl`, `solve_internal_timestep`).
-#
-# Formerly `BackwardEulerStageFunctionWrapper`, which additionally carried `u`, `uprev` and a mutable
-# `Δt` that `update_stage!` wrote into before every step. Both are gone: this no longer encodes any
-# time discretization, hence the rename.
+# Carries the *solver-owned* state that has to reach the element caches, and nothing else. `gto1`
+# supplies the previous solution and the timestep as call parameters, so the only thing left to inject
+# is the local nonlinear solver cache, which the material routine needs for the per-quadrature point
+# Newton (`materials.jl`, `solve_internal_timestep`). It encodes no time discretization.
 struct LocalSolverCacheAnnotation{F, S} <: AbstractModelAnnotation{F}
     f::F
     local_solver_cache::S
@@ -305,9 +300,8 @@ stage: it is the annotated one, carrying the local solver cache down to the elem
 
     local_solver_cache = _setup_local_solver_cache(local_solver, integrator, dh, lvh)
 
-    # The previous solution and the timestep are no longer threaded in here: `gto1` supplies them per
-    # call via `GenericFirstOrderTimeParameters`. Only the local solver cache still has to reach the
-    # element.
+    # `gto1` supplies the previous solution and the timestep per call via
+    # `GenericFirstOrderTimeParameters`, so only the local solver cache has to reach the element here.
     op = setup_operator(
         f.assembly_strategy,
         _annotate_with_local_solver_cache(integrator, local_solver_cache),

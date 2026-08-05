@@ -105,6 +105,7 @@ blocked functions and live outside this branch.
 
     dh, ch, lvh                    # fields laying out the solution vector
     get_volume_integrator(f)       # the volumetric weak form
+    get_assembly_dh(f)             # the handler that weak form assembles against
     solution_size(f)               # ndofs(dh) + ndofs(lvh)
 
 `dh` may carry more than one field -- an [`ElastodynamicsFunction`](@ref) holds a velocity next to the

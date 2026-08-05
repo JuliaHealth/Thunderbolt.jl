@@ -105,9 +105,9 @@ against one handler and knows nothing about who will solve with it. This one ans
 nonlinear problem posed by `f`", which is what an [`AbstractStageFunction`](@ref) carries -- directly
 for a continuation, wrapped in a scheme's own operator for a time step.
 
-Sharing one name for both was what let the displacement's integrator be paired with the state's dof
-handler for an [`ElastodynamicsFunction`](@ref): a query that guesses two things from one argument has
-nowhere to say that they come from different places.
+The integrator and the dof handler it assembles against are separate queries
+([`get_volume_integrator`](@ref), [`get_assembly_dh`](@ref)) because they need not come from the same
+object.
 """
 function setup_stage_operator(f::AbstractSolidMechanicsFunction, solver::AbstractNonlinearSolver)
     return setup_operator(get_strategy(f), get_volume_integrator(f), get_assembly_dh(f))
