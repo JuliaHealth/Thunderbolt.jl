@@ -1,4 +1,5 @@
 include("time/integrator/type.jl")
+include("time/controllers.jl")
 include("time/euler.jl")
 include("time/newmark.jl")
 include("time/homotopy.jl")

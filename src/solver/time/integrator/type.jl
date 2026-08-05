@@ -25,6 +25,11 @@ Base.@kwdef mutable struct IntegratorOptions{
     VT,
 }
     force_dtmin::Bool = false
+    # Error tolerances of the step size control, in the SciML sense: a step is accepted when the
+    # scheme's local error estimate satisfies `‖e‖ ≤ abstol + reltol·‖u‖` componentwise. Unused by the
+    # non-adaptive schemes.
+    reltol::tType = 1.0e-3
+    abstol::tType = 1.0e-6
     dtmin::tType = eps(tType)
     dtmax::tType = Inf
     failfactor::fType = 4.0
@@ -93,6 +98,10 @@ mutable struct ThunderboltTimeIntegrator{
     dt::tType
     dtcache::tType
     dtpropose::tType
+    # Step size factor the controller proposed for the current attempt, `NaN` until it has been asked.
+    # `stepsize_controller!` mutates the controller's history, so it must run once per attempt, while
+    # `should_accept_step` is a predicate that the step loop calls several times.
+    qpropose::tType
     tdir::tType
     # cache of the time integration algorithm
     cache::cacheType
@@ -195,20 +204,6 @@ function _reject_unsupported_saving(saveat, save_everystep, dense, save_idxs)
     )
 end
 
-# Error tolerances live on the algorithm, not on `init`, because `IntegratorOptions` has no slot for
-# them and the schemes that are adaptive scale their estimate where they compute it. Passing them here
-# would otherwise be swallowed by the trailing `kwargs...` and silently ignored.
-function _reject_solve_tolerances(reltol, abstol)
-    given = String[]
-    reltol === nothing || push!(given, "reltol")
-    abstol === nothing || push!(given, "abstol")
-    isempty(given) && return nothing
-    return error(
-        "Tolerances are set on the algorithm rather than on `init`, but $(join(given, " and ")) " *
-        "was passed. Use e.g. `NewmarkSolver(; reltol = 1e-4, abstol = 1e-7)`.",
-    )
-end
-
 # Callbacks are not implemented: the solution and integrator lack the stats and event
 # state they need. Refuse at construction rather than fail mid-step.
 function _reject_callbacks(callback)
@@ -246,8 +241,8 @@ function SciMLBase.__init(
     dense = false,
     dtmin = nothing,
     dtmax = nothing,
-    reltol = nothing,
-    abstol = nothing,
+    reltol = 1.0e-3,
+    abstol = 1.0e-6,
     internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
     kwargs...,
 )
@@ -259,7 +254,6 @@ function SciMLBase.__init(
 
     _reject_unsupported_saving(saveat, save_everystep, dense, save_idxs)
     _reject_callbacks(callback)
-    _reject_solve_tolerances(reltol, abstol)
 
     dt > zero(dt) || error("dt must be positive")
     # `dt` is a magnitude here and the direction lives in `tdir`, but the upstream
@@ -362,7 +356,16 @@ function SciMLBase.__init(
     end
 
     controller_cache = if controller !== nothing
-        OrdinaryDiffEqCore.setup_controller_cache(alg, cache, controller, EEstT)
+        # `disco_probs` is the discontinuity detection problem cache of the upstream controllers.
+        # Detection is off by default, so an empty vector of the expected element type is what the
+        # resolved controller options want.
+        OrdinaryDiffEqCore.setup_controller_cache(
+            alg,
+            cache,
+            controller,
+            EEstT,
+            SciMLBase.IntervalNonlinearProblem[],
+        )
     else
         nothing
     end
@@ -379,6 +382,7 @@ function SciMLBase.__init(
         dt,
         dt,
         dt,
+        tType(NaN),
         tdir,
         cache,
         callback_cache,
@@ -389,6 +393,8 @@ function SciMLBase.__init(
         IntegratorOptions(
             dtmin = dtmin,
             dtmax = dtmax,
+            reltol = tType(reltol),
+            abstol = tType(abstol),
             verbose = normalize_verbosity(verbose),
             adaptive = adaptive,
             maxiters = maxiters,

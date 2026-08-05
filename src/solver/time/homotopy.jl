@@ -204,6 +204,14 @@ function reject_step!(
     # Reset solution
     integrator.u .= integrator.uprev
 
+    # A step rejected because the *solve* failed has already had `dt` shortened: the step footer runs
+    # `post_newton_controller!`, which divides by the failure factor. Applying the convergence rate
+    # proposal below on top of it shrinks `dt` twice per failed attempt -- measured at a factor 2e7
+    # over six rejections where one failure factor each is 4^6. Upstream treats the two events as
+    # mutually exclusive, and so do we: this hook proposes a step size only for a rejection that came
+    # from the convergence rate itself.
+    integrator.force_stepfail && return nothing
+
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
@@ -265,6 +273,14 @@ function reject_step!(
 )
     # Reset solution
     integrator.u .= integrator.uprev
+
+    # A step rejected because the *solve* failed has already had `dt` shortened: the step footer runs
+    # `post_newton_controller!`, which divides by the failure factor. Applying the convergence rate
+    # proposal below on top of it shrinks `dt` twice per failed attempt -- measured at a factor 2e7
+    # over six rejections where one failure factor each is 4^6. Upstream treats the two events as
+    # mutually exclusive, and so do we: this hook proposes a step size only for a rejection that came
+    # from the convergence rate itself.
+    integrator.force_stepfail && return nothing
 
     @inline g(x) = √(1+4x) - 1
 
@@ -331,6 +347,14 @@ function reject_step!(
     # Reset solution
     integrator.u .= integrator.uprev
 
+    # A step rejected because the *solve* failed has already had `dt` shortened: the step footer runs
+    # `post_newton_controller!`, which divides by the failure factor. Applying the convergence rate
+    # proposal below on top of it shrinks `dt` twice per failed attempt -- measured at a factor 2e7
+    # over six rejections where one failure factor each is 4^6. Upstream treats the two events as
+    # mutually exclusive, and so do we: this hook proposes a step size only for a rejection that came
+    # from the convergence rate itself.
+    integrator.force_stepfail && return nothing
+
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
@@ -372,4 +396,5 @@ OrdinaryDiffEqCore.setup_controller_cache(
         ExperimentalDiscreteContinuationController,
     },
     EEstT,
+    disco_probs,
 ) = controller

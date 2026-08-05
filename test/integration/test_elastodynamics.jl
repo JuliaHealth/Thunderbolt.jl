@@ -40,7 +40,8 @@ function solve_elastodynamic(f, v0, tend, Δt; β = 1 / 4, γ = 1 / 2, adaptive 
     u0 = zeros(solution_size(f))
     Thunderbolt.default_initial_condition!(u0, f)
     problem = ElastodynamicsProblem(f, u0, v0, (0.0, tend))
-    integrator = init(problem, NewmarkSolver(; β, γ, kwargs...), dt = Δt; adaptive, verbose = false)
+    # `reltol`/`abstol` are `init` keywords, as everywhere else in SciML -- not solver fields.
+    integrator = init(problem, NewmarkSolver(; β, γ), dt = Δt; adaptive, verbose = false, kwargs...)
     solve!(integrator)
     return integrator
 end
@@ -241,10 +242,55 @@ end
         @test maximum(dts) / minimum(dts) > 10
     end
 
-    @testset "Tolerances belong to the algorithm" begin
+    @testset "The step size controller is Thunderbolt's own" begin
+        # The default has to be the in-package `PIDController`, not one reached through
+        # `OrdinaryDiffEqCore`'s controller protocol -- that protocol moves between versions, and
+        # pinning the default to it is what this port exists to avoid.
         f = elastodynamic_bar(ncells = (2, 1, 1))
-        problem = ElastodynamicsProblem(f, (0.0, 1.0))
-        @test_throws "NewmarkSolver" init(problem, NewmarkSolver(), dt = 0.1, reltol = 1.0e-6)
+        integrator = init(
+            ElastodynamicsProblem(f, (0.0, 1.0)),
+            NewmarkSolver(),
+            dt = 0.1,
+            adaptive = true,
+            verbose = false,
+        )
+        @test integrator.controller_cache isa Thunderbolt.PIDControllerCache
+
+        # The exponent is `1/(adaptive_order+1)`, and getting it wrong is the failure that a step
+        # count study would catch only indirectly.
+        @test Thunderbolt.adaptive_order(NewmarkSolver()) == 2
+    end
+
+    @testset "A failed solve shrinks dt once, not twice" begin
+        # `post_newton_controller!` applies the failure factor in the step footer, and the controller's
+        # reject hook runs in the next header. Both used to divide, shrinking `dt` by `failfactor²` per
+        # failed attempt — which reaches the floor in a handful of steps and looks like a diverging
+        # solve rather than a bookkeeping mistake.
+        f = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
+        integrator = init(
+            ElastodynamicsProblem(f, zeros(solution_size(f)), bending_velocity(f, 0.2), (0.0, 0.5)),
+            # A tolerance the Newton cannot reach, so every attempt fails.
+            NewmarkSolver(
+                inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+                    newton = NewtonRaphsonSolver(
+                        inner_solver = UMFPACKFactorization(),
+                        max_iter = 2,
+                        tol = 1.0e-30,
+                    ),
+                ),
+            ),
+            dt = 0.02,
+            adaptive = true,
+            verbose = false,
+        )
+        dt₀ = integrator.dt
+        try
+            step!(integrator)
+        catch
+            # the solve gives up eventually; what is asserted is how far `dt` fell on the way
+        end
+        @test integrator.stats.nreject > 1
+        @test dt₀ / integrator.dt ≤ integrator.opts.failfactor^integrator.stats.nreject
     end
 
     @testset "A rejected step rolls back the velocity and the acceleration" begin

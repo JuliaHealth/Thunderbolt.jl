@@ -32,6 +32,9 @@ The defaults ``\beta = 1/4``, ``\gamma = 1/2`` are the average acceleration rule
 stable, second order, and energy conserving. ``\gamma > 1/2`` adds numerical dissipation and drops
 the scheme to first order.
 
+Error tolerances are `init` keywords (`reltol`, `abstol`) as everywhere else in SciML, not fields
+here.
+
 Damping is not supported yet; the model is `M ü + f_int(u) = f_ext`.
 """
 Base.@kwdef struct NewmarkSolver{T, SolverType, SystemMatrixType, MonitorType} <: AbstractSolver
@@ -39,9 +42,6 @@ Base.@kwdef struct NewmarkSolver{T, SolverType, SystemMatrixType, MonitorType} <
     γ::T                                       = 1 / 2
     inner_solver::SolverType                   = MultiLevelNewtonRaphsonSolver()
     system_matrix_type::Type{SystemMatrixType} = ThreadedSparseMatrixCSR{Float64, Int64}
-    # Tolerances of the local error estimate, used only when the integrator runs adaptively
-    reltol::T = 1.0e-3
-    abstol::T = 1.0e-6
     # DO NOT USE THIS (will be replaced by proper logging system)
     monitor::MonitorType = DefaultProgressMonitor()
 end
@@ -132,10 +132,6 @@ struct NewmarkStageCache{SolverType, StageOpType, T}
     stage_op::StageOpType
     β::T
     γ::T
-    # Error tolerances of the step size control. Kept here rather than on the controller so that
-    # `perform_step!`, which never sees the integrator, can scale its estimate.
-    reltol::T
-    abstol::T
     # The estimator straddles a step, so it is not computable on the first one.
     first_step::Base.RefValue{Bool}
 end
@@ -170,9 +166,6 @@ mutable struct NewmarkSolverCache{
     # The `uᵥ` of this step's `AffineVelocity`, held at full solution length so that the element query
     # can slice a cell out of it exactly as it does for the previous solution.
     uᵥ::VelocityReferenceType
-    # Scaled local error estimate of the last attempted step, see `_newmark_error_estimate!`.
-    # `Inf` until the second step, when the estimator becomes computable.
-    EEst::T
     stage::StageType
     # DO NOT USE THIS (will be replaced by proper logging system)
     monitor::MonitorType
@@ -251,16 +244,7 @@ function setup_solver_cache(
         copy(aₙ),
         zeros(nfe),
         zeros(solution_size(f)),
-        Inf,
-        NewmarkStageCache(
-            nlsolver,
-            stage_op,
-            solver.β,
-            solver.γ,
-            solver.reltol,
-            solver.abstol,
-            Ref(true),
-        ),
+        NewmarkStageCache(nlsolver, stage_op, solver.β, solver.γ, Ref(true)),
         solver.monitor,
     )
 end
@@ -327,13 +311,27 @@ function _newmark_affine_velocity!(uᵥ, ũ, ṽ, ∂v∂u)
     return uᵥ
 end
 
+# The scheme reports its error estimate to the *controller* via `set_error_estimate!`,
+# so this dispatches on the integrator rather than on `(f, cache, t, Δt)`. Nothing about the step size
+# control is stored on the solver cache.
+function OrdinaryDiffEqCore.perform_step!(
+    integrator::ThunderboltTimeIntegrator,
+    cache::NewmarkSolverCache,
+)
+    if !perform_step!(integrator.f, cache, integrator.t, integrator.dt)
+        integrator.force_stepfail = true
+        return nothing
+    end
+    _newmark_report_error!(integrator, cache, integrator.dt, cache.stage.β)
+    return nothing
+end
+
 function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, Δt)
     (; uₙ, uₙ₋₁, vₙ, aₙ, ṽ, uᵥ, stage) = cache
     (; nlsolver, stage_op, β, γ) = stage
     nfe = length(vₙ)
 
     update_constraints!(f, cache, t + Δt)
-
     # Predictors, in the same shape as the Ferrite reference implementation.
     @inbounds @views @.. stage_op.ũ = uₙ₋₁[1:nfe] + Δt * vₙ + (1 / 2 - β) * Δt^2 * aₙ
     @inbounds @.. ṽ = vₙ + (1 - γ) * Δt * aₙ
@@ -346,10 +344,6 @@ function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, 
     _newmark_affine_velocity!(uᵥ, stage_op.ũ, ṽ, ∂v∂u)
     p = NewmarkTimeParameters(nothing, t + Δt, Δt, AffineVelocity(∂v∂u, uᵥ), uₙ₋₁)
     if !nlsolve!(uₙ, f, nlsolver, t + Δt, p)
-        # A failed solve leaves no error estimate. Marking it as such is what keeps the controller from
-        # reading the *previous* step's estimate -- which is finite and small, and would grow `dt` on a
-        # step that just failed.
-        cache.EEst = Inf
         return false
     end
 
@@ -358,12 +352,11 @@ function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, 
     @inbounds @.. aₙ = a
     @inbounds @.. vₙ = ṽ + γ * Δt * aₙ
 
-    _newmark_error_estimate!(cache, f, Δt, β)
     return true
 end
 
 @doc raw"""
-    _newmark_error_estimate!(cache, f, Δt, β)
+    _newmark_report_error!(integrator, cache, Δt, β)
 
 Local error estimate of Zienkiewicz and Xie [ZieXie:1991:sae](@cite),
 
@@ -371,18 +364,20 @@ Local error estimate of Zienkiewicz and Xie [ZieXie:1991:sae](@cite),
 e_{n+1} = \Delta t^2 \left( \beta - \tfrac{1}{6} \right) \left( a_{n+1} - a_n \right) ,
 ```
 
-scaled into the usual `EEst ≤ 1` convention against `abstol + reltol·max(|u_{n+1}|, |u_n|)`.
+scaled into the usual `EEst ≤ 1` convention against `abstol + reltol·max(|u_{n+1}|, |u_n|)` and handed
+to the controller with [`set_error_estimate!`](@ref).
 
 It compares the Newmark update against the third order accurate one obtained with ``\beta = 1/6``, so
 the difference of the two accelerations across the step is the whole estimate. Since
 ``a_{n+1} - a_n = O(\Delta t)``, the estimate is ``O(\Delta t^3)`` — the local error of a second order
-scheme, which is what makes the exponent `1/3` in the controller correct.
+scheme, which is what makes `alg_adaptive_order = 2` correct.
 
 !!! note "Why no second right hand side evaluation"
     In the first order `(v, u)` formulation the acceleration is not part of the state, so an
     implementation there has to evaluate the right hand side again at the new state to recover it. The
-    displacement form does not: the converged Newton *is* the statement `M a_{n+1} = f_ext - f_int(u_{n+1})`,
-    so `aₙ` already holds that acceleration to solver tolerance and the estimator is free.
+    displacement form does not: the converged Newton *is* the statement
+    `M a_{n+1} = f_ext - f_int(u_{n+1})`, so `aₙ` already holds that acceleration to solver tolerance
+    and the estimator is free.
 
     The corollary is worth recording, because it is a trap: in this form the difference between the
     solved acceleration and a fresh right hand side evaluation at the same state is **zero**, so an
@@ -390,30 +385,34 @@ scheme, which is what makes the exponent `1/3` in the controller correct.
     has to straddle the step.
 
 `β = 1/6` makes the estimator vanish identically, which is correct — that is the member of the family
-the estimate is taken against — but it leaves the scheme with no error estimate, so it is refused.
+the estimate is taken against — but it leaves the scheme with no error estimate.
 """
-function _newmark_error_estimate!(cache::NewmarkSolverCache, f, Δt, β)
+function _newmark_report_error!(integrator, cache::NewmarkSolverCache, Δt, β)
+    controller_cache = integrator.controller_cache
+    controller_cache === nothing && return nothing # fixed step size, nothing to report to
+
     (; uₙ, uₙ₋₁, aₙ, aₙ₋₁, stage) = cache
-    nfe = length(aₙ)
     # The first step has no previous acceleration to compare against -- `aₙ₋₁` still holds the initial
-    # acceleration, which belongs to the same step. `Inf` forces the controller to leave `dt` alone.
+    # acceleration, which belongs to the same step. An estimate of zero leaves `dt` to the controller's
+    # own first-step growth bound.
     if stage.first_step[]
         stage.first_step[] = false
-        cache.EEst = Inf
+        set_error_estimate!(controller_cache, zero(eltype(uₙ)))
         return nothing
     end
-    scale = stage.reltol
-    atol = stage.abstol
+
+    nfe = length(aₙ)
+    reltol = integrator.opts.reltol
+    abstol = integrator.opts.abstol
     err = zero(eltype(uₙ))
     @inbounds for i = 1:nfe
         eᵢ = Δt^2 * (β - 1 / 6) * (aₙ[i] - aₙ₋₁[i])
-        tolᵢ = atol + scale * max(abs(uₙ[i]), abs(uₙ₋₁[i]))
+        tolᵢ = abstol + reltol * max(abs(uₙ[i]), abs(uₙ₋₁[i]))
         err += (eᵢ / tolᵢ)^2
     end
-    cache.EEst = sqrt(err / nfe)
+    set_error_estimate!(controller_cache, sqrt(err / nfe))
     return nothing
 end
-
 
 @doc raw"""
 A second order scheme carries state that the solution vector does not: the balance of momentum is
@@ -423,9 +422,7 @@ need theirs here, kept in lockstep with `uprev`.
 
 Without this, a rejected step restores `u` and leaves `v` and `a` at the values the *rejected* step
 produced. The retry then builds its predictors from them and converges to a wrong answer without any
-symptom. The path is reachable today -- a failed Newton already increments `nreject` -- and is only
-harmless because such a solve subsequently aborts rather than retrying. It stops being harmless the
-moment this scheme gets an error estimate and a real controller.
+symptom.
 """
 function _newmark_store_previous!(cache::NewmarkSolverCache)
     cache.vₙ₋₁ .= cache.vₙ
@@ -448,90 +445,56 @@ function accept_step!(integrator::ThunderboltTimeIntegrator, cache::NewmarkSolve
     return store_previous_info!(integrator)
 end
 
-# Spelled out against both controller signatures of the generic fallback, which are equally specific
-# in the cache slot and would otherwise be ambiguous.
-function reject_step!(integrator::ThunderboltTimeIntegrator, cache::NewmarkSolverCache, controller)
-    return _newmark_rollback!(integrator, cache)
-end
-
-function reject_step!(
-    integrator::ThunderboltTimeIntegrator,
-    cache::NewmarkSolverCache,
-    ::Union{Nothing, DummyControllerCache},
-)
-    return _newmark_rollback!(integrator, cache)
-end
-
-
-@doc raw"""
-    NewmarkErrorController(; γ = 0.9, qmin = 0.2, qmax = 5.0)
-
-Step size control from the local error estimate of [`_newmark_error_estimate!`](@ref).
-
-A step is accepted when the scaled estimate satisfies `EEst ≤ 1`, and the next step is proposed with
-the textbook elementary controller
-
-```math
-q = \mathrm{clamp}\left( \frac{1}{\gamma}\,\mathrm{EEst}^{1/3},\; q_{\min}^{-1}, q_{\max}^{-1} \right) ,
-\qquad \Delta t_{\mathrm{new}} = \Delta t / q .
-```
-
-The exponent is `1/(order+1) = 1/3`: Newmark is second order, so its local error is `O(Δt³)`.
-
-`γ < 1` is the usual safety factor, and `qmin`/`qmax` bound how far a single step may move `dt`. The
-tolerances themselves live on [`NewmarkSolver`](@ref), because the estimate is scaled where it is
-computed.
 """
-Base.@kwdef struct NewmarkErrorController{T}
-    γ::T = 0.9
-    qmin::T = 0.2
-    qmax::T = 5.0
-end
+Step size control for [`NewmarkSolver`](@ref) uses Thunderbolt's own [`PIDController`](@ref).
 
-OrdinaryDiffEqCore.default_controller(QT, ::NewmarkSolver) = NewmarkErrorController{QT}()
+The only thing the scheme owes it is the scaled error estimate, reported with
+[`set_error_estimate!`](@ref) at the end of a step. Everything derived from it -- the proposed step
+size, whether the step is accepted, the error history -- lives on the controller cache.
+"""
+adaptive_order(::NewmarkSolver) = 2
 
-OrdinaryDiffEqCore.setup_controller_cache(_alg, cache, controller::NewmarkErrorController, EEstT) =
-    controller
+# Söderlind's coefficients. `PIDController` scales them by the order, so they are stated once here
+# rather than per scheme.
+OrdinaryDiffEqCore.default_controller(QT, ::NewmarkSolver) =
+    PIDController(QT(3 // 5), QT(-1 // 5), QT(0))
 
-# `Inf` on the first step, where the estimator is not yet computable, so it is accepted unconditionally
-# and `dt` is left alone.
-function should_accept_step(
+# Without a controller there is nothing to adapt, but the rollback still has to restore the velocity
+# and the acceleration.
+reject_step!(integrator::ThunderboltTimeIntegrator, cache::NewmarkSolverCache, ::Nothing) =
+    _newmark_rollback!(integrator, cache)
+
+reject_step!(
     integrator::ThunderboltTimeIntegrator,
     cache::NewmarkSolverCache,
-    controller::NewmarkErrorController,
-)
-    return !isfinite(cache.EEst) || cache.EEst ≤ one(cache.EEst)
-end
+    ::DummyControllerCache,
+) = _newmark_rollback!(integrator, cache)
 
-function _newmark_proposed_dt(integrator, cache::NewmarkSolverCache, controller)
-    (; γ, qmin, qmax) = controller
-    isfinite(cache.EEst) || return integrator.dt
-    EEst = max(cache.EEst, eps(typeof(cache.EEst)))
-    q = clamp(EEst^(1 / 3) / γ, inv(qmax), inv(qmin))
-    return min(integrator.dt / q, integrator.opts.dtmax)
-end
-
-function adapt_dt!(
+should_accept_step(
     integrator::ThunderboltTimeIntegrator,
     cache::NewmarkSolverCache,
-    controller::NewmarkErrorController,
-)
-    integrator.dt = _newmark_proposed_dt(integrator, cache, controller)
-    return nothing
-end
+    ::DummyControllerCache,
+) = !integrator.force_stepfail
 
+adapt_dt!(
+    integrator::ThunderboltTimeIntegrator,
+    cache::NewmarkSolverCache,
+    ::DummyControllerCache,
+) = nothing
+
+# The rollback of the scheme's own state has to happen for *every* controller, so it is hooked here
+# and the controller's own `reject_step!` is called afterwards.
 function reject_step!(
     integrator::ThunderboltTimeIntegrator,
     cache::NewmarkSolverCache,
-    controller::NewmarkErrorController,
+    controller_cache::PIDControllerCache,
 )
     _newmark_rollback!(integrator, cache)
-    # A rejected step has `EEst > 1`, so the controller shrinks; a rejected *solve* has no estimate at
-    # all and falls back to the integrator's failure factor.
-    integrator.dt = if isfinite(cache.EEst)
-        _newmark_proposed_dt(integrator, cache, controller)
-    else
-        integrator.dt / integrator.opts.failfactor
-    end
-    return nothing
+    return invoke(
+        reject_step!,
+        Tuple{ThunderboltTimeIntegrator, Any, PIDControllerCache},
+        integrator,
+        cache,
+        controller_cache,
+    )
 end

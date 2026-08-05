@@ -237,6 +237,8 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
 
     # Before stepping we might need to adjust the dt
     increment_iteration(integrator)
+    # A new attempt begins, so the controller has not proposed for it yet.
+    integrator.qpropose = oftype(integrator.qpropose, NaN)
     OrdinaryDiffEqCore.choose_algorithm!(integrator, integrator.cache)
     OrdinaryDiffEqCore.fix_dt_at_bounds!(integrator)
     OrdinaryDiffEqCore.modify_dt_for_tstops!(integrator)

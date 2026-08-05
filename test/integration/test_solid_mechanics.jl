@@ -957,6 +957,46 @@ end
     @test integrator.t == 0.0
 end
 
+@testset "A failed homotopy solve shrinks dt once, not twice" begin
+    # `post_newton_controller!` divides `dt` by the failure factor in the step footer, and the
+    # continuation controller's reject hook runs in the next header. Both used to shrink, so a failed
+    # solve cost `failfactor` *times* the controller's own proposal -- measured at 2e7 over six
+    # rejections where one failure factor each is 4^6. The two events are mutually exclusive: this
+    # controller proposes a step size only for a rejection that came from the convergence rate.
+    mesh = generate_mesh(Hexahedron, (2, 1, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 0.2, 0.2)))
+    ms = ConstantCoefficient(
+        OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3]),
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> [0.6t, 0.0, 0.0], [1, 2, 3]),
+    ]
+    f = semidiscretize(
+        QuasiStaticModel(:d, PK1Model(Guccione1991PassiveModel(), ms), ()),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    integrator = init(
+        QuasiStaticProblem(f, (0.0, 1.0)),
+        # A tolerance the Newton cannot reach, so every attempt fails.
+        HomotopyPathSolver(
+            NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 1, tol = 1e-30),
+        ),
+        dt = 0.2,
+        verbose = false,
+    )
+    dt₀ = integrator.dt
+    with_logger(NullLogger()) do
+        try
+            step!(integrator)
+        catch
+            # the solve gives up eventually; what is asserted is how far `dt` fell on the way
+        end
+    end
+    @test integrator.stats.nreject > 1
+    @test dt₀ / integrator.dt ≤ integrator.opts.failfactor^integrator.stats.nreject
+end
+
 """
 The condensed cuboid of the two testsets above, solved with whichever global Newton is handed in.
 Fully activated, so the local problems are genuinely nonlinear at every quadrature point.
