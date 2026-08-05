@@ -36,8 +36,6 @@ function assemble_element!(Mₑ::AbstractMatrix, cell, element_cache::BilinearMa
             Nᵢ = shape_value(cellvalues, qp, i)
             for j = 1:n_basefuncs
                 Nⱼ = shape_value(cellvalues, qp, j)
-                # `⋅` rather than `*`, so that this also serves a vector valued field, where
-                # `shape_value` returns a `Vec`. For a scalar field it is the plain product.
                 Mₑ[i, j] += ρ * (Nᵢ ⋅ Nⱼ) * dΩ
             end
         end
