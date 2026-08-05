@@ -495,19 +495,17 @@ function _consistent_initial_acceleration(f::ElastodynamicsFunction, stage_op, u
     #    A vanishing timestep does that: `(Q - Qprev)/Δt = L(F, Q)` forces `Q → Qprev` as `Δt → 0`, so
     #    the local solve returns the state it was handed.
     #  * the deformation rate must be `∇v₀`, not zero. A rate dependent material's stress reads it, and
-    #    at `t₀` the body is moving at `v₀`. Taking the slope `1` puts the velocity reference at
-    #    `u₀ - v₀`, for which `∂v∂u (u₀ - uᵥ) = v₀` exactly.
+    #    at `t₀` the body is moving at `v₀`. Since the anchor divides by the slope, `v(u₀) = v₀` holds
+    #    for *any* nonzero slope; unity is a conditioning choice rather than a dimensional one. The
+    #    seemingly natural `1/Δt` would place the anchor at `u₀ - v₀Δt`, which cancels to `u₀` in
+    #    floating point at the vanishing `Δt` used here, and then recover the velocity by dividing
+    #    that cancellation by `Δt`.
     #
     # `u₀` is copied because writing the condensed tail back is what the assembly does with it.
+    ∂v∂u = one(eltype(z))
     uᵥ = copy(z)
-    @inbounds @views @.. uᵥ[fe] = z[fe] - v₀
-    p = NewmarkTimeParameters(
-        nothing,
-        t₀,
-        eps(Float64),
-        AffineVelocity(one(eltype(z)), uᵥ),
-        copy(z),
-    )
+    @inbounds @views @.. uᵥ[fe] = z[fe] - v₀ / ∂v∂u
+    p = NewmarkTimeParameters(nothing, t₀, eps(Float64), AffineVelocity(∂v∂u, uᵥ), copy(z))
     residual!(stage_op.op, r, copy(z), p)
     r .= .-r
 
