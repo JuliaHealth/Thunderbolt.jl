@@ -218,7 +218,11 @@ mutable struct NewmarkSolverCache{
     vₙ₋₁::VelocityViewType
     # The acceleration is *not* state -- it is determined by `(u, v)` through the balance of momentum
     # -- so it stays scheme workspace, kept only to avoid re-solving `M a = f_ext - f_int` each step.
-    # It therefore does need its own rollback buffer; see `rollback_state!` below.
+    #
+    # Caching it is what forces the rollback buffer. A step whose *solve* fails leaves `aₙ` untouched,
+    # because `perform_step!` returns before the corrector. A step the error controller rejects does
+    # not: the solve succeeded, `aₙ` already holds the rejected attempt's value, and the retry needs
+    # the last accepted one to form its predictors. `aₙ₋₁` is that value.
     aₙ::AccelerationType
     aₙ₋₁::AccelerationType
     # Scratch for the velocity predictor
@@ -237,8 +241,12 @@ end
     velocity(integrator, t)   -> v interpolated to `t`
     acceleration(integrator, t)
 
-The velocity and acceleration the scheme reconstructed. They are not part of the solution vector, so
-this is how a consumer reaches them.
+The velocity and acceleration the scheme reconstructed.
+
+The velocity is a field of the solution vector and could also be read out of it directly; these
+accessors exist because the *interpolated* velocity at an interior `t` is not something a consumer can
+assemble by hand. The acceleration has no block of its own -- it is determined by the state rather
+than part of it -- so this is the only way to reach it.
 
 **Pass the time whenever the solution is read at a chosen time rather than at a step boundary.**
 `TimeChoiceIterator` and `intervals` interpolate `u` to the requested `t` but leave the integrator

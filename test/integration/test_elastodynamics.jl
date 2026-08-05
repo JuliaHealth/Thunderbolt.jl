@@ -407,11 +407,11 @@ end
     end
 
     @testset "A rejected step rolls back the velocity and the acceleration" begin
-        # The solution vector carries the displacement (and the condensed internal variables) only, so
-        # the integrator's own rollback buffer cannot restore the velocity and the acceleration. They
-        # are state of the same second order ODE and have to come back with it, or a retried step
-        # builds its predictors from the rejected step's state and converges to a wrong answer with no
-        # symptom.
+        # The velocity rides along in the solution vector, so the integrator's own rollback restores
+        # it. The acceleration does not: it is determined by `(u, v)` rather than part of the state,
+        # and is cached to avoid a mass solve per step. A step the error controller rejects has
+        # already overwritten it, so without a buffer of its own the retry would build its predictors
+        # from the rejected attempt and converge to a wrong answer with no symptom.
         f = elastodynamic_bar(ncells = (2, 1, 1))
         integrator = init(
             ElastodynamicsProblem(f, zeros(solution_size(f)), bending_velocity(f, 0.5), (0.0, 1.0)),

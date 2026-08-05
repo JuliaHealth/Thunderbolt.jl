@@ -41,12 +41,13 @@ Balance of momentum including the inertia term,
 ```
 i.e. the [`QuasiStaticModel`](@ref) with a mass term on top.
 
-!!! note "The velocity is not a degree of freedom"
-    `velocity_symbol` names the velocity for output only. Time integrators for this model
-    (see [`NewmarkSolver`](@ref)) discretize in displacement form: the global unknown is the
-    displacement field alone, and velocity and acceleration are reconstructed by the scheme and
-    kept in the solver cache. A formulation carrying the velocity as a genuine unknown would be a
-    different model with two field variables.
+!!! note "The velocity is a field, but not a Newton unknown"
+    `velocity_symbol` names a genuine field: it shares the displacement's interpolation, occupies a
+    block of the solution vector, and can be constrained and written out like any other. What it is
+    *not* is an unknown of the nonlinear solve. Time integrators for this model (see
+    [`NewmarkSolver`](@ref)) discretize in displacement form, so a step solves for the displacement
+    and reconstructs the velocity from it. The acceleration is not stored either way: it follows from
+    the balance of momentum.
 """
 # Not an `AbstractMaterialModel`, and it never reaches the material path: `semidiscretize` lowers it
 # to a `QuasiStaticModel`, which is what the element caches are built from.
@@ -61,8 +62,11 @@ end
 ElastodynamicsModel(displacement_symbol, velocity_symbol, material_model, ρ) =
     ElastodynamicsModel(displacement_symbol, velocity_symbol, material_model, (), ρ)
 
-# Only the displacement is discretized, hence a single field variable -- see the note above.
-get_field_variable_names(model::ElastodynamicsModel) = (model.displacement_symbol,)
+# The velocity is part of the state, so it is a field variable. The *weak form* below names the
+# displacement alone: the internal forces have no velocity equation, and the problem the nonlinear
+# solver is handed is posed on the displacement.
+get_field_variable_names(model::ElastodynamicsModel) =
+    (model.displacement_symbol, model.velocity_symbol)
 
 get_volumetric_weak_form_names(model::ElastodynamicsModel) = (model.displacement_symbol,)
 

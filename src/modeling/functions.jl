@@ -90,9 +90,9 @@ solution_size(f::AffineSteadyStateFunction) = ndofs(f.dh)
 """
     AbstractSolidMechanicsFunction <: AbstractSemidiscreteFunction
 
-A spatially discrete solid mechanics problem: the unknown is a displacement field, quadrature point
-local internal variables are condensed into the tail of the solution vector, and Dirichlet conditions
-come from a `ConstraintHandler`.
+A spatially discrete solid mechanics problem: a displacement field, quadrature point local internal
+variables condensed into the tail of the solution vector, and Dirichlet conditions from a
+`ConstraintHandler`.
 
 It classifies the *spatial* problem only. Whether the inertial terms are present is a property of the
 concrete function ([`QuasiStaticFunction`](@ref) versus [`ElastodynamicsFunction`](@ref)), and the time
@@ -103,8 +103,13 @@ blocked functions and live outside this branch.
 
 ## Interface
 
-    dh, ch, lvh, integrator  # fields
-    solution_size(f)         # ndofs(dh) + ndofs(lvh)
+    dh, ch, lvh                    # fields laying out the solution vector
+    get_volume_integrator(f)       # the volumetric weak form
+    solution_size(f)               # ndofs(dh) + ndofs(lvh)
+
+`dh` may carry more than one field -- an [`ElastodynamicsFunction`](@ref) holds a velocity next to the
+displacement -- so nothing may assume the finite element block is one field's, nor that a field
+occupies a contiguous range of it.
 """
 abstract type AbstractSolidMechanicsFunction <: AbstractSemidiscreteFunction end
 

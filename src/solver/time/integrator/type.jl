@@ -497,7 +497,7 @@ step size for the retry: restoring state is the *scheme's* business and proposin
 *controller's*, so expressing both on one generic would make the method count their product.
 
 The fallback restores the solution vector. A scheme whose state is not fully contained in it -- a
-second order scheme carries a velocity and an acceleration -- extends this.
+second order scheme caches an acceleration, which is not in the vector -- extends this.
 """
 function rollback_state!(integrator::ThunderboltTimeIntegrator, cache)
     if length(integrator.uprev) == 0
