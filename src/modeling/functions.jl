@@ -157,6 +157,31 @@ get_strategy(f::ElastodynamicsFunction) = f.assembly_strategy
 
 solution_size(f::AbstractSolidMechanicsFunction) = ndofs(f.dh)+ndofs(f.lvh)
 
+"""
+    fe_dof_range(f)
+
+The finite element dofs of the solution vector, i.e. everything the `DofHandler` distributes.
+
+This is one of the two places the solution vector layout is written down, the other being
+[`internal_variable_range`](@ref). Query them rather than spelling the arithmetic at a call site: a
+consumer that wants *part* of the finite element block -- a stage solver typically solves for a
+subset of the fields -- must say so, and cannot if every site assumes the whole block.
+"""
+fe_dof_range(f::AbstractSolidMechanicsFunction) = Base.OneTo(ndofs(f.dh))
+
+"""
+    internal_variable_range(f)
+    internal_variable_range(dh, lvh)
+
+The quadrature point local internal variables of the solution vector, condensed into its tail. The
+two-argument form serves call sites that hold the handlers but not the function.
+
+See [`fe_dof_range`](@ref) for why this is a query rather than arithmetic at the call site.
+"""
+internal_variable_range(dh::Ferrite.AbstractDofHandler, lvh::InternalVariableHandler) =
+    (ndofs(dh)+1):(ndofs(dh)+ndofs(lvh))
+internal_variable_range(f::AbstractSolidMechanicsFunction) = internal_variable_range(f.dh, f.lvh)
+
 # The solution vector is laid out as `[fe_dofs | internal_variables]`. The internal variables are
 # condensed out at quadrature point level and do not enter the global linear system, so indices into
 # the solution vector are not indices into the system matrix.

@@ -143,8 +143,26 @@ normalize_verbosity(verbose) = verbose
 normalize_verbosity(verbose::AbstractVerbosityPreset) = DiffEqBase.DEVerbosity(verbose)
 
 # Interpolation
-function (integrator::ThunderboltTimeIntegrator)(tmp, t)
-    OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
+#
+# Dispatching on the *cache* is what lets a scheme supply an interpolant of its own accuracy. The
+# default is linear, which is first order and correct for any scheme, but below the order of every
+# scheme above first. A scheme that carries a derivative of the solution can do better -- see
+# `interpolate_solution!` for `NewmarkSolverCache`.
+(integrator::ThunderboltTimeIntegrator)(tmp, t) =
+    interpolate_solution!(tmp, integrator, integrator.cache, t)
+
+"""
+    interpolate_solution!(out, integrator, cache, t)
+
+Write the solution at `t` into `out`, interpolating between the step endpoints the integrator
+currently holds.
+
+The fallback is linear in `(uprev, u)`. Override for a solver cache that can do better; a scheme with
+a solution derivative at both ends has a Hermite interpolant available at no extra assembly.
+"""
+function interpolate_solution!(out, integrator::ThunderboltTimeIntegrator, cache, t)
+    OS.linear_interpolation!(out, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
+    return out
 end
 
 # CommonSolve interface

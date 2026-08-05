@@ -217,21 +217,88 @@ acceleration(integrator::ThunderboltTimeIntegrator) = acceleration(integrator.ca
 # `vₙ₋₁`/`aₙ₋₁` are written by `accept_step!`, which runs in the header of the *following* step, so
 # after a completed step they hold the previous step's values and pair with `integrator.tprev`.
 velocity(integrator::ThunderboltTimeIntegrator, t) =
-    _newmark_interpolate(integrator, integrator.cache.vₙ₋₁, integrator.cache.vₙ, t)
+    _newmark_hermite(integrator, integrator.cache, t, Val(1))
 acceleration(integrator::ThunderboltTimeIntegrator, t) =
-    _newmark_interpolate(integrator, integrator.cache.aₙ₋₁, integrator.cache.aₙ, t)
+    _newmark_hermite(integrator, integrator.cache, t, Val(2))
 
-function _newmark_interpolate(integrator::ThunderboltTimeIntegrator, xprev, x, t)
-    out = similar(x)
-    # Before the first step there is no interval to interpolate over, and `tprev == t` would divide
-    # by zero. The initial value is the answer for any `t` that can be asked at that point.
-    if integrator.t == integrator.tprev
-        out .= x
+# The scheme has `u` and `v` at both ends of the step, so the unique cubic matching all four is
+# available at no extra assembly, and it is second order rather than the first order a linear
+# interpolant gives. Its first and second derivatives are the velocity and the acceleration, which is
+# what keeps the three fields mutually consistent -- a linear interpolation of each separately does
+# not satisfy `v = dₜu`.
+interpolate_solution!(out, integrator::ThunderboltTimeIntegrator, cache::NewmarkSolverCache, t) =
+    _newmark_hermite!(out, integrator, cache, t, Val(0))
+
+@doc raw"""
+    _newmark_hermite!(out, integrator, cache, t, ::Val{D})
+
+`D`-th time derivative at `t` of the cubic Hermite interpolant through `(uₙ₋₁, vₙ₋₁)` and `(uₙ, vₙ)`.
+
+With ``	heta = (t - t_{n-1})/\Delta t`` the interpolant is
+```math
+u(	heta) = h_{00}u_{n-1} + \Delta t\, h_{10} v_{n-1} + h_{01} u_n + \Delta t\, h_{11} v_n
+```
+with the standard Hermite basis. `D = 0` gives the displacement, `D = 1` the velocity, `D = 2` the
+acceleration. The velocity is *exact* at both endpoints by construction; the acceleration is the
+interpolant's, which is linear in `θ` and therefore only an approximation of the scheme's own.
+"""
+function _newmark_hermite!(out, integrator::ThunderboltTimeIntegrator, cache, t, ::Val{D}) where {D}
+    fe = fe_dof_range(integrator.f)
+    iv = internal_variable_range(integrator.f)
+    Δt = integrator.t - integrator.tprev
+    # Before the first step there is no interval to interpolate over. The current state answers any
+    # `t` that can be asked at that point, and a zero-width interval would divide by zero.
+    if Δt == zero(Δt)
+        _newmark_endpoint!(out, cache, Val(D))
         return out
     end
-    OS.linear_interpolation!(out, t, xprev, x, integrator.tprev, integrator.t)
+    θ = (t - integrator.tprev) / Δt
+
+    uprev = @view integrator.uprev[fe]
+    u = @view integrator.u[fe]
+    vprev, v = cache.vₙ₋₁, cache.vₙ
+
+    c₀, c₁, c₂, c₃ = _hermite_weights(θ, Δt, Val(D))
+    @inbounds @views @.. out[fe] = c₀ * uprev + c₁ * vprev + c₂ * u + c₃ * v
+    # The condensed internal variables have no derivative here, so they stay linear. `out` is only
+    # required to hold the finite element block -- the out-of-place entry points allocate it that
+    # long -- so the tail is filled only when the caller supplied room for it.
+    if D == 0 && !isempty(iv) && lastindex(out) ≥ last(iv)
+        OS.linear_interpolation!(
+            @view(out[iv]),
+            t,
+            @view(integrator.uprev[iv]),
+            @view(integrator.u[iv]),
+            integrator.tprev,
+            integrator.t,
+        )
+    end
     return out
 end
+
+function _newmark_hermite(integrator::ThunderboltTimeIntegrator, cache, t, ::Val{D}) where {D}
+    out = similar(cache.vₙ)
+    _newmark_hermite!(out, integrator, cache, t, Val(D))
+    return out
+end
+
+_newmark_endpoint!(out, cache, ::Val{0}) = (out .= 0; nothing)
+_newmark_endpoint!(out, cache, ::Val{1}) = (out .= cache.vₙ; nothing)
+_newmark_endpoint!(out, cache, ::Val{2}) = (out .= cache.aₙ; nothing)
+
+# Hermite basis and its first two derivatives with respect to `t`, as the four weights of
+# `(uprev, vprev, u, v)`.
+@inline function _hermite_weights(θ, Δt, ::Val{0})
+    θ² = θ * θ
+    θ³ = θ² * θ
+    return (2θ³ - 3θ² + 1, Δt * (θ³ - 2θ² + θ), -2θ³ + 3θ², Δt * (θ³ - θ²))
+end
+@inline function _hermite_weights(θ, Δt, ::Val{1})
+    θ² = θ * θ
+    return ((6θ² - 6θ) / Δt, 3θ² - 4θ + 1, (-6θ² + 6θ) / Δt, 3θ² - 2θ)
+end
+@inline _hermite_weights(θ, Δt, ::Val{2}) =
+    ((12θ - 6) / Δt^2, (6θ - 4) / Δt, (-12θ + 6) / Δt^2, (6θ - 2) / Δt)
 
 function setup_solver_cache(
     f::ElastodynamicsFunction,
@@ -310,8 +377,8 @@ equilibrium, and is silently wrong otherwise — which is exactly the interestin
 released from a deflected state.
 """
 function _consistent_initial_acceleration(f::ElastodynamicsFunction, stage_op, u₀, v₀, t₀)
-    nfe = ndofs(f.dh)
-    r = zeros(nfe)
+    fe = fe_dof_range(f)
+    r = zeros(length(fe))
 
     # Two things have to be right about this evaluation, and the Newmark parameter object is what
     # makes both expressible:
@@ -325,7 +392,7 @@ function _consistent_initial_acceleration(f::ElastodynamicsFunction, stage_op, u
     #
     # `u₀` is copied because writing the condensed tail back is what the assembly does with it.
     uᵥ = copy(u₀)
-    @inbounds @views @.. uᵥ[1:nfe] = u₀[1:nfe] - v₀
+    @inbounds @views @.. uᵥ[fe] = u₀[fe] - v₀
     p = NewmarkTimeParameters(
         nothing,
         t₀,
@@ -379,11 +446,11 @@ end
 function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, Δt)
     (; uₙ, uₙ₋₁, vₙ, aₙ, ṽ, uᵥ, stage) = cache
     (; nlsolver, stage_op, β, γ) = stage
-    nfe = length(vₙ)
+    fe = fe_dof_range(f)
 
     update_constraints!(f, cache, t + Δt)
     # Predictors, in the same shape as the Ferrite reference implementation.
-    @inbounds @views @.. stage_op.ũ = uₙ₋₁[1:nfe] + Δt * vₙ + (1 / 2 - β) * Δt^2 * aₙ
+    @inbounds @views @.. stage_op.ũ = uₙ₋₁[fe] + Δt * vₙ + (1 / 2 - β) * Δt^2 * aₙ
     @inbounds @.. ṽ = vₙ + (1 - γ) * Δt * aₙ
     stage_op.βΔt² = β * Δt^2
 
@@ -449,16 +516,19 @@ function _newmark_report_error!(integrator, cache::NewmarkSolverCache, Δt, β)
         return nothing
     end
 
-    nfe = length(aₙ)
     reltol = integrator.opts.reltol
     abstol = integrator.opts.abstol
+    fe = fe_dof_range(integrator.f)
     err = zero(eltype(uₙ))
-    @inbounds for i = 1:nfe
-        eᵢ = Δt^2 * (β - 1 / 6) * (aₙ[i] - aₙ₋₁[i])
+    # The acceleration carries the scheme's own numbering while `uₙ` carries the solution vector's.
+    # They coincide today; walking them as a pair rather than with one shared index keeps the estimate
+    # correct once a stage solves against a handler of its own.
+    @inbounds for (k, i) in enumerate(fe)
+        eᵢ = Δt^2 * (β - 1 / 6) * (aₙ[k] - aₙ₋₁[k])
         tolᵢ = abstol + reltol * max(abs(uₙ[i]), abs(uₙ₋₁[i]))
         err += (eᵢ / tolᵢ)^2
     end
-    set_error_estimate!(controller_cache, sqrt(err / nfe))
+    set_error_estimate!(controller_cache, sqrt(err / length(fe)))
     return nothing
 end
 

@@ -86,7 +86,7 @@ end
         # residual corresponds to a displacement error of that order — hence the tolerances below are
         # a statement about the Newton, not about Newmark.
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
-        @test integrator.u[1:ndofs(f.dh)]≈tend .* v0 rtol=1e-7
+        @test integrator.u[Thunderbolt.fe_dof_range(f)]≈tend .* v0 rtol=1e-7
         @test velocity(integrator)≈v0 rtol=1e-7
         @test norm(acceleration(integrator)) < 1e-6
     end
@@ -172,7 +172,7 @@ end
             first_swing, last_swing = 0.0, 0.0
             while integrator.t < tend - 1.0e-12
                 step!(integrator)
-                amplitude = norm(integrator.u[1:ndofs(f.dh)], Inf)
+                amplitude = norm(integrator.u[Thunderbolt.fe_dof_range(f)], Inf)
                 integrator.t < tend / 3 && (first_swing = max(first_swing, amplitude))
                 integrator.t > 2tend / 3 && (last_swing = max(last_swing, amplitude))
             end
@@ -331,6 +331,45 @@ end
         @test ff^(integrator.stats.nreject - 1) ≤ dt₀ / integrator.dt ≤ ff^integrator.stats.nreject
     end
 
+    @testset "The interpolant is Hermite, not linear" begin
+        # `u`, `v` and `a` come from one cubic and its derivatives, so they are mutually consistent:
+        # a linear interpolation of each separately does not satisfy `v = dₜu`. The endpoint
+        # reproduction of `v` is what a linear interpolant cannot do at all.
+        f = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
+        integrator = init(
+            ElastodynamicsProblem(f, zeros(solution_size(f)), bending_velocity(f, 0.2), (0.0, 0.5)),
+            NewmarkSolver(),
+            dt = 0.005,
+            adaptive = false,
+            verbose = false,
+        )
+        for _ = 1:4
+            step!(integrator)
+        end
+        fe = Thunderbolt.fe_dof_range(f)
+        tmp = zeros(solution_size(f))
+        tprev, t = integrator.tprev, integrator.t
+        tmid = (tprev + t) / 2
+
+        @test integrator(tmp, tprev)[fe] == integrator.uprev[fe]
+        @test integrator(tmp, t)[fe] == integrator.u[fe]
+        @test velocity(integrator, tprev) == integrator.cache.vₙ₋₁
+        @test velocity(integrator, t) == integrator.cache.vₙ
+
+        # dₜ of the displacement interpolant is the velocity interpolant, and dₜ of that is the
+        # acceleration one.
+        h = 1.0e-6
+        du = (copy(integrator(tmp, tmid + h))[fe] - copy(integrator(tmp, tmid - h))[fe]) / (2h)
+        @test du≈velocity(integrator, tmid) rtol=1.0e-8
+        dv = (velocity(integrator, tmid + h) - velocity(integrator, tmid)) / h
+        @test dv≈acceleration(integrator, tmid) rtol=1.0e-4
+
+        # And it is genuinely not the linear interpolant the fallback would give.
+        linear = @. integrator.uprev[fe] +
+           (tmid - tprev) / (t - tprev) * (integrator.u[fe] - integrator.uprev[fe])
+        @test !isapprox(integrator(tmp, tmid)[fe], linear)
+    end
+
     @testset "Velocity and acceleration interpolate to a requested time" begin
         # `TimeChoiceIterator` interpolates `u` to the requested `t` but leaves the integrator at the
         # end of the bracketing step, so the no-argument accessors report a *different* time than the
@@ -400,8 +439,9 @@ end
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
         @test all(isfinite, integrator.u)
         # The viscous strain starts at zero and has to have moved: a material whose internal variable
-        # never advanced would pass every assertion above.
-        @test maximum(abs, integrator.u[(ndofs(f.dh)+1):end]) > 0
+        # never advanced would pass every assertion above. Read the internal variables by name --
+        # anything else in the tail of the solution vector would make this pass for the wrong reason.
+        @test maximum(abs, integrator.u[Thunderbolt.internal_variable_range(f)]) > 0
     end
 
     # `RDQ20MFModel` is rate coupled (`dₜQ = L(F, dₜF, Q)`), so its local problem reads the deformation
@@ -428,17 +468,20 @@ end
         end
 
         integrator = contract(Thunderbolt.RDQ20MFModel())
-        nfe = ndofs(elastodynamic_bar(ncells = (2, 1, 1)).dh)
+        # Read the layout off the solved function: a bar built with a different material carries a
+        # different internal variable block, so it cannot stand in for this one.
+        fe = Thunderbolt.fe_dof_range(integrator.f)
+        iv = Thunderbolt.internal_variable_range(integrator.f)
         @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
         @test all(isfinite, integrator.u)
         # The sarcomere activates at Ca = 1 and pulls the bar in.
-        @test maximum(integrator.u[(nfe+1):end]) > 0.1
-        @test norm(integrator.u[1:nfe]) > 0.1
+        @test maximum(integrator.u[iv]) > 0.1
+        @test norm(integrator.u[fe]) > 0.1
 
         # Dropping the velocity coupling has to change the answer: if the element fed the material no
         # rate at all, the two models would agree exactly, since they differ in nothing else.
         wrapped = contract(Thunderbolt.AsRateIndependent(Thunderbolt.RDQ20MFModel()))
         @test wrapped.sol.retcode == SciMLBase.ReturnCode.Success
-        @test norm(wrapped.u[1:nfe] - integrator.u[1:nfe]) / norm(integrator.u[1:nfe]) > 0.05
+        @test norm(wrapped.u[fe] - integrator.u[fe]) / norm(integrator.u[fe]) > 0.05
     end
 end

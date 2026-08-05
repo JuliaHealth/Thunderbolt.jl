@@ -37,7 +37,7 @@ store to the subdomain this solver serves; cells outside it get an empty range.
 function setup_local_solve_reports(dh, lvh, ndofs_per_quadrature_point::Int, cellset)
     ndofs_per_quadrature_point == 0 && return nothing
     ncells     = getncells(get_grid(dh))
-    ndofs_last = ndofs(dh) + ndofs(lvh)
+    ndofs_last = last(internal_variable_range(dh, lvh))
     offsets    = Vector{Int}(undef, ncells+1)
     offsets[1] = 1
     for cellid = 1:ncells
