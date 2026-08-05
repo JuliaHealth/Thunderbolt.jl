@@ -406,6 +406,59 @@ end
         @test mismatched
     end
 
+    @testset "Two subdomains with different internal variable models" begin
+        # The configuration the internal variable wiring is most exposed to: the two halves condense a
+        # different number of unknowns per cell, so a mapping built from one subdomain's layout, or
+        # from an assumed subdomain ordering, would put the sarcomere state where the viscous strain
+        # belongs. Nothing else in the suite pairs unequal condensed blocks under Newmark.
+        grid = generate_grid(
+            Hexahedron,
+            (4, 1, 1),
+            Ferrite.Vec{3}((0.0, 0.0, 0.0)),
+            Ferrite.Vec{3}((1.0, 0.2, 0.2)),
+        )
+        addcellset!(grid, "left half", x -> x[1] ≤ 0.5)
+        addcellset!(grid, "right half", x -> x[1] ≥ 0.5)
+        mesh = to_mesh(grid)
+
+        viscous = ElastodynamicsModel(
+            :d,
+            :v,
+            Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3),
+            (),
+            ConstantCoefficient(1.0e3),
+        )
+        elastic = ElastodynamicsModel(
+            :d,
+            :v,
+            PK1Model(Guccione1991PassiveModel(), ORTHO_MS),
+            (),
+            ConstantCoefficient(2.0e3), # a different density, so the mass term is per subdomain too
+        )
+        f = semidiscretize(
+            Dict{String, Any}("left half" => viscous, "right half" => elastic) |>
+            Thunderbolt.narrow_dict_types,
+            FiniteElementDiscretization(
+                Dict(:d => LagrangeCollection{1}()^3);
+                dbcs = [
+                    Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3]),
+                ],
+            ),
+            mesh,
+        )
+
+        # Only the viscoelastic half condenses anything, so the two halves genuinely differ.
+        @test solution_size(f) > ndofs(f.dh)
+
+        integrator = solve_elastodynamic(f, bending_velocity(f, 1.0), 0.05, 0.005)
+        @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+        @test all(isfinite, integrator.u)
+        @test norm(integrator.u[Thunderbolt.displacement_dofs(f)]) > 0
+        # The viscous strain has to have moved, and it can only be read correctly if the internal
+        # variable wiring lines the two numberings up cell by cell.
+        @test maximum(abs, integrator.u[Thunderbolt.internal_variable_range(f)]) > 0
+    end
+
     @testset "A rejected step rolls back the velocity and the acceleration" begin
         # The velocity rides along in the solution vector, so the integrator's own rollback restores
         # it. The acceleration does not: it is determined by `(u, v)` rather than part of the state,

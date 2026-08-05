@@ -604,21 +604,48 @@ function semidiscretize(
         sym,
     )
 
-    # The velocity is a genuine field of the *state*, so that it is interpolated with the
-    # displacement, can be constrained, and can be written out by name. It is deliberately not a
-    # field of the structural problem above: the internal forces have no velocity equation, and a
-    # scheme that reconstructs the velocity would otherwise assemble empty rows for it.
-    vsym = model.velocity_symbol
+    return _elastodynamics_function(
+        quasistaticform,
+        mass_term,
+        discretization,
+        mesh,
+        sym,
+        model.velocity_symbol,
+        [single_subdomain_or_error(mesh)],
+    )
+end
+
+"""
+    _elastodynamics_function(quasistaticform, mass_term, discretization, mesh, sym, vsym, names)
+
+Wrap a structural problem and a mass term into an [`ElastodynamicsFunction`](@ref).
+
+The velocity is a genuine field of the *state*, so that it is interpolated with the displacement, can
+be constrained, and can be written out by name. It is deliberately not a field of the structural
+problem: the internal forces have no velocity equation, and a scheme that reconstructs the velocity
+would otherwise assemble empty rows for it. The two numberings are wired rather than assumed to
+coincide.
+"""
+function _elastodynamics_function(
+    quasistaticform,
+    mass_term,
+    discretization,
+    mesh,
+    sym,
+    vsym,
+    names,
+)
     ipc = _get_interpolation_from_discretization(discretization, sym)
     _assert_shared_interpolation(discretization, sym, vsym, ipc)
 
     dh = DofHandler(mesh)
-    name = single_subdomain_or_error(get_grid(dh))
-    add_subdomain!(
-        dh,
-        name,
-        [ApproximationDescriptor(sym, ipc), ApproximationDescriptor(vsym, ipc)],
-    )
+    for name in names
+        add_subdomain!(
+            dh,
+            name,
+            [ApproximationDescriptor(sym, ipc), ApproximationDescriptor(vsym, ipc)],
+        )
+    end
     close!(dh)
 
     ch = ConstraintHandler(dh)
@@ -633,6 +660,8 @@ function semidiscretize(
     )
     velocity_dofs = field_dof_mapping(quasistaticform.dh, sym, dh, vsym)
 
+    _assert_constraints_transfer(quasistaticform.ch, ch, state_mapping)
+
     return ElastodynamicsFunction(
         dh,
         ch,
@@ -643,6 +672,33 @@ function semidiscretize(
         velocity_dofs,
         quasistaticform.assembly_strategy,
     )
+end
+
+"""
+    _assert_constraints_transfer(structural_ch, state_ch, mapping)
+
+The stage solves against the structural constraint handler while the state carries its own, both
+built from the same `Dirichlet` conditions. This checks that they agree: every displacement dof
+prescribed on one side must be prescribed on the other.
+
+Without it, a condition that bound on one handler and silently failed to bind on the other -- a
+misspelled field, a set that reaches cells outside a subdomain -- would leave the two solving
+different problems.
+"""
+function _assert_constraints_transfer(structural_ch, state_ch, mapping)
+    structural = Set(structural_ch.prescribed_dofs)
+    state = Set(state_ch.prescribed_dofs)
+    image = Set(mapping.dofs[d] for d in structural)
+    image ⊆ state || error(
+        "$(length(setdiff(image, state))) displacement dofs are constrained on the structural " *
+        "problem but not on the state.",
+    )
+    extra = setdiff(intersect(state, Set(mapping.dofs)), image)
+    isempty(extra) || error(
+        "$(length(extra)) displacement dofs are constrained on the state but not on the structural " *
+        "problem, which is what the stage solves.",
+    )
+    return nothing
 end
 
 """
@@ -662,6 +718,70 @@ function _assert_shared_interpolation(discretization, sym, vsym, ipc)
         "got $(discretization.interpolations[vsym]) and $(ipc).",
     )
     return nothing
+end
+
+"""
+    semidiscretize(models::Dict{String, <:ElastodynamicsModel}, discretization, mesh)
+
+Elastodynamics over several subdomains, each with its own material and density.
+
+The structural sub-problem is the multi-subdomain quasi-static one, so materials with different
+internal variable models sit side by side exactly as they do without inertia. The mass term becomes a
+[`BilinearMultiIntegrator`](@ref) so that each subdomain contributes its own `ρ`.
+"""
+function semidiscretize(
+    models::Dict{String, <: ElastodynamicsModel},
+    discretization::FiniteElementDiscretization,
+    mesh::AbstractGrid,
+)
+    sym = structural_displacement_symbol(models)
+    vsym = _velocity_symbol_or_error(models)
+
+    quasistaticform = semidiscretize(
+        Dict{String, QuasiStaticModel}(
+            name => QuasiStaticModel(
+                model.displacement_symbol,
+                model.material_model,
+                model.facet_models,
+            ) for (name, model) in models
+        ),
+        discretization,
+        mesh,
+    )
+
+    mass_term = BilinearMultiIntegrator(
+        Dict{String, AbstractBilinearIntegrator}(
+            name => BilinearMassIntegrator(
+                model.ρ,
+                _get_quadrature_from_discretization(discretization, sym),
+                sym,
+            ) for (name, model) in models
+        ),
+    )
+
+    return _elastodynamics_function(
+        quasistaticform,
+        mass_term,
+        discretization,
+        mesh,
+        sym,
+        vsym,
+        collect(keys(models)),
+    )
+end
+
+"""
+    _velocity_symbol_or_error(models)
+
+The velocity symbol shared by every subdomain. Distinct symbols would mean distinct fields, and the
+state carries one velocity field.
+"""
+function _velocity_symbol_or_error(models::Dict{String, <: ElastodynamicsModel})
+    symbols = Set(model.velocity_symbol for model in values(models))
+    length(symbols) == 1 || error(
+        "All elastodynamics models in a domain split must share the same velocity symbol, got $(symbols).",
+    )
+    return first(symbols)
 end
 
 function semidiscretize(

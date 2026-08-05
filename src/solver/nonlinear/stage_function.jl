@@ -96,8 +96,14 @@ function field_dof_mapping(
     dofs = zeros(Int, ndofs(target_dh))
     target_cdofs = Int[]
     source_cdofs = Int[]
-    for (sdh_target, sdh_source) ∈ zip(target_dh.subdofhandlers, source_dh.subdofhandlers)
-        @assert sdh_target.cellset == sdh_source.cellset "Subdomain mismatch between the two dof handlers."
+    for sdh_target ∈ target_dh.subdofhandlers
+        # Matched by cellset, not by position: the two handlers are built by separate loops over the
+        # same subdomains, and nothing guarantees those loops agree on an order.
+        idx = findfirst(sdh -> sdh.cellset == sdh_target.cellset, source_dh.subdofhandlers)
+        idx === nothing && error(
+            "No subdomain of the source dof handler matches a target subdomain of $(length(sdh_target.cellset)) cells.",
+        )
+        sdh_source = source_dh.subdofhandlers[idx]
         target_range = dof_range(sdh_target, target_sym)
         source_range = dof_range(sdh_source, source_sym)
         @assert length(target_range) == length(source_range) "Fields $(target_sym) and $(source_sym) do not share an interpolation."

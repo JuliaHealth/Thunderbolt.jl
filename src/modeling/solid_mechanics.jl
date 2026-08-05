@@ -25,11 +25,6 @@ Returns the displacement symbol of a (possibly multi-domain) structural model, i
 Errors if a multi-domain model does not agree on a single displacement symbol across all subdomains.
 """
 structural_displacement_symbol(model::QuasiStaticModel) = model.displacement_symbol
-function structural_displacement_symbol(models::Dict{String, <:QuasiStaticModel})
-    symbols = Set(model.displacement_symbol for model in values(models))
-    @assert length(symbols) == 1 "All structural models in a domain split must share the same displacement symbol, got $(symbols)."
-    return first(symbols)
-end
 
 @doc raw"""
     ElastodynamicsModel(displacement_sym, velocity_symbol, material_model, facet_models, ρ)
@@ -71,6 +66,15 @@ get_field_variable_names(model::ElastodynamicsModel) =
 get_volumetric_weak_form_names(model::ElastodynamicsModel) = (model.displacement_symbol,)
 
 structural_displacement_symbol(model::ElastodynamicsModel) = model.displacement_symbol
+
+# Stated once for both model families: a domain split must agree on one displacement field.
+function structural_displacement_symbol(
+    models::Dict{String, <:Union{QuasiStaticModel, ElastodynamicsModel}},
+)
+    symbols = Set(model.displacement_symbol for model in values(models))
+    @assert length(symbols) == 1 "All structural models in a domain split must share the same displacement symbol, got $(symbols)."
+    return first(symbols)
+end
 
 include("solid/energies.jl")
 include("solid/contraction.jl")
