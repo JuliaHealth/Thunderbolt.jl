@@ -94,17 +94,13 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
 
         peh_deflection = PointEvalHandler(mesh.grid, [Vec(10.0, 0.5, 1.0)])
         @test isapprox(
-            evaluate_at_points(
-                peh_deflection,
-                integrator.cache.inner_solver_cache.op.dh,
-                integrator.u,
-            )[1][3],
+            evaluate_at_points(peh_deflection, integrator.f.dh, integrator.u)[1][3],
             3.17;
             atol = 0.02,
         )
 
         # VTKGridFile("Land2015Problem1-$(celltype)", mesh.grid) do vtk
-        #     write_solution(vtk, integrator.cache.inner_solver_cache.op.dh, integrator.u)
+        #     write_solution(vtk, integrator.f.dh, integrator.u)
         # end
 
     end
@@ -125,7 +121,7 @@ Thunderbolt.evaluate_coefficient(c::TimeFunctionCoefficient, cell, qp, time) = c
     #     ip = Lagrange{RefHexahedron,1}()^3
     #     fv = FacetValues(qr, ip)
 
-    #     Thunderbolt.reinit!(fv, first(CellIterator(integrator.cache.inner_solver_cache.op.dh)), 1)
+    #     Thunderbolt.reinit!(fv, first(CellIterator(integrator.f.dh)), 1)
     #     for qp in QuadratureIterator(fv)
     #         r .= 0.0
     #         Thunderbolt.assemble_facet_pressure_qp!(J, r, u, p, qp, fv)

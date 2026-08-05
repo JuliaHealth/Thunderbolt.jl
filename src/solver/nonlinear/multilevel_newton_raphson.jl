@@ -233,14 +233,16 @@ end
 
 function nlsolve!(
     u::AbstractVector,
-    f::AbstractSemidiscreteFunction,
+    sf::AbstractStageFunction,
     mlcache::MultiLevelNewtonRaphsonSolverCache,
     t,
-    p = t,
 )
     cache = mlcache.global_solver_cache
+    f = getfunction(sf)
+    op = getoperator(sf)
+    p = stage_parameters(sf)
 
-    @unpack op, residual, linear_solver_cache, Θks = cache
+    @unpack residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
     simplified = cache.parameters.simplified_newton
     cache.iter = -1
@@ -265,15 +267,15 @@ function nlsolve!(
         # failure at a small global residual points somewhere very different than one far from the
         # solution.
         if check_local_solve_covergence(mlcache.local_solver_cache)
-            @debug "Some local newton did not converge. Aborting. ||r|| = $(residual_norm(cache, f))\n$(describe_local_solve_failures(mlcache.local_solver_cache))" _group =
+            @debug "Some local newton did not converge. Aborting. ||r|| = $(residual_norm(cache, sf))\n$(describe_local_solve_failures(mlcache.local_solver_cache))" _group =
                 :nlsolve
             return false
         end
         if simplified && cache.iter > 0
-            @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, f)
+            @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, sf)
             # Leave isfresh / precsisfresh false → reuse the existing factorization.
         else
-            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
+            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, sf)
             # Both flags: the matrix changed, and so must anything built from it. Setting only
             # `isfresh` left a `precs` preconditioner built once from the numerically empty Jacobian
             # and never rebuilt, because Thunderbolt mutates `op.J` in place and LinearSolve raises
@@ -282,7 +284,7 @@ function nlsolve!(
             linear_solver_cache.precsisfresh = true
         end
 
-        residualnorm = residual_norm(cache, f)
+        residualnorm = residual_norm(cache, sf)
         set_local_solver_tol(mlcache.local_solver_cache, residualnorm^2)
         if residualnorm < cache.parameters.tol && cache.iter > 1 # Do at least two iterations to get a sane convergence estimate
             break
@@ -305,7 +307,7 @@ function nlsolve!(
             sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
-        eliminate_constraints_from_increment!(Δu, f, cache)
+        eliminate_constraints_from_increment!(Δu, sf, cache)
 
         u[1:length(Δu)] .-= Δu # Current guess
 

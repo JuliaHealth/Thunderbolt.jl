@@ -8,8 +8,10 @@ struct HomotopyPathSolver{IS} <: AbstractSolver
     inner_solver::IS
 end
 
-mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}, VTprev} <:
+mutable struct HomotopyPathSolverCache{SFT, ISC, T, VT <: AbstractVector{T}, VTprev} <:
                AbstractTimeSolverCache
+    # Continuation condenses nothing, so the stage unknowns are the function's.
+    stage_function::SFT
     inner_solver_cache::ISC
     uₙ::VT
     uₙ₋₁::VTprev
@@ -64,7 +66,11 @@ function setup_solver_cache(
     alias_u     = false,
 )
     check_internal_variables_are_rate_free(f)
-    inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
+    # The stage carries the operator, so it is built before the solver cache that works on it. A
+    # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
+    # pseudo-time.
+    stage_function = FullStateStage(f, setup_operator(f, solver.inner_solver), t₀)
+    inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
 
@@ -82,8 +88,13 @@ function setup_solver_cache(
         _uprev = alias_uprev ? uprev : recursivecopy(uprev)
     end
 
-    solver_cache =
-        HomotopyPathSolverCache(inner_solver_cache, _u, _uprev, vtype(undef, solution_size(f)))
+    solver_cache = HomotopyPathSolverCache(
+        stage_function,
+        inner_solver_cache,
+        _u,
+        _uprev,
+        vtype(undef, solution_size(f)),
+    )
 
     # Make sure the initial state is consistent
     perform_step!(f, solver_cache, t₀, 0.0) ||
@@ -102,7 +113,11 @@ function setup_solver_cache(
     alias_u     = false,
 )
     check_internal_variables_are_rate_free(f)
-    inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
+    # The stage carries the operator, so it is built before the solver cache that works on it. A
+    # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
+    # pseudo-time.
+    stage_function = FullStateStage(f, setup_operator(f, solver.inner_solver), t₀)
+    inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
     if u === nothing
@@ -130,6 +145,7 @@ function setup_solver_cache(
     end
 
     solver_cache = HomotopyPathSolverCache(
+        stage_function,
         inner_solver_cache,
         _u,
         _uprev,
@@ -150,7 +166,9 @@ function perform_step!(
     Δt,
 )
     update_constraints!(f, solver_cache, t + Δt)
-    if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t + Δt)
+    sf = solver_cache.stage_function
+    set_stage_parameters!(sf, t + Δt)
+    if !nlsolve!(solver_cache.uₙ, sf, solver_cache.inner_solver_cache, t + Δt)
         return false
     end
 

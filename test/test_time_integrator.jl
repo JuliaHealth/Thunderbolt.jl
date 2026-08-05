@@ -301,7 +301,9 @@ struct StubNewtonCache
     parameters::NamedTuple{(:enforce_monotonic_convergence,), Tuple{Bool}}
 end
 
+# The controllers read only the Newton history, so the stage the cache carries is irrelevant here.
 stub_homotopy_cache(Θks; enforce = true) = Thunderbolt.HomotopyPathSolverCache(
+    nothing,
     StubNewtonCache(Θks, (; enforce_monotonic_convergence = enforce)),
     [0.0],
     [0.0],
@@ -401,7 +403,7 @@ g_deuflhard(x) = √(1 + 4x) - 1
             StubNewtonCache([0.1, 0.2], (; enforce_monotonic_convergence = true)),
             nothing,
         )
-        cache = Thunderbolt.HomotopyPathSolverCache(mlcache, [0.0], [0.0], [0.0])
+        cache = Thunderbolt.HomotopyPathSolverCache(nothing, mlcache, [0.0], [0.0], [0.0])
         @test Thunderbolt.should_accept_step(dummy(0.1), cache, controllers[1])
     end
 end

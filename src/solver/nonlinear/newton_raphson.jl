@@ -67,16 +67,16 @@ Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType, ForcingType} 
     simplified_newton::Bool = false
 end
 
+# The operator is deliberately absent: it belongs to the `AbstractStageFunction` being solved, which
+# is what knows which nonlinear problem this is. One owner, so a scheme cannot hand the solver one
+# operator and the cache another.
 mutable struct NewtonRaphsonSolverCache{
-    OpType,
     ResidualType,
     T,
     NewtonType <: NewtonRaphsonSolver{T},
     InnerSolverCacheType,
     ForcingCacheType,
 } <: AbstractNonlinearSolverCache
-    # The nonlinear operator
-    op::OpType
     # Cache for the right hand side f(u)
     residual::ResidualType
     #
@@ -101,57 +101,35 @@ global_newton_cache(cache) = cache
 function Base.show(io::IO, cache::NewtonRaphsonSolverCache)
     println(io, "NewtonRaphsonSolverCache:")
     Base.show(io, cache.parameters)
-    Base.show(io, cache.op)
 end
 
-function setup_solver_cache(
-    f::AbstractSemidiscreteFunction,
-    solver::NewtonRaphsonSolver{T},
-) where {T}
+"""
+    setup_solver_cache(sf::AbstractStageFunction, solver::NewtonRaphsonSolver)
+
+Allocate the Newton work buffers for the stage `sf`.
+
+The residual is sized by the stage's unknowns rather than by the linear system, which for a
+condensed solid mechanics function is longer than `getJ` -- the internal variables live in the
+solution vector but not in the global system. That asymmetry is pre-existing and deliberate here;
+only the leading `size(J, 1)` entries ever reach the linear solve.
+"""
+function setup_solver_cache(sf::AbstractStageFunction, solver::NewtonRaphsonSolver{T}) where {T}
     @unpack inner_solver = solver
-    op = setup_operator(f, solver)
-    residual = Vector{T}(undef, solution_size(f))
-    Δu = Vector{T}(undef, solution_size(f))
+    f = getfunction(sf)
+    op = getoperator(sf)
+    J = getJ(op)
+    residual = Vector{T}(undef, stage_size(sf))
+    Δu = Vector{T}(undef, stage_size(sf))
 
     # Connect both solver caches
-    inner_prob  = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    inner_prob  = LinearSolve.LinearProblem(J, residual; u0 = Δu)
     maxiters    = _linear_maxiters(inner_solver)
     init_kw     = maxiters === nothing ? (;) : (; maxiters = maxiters)
     inner_cache = init(inner_prob, _materialize_inner_solver(f, inner_solver); alias = LinearAliasSpecifier(alias_A = true, alias_b = true), init_kw...)
     @assert inner_cache.b === residual
-    @assert inner_cache.A === op.J
+    @assert inner_cache.A === J
 
     NewtonRaphsonSolverCache(
-        op,
-        residual,
-        solver,
-        inner_cache,
-        _build_forcing_cache(solver.forcing, inner_cache, T),
-        T[],
-        0,
-    )
-end
-
-function setup_solver_cache(
-    f::AbstractSemidiscreteBlockedFunction,
-    solver::NewtonRaphsonSolver{T},
-) where {T}
-    @unpack inner_solver = solver
-    op = setup_operator(f, solver)
-    sizeu = solution_size(f)
-    residual = Vector{T}(undef, sizeu)
-    Δu = Vector{T}(undef, sizeu)
-    # Connect both solver caches
-    inner_prob  = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
-    maxiters    = _linear_maxiters(inner_solver)
-    init_kw     = maxiters === nothing ? (;) : (; maxiters = maxiters)
-    inner_cache = init(inner_prob, _materialize_inner_solver(f, inner_solver); alias = LinearAliasSpecifier(alias_A = true, alias_b = true), init_kw...)
-    @assert inner_cache.alg == inner_solver
-    @assert inner_cache.b === residual
-    @assert inner_cache.A === op.J
-
-    NewtonRaphsonSolverCache(
-        op,
         residual,
         solver,
         inner_cache,
@@ -200,9 +178,12 @@ function _ew_prestep!(fc::EisenstatWalkerForcingCache, linear_solver_cache, resi
 end
 
 """
-    nlsolve!(u, f, cache, t, p = t)
+    nlsolve!(z, sf::AbstractStageFunction, cache, t)
 
-`t` is the time, used for monitoring. `p` is the parameter object handed to the operator and thence to
+Solve the stage `sf` for its unknowns `z`.
+
+`t` is the time, used for monitoring only. Everything the operator needs travels in
+`stage_parameters(sf)`, which is the parameter object handed to the operator and thence to
 `FerriteOperators.query_element_parameters`.
 
 !!! warning "Transitional: `p` is currently overloaded"
@@ -224,18 +205,20 @@ end
     `p` field of `GenericFirstOrderTimeParameters`, which FerriteOperators forwards via
     `query_element_parameters(element, cell, ivh, p.p)`. Do not add new meanings to `t`.
 
-`p` defaults to `t` so callers with nothing extra to say are unaffected — notably
-`HomotopyPathSolver`, which is a load-stepping continuation rather than a time integrator and so has
-neither a previous solution nor a timestep to offer.
+A stage with nothing extra to say sets `p` to the bare time — notably `HomotopyPathSolver`, which is
+a load-stepping continuation rather than a time integrator and so has neither a previous solution nor
+a timestep to offer.
 """
 function nlsolve!(
     u::AbstractVector{T},
-    f::AbstractSemidiscreteFunction,
+    sf::AbstractStageFunction,
     cache::NewtonRaphsonSolverCache,
     t,
-    p = t,
 ) where {T}
-    @unpack op, residual, linear_solver_cache, Θks = cache
+    f = getfunction(sf)
+    op = getoperator(sf)
+    p = stage_parameters(sf)
+    @unpack residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
     simplified = cache.parameters.simplified_newton
     cache.iter = -1
@@ -249,16 +232,16 @@ function nlsolve!(
         if simplified && cache.iter > 0
             # Simplified Newton: reuse Jacobian and preconditioner from iter 0.
             @timeit_debug "update residual" residual!(op, residual, u, p)
-            @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, f)
+            @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, sf)
             # Leave isfresh / precsisfresh false → reuse existing factorization.
         else
             @timeit_debug "update operator" update_linearization!(op, residual, u, p)
-            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
+            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, sf)
             linear_solver_cache.isfresh = true        # Notify linear solver that both the matrix and the preconditioner need to be updated.
             linear_solver_cache.precsisfresh = true
         end
 
-        residualnorm = residual_norm(cache, f)
+        residualnorm = residual_norm(cache, sf)
         if residualnorm < cache.parameters.tol && cache.iter > 0
             push!(Θks, 0.0)
             break
@@ -285,7 +268,7 @@ function nlsolve!(
             sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
-        eliminate_constraints_from_increment!(Δu, f, cache)
+        eliminate_constraints_from_increment!(Δu, sf, cache)
 
         u .-= Δu # Current guess
         incrementnorm = norm(Δu)

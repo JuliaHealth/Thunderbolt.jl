@@ -138,7 +138,11 @@ function FerriteOperators.residual!(
     return nothing
 end
 
-struct NewmarkStageCache{SolverType, StageOpType, T}
+struct NewmarkStageCache{StageType, SolverType, StageOpType, T}
+    # Newmark condenses the velocity out, but the velocity is not part of the solution vector yet, so
+    # the stage's unknowns are still the function's. It becomes a stage of its own once the velocity
+    # is a genuine field.
+    stage_function::StageType
     nlsolver::SolverType
     stage_op::StageOpType
     β::T
@@ -346,7 +350,18 @@ function setup_solver_cache(
         zeros(nfe),
         one(Float64), # overwritten by the first step
     )
-    nlsolver = _setup_multilevel_newton_cache(f, stage_op, local_solver_cache, newton, nfe)
+    stage_function = FullStateStage(
+        f,
+        stage_op,
+        NewmarkTimeParameters(
+            nothing,
+            t₀,
+            zero(t₀),
+            AffineVelocity(one(Float64), zeros(solution_size(f))),
+            _uprev,
+        ),
+    )
+    nlsolver = _setup_multilevel_newton_cache(stage_function, local_solver_cache, newton, nfe)
 
     vₙ = v0 === nothing ? zeros(nfe) : recursivecopy(v0)
     aₙ = _consistent_initial_acceleration(f, stage_op, _u, vₙ, t₀)
@@ -361,7 +376,7 @@ function setup_solver_cache(
         copy(aₙ),
         zeros(nfe),
         zeros(solution_size(f)),
-        NewmarkStageCache(nlsolver, stage_op, solver.β, solver.γ, Ref(true)),
+        NewmarkStageCache(stage_function, nlsolver, stage_op, solver.β, solver.γ, Ref(true)),
         solver.monitor,
     )
 end
@@ -445,7 +460,7 @@ end
 
 function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, Δt)
     (; uₙ, uₙ₋₁, vₙ, aₙ, ṽ, uᵥ, stage) = cache
-    (; nlsolver, stage_op, β, γ) = stage
+    (; stage_function, nlsolver, stage_op, β, γ) = stage
     fe = fe_dof_range(f)
 
     update_constraints!(f, cache, t + Δt)
@@ -459,8 +474,11 @@ function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, 
     # problem is unchanged. The `AffineVelocity` is how the deformation rate is formed and linearized.
     ∂v∂u = γ / (β * Δt)
     _newmark_affine_velocity!(uᵥ, stage_op.ũ, ṽ, ∂v∂u)
-    p = NewmarkTimeParameters(nothing, t + Δt, Δt, AffineVelocity(∂v∂u, uᵥ), uₙ₋₁)
-    if !nlsolve!(uₙ, f, nlsolver, t + Δt, p)
+    set_stage_parameters!(
+        stage_function,
+        NewmarkTimeParameters(nothing, t + Δt, Δt, AffineVelocity(∂v∂u, uᵥ), uₙ₋₁),
+    )
+    if !nlsolve!(uₙ, stage_function, nlsolver, t + Δt)
         return false
     end
 

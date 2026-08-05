@@ -252,10 +252,10 @@ eliminate_constraints_from_increment!(
 ) = nothing
 function eliminate_constraints_from_linearization!(
     solver_cache::AbstractNonlinearSolverCache,
+    op,
     f::RSAFDQ20223DFunction,
 )
     @unpack structural_function = f
-    @unpack op = solver_cache
     ch = getch(structural_function)
     # Eliminate residual
     residual_block = @view solver_cache.residual[Block(1)]

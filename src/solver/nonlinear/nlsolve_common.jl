@@ -5,12 +5,15 @@ residual_norm(cache::AbstractNonlinearSolverCache, f::AbstractSolidMechanicsFunc
 residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction, i::Block) = 0.0
 residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction) = 0.0
 
-# Through `getJ` rather than `cache.op.J`, so that an operator which contributes terms of its own --
+# Through `getJ` rather than `op.J`, so that an operator which contributes terms of its own --
 # `NewmarkStageOperator` adds the inertia -- can forward to the matrix it shares with the assembly.
+# The operator is passed in rather than read off the cache: it belongs to the stage, which is the one
+# thing that knows which nonlinear problem is being solved.
 eliminate_constraints_from_linearization!(
     cache::AbstractNonlinearSolverCache,
+    op,
     f::AbstractSemidiscreteFunction,
-) = apply_zero!(getJ(cache.op), cache.residual, getch(f))
+) = apply_zero!(getJ(op), cache.residual, getch(f))
 
 eliminate_constraints_from_residual!(
     cache::AbstractNonlinearSolverCache,
@@ -41,15 +44,17 @@ eliminate_constraints_from_increment!(
 
 function eliminate_constraints_from_linearization!(
     cache::AbstractNonlinearSolverCache,
+    op,
     f::AbstractSemidiscreteBlockedFunction,
 )
     for (i, _) ∈ enumerate(blocks(f))
-        eliminate_constraints_from_linearization_blocked!(cache, f, Block(i))
+        eliminate_constraints_from_linearization_blocked!(cache, op, f, Block(i))
     end
 end
 
 function eliminate_constraints_from_linearization_blocked!(
     cache::AbstractNonlinearSolverCache,
+    op,
     f::AbstractSemidiscreteBlockedFunction,
     i_::Block,
 )
@@ -61,16 +66,16 @@ function eliminate_constraints_from_linearization_blocked!(
     # TODO optimize this
     for j = 1:length(blocks(f))
         if i == j
-            jacobian_block = getJ(cache.op, Block((i, i)))
+            jacobian_block = getJ(op, Block((i, i)))
             # Eliminate diagonal entry only
             residual_block = @view cache.residual[i_]
             apply_zero!(jacobian_block, residual_block, ch)
         else
             # Eliminate rows
-            jacobian_block = getJ(cache.op, Block((i, j)))
+            jacobian_block = getJ(op, Block((i, j)))
             jacobian_block[ch.prescribed_dofs, :] .= 0.0
             # Eliminate columns
-            jacobian_block = getJ(cache.op, Block((j, i)))
+            jacobian_block = getJ(op, Block((j, i)))
             jacobian_block[:, ch.prescribed_dofs] .= 0.0
         end
     end

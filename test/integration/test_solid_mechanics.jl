@@ -364,8 +364,8 @@ end
             ),
             timestepper,
         )
-        # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
-        #     write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
+        # VTKGridFile("SolidMechanicsIntegrationDebug", i.f.dh.grid) do vtk
+        #     write_solution(vtk, i.f.dh, i.u)
         # end
     end
 
@@ -413,9 +413,9 @@ end
         )
         # VTKGridFile(
         #     "SolidMechanicsIntegrationDebug",
-        #     i.cache.stage.nlsolver.global_solver_cache.op.dh.grid,
+        #     i.f.dh.grid,
         # ) do vtk
-        #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+        #     write_solution(vtk, i.f.dh, i.u)
         # end
 
         test_solve_contractile_cuboid(
