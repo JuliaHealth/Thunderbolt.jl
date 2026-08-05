@@ -105,7 +105,6 @@ blocked functions and live outside this branch.
 
     dh, ch, lvh                    # fields laying out the solution vector
     get_volume_integrator(f)       # the volumetric weak form
-    get_assembly_dh(f)             # the handler that weak form assembles against
     solution_size(f)               # ndofs(dh) + ndofs(lvh)
 
 `dh` may carry more than one field -- an [`ElastodynamicsFunction`](@ref) holds a velocity next to the
@@ -180,20 +179,6 @@ the internal force term, which lives on the structural sub-problem rather than o
 """
 get_volume_integrator(f::AbstractSolidMechanicsFunction) = f.integrator
 get_volume_integrator(f::ElastodynamicsFunction) = f.structural.integrator
-
-"""
-    get_assembly_dh(f)
-
-The dof handler the volumetric weak form assembles against.
-
-For most functions that is `f.dh`, the handler laying out the solution vector. For an
-[`ElastodynamicsFunction`](@ref) the two differ: the state carries a velocity field that the internal
-forces have no equation for, so the weak form is posed on the structural sub-problem. This is the
-counterpart of [`get_volume_integrator`](@ref) -- pairing that integrator with `f.dh` would assemble
-the displacement's residual into a handler twice its size.
-"""
-get_assembly_dh(f::AbstractSolidMechanicsFunction) = f.dh
-get_assembly_dh(f::ElastodynamicsFunction) = f.structural.dh
 
 """
     displacement_dofs(f::ElastodynamicsFunction)

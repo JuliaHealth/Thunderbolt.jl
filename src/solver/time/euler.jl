@@ -281,6 +281,35 @@ function _annotate_with_local_solver_cache(
 end
 
 """
+    setup_local_solver_cache(f, solver)
+
+The per-quadrature-point scratch a condensed material needs for its local Newton, or `nothing` when
+nothing is condensed.
+
+Its own step because it depends on neither the operator nor the time scheme -- only on the local
+solver, the integrator and the two handlers -- while two later steps both need it: the annotated
+operator, so the element can reach the scratch, and the multilevel Newton cache, so `nlsolve!` can
+report a local failure. Threading it explicitly is a consequence of the element reaching its scratch
+through an annotated model tree; a slot in `FerriteOperators`' assembly workspace would remove the
+need.
+"""
+setup_local_solver_cache(f::AbstractSolidMechanicsFunction, solver::AbstractNonlinearSolver) =
+    nothing
+setup_local_solver_cache(f::QuasiStaticFunction, solver::MultiLevelNewtonRaphsonSolver) =
+    _setup_local_solver_cache(solver.local_solver, f.integrator, f.dh, f.lvh)
+setup_local_solver_cache(f::ElastodynamicsFunction, solver::MultiLevelNewtonRaphsonSolver) =
+    setup_local_solver_cache(f.structural, solver)
+
+# `gto1` supplies the previous solution and the timestep per call via
+# `GenericFirstOrderTimeParameters`, so only the local solver cache has to reach the element here.
+setup_stage_operator(f::QuasiStaticFunction, solver::BackwardEulerSolver, local_solver_cache, t₀) =
+    setup_operator(
+        get_strategy(f),
+        _annotate_with_local_solver_cache(f.integrator, local_solver_cache),
+        f.dh,
+    )
+
+"""
     _setup_backward_euler_stage(f, solver, uprev, t₀)
 
 Build the stage one backward Euler step poses, together with the nonlinear solver cache for it.
@@ -291,22 +320,14 @@ stage: it is the annotated one, carrying the local solver cache down to the elem
 """
 @inline function _setup_backward_euler_stage(
     f::QuasiStaticFunction,
-    solver::MultiLevelNewtonRaphsonSolver,
+    solver::BackwardEulerSolver,
     uprev,
     t₀,
 )
-    (; integrator, dh, lvh) = f
-    (; local_solver, newton) = solver
+    newton = solver.inner_solver.newton
 
-    local_solver_cache = _setup_local_solver_cache(local_solver, integrator, dh, lvh)
-
-    # `gto1` supplies the previous solution and the timestep per call via
-    # `GenericFirstOrderTimeParameters`, so only the local solver cache has to reach the element here.
-    op = setup_operator(
-        f.assembly_strategy,
-        _annotate_with_local_solver_cache(integrator, local_solver_cache),
-        dh,
-    )
+    local_solver_cache = setup_local_solver_cache(f, solver.inner_solver)
+    op = setup_stage_operator(f, solver, local_solver_cache, t₀)
 
     # Placeholder parameters of the same type the step function writes, so that the field stays
     # concretely typed across the first assignment.
@@ -318,7 +339,7 @@ stage: it is the annotated one, carrying the local solver cache down to the elem
 
     return BackwardEulerStageCache(
         sf,
-        _setup_multilevel_newton_cache(sf, local_solver_cache, newton, ndofs(dh)),
+        _setup_multilevel_newton_cache(sf, local_solver_cache, newton, ndofs(f.dh)),
     )
 end
 
@@ -405,7 +426,7 @@ function setup_solver_cache(
         _u,
         _uprev,
         copy(_u),
-        _setup_backward_euler_stage(f, solver.inner_solver, _uprev, t₀),
+        _setup_backward_euler_stage(f, solver, _uprev, t₀),
         solver.monitor,
     )
 

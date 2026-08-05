@@ -381,6 +381,35 @@ end
 # carries.
 @inline _hermite_weights(θ, Δt, ::Val{3}) = (12 / Δt^3, 6 / Δt^2, -12 / Δt^3, 6 / Δt^2)
 
+# Newmark poses the internal forces *and* the inertia, so its operator is the structural one wrapped
+# together with the mass. The handler is the structural problem's: the state carries a velocity field
+# that neither term has an equation for.
+function setup_stage_operator(
+    f::ElastodynamicsFunction,
+    solver::NewmarkSolver,
+    local_solver_cache,
+    t₀,
+)
+    structural = f.structural
+    dh = structural.dh
+    op = setup_operator(
+        get_strategy(f),
+        _annotate_with_local_solver_cache(structural.integrator, local_solver_cache),
+        dh,
+    )
+    mass_operator = setup_operator(get_strategy(f), f.mass_term, solver, dh)
+    @timeit_debug "mass assembly" update_operator!(mass_operator, t₀)
+
+    nfe = ndofs(dh)
+    return NewmarkStageOperator(
+        op,
+        mass_operator,
+        zeros(nfe),
+        zeros(nfe),
+        one(Float64), # overwritten by the first step
+    )
+end
+
 function setup_solver_cache(
     f::ElastodynamicsFunction,
     solver::NewmarkSolver,
@@ -410,25 +439,10 @@ function setup_solver_cache(
         _uprev = alias_uprev ? uprev : recursivecopy(uprev)
     end
 
-    (; integrator, dh) = structural
-    (; newton, local_solver) = solver.inner_solver
+    newton = solver.inner_solver.newton
 
-    local_solver_cache = _setup_local_solver_cache(local_solver, integrator, dh, structural.lvh)
-    op = setup_operator(
-        f.assembly_strategy,
-        _annotate_with_local_solver_cache(integrator, local_solver_cache),
-        dh,
-    )
-    mass_operator = setup_operator(get_strategy(f), f.mass_term, solver, dh)
-    @timeit_debug "mass assembly" update_operator!(mass_operator, t₀)
-
-    stage_op = NewmarkStageOperator(
-        op,
-        mass_operator,
-        zeros(nfe),
-        zeros(nfe),
-        one(Float64), # overwritten by the first step
-    )
+    local_solver_cache = setup_local_solver_cache(f, solver.inner_solver)
+    stage_op = setup_stage_operator(f, solver, local_solver_cache, t₀)
     stage_function = NewmarkStage(
         structural,
         stage_op,

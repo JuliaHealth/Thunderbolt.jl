@@ -143,7 +143,12 @@ function setup_3D0D_coupling_integrator(sdh, chamber, integrator::NonlinearMulti
     return FerriteOperators.EmptySurfaceElementCache()
 end
 
-function setup_stage_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver)
+function setup_stage_operator(
+    f::RSAFDQ20223DFunction,
+    solver::HomotopyPathSolver,
+    local_solver_cache,
+    t₀,
+)
     (; tying_info, structural_function) = f
     (; dh, integrator, assembly_strategy) = structural_function
 

@@ -9,9 +9,8 @@ abstract type AbstractTimeSolverCache end
 getJ(op) = op.J
 
 # Nonlinear
-function setup_stage_operator(f::NullFunction, solver::AbstractSolver)
-    return NullOperator{Float64, solution_size(f), solution_size(f)}()
-end
+setup_stage_operator(f::NullFunction, solver::AbstractSolver, local_solver_cache, t₀) =
+    NullOperator{Float64, solution_size(f), solution_size(f)}()
 
 # Linear
 # Unrolled to disambiguate
@@ -96,22 +95,23 @@ end
 
 # Nonlinear
 """
-    setup_stage_operator(f, solver)
+    setup_stage_operator(f, solver, local_solver_cache, t₀)
 
-The nonlinear operator a solver works on for the function `f`.
+The operator the stage of `solver` solves with, for the function `f`.
+
+Dispatches on the **pair**, because what is assembled and which dof handler it is assembled against
+are both properties of the combination: a continuation poses the internal forces alone, backward Euler
+poses them with a condensed local problem underneath, and Newmark poses them together with an inertia
+term. Each method therefore names its own handler; nothing infers one from `f`.
 
 Distinct from the `setup_operator(strategy, integrator, dh)` family, which materializes one integrator
-against one handler and knows nothing about who will solve with it. This one answers "what is the
-nonlinear problem posed by `f`", which is what an [`AbstractStageFunction`](@ref) carries -- directly
-for a continuation, wrapped in a scheme's own operator for a time step.
+against one handler and knows nothing about who will solve with it.
 
-The integrator and the dof handler it assembles against are separate queries
-([`get_volume_integrator`](@ref), [`get_assembly_dh`](@ref)) because they need not come from the same
-object.
+`local_solver_cache` is the per-quadrature-point scratch from [`setup_local_solver_cache`](@ref), or
+`nothing` where nothing is condensed. `t₀` is the time any operator that has to be assembled once at
+setup is assembled at.
 """
-function setup_stage_operator(f::AbstractSolidMechanicsFunction, solver::AbstractNonlinearSolver)
-    return setup_operator(get_strategy(f), get_volume_integrator(f), get_assembly_dh(f))
-end
+function setup_stage_operator end
 
 function update_constraints!(
     f::AbstractSemidiscreteFunction,

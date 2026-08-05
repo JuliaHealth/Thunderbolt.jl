@@ -56,6 +56,35 @@ function _check_model_is_rate_free(model)
     )
 end
 
+# Continuation poses the internal forces alone: no previous solution, no timestep, no inertia. The
+# handler is the function's own, because for these functions the solution vector and the weak form
+# live on the same one.
+setup_stage_operator(
+    f::AbstractSemidiscreteFunction,
+    solver::HomotopyPathSolver,
+    local_solver_cache,
+    t₀,
+) = setup_operator(get_strategy(f), get_volume_integrator(f), f.dh)
+
+# A `NullFunction` matches both the null method (any solver) and the continuation method (any
+# function), and neither signature dominates. The answer is the null operator either way.
+setup_stage_operator(f::NullFunction, solver::HomotopyPathSolver, local_solver_cache, t₀) =
+    NullOperator{Float64, solution_size(f), solution_size(f)}()
+
+# An elastodynamics function's solution vector carries a velocity field that the internal forces have
+# no equation for, so there is no one operator that answers for it. Refusing is the honest answer:
+# pairing the displacement's integrator with the state handler would assemble a residual into a
+# handler twice its size.
+setup_stage_operator(
+    f::ElastodynamicsFunction,
+    solver::HomotopyPathSolver,
+    local_solver_cache,
+    t₀,
+) = error(
+    "An elastodynamics function has no single operator: the inertia belongs to the time scheme, not " *
+    "to the function. Pose the continuation on `f.structural` to solve for the static equilibrium.",
+)
+
 function setup_solver_cache(
     f::AbstractSemidiscreteFunction,
     solver::HomotopyPathSolver,
@@ -69,7 +98,7 @@ function setup_solver_cache(
     # The stage carries the operator, so it is built before the solver cache that works on it. A
     # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
     # pseudo-time.
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver.inner_solver), t₀)
+    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), t₀)
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -113,7 +142,7 @@ function setup_solver_cache(
     alias_u     = false,
 )
     check_internal_variables_are_rate_free(f)
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver.inner_solver), t₀)
+    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), t₀)
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
