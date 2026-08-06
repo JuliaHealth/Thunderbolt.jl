@@ -314,14 +314,46 @@ end
 # into. The local solve writes its result back into the `Qₑ` view; `store_condensed_element_unknowns!`
 # is what copies that tail back into the global solution vector.
 
+@doc raw"""
+    AffineVelocity(∂v∂u, uᵥ)
+
+How a time scheme reconstructs the end-of-step velocity from the unknown displacement,
+```math
+v(u) = \frac{\partial v}{\partial u}\,(u - u_v) .
+```
+
+Every single-stage scheme in this package makes the velocity an *affine* function of the unknown, so
+two numbers describe it completely: the slope, which is also the ``\partial\dot{F}/\partial u`` the
+element needs for the tangent, and the displacement at which the reconstructed velocity vanishes.
+
+| scheme | `∂v∂u` | `uᵥ` |
+| :----- | :----- | :--- |
+| backward Euler (`gto1`) | `1/Δt` | `uprev` |
+| Newmark | `γ/(βΔt)` | `ũ - ṽ/∂v∂u` |
+
+`uᵥ` is deliberately a displacement-shaped *vector* rather than the offset of the affine map: that is
+what lets it be sliced per cell by `load_element_unknowns!`, exactly like the previous solution. Under
+backward Euler it simply *is* the previous solution, which is why that scheme never needed the concept.
+
+The same type serves both granularities — global in the solver, element local after
+`query_element_parameters` — as `FerriteOperators.GenericFirstOrderTimeParameters` does with `uprev`.
+
+!!! note "This is not a timestep"
+    A scheme hands the element **two** unrelated time quantities: this reconstruction, and the `Δt`
+    that the *internal variable* integrates over. Backward Euler is the special case where the slope
+    happens to be the reciprocal of that `Δt`; under Newmark they differ by `γ/β`. Collapsing them is
+    what makes a rate-coupled material silently wrong under any scheme but backward Euler.
+"""
+struct AffineVelocity{T, VT}
+    ∂v∂u::T
+    uᵥ::VT
+end
+
 # Forming the rate and stating how it linearizes are the *scheme's* two contributions, and these are
-# the only places in the element layer that know which scheme is running. Within `gto1` the rate is
-# the backward difference `Ḟ = dₜ(I + ∇u)`, hence `∂Ḟ/∂u = 1/Δt`.
-#
-# The two are defined side by side deliberately: a scheme that changes how the rate is formed must
-# change its linearization in the same breath, and splitting them across the file is how a `1/Δt`
-# quietly outlives the difference quotient it belongs to. Newmark replaces both with `γ/(βΔt)`;
-# an SDIRK stage in rate form moves the timestep onto `∂F∂u` instead (see `KinematicLinearization`).
+# the only places in the element layer that read the reconstruction. They are defined side by side
+# deliberately: a scheme that changes how the rate is formed must change its linearization in the same
+# breath, and splitting them across the file is how a stale coefficient quietly outlives the difference
+# quotient it belongs to.
 #
 # Dispatching on the cache means the ODE cache does not pay for the second gradient evaluation: its
 # local problem `dₜQ = L(F, Q)` cannot read a rate, so offering one would be dead work — and its
@@ -330,8 +362,7 @@ end
     e::QuasiStaticCondensedODEElementCache,
     qp,
     dₑ,
-    dₑprev,
-    Δt,
+    velocity::AffineVelocity,
 )
     ∇u = function_gradient(e.cv, qp, dₑ)
     return DeformationGradient(one(∇u) + ∇u)
@@ -341,25 +372,37 @@ end
     e::QuasiStaticCondensedDAEElementCache,
     qp,
     dₑ,
-    dₑprev,
-    Δt,
+    velocity::AffineVelocity,
 )
-    ∇u     = function_gradient(e.cv, qp, dₑ)
-    ∇uprev = function_gradient(e.cv, qp, dₑprev)
-    return DeformationGradientWithRate(one(∇u) + ∇u, (∇u - ∇uprev) / Δt)
+    ∇u  = function_gradient(e.cv, qp, dₑ)
+    ∇uᵥ = function_gradient(e.cv, qp, velocity.uᵥ)
+    return DeformationGradientWithRate(one(∇u) + ∇u, velocity.∂v∂u * (∇u - ∇uᵥ))
 end
 
-@inline compute_kinematic_linearization(::QuasiStaticCondensedODEElementCache, Δt) =
-    KinematicLinearization(one(Δt))
+@inline compute_kinematic_linearization(
+    ::QuasiStaticCondensedODEElementCache,
+    velocity::AffineVelocity,
+) = KinematicLinearization(one(velocity.∂v∂u))
 
-@inline compute_kinematic_linearization(::QuasiStaticCondensedDAEElementCache, Δt) =
-    KinematicLinearization(one(Δt), inv(Δt))
+@inline compute_kinematic_linearization(
+    ::QuasiStaticCondensedDAEElementCache,
+    velocity::AffineVelocity,
+) = KinematicLinearization(one(velocity.∂v∂u), velocity.∂v∂u)
 
-function FerriteOperators.assemble_element_gto1!(
+# The three assembly variants below are the *only* element loop; the `assemble_element_gto1!` and
+# `assemble_element!(…, ::NewmarkElementParameters)` methods underneath them are thin adapters that
+# unpack their respective parameter protocol and call in here. Without them the loop would exist twice,
+# once per time scheme.
+#
+# `uₑprev` and `velocity` are separate arguments because they answer different questions: the first
+# supplies the known internal state `Qprev`, the second says how the velocity is reconstructed from the
+# unknown. They coincide under backward Euler and differ under Newmark.
+function _assemble_condensed_element_jr!(
     Kₑ::AbstractMatrix,
     residualₑ::AbstractVector,
     uₑ::AbstractVector,
     uₑprev::AbstractVector,
+    velocity::AffineVelocity,
     geometry_cache::CellCache,
     element_cache::QuasiStaticCondensedElementCache,
     p,
@@ -369,14 +412,16 @@ function FerriteOperators.assemble_element_gto1!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    dₑprev, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    dvelocity, _ = _qs_split_unknowns(element_cache, velocity.uᵥ)
+    velocityₑ = AffineVelocity(velocity.∂v∂u, dvelocity)
 
     reinit!(cv, geometry_cache)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, dₑprev, Δt)
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, velocityₑ)
 
         P, sensitivities = material_routine(
             constitutive_model,
@@ -390,8 +435,10 @@ function FerriteOperators.assemble_element_gto1!(
             @view(Qₑprev[:, qp.i]),
             Δt,
         )
-        tangent =
-            consistent_tangent(sensitivities, compute_kinematic_linearization(element_cache, Δt))
+        tangent = consistent_tangent(
+            sensitivities,
+            compute_kinematic_linearization(element_cache, velocityₑ),
+        )
 
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
@@ -406,10 +453,34 @@ function FerriteOperators.assemble_element_gto1!(
     end
 end
 
-function FerriteOperators.assemble_element_gto1!(
+FerriteOperators.assemble_element_gto1!(
+    Kₑ::AbstractMatrix,
+    residualₑ::AbstractVector,
+    uₑ::AbstractVector,
+    uₑprev::AbstractVector,
+    geometry_cache::CellCache,
+    element_cache::QuasiStaticCondensedElementCache,
+    p,
+    t,
+    Δt,
+) = _assemble_condensed_element_jr!(
+    Kₑ,
+    residualₑ,
+    uₑ,
+    uₑprev,
+    AffineVelocity(inv(Δt), uₑprev),
+    geometry_cache,
+    element_cache,
+    p,
+    t,
+    Δt,
+)
+
+function _assemble_condensed_element_j!(
     Kₑ::AbstractMatrix,
     uₑ::AbstractVector,
     uₑprev::AbstractVector,
+    velocity::AffineVelocity,
     geometry_cache::CellCache,
     element_cache::QuasiStaticCondensedElementCache,
     p,
@@ -419,14 +490,16 @@ function FerriteOperators.assemble_element_gto1!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    dₑprev, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    dvelocity, _ = _qs_split_unknowns(element_cache, velocity.uᵥ)
+    velocityₑ = AffineVelocity(velocity.∂v∂u, dvelocity)
 
     reinit!(cv, geometry_cache)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, dₑprev, Δt)
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, velocityₑ)
 
         # Tangent only
         _, sensitivities = material_routine(
@@ -441,8 +514,10 @@ function FerriteOperators.assemble_element_gto1!(
             @view(Qₑprev[:, qp.i]),
             Δt,
         )
-        tangent =
-            consistent_tangent(sensitivities, compute_kinematic_linearization(element_cache, Δt))
+        tangent = consistent_tangent(
+            sensitivities,
+            compute_kinematic_linearization(element_cache, velocityₑ),
+        )
 
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
@@ -455,10 +530,11 @@ function FerriteOperators.assemble_element_gto1!(
     end
 end
 
-function FerriteOperators.assemble_element_gto1!(
+function _assemble_condensed_element_r!(
     residualₑ::AbstractVector,
     uₑ::AbstractVector,
     uₑprev::AbstractVector,
+    velocity::AffineVelocity,
     geometry_cache::CellCache,
     element_cache::QuasiStaticCondensedElementCache,
     p,
@@ -468,14 +544,16 @@ function FerriteOperators.assemble_element_gto1!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    dₑprev, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
+    dvelocity, _ = _qs_split_unknowns(element_cache, velocity.uᵥ)
+    velocityₑ = AffineVelocity(velocity.∂v∂u, dvelocity)
 
     reinit!(cv, geometry_cache)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, dₑprev, Δt)
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, velocityₑ)
 
         # Stress only
         P = reduced_material_routine(
@@ -497,6 +575,169 @@ function FerriteOperators.assemble_element_gto1!(
         end
     end
 end
+
+FerriteOperators.assemble_element_gto1!(
+    Kₑ::AbstractMatrix,
+    uₑ::AbstractVector,
+    uₑprev::AbstractVector,
+    geometry_cache::CellCache,
+    element_cache::QuasiStaticCondensedElementCache,
+    p,
+    t,
+    Δt,
+) = _assemble_condensed_element_j!(
+    Kₑ,
+    uₑ,
+    uₑprev,
+    AffineVelocity(inv(Δt), uₑprev),
+    geometry_cache,
+    element_cache,
+    p,
+    t,
+    Δt,
+)
+
+FerriteOperators.assemble_element_gto1!(
+    residualₑ::AbstractVector,
+    uₑ::AbstractVector,
+    uₑprev::AbstractVector,
+    geometry_cache::CellCache,
+    element_cache::QuasiStaticCondensedElementCache,
+    p,
+    t,
+    Δt,
+) = _assemble_condensed_element_r!(
+    residualₑ,
+    uₑ,
+    uₑprev,
+    AffineVelocity(inv(Δt), uₑprev),
+    geometry_cache,
+    element_cache,
+    p,
+    t,
+    Δt,
+)
+
+"""
+    NewmarkTimeParameters(p, t, Δt, velocity, uprev)
+
+The element facing parameters of a Newmark stage, the second order counterpart of
+`FerriteOperators.GenericFirstOrderTimeParameters`.
+
+It keeps apart the **two** time quantities that the first order object conflates into one `Δt`:
+
+* `Δt` — the real timestep, which the *internal variable* integrates over. `dₜQ = L(F, Q)` is first
+  order no matter what the global scheme does with `u`, so its local problem is unchanged.
+* `velocity::`[`AffineVelocity`](@ref) — how the deformation rate is formed and how it linearizes.
+
+`uprev` is still carried on its own, because it is what supplies `Qprev`.
+"""
+@concrete struct NewmarkTimeParameters
+    p
+    t
+    Δt
+    velocity
+    uprev
+end
+
+"""
+    NewmarkElementParameters
+
+Element local form of [`NewmarkTimeParameters`](@ref), produced by `query_element_parameters`.
+"""
+@concrete struct NewmarkElementParameters
+    pₑ
+    t
+    Δt
+    velocity
+    uₑprev
+end
+
+# Every element parameter object that carries a time discretization. Facet caches read only the time
+# out of them, so they can be served by one set of unwrapping methods.
+const AnyTimeElementParameters =
+    Union{FerriteOperators.GenericFirstOrderTimeElementParameters, NewmarkElementParameters}
+
+function FerriteOperators.query_element_parameters(
+    element::QuasiStaticCondensedElementCache,
+    cell,
+    ivh,
+    p::NewmarkTimeParameters,
+)
+    uₑprev = FerriteOperators.allocate_element_unknown_vector(element, cell)
+    FerriteOperators.load_element_unknowns!(uₑprev, p.uprev, cell, ivh, element)
+    uₑᵥ = FerriteOperators.allocate_element_unknown_vector(element, cell)
+    FerriteOperators.load_element_unknowns!(uₑᵥ, p.velocity.uᵥ, cell, ivh, element)
+    pₑ = FerriteOperators.query_element_parameters(element, cell, ivh, p.p)
+    return NewmarkElementParameters(pₑ, p.t, p.Δt, AffineVelocity(p.velocity.∂v∂u, uₑᵥ), uₑprev)
+end
+
+# A rate-free element has no use for any of it and expects the bare time, so it is unwrapped here
+# rather than being handed a parameter object it would pass to `evaluate_coefficient`. A mixed mesh
+# carrying one rate-free and one condensed subdomain is the ordinary case for this solver; the `gto1`
+# path has no equivalent unwrapping.
+FerriteOperators.query_element_parameters(
+    ::QuasiStaticElementCache,
+    cell,
+    ivh,
+    p::NewmarkTimeParameters,
+) = p.t
+
+FerriteOperators.assemble_element!(
+    Kₑ::AbstractMatrix,
+    residualₑ::AbstractVector,
+    uₑ::AbstractVector,
+    cell,
+    element_cache::QuasiStaticCondensedElementCache,
+    p::NewmarkElementParameters,
+) = _assemble_condensed_element_jr!(
+    Kₑ,
+    residualₑ,
+    uₑ,
+    p.uₑprev,
+    p.velocity,
+    cell,
+    element_cache,
+    p.pₑ,
+    p.t,
+    p.Δt,
+)
+
+FerriteOperators.assemble_element!(
+    Kₑ::AbstractMatrix,
+    uₑ::AbstractVector,
+    cell,
+    element_cache::QuasiStaticCondensedElementCache,
+    p::NewmarkElementParameters,
+) = _assemble_condensed_element_j!(
+    Kₑ,
+    uₑ,
+    p.uₑprev,
+    p.velocity,
+    cell,
+    element_cache,
+    p.pₑ,
+    p.t,
+    p.Δt,
+)
+
+FerriteOperators.assemble_element!(
+    residualₑ::AbstractVector,
+    uₑ::AbstractVector,
+    cell,
+    element_cache::QuasiStaticCondensedElementCache,
+    p::NewmarkElementParameters,
+) = _assemble_condensed_element_r!(
+    residualₑ,
+    uₑ,
+    p.uₑprev,
+    p.velocity,
+    cell,
+    element_cache,
+    p.pₑ,
+    p.t,
+    p.Δt,
+)
 
 # FerriteOperators computes a *single* element parameter object from the volumetric cache and passes
 # it to the boundary cache as well (`operators/nonlinear.jl`), whose generic `assemble_element!`
@@ -539,7 +780,7 @@ FerriteOperators.assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     facet_cache::FerriteOperators.AbstractSurfaceElementCache,
-    pfot::FerriteOperators.GenericFirstOrderTimeElementParameters,
+    pfot::AnyTimeElementParameters,
 ) = FerriteOperators.assemble_element!(Kₑ, residualₑ, uₑ, geometry_cache, facet_cache, pfot.t)
 
 FerriteOperators.assemble_element!(
@@ -547,7 +788,7 @@ FerriteOperators.assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     facet_cache::FerriteOperators.AbstractSurfaceElementCache,
-    pfot::FerriteOperators.GenericFirstOrderTimeElementParameters,
+    pfot::AnyTimeElementParameters,
 ) = FerriteOperators.assemble_element!(Kₑ, uₑ, geometry_cache, facet_cache, pfot.t)
 
 FerriteOperators.assemble_element!(
@@ -555,7 +796,7 @@ FerriteOperators.assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     facet_cache::FerriteOperators.AbstractSurfaceElementCache,
-    pfot::FerriteOperators.GenericFirstOrderTimeElementParameters,
+    pfot::AnyTimeElementParameters,
 ) = FerriteOperators.assemble_element!(residualₑ, uₑ, geometry_cache, facet_cache, pfot.t)
 
 FerriteOperators.assemble_element!(
@@ -564,7 +805,7 @@ FerriteOperators.assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     facet_cache::FerriteOperators.CompositeSurfaceElementCache,
-    pfot::FerriteOperators.GenericFirstOrderTimeElementParameters,
+    pfot::AnyTimeElementParameters,
 ) = FerriteOperators.assemble_element!(Kₑ, residualₑ, uₑ, geometry_cache, facet_cache, pfot.t)
 
 FerriteOperators.assemble_element!(
@@ -572,7 +813,7 @@ FerriteOperators.assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     facet_cache::FerriteOperators.CompositeSurfaceElementCache,
-    pfot::FerriteOperators.GenericFirstOrderTimeElementParameters,
+    pfot::AnyTimeElementParameters,
 ) = FerriteOperators.assemble_element!(Kₑ, uₑ, geometry_cache, facet_cache, pfot.t)
 
 FerriteOperators.assemble_element!(
@@ -580,7 +821,7 @@ FerriteOperators.assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     facet_cache::FerriteOperators.CompositeSurfaceElementCache,
-    pfot::FerriteOperators.GenericFirstOrderTimeElementParameters,
+    pfot::AnyTimeElementParameters,
 ) = FerriteOperators.assemble_element!(residualₑ, uₑ, geometry_cache, facet_cache, pfot.t)
 
 # ------------------------------------------------------------------------------------------------

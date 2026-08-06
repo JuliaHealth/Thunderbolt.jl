@@ -13,6 +13,7 @@ AnalyticalCoefficient
 SpectralTensorCoefficient
 SpatiallyHomogeneousDataField
 evaluate_coefficient
+ElastodynamicsModel
 ```
 
 ## [Microstructure](@id microstructure-api)

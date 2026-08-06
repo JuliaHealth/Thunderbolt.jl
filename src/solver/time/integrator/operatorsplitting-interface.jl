@@ -148,7 +148,15 @@ function OS._build_child(
     end
 
     controller_cache = if controller !== nothing
-        OrdinaryDiffEqCore.setup_controller_cache(alg, cache, controller, EEstT)
+        # Five arguments, as in the standalone `__init`: the trailing one is the discontinuity
+        # detection problem cache of the upstream controllers, which is off by default.
+        OrdinaryDiffEqCore.setup_controller_cache(
+            alg,
+            cache,
+            controller,
+            EEstT,
+            SciMLBase.IntervalNonlinearProblem[],
+        )
     else
         nothing
     end
@@ -182,6 +190,8 @@ function OS._build_child(
                 get(inner, :dtmin, DiffEqBase.prob2dtmin((t0, tf), oneunit(tType), true)),
             ),
             dtmax = tType(get(inner, :dtmax, tf - t0)),
+            reltol = tType(get(inner, :reltol, 1.0e-3)),
+            abstol = tType(get(inner, :abstol, 1.0e-6)),
             verbose = verbose,
             adaptive = adaptive,
             maxiters = maxiters,

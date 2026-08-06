@@ -37,13 +37,10 @@ store to the subdomain this solver serves; cells outside it get an empty range.
 function setup_local_solve_reports(dh, lvh, ndofs_per_quadrature_point::Int, cellset)
     ndofs_per_quadrature_point == 0 && return nothing
     ncells     = getncells(get_grid(dh))
-    ndofs_last = ndofs(dh) + ndofs(lvh)
     offsets    = Vector{Int}(undef, ncells+1)
     offsets[1] = 1
     for cellid = 1:ncells
-        cell_end =
-            cellid < ncells ? FerriteOperators.internal_variable_offset(lvh, cellid+1) : ndofs_last
-        ndofs_cell = cell_end - FerriteOperators.internal_variable_offset(lvh, cellid)
+        ndofs_cell = length(FerriteOperators.internal_variable_range(lvh, cellid))
         nqp =
             (cellset === nothing || cellid ∈ cellset) ? ndofs_cell ÷ ndofs_per_quadrature_point : 0
         offsets[cellid+1] = offsets[cellid] + nqp
@@ -233,14 +230,16 @@ end
 
 function nlsolve!(
     u::AbstractVector,
-    f::AbstractSemidiscreteFunction,
+    sf::AbstractStageFunction,
     mlcache::MultiLevelNewtonRaphsonSolverCache,
     t,
-    p = t,
 )
     cache = mlcache.global_solver_cache
+    f = getfunction(sf)
+    op = getoperator(sf)
+    p = stage_parameters(sf)
 
-    @unpack op, residual, linear_solver_cache, Θks = cache
+    @unpack residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
     simplified = cache.parameters.simplified_newton
     cache.iter = -1
@@ -265,15 +264,15 @@ function nlsolve!(
         # failure at a small global residual points somewhere very different than one far from the
         # solution.
         if check_local_solve_covergence(mlcache.local_solver_cache)
-            @debug "Some local newton did not converge. Aborting. ||r|| = $(residual_norm(cache, f))\n$(describe_local_solve_failures(mlcache.local_solver_cache))" _group =
+            @debug "Some local newton did not converge. Aborting. ||r|| = $(residual_norm(cache, sf))\n$(describe_local_solve_failures(mlcache.local_solver_cache))" _group =
                 :nlsolve
             return false
         end
         if simplified && cache.iter > 0
-            @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, f)
+            @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, sf)
             # Leave isfresh / precsisfresh false → reuse the existing factorization.
         else
-            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
+            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, sf)
             # Both flags: the matrix changed, and so must anything built from it. Setting only
             # `isfresh` left a `precs` preconditioner built once from the numerically empty Jacobian
             # and never rebuilt, because Thunderbolt mutates `op.J` in place and LinearSolve raises
@@ -282,7 +281,7 @@ function nlsolve!(
             linear_solver_cache.precsisfresh = true
         end
 
-        residualnorm = residual_norm(cache, f)
+        residualnorm = residual_norm(cache, sf)
         set_local_solver_tol(mlcache.local_solver_cache, residualnorm^2)
         if residualnorm < cache.parameters.tol && cache.iter > 1 # Do at least two iterations to get a sane convergence estimate
             break
@@ -305,9 +304,11 @@ function nlsolve!(
             sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
-        eliminate_constraints_from_increment!(Δu, f, cache)
+        eliminate_constraints_from_increment!(Δu, sf, cache)
 
-        u[1:length(Δu)] .-= Δu # Current guess
+        # Only the entries the linear system solves for; the condensed tail is written by the
+        # assembly, not by the increment.
+        @inbounds @views u[uncondensed_range(sf)] .-= Δu
 
         if cache.iter > 0
             # In this case we might be unablet to estimate the convergence rate, because we are too close to the solution

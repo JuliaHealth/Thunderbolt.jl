@@ -25,6 +25,11 @@ Base.@kwdef mutable struct IntegratorOptions{
     VT,
 }
     force_dtmin::Bool = false
+    # Error tolerances of the step size control, in the SciML sense: a step is accepted when the
+    # scheme's local error estimate satisfies `‖e‖ ≤ abstol + reltol·‖u‖` componentwise. Unused by the
+    # non-adaptive schemes.
+    reltol::tType = 1.0e-3
+    abstol::tType = 1.0e-6
     dtmin::tType = eps(tType)
     dtmax::tType = Inf
     failfactor::fType = 4.0
@@ -132,8 +137,52 @@ normalize_verbosity(verbose) = verbose
 normalize_verbosity(verbose::AbstractVerbosityPreset) = DiffEqBase.DEVerbosity(verbose)
 
 # Interpolation
-function (integrator::ThunderboltTimeIntegrator)(tmp, t)
-    OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
+#
+# Dispatching on the *cache* is what lets a scheme supply an interpolant of its own accuracy. The
+# default is linear, which is first order and correct for any scheme, but below the order of every
+# scheme above first. A scheme that carries a derivative of the solution can do better -- see
+# `interpolate_solution!` for `NewmarkSolverCache`.
+(integrator::ThunderboltTimeIntegrator)(tmp, t) =
+    interpolate_solution!(tmp, integrator, integrator.cache, t)
+
+"""
+    interpolate_solution!(out, integrator, cache, t)
+
+Write the solution at `t` into `out`, interpolating between the step endpoints the integrator
+currently holds.
+
+The fallback is linear in `(uprev, u)`. Override for a solver cache that can do better; a scheme with
+a solution derivative at both ends has a Hermite interpolant available at no extra assembly.
+"""
+function interpolate_solution!(out, integrator::ThunderboltTimeIntegrator, cache, t)
+    return _linear_interpolation!(
+        out,
+        t,
+        integrator.uprev,
+        integrator.u,
+        integrator.tprev,
+        integrator.t,
+    )
+end
+
+"""
+    _linear_interpolation!(out, t, uprev, u, tprev, tnext)
+
+Linear interpolation between two step endpoints.
+
+Written out rather than taken from `OrdinaryDiffEqOperatorSplitting`, whose spelling of it is a
+private name with a private argument convention. Two lines of arithmetic are not worth a dependency
+that can be renamed without a version bump.
+
+The length of the step is `tnext - tprev` and never `integrator.dt`: once a step is accepted the
+controller has already overwritten `dt` with its next proposal. A zero-length interval occurs before
+the first step, where `uprev == u` and every coordinate gives the same answer.
+"""
+function _linear_interpolation!(out, t, uprev, u, tprev, tnext)
+    Δt = tnext - tprev
+    Θ = iszero(Δt) ? zero(t / oneunit(Δt)) : (t - tprev) / Δt
+    @. out = (1 - Θ) * uprev + Θ * u
+    return out
 end
 
 # CommonSolve interface
@@ -226,6 +275,8 @@ function SciMLBase.__init(
     dense = false,
     dtmin = nothing,
     dtmax = nothing,
+    reltol = 1.0e-3,
+    abstol = 1.0e-6,
     internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
     kwargs...,
 )
@@ -339,7 +390,16 @@ function SciMLBase.__init(
     end
 
     controller_cache = if controller !== nothing
-        OrdinaryDiffEqCore.setup_controller_cache(alg, cache, controller, EEstT)
+        # `disco_probs` is the discontinuity detection problem cache of the upstream controllers.
+        # Detection is off by default, so an empty vector of the expected element type is what the
+        # resolved controller options want.
+        OrdinaryDiffEqCore.setup_controller_cache(
+            alg,
+            cache,
+            controller,
+            EEstT,
+            SciMLBase.IntervalNonlinearProblem[],
+        )
     else
         nothing
     end
@@ -366,6 +426,8 @@ function SciMLBase.__init(
         IntegratorOptions(
             dtmin = dtmin,
             dtmax = dtmax,
+            reltol = tType(reltol),
+            abstol = tType(abstol),
             verbose = normalize_verbosity(verbose),
             adaptive = adaptive,
             maxiters = maxiters,
@@ -447,21 +509,29 @@ end
 # Controller interface
 function reject_step!(integrator::ThunderboltTimeIntegrator)
     OrdinaryDiffEqCore.increment_reject!(integrator.stats)
+    rollback_state!(integrator, integrator.cache)
     reject_step!(integrator, integrator.cache, integrator.controller_cache)
 end
-function reject_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
-    integrator.u .= integrator.uprev
-end
-function reject_step!(
-    integrator::ThunderboltTimeIntegrator,
-    cache,
-    ::Union{Nothing, DummyControllerCache},
-)
+
+"""
+    rollback_state!(integrator, cache)
+
+Restore the state a rejected step advanced. Separate from [`reject_step!`](@ref), which proposes the
+step size for the retry: restoring state is the *scheme's* business and proposing a step size is the
+*controller's*, so expressing both on one generic would make the method count their product.
+
+The fallback restores the solution vector. A scheme whose state is not fully contained in it -- a
+second order scheme caches an acceleration, which is not in the vector -- extends this.
+"""
+function rollback_state!(integrator::ThunderboltTimeIntegrator, cache)
     if length(integrator.uprev) == 0
         error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
     end
     integrator.u .= integrator.uprev
+    return nothing
 end
+
+reject_step!(integrator::ThunderboltTimeIntegrator, cache, controller) = nothing
 
 adapt_dt!(integrator::ThunderboltTimeIntegrator) =
     adapt_dt!(integrator, integrator.cache, integrator.controller_cache)

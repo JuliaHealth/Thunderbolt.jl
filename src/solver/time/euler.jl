@@ -182,39 +182,26 @@ end
 #                     DAE Problems                      #
 #########################################################
 
-struct BackwardEulerStageCache{SolverType}
+struct BackwardEulerStageCache{StageType, SolverType}
+    # The nonlinear problem one backward Euler step poses. Nothing is condensed out, so it is the
+    # degenerate `FullStateStage`: the stage unknowns are the function's unknowns.
+    stage_function::StageType
     # Nonlinear solver for generic backward Euler discretizations
     nlsolver::SolverType
-end
-
-# This is an annotation to setup the operator in the inner nonlinear problem correctly.
-struct BackwardEulerStageAnnotation{F, U}
-    f::F
-    u::U
-    uprev::U
 end
 
 # Marks a model tree rewritten to carry solver-side information down to the element caches.
 abstract type AbstractModelAnnotation{T} end
 
-# This is the wrapper used to communicate solver info into the operator.
-# Carries the *solver-owned* state that has to reach the element caches, and nothing else. Since
-# `gto1` supplies the previous solution and the timestep as call parameters, the only thing left to
-# inject is the local nonlinear solver cache, which the material routine needs for the per-quadrature
-# point Newton (`materials.jl`, `solve_internal_timestep`).
-#
-# Formerly `BackwardEulerStageFunctionWrapper`, which additionally carried `u`, `uprev` and a mutable
-# `Δt` that `update_stage!` wrote into before every step. Both are gone: this no longer encodes any
-# time discretization, hence the rename.
+# Carries the *solver-owned* state that has to reach the element caches, and nothing else. `gto1`
+# supplies the previous solution and the timestep as call parameters, so the only thing left to inject
+# is the local nonlinear solver cache, which the material routine needs for the per-quadrature point
+# Newton (`materials.jl`, `solve_internal_timestep`). It encodes no time discretization.
 struct LocalSolverCacheAnnotation{F, S} <: AbstractModelAnnotation{F}
     f::F
     local_solver_cache::S
 end
 
-# We unpack to dispatch per function class
-function setup_solver_cache(wrapper::BackwardEulerStageAnnotation, solver::AbstractNonlinearSolver)
-    _setup_solver_cache(wrapper, wrapper.f, solver)
-end
 function _setup_local_solver_cache(
     local_solver::GenericLocalNonlinearSolver,
     material_model::AbstractMaterialModel,
@@ -293,32 +280,93 @@ function _annotate_with_local_solver_cache(
     )
 end
 
-@inline function _setup_solver_cache(
-    wrapper::BackwardEulerStageAnnotation,
-    f::QuasiStaticFunction,
-    solver::MultiLevelNewtonRaphsonSolver,
-)
-    (; integrator, dh, lvh) = f
-    (; local_solver, newton) = solver
+"""
+    setup_local_solver_cache(f, solver)
 
-    local_solver_cache = _setup_local_solver_cache(solver.local_solver, integrator, dh, lvh)
+The per-quadrature-point scratch a condensed material needs for its local Newton, or `nothing` when
+nothing is condensed.
 
-    # The previous solution and the timestep are no longer threaded in here: `gto1` supplies them per
-    # call via `GenericFirstOrderTimeParameters`. Only the local solver cache still has to reach the
-    # element.
-    op = setup_operator(
-        f.assembly_strategy,
-        _annotate_with_local_solver_cache(integrator, local_solver_cache),
-        dh,
+Its own step because it depends on neither the operator nor the time scheme -- only on the local
+solver, the integrator and the two handlers -- while two later steps both need it: the annotated
+operator, so the element can reach the scratch, and the multilevel Newton cache, so `nlsolve!` can
+report a local failure. Threading it explicitly is a consequence of the element reaching its scratch
+through an annotated model tree; a slot in `FerriteOperators`' assembly workspace would remove the
+need.
+"""
+setup_local_solver_cache(f::AbstractSolidMechanicsFunction, solver::AbstractNonlinearSolver) =
+    nothing
+setup_local_solver_cache(f::QuasiStaticFunction, solver::MultiLevelNewtonRaphsonSolver) =
+    _setup_local_solver_cache(solver.local_solver, f.integrator, f.dh, f.lvh)
+setup_local_solver_cache(f::ElastodynamicsFunction, solver::MultiLevelNewtonRaphsonSolver) =
+    setup_local_solver_cache(f.structural, solver)
+
+# `gto1` supplies the previous solution and the timestep per call via
+# `GenericFirstOrderTimeParameters`, so only the local solver cache has to reach the element here.
+setup_stage_operator(f::QuasiStaticFunction, solver::BackwardEulerSolver, local_solver_cache, t₀) =
+    setup_operator(
+        get_strategy(f),
+        _annotate_with_local_solver_cache(f.integrator, local_solver_cache),
+        f.dh,
     )
+
+"""
+    _setup_backward_euler_stage(f, solver, uprev, t₀)
+
+Build the stage one backward Euler step poses, together with the nonlinear solver cache for it.
+
+Backward Euler condenses nothing, so the stage is a [`FullStateStage`](@ref) whose unknowns are the
+function's. The operator is built here rather than by the nonlinear solver because it belongs to the
+stage: it is the annotated one, carrying the local solver cache down to the element caches.
+"""
+@inline function _setup_backward_euler_stage(
+    f::QuasiStaticFunction,
+    solver::BackwardEulerSolver,
+    uprev,
+    t₀,
+)
+    newton = solver.inner_solver.newton
+
+    local_solver_cache = setup_local_solver_cache(f, solver.inner_solver)
+    op = setup_stage_operator(f, solver, local_solver_cache, t₀)
+
+    # Placeholder parameters of the same type the step function writes, so that the field stays
+    # concretely typed across the first assignment.
+    sf = FullStateStage(
+        f,
+        op,
+        FerriteOperators.GenericFirstOrderTimeParameters(nothing, t₀, zero(t₀), uprev),
+    )
+
+    return BackwardEulerStageCache(
+        sf,
+        _setup_multilevel_newton_cache(sf, local_solver_cache, newton, ndofs(f.dh)),
+    )
+end
+
+"""
+    _setup_multilevel_newton_cache(sf, local_solver_cache, newton, ndofs)
+
+Wrap an already built stage into a [`MultiLevelNewtonRaphsonSolverCache`](@ref).
+
+The operator the stage carries is the only thing that differs between time schemes: backward Euler
+hands over the assembled linearization directly, Newmark hands over the same operator wrapped in a
+[`NewmarkStageOperator`](@ref) that adds the inertia contribution.
+
+`ndofs` sizes the linear system, which for a condensed function is shorter than the stage's unknowns
+-- the internal variables are condensed at quadrature point level and never enter it.
+"""
+function _setup_multilevel_newton_cache(sf, local_solver_cache, newton, ndofs)
     T = Float64
-    residual = Vector{T}(undef, ndofs(dh))#solution_size(G))
-    Δu = Vector{T}(undef, ndofs(dh))#solution_size(G))
+    f = getfunction(sf)
+    op = getoperator(sf)
+    residual = Vector{T}(undef, ndofs)
+    Δu = Vector{T}(undef, ndofs)
 
     # Connect both solver caches. Same materialization as the plain Newton's `setup_solver_cache`:
     # `KrylovMGSolver` reaches `init` as a description and has to be built into a LinearSolve
     # algorithm with its `precs` callable first, and it carries its own iteration budget.
-    inner_prob = LinearSolve.LinearProblem(op.J, residual; u0 = Δu)
+    J = getJ(op)
+    inner_prob = LinearSolve.LinearProblem(J, residual; u0 = Δu)
     maxiters = _linear_maxiters(newton.inner_solver)
     init_kw = maxiters === nothing ? (;) : (; maxiters = maxiters)
     inner_cache = init(
@@ -328,10 +376,9 @@ end
         init_kw...,
     )
     @assert inner_cache.b === residual
-    @assert inner_cache.A === op.J
+    @assert inner_cache.A === J
 
     newton_cache = NewtonRaphsonSolverCache(
-        op,
         residual,
         newton,
         inner_cache,
@@ -379,9 +426,7 @@ function setup_solver_cache(
         _u,
         _uprev,
         copy(_u),
-        BackwardEulerStageCache(
-            setup_solver_cache(BackwardEulerStageAnnotation(f, _u, _uprev), solver.inner_solver),
-        ),
+        _setup_backward_euler_stage(f, solver, _uprev, t₀),
         solver.monitor,
     )
 
@@ -428,18 +473,25 @@ function perform_backward_euler_step!(
     Δt,
 )
     update_constraints!(f, cache, t + Δt)
-    # `gto1`: hand the nonlinear solver the previous solution and the timestep as *parameters*
-    # instead of mutating them into the element caches beforehand. `update_stage!` is what used to do
-    # the mutating and is now unnecessary.
+    sf = stage_info.stage_function
+    # `gto1`: the previous solution and the timestep reach the element as *parameters* of the call,
+    # so nothing has to be written into the element caches first.
     #
     # The leading `nothing` is the inner parameter object, which FerriteOperators forwards to the
     # element via `query_element_parameters(element, cell, ivh, p.p)`. It is the slot reserved for the
     # parameters being *optimized* — not the model's parameters in general, which stay in the model
     # struct. Nothing is optimized here, hence `nothing`. See the `nlsolve!` docstring.
-    p = FerriteOperators.GenericFirstOrderTimeParameters(nothing, t + Δt, Δt, cache.uₙ₋₁)
-    if !nlsolve!(cache.uₙ, f, stage_info.nlsolver, t + Δt, p)
+    set_stage_parameters!(
+        sf,
+        FerriteOperators.GenericFirstOrderTimeParameters(nothing, t + Δt, Δt, cache.uₙ₋₁),
+    )
+    # Nothing is condensed, so the stage vector aliases the state and both transfer hooks are no-ops.
+    z = cache.uₙ
+    init_stage!(z, sf, cache.uₙ)
+    if !nlsolve!(z, sf, stage_info.nlsolver, t + Δt)
         return false
     end
+    update_state!(cache.uₙ, sf, z)
     return true
 end
 

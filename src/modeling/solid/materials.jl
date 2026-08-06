@@ -1270,25 +1270,9 @@ setup_internal_cache(
     qr::QuadratureRule,
     sdh::SubDofHandler,
 ) = setup_contraction_model_cache(material_model.contraction_model, qr, sdh)
-setup_internal_cache(
-    material_model::Union{
-        <:ElastodynamicsModel{<:ActiveStressModel},
-        <:ElastodynamicsModel{<:ExtendedHillModel},
-        <:ElastodynamicsModel{<:GeneralizedHillModel},
-    },
-    qr::QuadratureRule,
-    sdh::SubDofHandler,
-) = setup_contraction_model_cache(material_model.rhs.contraction_model, qr, sdh)
 internal_variable_evolution(
     material_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel},
 ) = internal_variable_evolution(material_model.contraction_model)
-internal_variable_evolution(
-    material_model::Union{
-        <:ElastodynamicsModel{<:ActiveStressModel},
-        <:ElastodynamicsModel{<:ExtendedHillModel},
-        <:ElastodynamicsModel{<:GeneralizedHillModel},
-    },
-) = internal_variable_evolution(material_model.rhs.contraction_model)
 
 # TODO this actually belongs to the multi-level newton file :)
 # Dual (global cache and element-level cache) use for now to make it non-allocating.
@@ -1809,6 +1793,9 @@ Base.@kwdef struct LinearMaxwellMaterial{T, sdim} <: AbstractMaterialModel
 end
 LinearMaxwellMaterial(E₀::T, Eₗ::T, μ::T, η₁::T, ν::T) where {T} =
     LinearMaxwellMaterial{T, 3}(E₀, Eₗ, μ, η₁, ν)
+
+# The internal variable is the viscous strain, which vanishes in the undeformed reference state.
+default_initial_state!(uq, ::LinearMaxwellMaterial) = fill!(uq, zero(eltype(uq)))
 
 internal_variable_size(model::QuasiStaticModel, cid, qp) =
     internal_variable_size(model.material_model, cid, qp)

@@ -364,8 +364,8 @@ end
             ),
             timestepper,
         )
-        # VTKGridFile("SolidMechanicsIntegrationDebug", i.cache.inner_solver_cache.op.dh.grid) do vtk
-        #     write_solution(vtk, i.cache.inner_solver_cache.op.dh, i.u)
+        # VTKGridFile("SolidMechanicsIntegrationDebug", i.f.dh.grid) do vtk
+        #     write_solution(vtk, i.f.dh, i.u)
         # end
     end
 
@@ -413,9 +413,9 @@ end
         )
         # VTKGridFile(
         #     "SolidMechanicsIntegrationDebug",
-        #     i.cache.stage.nlsolver.global_solver_cache.op.dh.grid,
+        #     i.f.dh.grid,
         # ) do vtk
-        #     write_solution(vtk, i.cache.stage.nlsolver.global_solver_cache.op.dh, i.u)
+        #     write_solution(vtk, i.f.dh, i.u)
         # end
 
         test_solve_contractile_cuboid(
@@ -955,6 +955,45 @@ end
     end
     @test integrator.sol.retcode == SciMLBase.ReturnCode.ConvergenceFailure
     @test integrator.t == 0.0
+end
+
+@testset "A failed homotopy solve shrinks dt once, not twice" begin
+    # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
+    # solve-failure case, the controller's reject hook owns the convergence-rate case.
+    mesh = generate_mesh(Hexahedron, (2, 1, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 0.2, 0.2)))
+    ms = ConstantCoefficient(
+        OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> [0.0, 0.0, 0.0], [1, 2, 3]),
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> [0.6t, 0.0, 0.0], [1, 2, 3]),
+    ]
+    f = semidiscretize(
+        QuasiStaticModel(:d, PK1Model(Guccione1991PassiveModel(), ms), ()),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    integrator = init(
+        QuasiStaticProblem(f, (0.0, 1.0)),
+        # A tolerance the Newton cannot reach, so every attempt fails.
+        HomotopyPathSolver(
+            NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 1, tol = 1e-30),
+        ),
+        dt = 0.2,
+        verbose = false,
+    )
+    dt₀ = integrator.dt
+    with_logger(NullLogger()) do
+        try
+            step!(integrator)
+        catch
+            # the solve gives up eventually; what is asserted is how far `dt` fell on the way
+        end
+    end
+    ff = integrator.opts.failfactor
+    @test integrator.stats.nreject > 1
+    # Two-sided: `≤` alone is also satisfied by a `dt` that never shrank, which is the opposite bug.
+    @test ff^(integrator.stats.nreject - 1) ≤ dt₀ / integrator.dt ≤ ff^integrator.stats.nreject
 end
 
 """

@@ -37,10 +37,21 @@ BackwardEulerSolver
 ForwardEulerCellSolver
 AdaptiveForwardEulerSubstepper
 HomotopyPathSolver
+NewmarkSolver
 ```
 
 ## Operator Splitting Adaptivity
 
 ```@docs
 Thunderbolt.ReactionTangentController
+```
+
+## Step size control
+
+```@docs
+Thunderbolt.PIDController
+Thunderbolt.adaptive_order
+Thunderbolt.set_error_estimate!
+Thunderbolt.velocity
+Thunderbolt.acceleration
 ```

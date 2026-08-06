@@ -9,9 +9,8 @@ abstract type AbstractTimeSolverCache end
 getJ(op) = op.J
 
 # Nonlinear
-function setup_operator(f::NullFunction, solver::AbstractSolver)
-    return NullOperator{Float64, solution_size(f), solution_size(f)}()
-end
+setup_stage_operator(f::NullFunction, solver::AbstractSolver, local_solver_cache, t₀) =
+    NullOperator{Float64, solution_size(f), solution_size(f)}()
 
 # Linear
 # Unrolled to disambiguate
@@ -95,9 +94,24 @@ function setup_assembled_operator(
 end
 
 # Nonlinear
-function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
-    return setup_operator(get_strategy(f), f.integrator, f.dh)
-end
+"""
+    setup_stage_operator(f, solver, local_solver_cache, t₀)
+
+The operator the stage of `solver` solves with, for the function `f`.
+
+Dispatches on the **pair**, because what is assembled and which dof handler it is assembled against
+are both properties of the combination: a continuation poses the internal forces alone, backward Euler
+poses them with a condensed local problem underneath, and Newmark poses them together with an inertia
+term. Each method therefore names its own handler; nothing infers one from `f`.
+
+Distinct from the `setup_operator(strategy, integrator, dh)` family, which materializes one integrator
+against one handler and knows nothing about who will solve with it.
+
+`local_solver_cache` is the per-quadrature-point scratch from [`setup_local_solver_cache`](@ref), or
+`nothing` where nothing is condensed. `t₀` is the time any operator that has to be assembled once at
+setup is assembled at.
+"""
+function setup_stage_operator end
 
 function update_constraints!(
     f::AbstractSemidiscreteFunction,

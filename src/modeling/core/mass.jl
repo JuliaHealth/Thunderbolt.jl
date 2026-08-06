@@ -36,7 +36,7 @@ function assemble_element!(Mₑ::AbstractMatrix, cell, element_cache::BilinearMa
             Nᵢ = shape_value(cellvalues, qp, i)
             for j = 1:n_basefuncs
                 Nⱼ = shape_value(cellvalues, qp, j)
-                Mₑ[i, j] += ρ * Nᵢ * Nⱼ * dΩ
+                Mₑ[i, j] += ρ * (Nᵢ ⋅ Nⱼ) * dΩ
             end
         end
     end
