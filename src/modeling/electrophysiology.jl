@@ -97,7 +97,72 @@ Supertype for all ionic models in Thunderbolt.
 """
 abstract type AbstractIonicModel end
 
-state_symbol(ionic_model::AbstractIonicModel, sidx::Int) = Symbol("s$sidx")
+"""
+    num_states(ionic_model) -> Int
+    num_states(::Type{<:AbstractIonicModel})
+
+Length of the model's local state vector. Like [`state_symbols`](@ref) this is a property of the model
+*type*; implementations dispatch on the type and the instance form forwards.
+"""
+num_states(model::AbstractIonicModel) = num_states(typeof(model))
+
+"""
+    state_symbols(ionic_model)              -> NTuple{num_states(ionic_model), Symbol}
+    state_symbols(::Type{<:AbstractIonicModel})
+
+Names of the local state variables, in the order they occupy the model's local state vector.
+
+Names are a property of the model *type*, so implementations dispatch on the type and the instance form
+forwards. The default is `(:φₘ, :s1, :s2, …)`; override it when the transmembrane potential does not come
+first, or to give the remaining states meaningful names.
+"""
+state_symbols(model::AbstractIonicModel) = state_symbols(typeof(model))
+function state_symbols(::Type{M}) where {M <: AbstractIonicModel}
+    return ntuple(i -> i == 1 ? transmembranepotential_symbol(M) : Symbol(:s, i-1), num_states(M))
+end
+
+"""
+    transmembranepotential_symbol(ionic_model) -> Symbol
+    transmembranepotential_symbol(::Type{<:AbstractIonicModel})
+
+Which entry of [`state_symbols`](@ref) plays the role of the transmembrane potential. Defaults to `:φₘ`.
+
+This is a *role*, not a user-facing name: the field a `MonodomainModel` exposes is named independently, so
+the two need not agree.
+"""
+transmembranepotential_symbol(model::AbstractIonicModel) =
+    transmembranepotential_symbol(typeof(model))
+transmembranepotential_symbol(::Type{<:AbstractIonicModel}) = :φₘ
+
+"""
+    transmembranepotential_index(ionic_model) -> Int
+
+Position of the transmembrane potential in the local state vector, derived from [`state_symbols`](@ref) and
+[`transmembranepotential_symbol`](@ref) so that a model's state names and the index cannot disagree. The
+potential may therefore sit at any index.
+
+Both inputs depend only on the model *type*, so this folds to a literal and no `Symbol` survives into the
+pointwise kernels. It is deliberately *not* a `@generated` function: a generator runs in the world age of
+the caller's compilation, so a cell model defined by a user after Thunderbolt was loaded would be invisible
+to it.
+"""
+@inline function transmembranepotential_index(ionic_model::AbstractIonicModel)
+    idx = findfirst(==(transmembranepotential_symbol(ionic_model)), state_symbols(ionic_model))
+    idx === nothing && _no_transmembrane_potential(ionic_model)
+    return idx
+end
+
+@noinline function _no_transmembrane_potential(ionic_model)
+    φsym = transmembranepotential_symbol(ionic_model)
+    return error(
+        "Cannot locate the transmembrane potential in $(nameof(typeof(ionic_model))): its " *
+        "`transmembranepotential_symbol` is $(repr(φsym)), but `state_symbols` returns " *
+        "$(state_symbols(ionic_model)). Implement " *
+        "`Thunderbolt.state_symbols(::Type{<:$(nameof(typeof(ionic_model)))})` naming every state " *
+        "(including $(repr(φsym))), or override `Thunderbolt.transmembranepotential_symbol` if the " *
+        "potential goes by another name in this model.",
+    )
+end
 
 """
 Models where all states are described by Hodgkin-Huxley type ion channels.
@@ -260,34 +325,62 @@ struct MonodomainModel{
     F3,
     STIM <: TransmembraneStimulationProtocol,
     ION <: AbstractIonicModel,
+    CS,
 } <: AbstractEPModel
     χ::F1
     Cₘ::F2
     κ::F3
     stim::STIM
     ion::ION
-    # TODO the variables below should be queried from the ionic model
+    # Which coordinate the cell model is handed as its `x`, as a coefficient -- a Cartesian position, a
+    # generalized coordinate, a cell index. It sits here next to `κ` and `stim` because it is a modelling
+    # choice like any other spatially varying input, and because a `Dict` of subdomain models can then
+    # give a 1D Purkinje network and 3D tissue different coordinate systems. `nothing` when the cell model
+    # ignores its coordinate.
+    cell_coordinates::CS
     transmembrane_solution_symbol::Symbol
     internal_state_symbol::Symbol
 end
+
+MonodomainModel(χ, Cₘ, κ, stim, ion, φsym::Symbol, ssym::Symbol) =
+    MonodomainModel(χ, Cₘ, κ, stim, ion, nothing, φsym, ssym)
 
 get_field_variable_names(model::MonodomainModel) = (model.transmembrane_solution_symbol,)
 
 reaction_solution_symbol(model::MonodomainModel) = model.transmembrane_solution_symbol
 
-"""
-    ReactionDiffusionSplit(model)
-    ReactionDiffusionSplit(model, coeff)
-Annotation for the classical reaction-diffusion split of a given model. The
-second argument is a coefficient describing the input `x` for the reaction model rhs,
-which is usually some generalized coordinate.
-"""
-struct ReactionDiffusionSplit{mType, csType}
-    model::mType
-    cs::csType
+# The cell state is quadrature-point-local state in exactly the sense the solid mechanics materials mean
+# it, so it is declared through the same interface. The transmembrane potential is excluded: it is a field
+# the heat problem solves for, and it aliases one slot of every point's local state vector.
+function gather_internal_variable_infos(model::MonodomainModel)
+    return (InternalVariableInfo(model.internal_state_symbol, num_states(model.ion) - 1),)
 end
 
-ReactionDiffusionSplit(model) = ReactionDiffusionSplit(model, nothing)
+"""
+    internal_state_components(model) -> Vector{Int}
+
+Which slots of a point's local state vector the model's *internal* state occupies, i.e. everything except
+the transmembrane potential. Not necessarily contiguous - `ParametrizedAlievPanfilovModel` carries the
+potential at index 2 of 2, so its internal state is slot 1.
+"""
+function internal_state_components(model::MonodomainModel)
+    ion = reaction_model(model)
+    φidx = transmembranepotential_index(ion)
+    return [i for i = 1:num_states(ion) if i != φidx]
+end
+
+"""
+    ReactionDiffusionSplit(model)
+
+Annotation for the classical reaction-diffusion split of a given model.
+
+The coordinate handed to the reaction model lives on the model itself
+([`MonodomainModel`](@ref)'s `cell_coordinates`), not here, so that it survives any other split
+annotation and can differ between subdomains.
+"""
+struct ReactionDiffusionSplit{mType}
+    model::mType
+end
 
 include("cells/aliev-panfilov.jl")
 include("cells/fhn.jl")

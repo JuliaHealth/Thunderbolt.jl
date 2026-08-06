@@ -54,18 +54,63 @@ Quadrature-point-local state ("internal variables") is declared through:
 
 ```@docs
 Thunderbolt.gather_internal_variable_infos
+Thunderbolt.internal_variable_size
 ```
 
-together with `internal_variable_size(model, cid, qp)` and `default_initial_state!(Q, model)`.
+together with `default_initial_state!(Q, model)`.
+
+!!! warning "The size is not a constant in general"
+    `internal_variable_size` takes a cell and a quadrature point because a model may size its local state
+    per point — FE² and computational homogenization solve a nested boundary value problem at every
+    quadrature point, and those problems need not have the same number of dofs.
+
+    Every material in the package today is size-constant, and the machinery around them currently
+    *assumes* it in four places: `get_number_of_internal_dofs_per_element` sizes a whole subdomain from
+    one number, `_qs_split_unknowns` reshapes a cell's block into a rectangular
+    `(size_per_qp, nqp)` array, `setup_local_solve_reports` divides to recover `nqp`, and the local
+    solver cache allocates one `J`/residual/corrector. `InternalVariableHandler` itself stores one offset
+    per *cell*, so a ragged per-point layout is not expressible yet either.
+
+    Supporting a varying size therefore means changing the storage layout, not only this function. The
+    argument list is what keeps that door open, and each of the sites above says so where it assumes
+    otherwise.
 
 ## Ionic cell models
 
-Implement `num_states(model)`, `transmembranepotential_index(model)`,
+Implement `num_states(::Type{Model})`, `state_symbols(::Type{Model})`,
 `default_initial_state(model)` and `cell_rhs!(du, u, x, t, cell_parameters)`, where `u` is the full
 local state vector. Models that also provide the reaction/state split implement `reaction_rhs!` and
 `state_rhs!`, which an IMEX or Rush–Larsen integrator can exploit.
 
+The state count and the state names are properties of the model *type*, so they dispatch on the type;
+instance-level forwarders are provided.
+
+`transmembranepotential_index(model)` is **derived**, not implemented: it is the position of
+[`transmembranepotential_symbol`](@ref Thunderbolt.transmembranepotential_symbol) within
+[`state_symbols`](@ref Thunderbolt.state_symbols). The potential may therefore sit at any index — as it
+does in `ParametrizedAlievPanfilovModel`, which carries it second — and a model whose names and role
+symbol disagree fails loudly at setup instead of silently reading the wrong state.
+
+```@docs
+Thunderbolt.state_symbols
+Thunderbolt.transmembranepotential_symbol
+Thunderbolt.transmembranepotential_index
+```
+
 See `src/modeling/cells/fhn.jl` for a minimal example.
+
+## Naming quantities in the solution vector
+
+The three interfaces above describe a *model*. What a semidiscrete **function**'s solution vector holds
+is answered by [`solution_variables`](@ref Thunderbolt.solution_variables), which every consumer —
+initial conditions, post-processing, IO — is built on. A function type implements that one method; the
+descriptors it returns carry everything else.
+
+```@docs
+Thunderbolt.solution_variables
+Thunderbolt.SolutionVariable
+Thunderbolt.StatePointSet
+```
 
 ## Material models
 
@@ -106,14 +151,18 @@ These are easily confused. They are *not* variants of one function:
 
 | Function | Scope |
 | :------- | :---- |
-| `default_initial_state!(Q, material_model)` | one quadrature point of a material |
-| `default_initial_state(ionic_model)` | one point of a pointwise cell model |
-| `default_initial_condition!(u, f)` | an entire semidiscrete function |
+| `default_initial_state!(Q, model)` | one evaluation point of a model — a material at a quadrature point, a cell model at a nodal point, a lumped circuit |
+| `default_initial_state(ionic_model)` | the same, for cell models that return their state rather than write it |
+| `default_initial_condition!(u, f)` | an entire semidiscrete **function** |
 
-!!! warning
-    `default_initial_state(ionic_model)` currently has no consumers inside the package, although it
-    is taught as required API in the how-to guide. Initial conditions for EP problems must still be
-    set by hand.
+The first two are the *model's* business and the third the *function's*: `default_initial_condition!`
+walks [`solution_variables`](@ref Thunderbolt.solution_variables) and asks each model for its own
+default, so a model author never writes solution-vector indices. `create_initial_condition(f)`
+allocates and does this in one step.
+
+!!! note "Write only what you own"
+    `default_initial_condition!` may assume `u` is already zeroed and must write only the entries it
+    owns. That is what lets it recurse into an operator split without a child clobbering its siblings.
 
 ## Assembly-facing protocol
 

@@ -33,6 +33,10 @@ replace.
 The per-cell quadrature point count is recovered from the [`InternalVariableHandler`](@ref), which
 lays out `nqp * ndofs_per_quadrature_point` condensed unknowns per cell. `cellset` restricts the
 store to the subdomain this solver serves; cells outside it get an empty range.
+
+Dividing to recover `nqp` presumes one size for every quadrature point of the cell, the same assumption
+the element layout and the local solver cache make; see [`internal_variable_size`](@ref) for the case that
+breaks it.
 """
 function setup_local_solve_reports(dh, lvh, ndofs_per_quadrature_point::Int, cellset)
     ndofs_per_quadrature_point == 0 && return nothing

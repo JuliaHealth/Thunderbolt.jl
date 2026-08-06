@@ -798,6 +798,8 @@ end
 
 default_initial_state!(uq, model::PrestressedMechanicalModel) =
     default_initial_state!(uq, model.inner_model)
+gather_internal_variable_infos(model::PrestressedMechanicalModel) =
+    gather_internal_variable_infos(model.inner_model)
 
 function setup_coefficient_cache(
     m::PrestressedMechanicalModel,
@@ -1001,6 +1003,8 @@ function setup_coefficient_cache(m::PK1Model, qr::QuadratureRule, sdh::SubDofHan
 end
 
 default_initial_state!(uq, model::PK1Model) = default_initial_state!(uq, model.internal_model)
+gather_internal_variable_infos(model::PK1Model) =
+    gather_internal_variable_infos(model.internal_model)
 
 setup_internal_cache(material_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) =
     setup_internal_cache(material_model.internal_model, qr, sdh)
@@ -1261,7 +1265,11 @@ function stress_and_tangent(model::ActiveStressModel, F::Tensor{2}, coefficients
     return ∂Ψ∂F + P2, ∂²Ψ∂F² + ∂2
 end
 
-function gather_internal_variable_infos(model::ActiveStressModel)
+# The same three models that forward `default_initial_state!` above. Forwarding one without the other
+# would let a stateful contraction model declare no internal variables while still trying to write them.
+function gather_internal_variable_infos(
+    model::Union{GeneralizedHillModel, ExtendedHillModel, ActiveStressModel},
+)
     return gather_internal_variable_infos(model.contraction_model)
 end
 
@@ -1797,22 +1805,29 @@ LinearMaxwellMaterial(E₀::T, Eₗ::T, μ::T, η₁::T, ν::T) where {T} =
 # The internal variable is the viscous strain, which vanishes in the undeformed reference state.
 default_initial_state!(uq, ::LinearMaxwellMaterial) = fill!(uq, zero(eltype(uq)))
 
+"""
+    internal_variable_size(model, cid, qp) -> Int
+
+How many values of quadrature-point-local state one quadrature point of `model` carries.
+
+**This is not a constant in general**, which is why it takes the cell and the quadrature point rather than
+the model alone. A model that solves a nested boundary value problem per quadrature point -- FE² and
+computational homogenization generally -- sizes its local state by that problem's dof count, and that
+differs from point to point. Such a model implements this method directly and ignores the default below.
+
+The default *is* constant: it sums [`gather_internal_variable_infos`](@ref), which is fixed by the model
+type, and therefore folds to a literal. Every material in the package today takes that route, and the
+assembly path relies on it -- see the callers that pass `nothing, nothing` and the note on
+[`InternalVariableHandler`](@ref) storage. Making a genuinely per-point size work needs those call sites
+and the storage layout to carry the variation too; the signature is what keeps that door open.
+"""
 internal_variable_size(model::QuasiStaticModel, cid, qp) =
     internal_variable_size(model.material_model, cid, qp)
-function internal_variable_size(model::AbstractMaterialModel, cid, qp)
-    return _compute_internal_variable_size(0, gather_internal_variable_infos(model))
-end
+internal_variable_size(model::AbstractMaterialModel, cid, qp) =
+    _compute_internal_variable_size(gather_internal_variable_infos(model))
 
-function _compute_internal_variable_size(total, lvis::Base.AbstractVecOrTuple)
-    for lvi in lvis
-        total += _compute_internal_variable_size(total, lvi)
-    end
-    return total
-end
-
-function _compute_internal_variable_size(total, lvi::InternalVariableInfo)
-    return lvi.size
-end
+_compute_internal_variable_size(lvis::Base.AbstractVecOrTuple) =
+    sum(lvi -> lvi.size, lvis; init = 0)
 
 function solve_internal_timestep(
     material::LinearMaxwellMaterial,

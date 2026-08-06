@@ -48,6 +48,9 @@ function Thunderbolt.MTKLumpedCicuitModel(
     return MTKLumpedCicuitModel(prob, pressure_symbols)
 end
 
+Thunderbolt.state_symbols(model::MTKLumpedCicuitModel) =
+    Tuple(SymbolicIndexingInterface.variable_symbols(model.prob))
+
 function Thunderbolt.get_variable_symbol_index(
     model::MTKLumpedCicuitModel,
     symbol::ModelingToolkit.Num,

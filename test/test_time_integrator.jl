@@ -274,15 +274,15 @@ end
 
 # A cell model whose right hand side depends on t, so a substepper that froze the clock
 # across the outer Δt would integrate the wrong function.
-struct TimeProbeCell end
-Thunderbolt.num_states(::TimeProbeCell) = 1
-Thunderbolt.transmembranepotential_index(::TimeProbeCell) = 1
+struct TimeProbeCell <: Thunderbolt.AbstractIonicModel end
+Thunderbolt.num_states(::Type{TimeProbeCell}) = 1
+Thunderbolt.state_symbols(::Type{TimeProbeCell}) = (:φₘ,)
 Thunderbolt.cell_rhs!(du, u, x, t, ::TimeProbeCell) = (du[1] = 1.0 + sin(t); nothing)
 
 @testset "Substepper evaluates each substep at its own time" begin
     t₀, Δt, substeps = 2.0, 0.4, 4
     prob = Thunderbolt.PointwiseODEProblem(
-        Thunderbolt.PointwiseODEFunction(TimeProbeCell(), nothing, 1:1),
+        Thunderbolt.PointwiseODEFunction(TimeProbeCell(), nothing, 1:1, :s),
         zeros(1),
         (t₀, t₀ + Δt),
     )

@@ -65,7 +65,7 @@ end
 @testset "3D0D Coupled" begin
     fluid_model_init = RSAFDQ2022LumpedCicuitModel()
     u0 = zeros(Thunderbolt.num_states(fluid_model_init))
-    Thunderbolt.default_initial_condition!(u0, fluid_model_init)
+    Thunderbolt.default_initial_state!(u0, fluid_model_init)
     prob = ODEProblem(
         (du, u, p, t) -> Thunderbolt.lumped_driver!(du, u, t, [], p),
         u0,

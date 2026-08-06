@@ -9,8 +9,9 @@ end
 
 const AlievPanfilovModel = ParametrizedAlievPanfilovModel{Float64};
 
-transmembranepotential_index(cell_model::ParametrizedAlievPanfilovModel) = 2
-num_states(::ParametrizedAlievPanfilovModel) = 2
+num_states(::Type{<:ParametrizedAlievPanfilovModel}) = 2
+# The recovery variable comes first here, so the transmembrane potential sits at index 2.
+state_symbols(::Type{<:ParametrizedAlievPanfilovModel}) = (:s, :φₘ)
 default_initial_state(::ParametrizedAlievPanfilovModel) = [0.0, 0.0]
 
 function cell_rhs!(

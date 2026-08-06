@@ -347,7 +347,7 @@ function _newmark_hermite(integrator::ThunderboltTimeIntegrator, cache, t, ::Val
     # The `D`-th derivative lives in the *displacement* block whatever `D` is -- the velocity block
     # carries the next one, so that a state vector filled at `D = 0` is internally consistent. Reading
     # it here would return the derivative one order too high.
-    return out[displacement_dofs(integrator.f)]
+    return out[integrator.f.state_mapping.dofs]
 end
 
 function _newmark_endpoint!(out, integrator, cache, ::Val{D}) where {D}

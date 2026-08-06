@@ -15,12 +15,21 @@ end
 HeterogeneousFHNModel(::Type{T}, e::F) where {T,F} = HeterogeneousFHNModel{T,F}(0.1,0.5,1.0,0.0,e)
 
 # We now need to dispatch all functions of the cell EP API.
-# First we need to give an index for the transmembrane potential, which we e.g. need for operator splitting methods and during post-processing.
-Thunderbolt.transmembranepotential_index(cell_model::HeterogeneousFHNModel) = 1
-# Now we need the number of state variables in the model.
-# Here we have only a single internal state $s$.
-Thunderbolt.num_states(::HeterogeneousFHNModel) = 1
+# First the number of state variables in the model.
+# Here the local state is the transmembrane potential $\varphi_{\textrm{m}}$ together with a single
+# internal state $s$, so there are two.
+# The state count and the state names are properties of the *type*, so they are dispatched on it.
+Thunderbolt.num_states(::Type{<:HeterogeneousFHNModel}) = 2
+# Then we name the states, in the order they occupy the local state vector.
+# This is what lets a solution vector be addressed by name, and it is also how the index of the
+# transmembrane potential is found -- so the potential may sit at any position, as long as it is named.
+Thunderbolt.state_symbols(::Type{<:HeterogeneousFHNModel}) = (:φₘ, :s)
+# !!! note
+#     `transmembranepotential_index` is *derived* from the two functions above and must not be
+#     implemented. If your model calls the potential something other than `:φₘ`, override
+#     `Thunderbolt.transmembranepotential_symbol` instead.
 # For convenience, we should dispatch this function which contains some admissible initial state for the model in its default parametrization.
+# It is what `create_initial_condition` seeds a solution vector with.
 Thunderbolt.default_initial_state(::HeterogeneousFHNModel) = [0.0, 0.0]
 # Finally we also need to provide the right hand side of the model.
 # The API is similar to what we have in SciML, but we have one additional input `x`.

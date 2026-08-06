@@ -55,6 +55,24 @@ function store_timestep_field!(
     Ferrite._vtk_write_node_data(io.current_file.vtk, data, name)
 end
 
+"""
+    store_timestep_field!(io, t, u, v::FieldVariable, [name])
+
+Write the field `v` out of the *whole* solution vector `u`, so a caller does not have to know which
+`DofHandler` the field belongs to or which slice of `u` holds it.
+
+Hoist the descriptor out of the timestep loop -- `solution_variable(f, :displacement)` rebuilds it.
+"""
+function store_timestep_field!(
+    io,
+    t,
+    u::AbstractVector,
+    v::FieldVariable,
+    name::String = String(v.name),
+)
+    return store_timestep_field!(io, t, v.dh, field_view(u, v), v.name, name)
+end
+
 function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
     @assert io.current_file !== nothing
     WriteVTK.vtk_cell_data(io.current_file, u, coeff_name)

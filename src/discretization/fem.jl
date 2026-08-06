@@ -359,13 +359,35 @@ function semidiscretize(
     )
 end
 
+"""
+    _pointwise_state_slot(layout, offset, npoints, nstates, point, state)
+
+Position in the pointwise state vector of `state` at `point`, for a block of `npoints` points carrying
+`nstates` values each, based at the 0-based `offset`.
+
+Both electrophysiology paths derive their heat dof map from this one formula, so the single- and
+multi-subdomain cases cannot disagree about where the transmembrane potential lives.
+"""
+_pointwise_state_slot(::StateBlockedLayout, offset, npoints, nstates, point, state) =
+    offset + (state - 1) * npoints + point
+_pointwise_state_slot(::PointBlockedLayout, offset, npoints, nstates, point, state) =
+    offset + (point - 1) * nstates + state
+
+# The cell model's `x`, evaluated once per state point. `compute_nodal_values` uses the delta property of
+# the interpolation, so this is the ordinary coefficient protocol specialised to nodal points. `cellset`
+# keeps a subdomain's evaluation off its neighbours -- and off any interface `SubDofHandler`, whose
+# interpolation has no reference coordinates to evaluate at.
+_cell_coordinates(model, dh, φsym, cellset = nothing) =
+    model.cell_coordinates === nothing ? nothing :
+    compute_nodal_values(model.cell_coordinates, dh, φsym; cellset)
+
 function semidiscretize(
     split::ReactionDiffusionSplit{<:MonodomainModel},
     discretization::FiniteElementDiscretization,
     mesh::AbstractGrid,
 )
     epmodel = split.model
-    φsym = epmodel.transmembrane_solution_symbol
+    φsym = reaction_solution_symbol(epmodel)
 
     heat_model = TransientDiffusionModel(
         ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
@@ -379,15 +401,23 @@ function semidiscretize(
     ndofsφ = ndofs(dh)
     # TODO we need some information about the discretization of this one, e.g. dofs a nodes vs dofs at quadrature points
     # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
-    nstates_per_point = num_states(epmodel.ion)
+    ion = reaction_model(epmodel)
+    nstates_per_point = num_states(ion)
     odefun = PointwiseODEFunction(
         # TODO epmodel.Cₘ(x)
-        epmodel.ion,
-        split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym),
+        ion,
+        _cell_coordinates(epmodel, dh, φsym),
         1:(nstates_per_point*ndofsφ),
+        epmodel.internal_state_symbol,
     )
-    # TODO this assumes that the transmembrane potential is the first field. Relax this.
-    heat_dofrange = 1:ndofsφ
+    # A single `PointwiseODEFunction` is state blocked, so the transmembrane potential occupies one
+    # contiguous stretch -- but which one depends on where the cell model keeps it, not on an assumption
+    # that it comes first.
+    φidx = transmembranepotential_index(ion)
+    heat_dofrange = [
+        _pointwise_state_slot(StateBlockedLayout(), 0, ndofsφ, nstates_per_point, j, φidx) for
+        j = 1:ndofsφ
+    ]
     ode_dofrange = 1:(nstates_per_point*ndofsφ)
     #
     semidiscrete_ode = GenericSplitFunction(
@@ -417,7 +447,7 @@ function semidiscretize(
     mesh::AbstractGrid,
 )
     models = narrow_dict_types(split.model)
-    semidiscretize(ReactionDiffusionSplit(models, split.cs), discretization, mesh)
+    semidiscretize(ReactionDiffusionSplit(models), discretization, mesh)
 end
 
 function semidiscretize(
@@ -460,42 +490,55 @@ function semidiscretize(
     )
     @assert length(epmodel_symbols) == 1 "All EP models in a domain split must share the same transmembrane potential symbol, got $(epmodel_symbols)."
     φsym = first(epmodel_symbols)
-    xφ = (split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym))
-    heat_dofrange = Int[]
+    # Coordinates are per subdomain now, so they live on the individual `PointwiseODEFunction`s below --
+    # which is what the solver caches read anyway. The multi function's own field stays empty.
+    xφ = nothing
+    # `heat_dofrange` is indexed by *dof of the heat problem*, because `view(u, heat_dofrange)` is what the
+    # heat sub-integrator solves on: entry `j` has to be dof `j` of `dh`. Scattering into a preallocated
+    # map rather than appending per subdomain is what guarantees that, independently of the order the
+    # subdomain dictionary happens to iterate in.
+    heat_dofrange = zeros(Int, ndofs(dh))
     for (name, model) in bulk_models
         if has_pointwise_reaction_part(model) # Bulk models without a reaction part need no ODE block
+            ion = reaction_model(model)
             # Extract dofs associated with subdomain
             subdofs = collect_dofs_on_subdomain(dh, mesh, name)
             # Compute range for states
             mindof, maxdof = extrema(subdofs)
             @assert length(mindof:maxdof) == length(subdofs) "$(mindof:maxdof) does not match length(subdofs)=$(length(subdofs)) => Subdomain is not isolated. "
-            nstates = num_states(reaction_model(model))
+            nstates = num_states(ion)
+            npoints = length(subdofs)
             # The state vector is packed subdomain by subdomain in iteration order, *not* by
             # global dof index, because the number of states per point varies between subdomains.
-            # Hence the range is derived from the running offset, exactly as the heat dof map below.
-            state_range = (offset+1):(offset+nstates*length(subdofs))
-            @info "Mapping state range on $name to $state_range from $(mindof:maxdof)"
+            # Hence the range is derived from the running offset.
+            state_range = (offset+1):(offset+nstates*npoints)
+            @debug "Mapping state range on $name to $state_range from $(mindof:maxdof)"
+
+            xsub = _cell_coordinates(model, dh, φsym, getcellset(mesh, name))
+            xsub === nothing || (xsub = view(xsub, mindof:maxdof))
 
             # Create ode function for subdomain
             push!(
                 inner_functions,
-                PointwiseODEFunction(
-                    reaction_model(model),
-                    xφ === nothing ? nothing : view(xφ, mindof:maxdof),
-                    state_range,
-                ),
+                PointwiseODEFunction(ion, xsub, state_range, model.internal_state_symbol),
             )
 
-            # Map heat dofs
-            heat_dofs_submodel =
-                ((subdofs .- minimum(subdofs)) .* nstates) .+
-                transmembranepotential_index(reaction_model(model)) .+ offset
-            append!(heat_dofrange, heat_dofs_submodel)
+            # Map heat dofs. The children of a `PointwiseMultiODEFunction` are point blocked.
+            φidx = transmembranepotential_index(ion)
+            for (k, dof) in enumerate(subdofs)
+                heat_dofrange[dof] =
+                    _pointwise_state_slot(PointBlockedLayout(), offset, npoints, nstates, k, φidx)
+            end
 
             # Update total number of dofs in split
-            offset += length(subdofs)*num_states(reaction_model(model))
+            offset += npoints*nstates
         end
     end
+    any(iszero, heat_dofrange) && error(
+        "The transmembrane potential field carries dofs that no bulk model claims, so the heat problem " *
+        "would read uninitialised state. Every dof of $(repr(φsym)) has to lie on a subdomain with a " *
+        "pointwise reaction part.",
+    )
     ionicfun = PointwiseMultiODEFunction(inner_functions, xφ)
     ionic_dofrange = 1:offset
 
@@ -823,7 +866,14 @@ function semidiscretize(
         add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
 
         form_names = get_volumetric_weak_form_names(model)
-        @assert length(form_names) == 1
+        # The quadrature is picked per weak form, and this path picks exactly one. A genuinely
+        # multi-form model -- a three-field mixed formulation, say -- needs a quadrature per form
+        # rather than a single choice, so it has to be handled here rather than silently mis-served.
+        length(form_names) == 1 || error(
+            "The model on subdomain \"$name\" ($(typeof(model))) contributes $(length(form_names)) " *
+            "volumetric weak forms ($(join(repr.(form_names), ", "))), but this discretization picks " *
+            "one quadrature rule per subdomain. Multi-form models are not supported here yet.",
+        )
         form_name = first(form_names)
         qrc = _get_quadrature_from_discretization(discretization, form_name) # FIXME we want a more intrusive approach which also takes the model into account here
 

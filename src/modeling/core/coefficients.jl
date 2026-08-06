@@ -143,12 +143,28 @@ function duplicate_for_device(device, cache::ConductivityToDiffusivityCoefficien
     )
 end
 
-function compute_nodal_values(csc::CoordinateSystemCoefficient, dh::DofHandler, field_name::Symbol)
+"""
+    compute_nodal_values(csc, dh, field_name; cellset = nothing)
+
+Evaluate a coordinate system at the dof positions of `field_name`.
+
+`cellset` restricts the evaluation to the `SubDofHandler`s living on those cells. That matters on a mixed
+grid: an interface `SubDofHandler` may carry the same field, but its interpolation has no reference
+coordinates, so evaluating there is neither meaningful nor possible. Entries outside the set are left
+undefined -- the caller asked only for its own subdomain.
+"""
+function compute_nodal_values(
+    csc::CoordinateSystemCoefficient,
+    dh::DofHandler,
+    field_name::Symbol;
+    cellset = nothing,
+)
     Tv = value_type(csc)
     nodal_values = Vector{Tv}(UndefInitializer(), ndofs(dh))
     T = eltype(Tv)
     for sdh in dh.subdofhandlers
         field_name ∈ sdh.field_names || continue
+        cellset === nothing || first(sdh.cellset) ∈ cellset || continue
         ip = Ferrite.getfieldinterpolation(sdh, field_name)
         rdim = Ferrite.getrefdim(ip)
         positions = Vec{rdim, T}.(Ferrite.reference_coordinates(ip))
@@ -170,6 +186,20 @@ function _compute_nodal_values!(nodal_values, qr, cc, sdh)
         end
     end
 end
+
+struct CellIndexCoordinateSystemCache end
+
+duplicate_for_device(device, cache::CellIndexCoordinateSystemCache) = cache
+
+setup_coefficient_cache(::CellIndexCoordinateSystem, ::QuadratureRule, ::SubDofHandler) =
+    CellIndexCoordinateSystemCache()
+
+evaluate_coefficient(
+    ::CellIndexCoordinateSystemCache,
+    geometry_cache::CellCache,
+    ::QuadraturePoint,
+    t,
+) = cellid(geometry_cache)
 
 struct CartesianCoordinateSystemCache{CS, CV}
     cs::CS

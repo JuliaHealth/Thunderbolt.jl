@@ -27,6 +27,20 @@ getcoordinateinterpolation(
 
 
 """
+    CellIndexCoordinateSystem()
+
+The cell index as a coordinate.
+
+Useful where a cell model varies by element rather than by position -- a 1D Purkinje network whose cells
+are distinguished by identity, or heterogeneity tabulated per element. It is a coefficient like any other,
+so it composes with [`AnalyticalCoefficient`](@ref) and can be handed to a `MonodomainModel` as its
+`cell_coordinates` alongside a subdomain that uses a generalized coordinate instead.
+"""
+struct CellIndexCoordinateSystem <: CoordinateSystemCoefficient end
+
+value_type(::CellIndexCoordinateSystem) = Int
+
+"""
     LVCoordinateSystem(dh, u_transmural, u_apicobasal)
 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and

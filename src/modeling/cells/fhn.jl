@@ -14,8 +14,8 @@ end;
 
 const FHNModel = ParametrizedFHNModel{Float64};
 
-transmembranepotential_index(cell_model::ParametrizedFHNModel) = 1
-num_states(::ParametrizedFHNModel) = 2
+num_states(::Type{<:ParametrizedFHNModel}) = 2
+state_symbols(::Type{<:ParametrizedFHNModel}) = (:φₘ, :s)
 default_initial_state(::ParametrizedFHNModel) = [0.0, 0.0]
 
 function cell_rhs!(

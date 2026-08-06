@@ -209,7 +209,10 @@ function _setup_local_solver_cache(
     lvh,
     cellset,
 )
-    singleQsize = internal_variable_size(material_model, nothing, nothing) # FIXME what to do here?
+    # FIXME what to do here? One size is baked into the local solver's `J`, residual and corrector, so a
+    # material whose local state size varies per quadrature point (FE², see `internal_variable_size`)
+    # cannot be served by a single cache.
+    singleQsize = internal_variable_size(material_model, nothing, nothing)
     @debug "Setting up local nonlinear solver with size(Q)=$(singleQsize) for material $(material_model)" _group=:nlsolve
     return GenericLocalNonlinearSolverCache(;
         params = local_solver,
