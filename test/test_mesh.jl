@@ -79,8 +79,15 @@ using Test, Thunderbolt, Tensors
         test_detJ(open_ring_mesh)
     end
 
-    @testset "Linear Hex LV" begin
+    @testset "Linear Mixed LV to Hex" begin
         lv_mesh = Thunderbolt.generate_ideal_lv_mesh(8, 4, 4)
+        test_detJ(lv_mesh)
+        lv_mesh_hex = Thunderbolt.hexahedralize(lv_mesh)
+        test_detJ(lv_mesh_hex)
+    end
+
+    @testset "Linear Hex LV" begin
+        lv_mesh = Thunderbolt.generate_ideal_lv_mesh_hex(8, 4, 4)
         test_detJ(lv_mesh)
         lv_mesh_hex = Thunderbolt.hexahedralize(lv_mesh)
         test_detJ(lv_mesh_hex)
