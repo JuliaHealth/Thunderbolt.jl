@@ -329,7 +329,7 @@ function _newmark_hermite!(out, integrator::ThunderboltTimeIntegrator, cache, t,
     end
     # The condensed internal variables have no derivative here, so they stay linear.
     if D == 0 && !isempty(iv)
-        OS.linear_interpolation!(
+        _linear_interpolation!(
             @view(out[iv]),
             t,
             @view(uprev[iv]),

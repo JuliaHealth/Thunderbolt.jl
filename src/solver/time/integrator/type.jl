@@ -155,7 +155,33 @@ The fallback is linear in `(uprev, u)`. Override for a solver cache that can do 
 a solution derivative at both ends has a Hermite interpolant available at no extra assembly.
 """
 function interpolate_solution!(out, integrator::ThunderboltTimeIntegrator, cache, t)
-    OS.linear_interpolation!(out, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
+    return _linear_interpolation!(
+        out,
+        t,
+        integrator.uprev,
+        integrator.u,
+        integrator.tprev,
+        integrator.t,
+    )
+end
+
+"""
+    _linear_interpolation!(out, t, uprev, u, tprev, tnext)
+
+Linear interpolation between two step endpoints.
+
+Written out rather than taken from `OrdinaryDiffEqOperatorSplitting`, whose spelling of it is a
+private name with a private argument convention. Two lines of arithmetic are not worth a dependency
+that can be renamed without a version bump.
+
+The length of the step is `tnext - tprev` and never `integrator.dt`: once a step is accepted the
+controller has already overwritten `dt` with its next proposal. A zero-length interval occurs before
+the first step, where `uprev == u` and every coordinate gives the same answer.
+"""
+function _linear_interpolation!(out, t, uprev, u, tprev, tnext)
+    Δt = tnext - tprev
+    Θ = iszero(Δt) ? zero(t / oneunit(Δt)) : (t - tprev) / Δt
+    @. out = (1 - Θ) * uprev + Θ * u
     return out
 end
 
