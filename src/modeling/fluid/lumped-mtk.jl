@@ -36,6 +36,6 @@ solution_size(model::MTKLumpedCicuitModel) = length(model.prob.u0)
 num_states(model::MTKLumpedCicuitModel) = length(model.prob.u0)
 num_unknown_pressures(model::MTKLumpedCicuitModel) = length(model.pressure_symbols)
 
-function default_initial_condition!(u, model::MTKLumpedCicuitModel)
+function default_initial_state!(u, model::MTKLumpedCicuitModel)
     u .= model.prob.u0
 end

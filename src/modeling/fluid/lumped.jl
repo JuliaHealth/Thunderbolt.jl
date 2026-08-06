@@ -4,6 +4,28 @@ function solution_size(model::AbstractLumpedCirculatoryModel)
     return num_states(model)
 end
 
+"""
+    state_symbols(model::AbstractLumpedCirculatoryModel) -> Tuple{Vararg{Symbol}}
+
+Names of the circuit's state variables, in the order the driver writes them. This is the single table the
+symbol lookups below are derived from.
+"""
+function state_symbols end
+
+"""
+    get_variable_symbol_index(model, symbol) -> Int
+
+Position of `symbol` in the circuit's state vector.
+"""
+function get_variable_symbol_index(model::AbstractLumpedCirculatoryModel, symbol::Symbol)
+    symbols = state_symbols(model)
+    idx = findfirst(==(symbol), symbols)
+    idx === nothing && error(
+        "Variable named '$symbol' not found in a $(nameof(typeof(model))). Available: $(join(repr.(symbols), ", ")).",
+    )
+    return idx
+end
+
 # TODO SciMLParameter interface
 struct LumpedCirculatoryModelFunction{M, T} <: SciMLBase.AbstractDiffEqFunction{true}
     m::M
@@ -11,6 +33,12 @@ struct LumpedCirculatoryModelFunction{M, T} <: SciMLBase.AbstractDiffEqFunction{
 end
 
 Base.setindex!(m::LumpedCirculatoryModelFunction{<:Any, T}, val::T, i::Int) where {T} = m.p[i] = val
+
+solution_variables(f::LumpedCirculatoryModelFunction) =
+    SolutionVariable[GlobalVariable(symbol, i) for (i, symbol) in enumerate(state_symbols(f.m))]
+
+default_initial_condition!(u::AbstractVector, f::LumpedCirculatoryModelFunction) =
+    default_initial_state!(u, f.m)
 
 #FIXME
 OS.recursive_null_parameters(f::LumpedCirculatoryModelFunction) = SciMLBase.NullParameters()
@@ -34,12 +62,14 @@ struct DummyLumpedCircuitModel{F} <: AbstractLumpedCirculatoryModel
     volume_fun::F
 end
 
+# Deliberately permissive: the single state *is* the chamber volume, whatever the coupling calls it.
 get_variable_symbol_index(model::DummyLumpedCircuitModel, symbol::Symbol) = 1
 
+state_symbols(::DummyLumpedCircuitModel) = (:V,)
 num_states(::DummyLumpedCircuitModel) = 1
 num_unknown_pressures(::DummyLumpedCircuitModel) = 1
 
-function default_initial_condition!(u, model::DummyLumpedCircuitModel)
+function default_initial_state!(u, model::DummyLumpedCircuitModel)
     u[1] = model.volume_fun(0.0)
 end
 
@@ -143,28 +173,26 @@ Base.@kwdef struct RSAFDQ2022LumpedCicuitModel{
 end
 
 num_states(::RSAFDQ2022LumpedCicuitModel) = 12
+# The state order `lumped_driver!` writes. One table, so the symbol lookup below cannot drift from it.
+state_symbols(::RSAFDQ2022LumpedCicuitModel) = (
+    :Vₗₐ,
+    :Vₗᵥ,
+    :Vᵣₐ,
+    :Vᵣᵥ,
+    :psysₐᵣ,
+    :psysᵥₑₙ,
+    :ppulₐᵣ,
+    :ppulᵥₑₙ,
+    :Qsysₐᵣ,
+    :Qsysᵥₑₙ,
+    :Qpulₐᵣ,
+    :Qpulᵥₑₙ,
+)
 num_unknown_pressures(model::RSAFDQ2022LumpedCicuitModel) =
     Int(!model.lv_pressure_given) +
     Int(!model.rv_pressure_given) +
     Int(!model.la_pressure_given) +
     Int(!model.ra_pressure_given)
-function get_variable_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::Symbol)
-    @unpack lv_pressure_given, la_pressure_given, ra_pressure_given, rv_pressure_given = model
-
-    # Try to query index
-    symbol == :Vₗₐ && return 1
-    symbol == :Vₗᵥ && return 2
-    symbol == :Vᵣₐ && return 3
-    symbol == :Vᵣᵥ && return 4
-
-    # Diagnostics
-    valid_symbols = Set{Symbol}()
-    push!(valid_symbols, :Vₗₐ)
-    push!(valid_symbols, :Vₗᵥ)
-    push!(valid_symbols, :Vᵣₐ)
-    push!(valid_symbols, :Vᵣᵥ)
-    @error "Variable named '$symbol' not found. The following symbols are defined and accessible: $valid_symbols."
-end
 
 function get_parameter_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::Symbol)
     @unpack lv_pressure_given, la_pressure_given, ra_pressure_given, rv_pressure_given = model
@@ -185,7 +213,7 @@ function get_parameter_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::
     @error "Variable named '$symbol' not found for model $model. The following symbols are defined and accessible: $valid_symbols."
 end
 
-function default_initial_condition!(u, model::RSAFDQ2022LumpedCicuitModel)
+function default_initial_state!(u, model::RSAFDQ2022LumpedCicuitModel)
     # obtain via pre-pacing in isolation
     u .= [65.0, 120.0, 65.0, 145.0, 10.66, 4.0, 4.67, 3.2, 0.0, 0.0, 0.0, 0.0]
 end

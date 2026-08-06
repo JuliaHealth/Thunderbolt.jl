@@ -68,14 +68,11 @@ get_volumetric_weak_form_names(model::ElastodynamicsModel) = (model.displacement
 
 structural_displacement_symbol(model::ElastodynamicsModel) = model.displacement_symbol
 
-# Stated once for both model families: a domain split must agree on one displacement field.
-function structural_displacement_symbol(
+# Stated once for both model families: a domain split must agree on one displacement field. The generic
+# `_shared_symbol_or_error` does the work, so this stays one line rather than a second implementation.
+structural_displacement_symbol(
     models::Dict{String, <:Union{QuasiStaticModel, ElastodynamicsModel}},
-)
-    symbols = Set(model.displacement_symbol for model in values(models))
-    @assert length(symbols) == 1 "All structural models in a domain split must share the same displacement symbol, got $(symbols)."
-    return first(symbols)
-end
+) = _shared_symbol_or_error(models, model -> model.displacement_symbol, "displacement")
 
 include("solid/energies.jl")
 include("solid/contraction.jl")

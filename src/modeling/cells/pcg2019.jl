@@ -132,8 +132,8 @@ function cell_rhs!(
     return nothing
 end
 
-transmembranepotential_index(cell_model::ParametrizedPCG2019Model) = 1
-num_states(::ParametrizedPCG2019Model) = 7
+num_states(::Type{<:ParametrizedPCG2019Model}) = 7
+state_symbols(::Type{<:ParametrizedPCG2019Model}) = (:φₘ, :h, :m, :f, :s, :xs, :xr)
 function default_initial_state(p::ParametrizedPCG2019Model{T}) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 

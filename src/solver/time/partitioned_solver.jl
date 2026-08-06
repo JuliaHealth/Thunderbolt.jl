@@ -114,7 +114,11 @@ function setup_solver_cache(
     uₙ = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
     uₙ₋₁ = uₙ
     uₙmat = reshape(uₙ, (npoints, ndofs_local))
-    xs = f.x === nothing ? nothing : Adapt.adapt(solver.solution_vector_type, f.x)
+    # `adapt_vector_type`, not `Adapt.adapt`: the coordinates are a vector of `Vec`s or of generalized
+    # coordinates, so only the *container* follows `solution_vector_type`, never the element type. The
+    # other three cache setups already do this; this one did not, and it only went unnoticed because
+    # `f.x` was `nothing` until a coordinate system could be attached to the model.
+    xs = f.x === nothing ? nothing : adapt_vector_type(solver.solution_vector_type, f.x)
 
     return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.batch_size_hint, xs)
 end

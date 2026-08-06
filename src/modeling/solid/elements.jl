@@ -92,7 +92,11 @@ function FerriteOperators.get_number_of_internal_dofs_per_element(
     element_cache::AnyQuasiStaticElementCache,
     sdh::SubDofHandler,
 )
-    nqp          = getnquadpoints(element_cache.cv)
+    nqp = getnquadpoints(element_cache.cv)
+    # `nothing, nothing`: this asks for *one* size and hands it to every cell and every quadrature point
+    # of the subdomain, so it only holds for a material whose local state size is constant. A model whose
+    # size varies per point -- FE², see `internal_variable_size` -- cannot be sized here, and the
+    # `InternalVariableHandler` block this feeds could not express the result either.
     ndofs_per_qp = internal_variable_size(element_cache.constitutive_model, nothing, nothing)
     return Iterators.repeated(ndofs_per_qp*nqp, length(sdh.cellset))
 end
@@ -101,6 +105,8 @@ end
 # unknown vector is laid out as `[fe_dofs | internal_variables]`. Sizes are computed from the cache
 # rather than stored, which keeps `QuasiStaticElementCache` unchanged.
 _qs_nbase(e::AnyQuasiStaticElementCache) = getnbasefunctions(e.cv)
+# Multiplying one size by the quadrature count assumes every point of the cell carries the same amount of
+# state; see `internal_variable_size` for when that stops being true.
 _qs_ninternal(e::AnyQuasiStaticElementCache) =
     internal_variable_size(e.constitutive_model, nothing, nothing)*getnquadpoints(e.cv)
 
@@ -152,6 +158,11 @@ loop can address its own slice as `@view Qₑ[:, qp.i]`.
 
 The internal block is empty for materials without condensed state, in which case the reshape yields a
 `0 × nqp` array and every per-point slice is empty.
+
+The reshape is what makes "one size per quadrature point" a structural assumption of the element layout,
+not merely of the caller: a material whose state size varies between the points of a cell (FE², see
+[`internal_variable_size`](@ref)) has no rectangular block to reshape into. `_qs_ninternal` sizes the
+block by multiplying, so the division here is exact by construction.
 """
 @inline function _qs_split_unknowns(e::AnyQuasiStaticElementCache, uₑ)
     n, ni = _qs_nbase(e), _qs_ninternal(e)

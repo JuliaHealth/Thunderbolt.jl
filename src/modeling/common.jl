@@ -6,6 +6,10 @@ abstract type AbstractInternalModel end
 
 struct EmptyInternalModel <: AbstractInternalModel end
 
+# Stated for this type rather than for `AbstractInternalModel`, so that a new internal model that forgets
+# to declare its state gets a `MethodError` instead of silently reporting none.
+gather_internal_variable_infos(::EmptyInternalModel) = ()
+
 struct EmptyInternalCache end
 
 setup_internal_cache(::EmptyInternalModel, ::QuadratureRule, ::SubDofHandler) = EmptyInternalCache()

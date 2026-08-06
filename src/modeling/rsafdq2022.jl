@@ -9,7 +9,6 @@ mutable struct RSAFDQ2022SingleChamberTying{CVM}
     const volume_method::CVM
     const displacement_symbol::Symbol
     V⁰ᴰval::Float64
-    const V⁰ᴰidx_local::Int
     const V⁰ᴰidx_global::Int
 end
 
@@ -107,6 +106,17 @@ getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 
 BlockArrays.blocks(f::RSAFDQ20223DFunction) = (f.structural_function, f.tying_info)
 
+# The chamber pressures are genuine unknowns appended after the structural block. `pressure_dof_index_local`
+# and `pressure_dof_index_global` hold the same value today, but `_local` is the correct one here: the
+# enclosing split translates, so a descriptor must report positions local to this function.
+function solution_variables(f::RSAFDQ20223DFunction)
+    vars = solution_variables(f.structural_function)
+    for chamber in f.tying_info.chambers
+        push!(vars, GlobalVariable(chamber.pressure_symbol, chamber.pressure_dof_index_local))
+    end
+    return merge_and_check_unique(vars)
+end
+
 ##########################################################################
 
 """
@@ -186,7 +196,6 @@ function create_chamber_tyings(
             coupling.chamber_volume_method,
             coupler.displacement_symbol,
             NaN,
-            chamber_volume_idx_lumped,
             num_unknowns_structure+num_unknown_pressures(circuit_model)+chamber_volume_idx_lumped,
         )
         tying.V⁰ᴰval =
@@ -219,7 +228,7 @@ function semidiscretize(
     chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
     @debug "Chamber tyings:"
     for chamber_tying in chamber_tyings
-        @debug "Chamber:" chamber_tying.pressure_dof_index_local chamber_tying.pressure_dof_index_global chamber_tying.volume_method chamber_tying.displacement_symbol chamber_tying.V⁰ᴰidx_local chamber_tying.V⁰ᴰidx_global
+        @debug "Chamber:" chamber_tying.pressure_dof_index_local chamber_tying.pressure_dof_index_global chamber_tying.volume_method chamber_tying.displacement_symbol chamber_tying.V⁰ᴰidx_global
     end
     @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
 

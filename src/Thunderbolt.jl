@@ -90,6 +90,20 @@ function solution_size(gsf::GenericSplitFunction)
     return length(alldofs)
 end
 
+# Children report positions local to themselves and the split rebases them. Solution indices are relative
+# to the parent at every level, so this composes through arbitrarily nested splits -- electrophysiology
+# and mechanics split apart, then each split again -- without a special case.
+function solution_variables(gsf::GenericSplitFunction)
+    vars = SolutionVariable[]
+    for i = 1:OS.num_operators(gsf)
+        indices = OS.get_solution_indices(gsf, i)
+        for v in solution_variables(OS.get_operator(gsf, i))
+            push!(vars, translate(v, indices))
+        end
+    end
+    return merge_and_check_unique(vars)
+end
+
 @reexport using Ferrite
 import Ferrite:
     AbstractDofHandler,
@@ -150,6 +164,8 @@ include("modeling/solid_mechanics.jl")
 include("modeling/fluid_mechanics.jl")
 
 include("modeling/multiphysics.jl")
+
+include("modeling/solution_variables.jl")
 
 include("modeling/functions.jl")
 include("modeling/problems.jl")
@@ -215,7 +231,19 @@ export
     TransientDiffusionModel,
     InterfaceDiffusionModel,
     AffineODEFunction,
+    # Named access to the solution vector
     default_initial_condition!,
+    create_initial_condition,
+    solution_variables,
+    solution_variable,
+    solution_variable_names,
+    solution_indices,
+    getvariable,
+    setvariable!,
+    FieldVariable,
+    LocalStateVariable,
+    GlobalVariable,
+    CellIndexCoordinateSystem,
     # Local API
     PointwiseODEProblem,
     PointwiseODEFunction,

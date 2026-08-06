@@ -67,47 +67,19 @@ cell_model = Thunderbolt.FHNModel();
 #     A full list of all models can be found in the [API reference](api-reference/models/#Cells).
 #     To implement a custom cell model please consult [the how-to section](@ref how-to-custom-ep-cell-model).
 
-# !!! todo
-#     The initializer API is not yet finished and hence we deconstruct stuff here manually.
-#     Please note that this method is quite fragile w.r.t. to many changes you can make in the code below.
-# Spiral wave initializer for the FitzHugh-Nagumo
-function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
-    ## TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    heatfun = f.functions[1]
-    heat_dofrange = f.solution_indices[1]
-    odefun = f.functions[2]
-    ionic_model = odefun.ode
-
-    φ₀ = @view u₀[heat_dofrange];
-    ## TODO extraction these via utility functions
-    dh = heatfun.dh
-    s₀flat = @view u₀[(ndofs(dh)+1):end];
-    ## Should not be reshape but some array of arrays fun, because in general (e.g. for heterogeneous tissues) we cannot reshape into a matrix
-    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
-
-    for cell in CellIterator(dh)
-        _celldofs = celldofs(cell)
-        φₘ_celldofs = _celldofs[dof_range(dh, :φₘ)]
-        ## TODO query coordinate directly from the cell model
-        coordinates = getcoordinates(cell)
-        for (i, (x₁, x₂)) in zip(φₘ_celldofs,coordinates)
-            if x₁ <= 1.25 && x₂ <= 1.25
-                φ₀[i] = 1.0
-            end
-            if x₂ >= 1.25
-                s₀[i,1] = 0.1
-            end
-        end
-    end
-end;
-
 # Now we put the components together by instantiating the monodomain model.
+# The sixth argument is the coordinate system the cell model is evaluated in.
+# It is what the model hands to the cell model as its `x`, and it is also what an initial condition
+# written as a function of position is evaluated against.
+# On a plain box a Cartesian coordinate is what we want; on a real heart one would pass a generalized
+# coordinate system here instead (see [the coordinate system API](@ref coordinate-system-api)).
 ep_model = MonodomainModel(
     Cₘ,
     χ,
     κ,
     stimulation_protocol,
     cell_model,
+    CartesianCoordinateSystem(mesh),
     :φₘ, :s,
 );
 
@@ -132,8 +104,21 @@ spatial_discretization_method = FiniteElementDiscretization(
 odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh);
 
 # We now allocate a solution vector and set the initial condition.
-u₀ = zeros(Float32, solution_size(odeform))
-spiral_wave_initializer!(u₀, odeform);
+# `create_initial_condition` allocates and fills in every model's own default -- here the resting state
+# of the FitzHugh-Nagumo cell model.
+u₀ = create_initial_condition(odeform, Float32);
+# The spiral wave then comes from perturbing the two field variables the model published by name.
+# `:φₘ` and `:s` are exactly the symbols passed to `MonodomainModel` above, and the functions are
+# evaluated in the coordinate system the model carries.
+setvariable!(u₀, odeform, :φₘ) do x
+    (x[1] ≤ 1.25 && x[2] ≤ 1.25) ? 1.0f0 : 0.0f0
+end
+setvariable!(u₀, odeform, :s) do x
+    x[2] ≥ 1.25 ? 0.1f0 : 0.0f0
+end;
+# !!! tip
+#     `solution_variable_names(odeform)` lists everything a semidiscrete function publishes, and
+#     `getvariable(u, odeform, :φₘ)` reads a quantity back out of a solution vector.
 
 
 # We proceed by defining the time integration algorithms for each subproblem.
@@ -189,18 +174,15 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 # Now we initialize our time integrator as usual.
 integrator = init(problem, timestepper, dt=dt₀);
 
-# !!! todo
-#     The post-processing API is not yet finished.
-#     Please revisit the tutorial later to see how to post-process the simulation online.
-#     Right now the solution is just exported into VTK, such that users can visualize the solution in e.g. ParaView.
-
 # And finally we solve the problem in time.
+# The transmembrane potential is written out by name, so the loop never has to know which part of the
+# solution vector holds it. We look the descriptor up once outside the loop, because each lookup walks
+# the function tree.
 io = ParaViewWriter("EP01_spiral_wave")
+φₘ = solution_variable(odeform, :φₘ)
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    (; dh) = odeform.functions[1]
-    φ = u[odeform.solution_indices[1]]
-    store_timestep!(io, t, dh.grid) do file
-        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+    store_timestep!(io, t, mesh) do file
+        Thunderbolt.store_timestep_field!(file, t, u, φₘ)
     end
 end;
 
