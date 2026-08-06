@@ -18,6 +18,12 @@ LVCoordinateSystem
 LVCoordinate
 BiVCoordinateSystem
 BiVCoordinate
+LVAxes
+compute_lv_axes
+compute_lv_coordinate_system
+compute_midmyocardial_section_coordinate_system
+apicobasal_from_laplace
+vtk_coordinate_system
 ```
 
 ## [Mesh Generators](@id mesh-generator-api)

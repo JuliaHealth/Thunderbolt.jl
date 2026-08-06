@@ -30,7 +30,7 @@ struct AnisotropicPlanarMicrostructure{T} <: AbstractOrthotropicMicrostructure
     s::Vec{2, T}
 end
 Base.zero(::Type{AnisotropicPlanarMicrostructure{T}}) where {T} =
-    AnisotropicPlanarMicrostructure(zero(Vec{3, T}), zero(Vec{3, T}))
+    AnisotropicPlanarMicrostructure(zero(Vec{2, T}), zero(Vec{2, T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::AnisotropicPlanarMicrostructure, λ::SVector{2})
@@ -82,7 +82,7 @@ end
 struct TransverselyIsotropicMicrostructure{dim, T} <: AbstractTransverselyIsotropicMicrostructure
     f::Vec{dim, T}
 end
-Base.zero(::Type{TransverselyIsotropicMicrostructure{T}}) where {T} =
+Base.zero(::Type{TransverselyIsotropicMicrostructure{dim, T}}) where {dim, T} =
     TransverselyIsotropicMicrostructure(zero(Vec{dim, T}))
 
 # Compat with spectral coefficient
@@ -130,7 +130,7 @@ struct OrthotropicMicrostructure{T} <: AbstractOrthotropicMicrostructure
     n::Vec{3, T}
 end
 Base.zero(::Type{OrthotropicMicrostructure{T}}) where {T} =
-    OrthotropicMicrostructure(zero(Vec{dim, T}), zero(Vec{dim, T}), zero(Vec{dim, T}))
+    OrthotropicMicrostructure(zero(Vec{3, T}), zero(Vec{3, T}), zero(Vec{3, T}))
 
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::OrthotropicMicrostructure, λ::SVector{3})
@@ -340,10 +340,12 @@ function create_microstructure_model(
                         qp,
                         coordinate_system.u_transmural[dof_indices],
                     ),
-                    rotational = function_value(
+                    rotational = rotational_value(
+                        coordinate_system,
                         cv,
                         qp,
-                        coordinate_system.u_rotational[dof_indices],
+                        cellindex,
+                        dof_indices,
                     ),
                     apicobasal = function_value(
                         cv,

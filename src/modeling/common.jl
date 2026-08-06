@@ -96,6 +96,7 @@ not infer it from the presence or absence of a reaction part.
 """
 is_coupling_model(model) = false
 
+include("core/heart_axes.jl")
 include("core/coordinate_systems.jl")
 
 include("core/coefficients.jl")

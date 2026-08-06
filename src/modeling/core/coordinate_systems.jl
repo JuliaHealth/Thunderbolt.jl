@@ -41,16 +41,33 @@ struct CellIndexCoordinateSystem <: CoordinateSystemCoefficient end
 value_type(::CellIndexCoordinateSystem) = Int
 
 """
-    LVCoordinateSystem(dh, u_transmural, u_apicobasal)
+    LVCoordinateSystem(dh, ip_collection, u_transmural, u_apicobasal, dh_rotational, ip_collection_rotational, u_rotational)
 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
 rotational coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
+
+The transmural and apicobasal coordinates are continuous scalar fields and live on `dh`. The
+rotational coordinate wraps around the ventricle, so somewhere it has to jump from 1 back to 0 --
+on the posterior ridge, where the free wall reads 0 and the septum reads 1. A continuous nodal field
+cannot carry that jump: the ridge nodes are shared by the elements on both sides of it, so a single
+nodal value there forces the coordinate to ramp back through the entire range across one layer of
+elements. It is therefore stored on its own discontinuous dof handler `dh_rotational`, where each
+element carries its own copy of the ridge nodes and the jump sits exactly on the interface it
+belongs on.
+
+Consequently `u_rotational` is *not* dof-for-dof comparable with `u_transmural` and `u_apicobasal`,
+and it is only defined modulo 1: under the azimuthal fallback an element straddling the branch cut
+holds values slightly above 1 (or below 0) so that its interpolant stays affine.
+`evaluate_coefficient` wraps the interpolated value back into `[0, 1)`.
 """
-struct LVCoordinateSystem{T, DH <: AbstractDofHandler, IPC} <: CoordinateSystemCoefficient
+struct LVCoordinateSystem{T, DH <: AbstractDofHandler, IPC, DHR <: AbstractDofHandler, IPCR} <:
+       CoordinateSystemCoefficient
     dh::DH
     ip_collection::IPC # TODO special dof handler with type stable interpolation
     u_transmural::Vector{T}
     u_apicobasal::Vector{T}
+    dh_rotational::DHR
+    ip_collection_rotational::IPCR
     u_rotational::Vector{T}
 end
 
@@ -82,50 +99,49 @@ Get interpolation function for the LV coordinate system.
 getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) =
     getinterpolation(cs.ip_collection, cell)
 
+"""
+    getrotationalinterpolation(cs::LVCoordinateSystem, cell::AbstractCell)
+
+Get the interpolation of the rotational coordinate, which is discontinuous across elements -- see
+[`LVCoordinateSystem`](@ref).
+"""
+getrotationalinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) =
+    getinterpolation(cs.ip_collection_rotational, cell)
+
+"Wrap an angular coordinate back into `[0, 1)`."
+@inline wrap_rotational(r::T) where {T <: Real} = mod(r, one(T))
 
 """
-    compute_lv_coordinate_system(mesh::SimpleMesh)
+    rotational_value(cs, cv, qp, cellindex, coordinate_dofs)
 
-Requires a mesh with facetsets
-    * Base
-    * Epicardium
-    * Endocardium
-and a nodeset
-    * Apex
+Interpolate the rotational coordinate of `cs` at `qp` on cell `cellindex`. `coordinate_dofs` are the
+dofs of the transmural and apicobasal coordinates on that cell, which is also where the rotational
+coordinate lives for every coordinate system that does not store it separately.
 """
-function compute_lv_coordinate_system(
-    mesh::SimpleMesh{3, <:Any, T};
-    subdomains::Vector{String} = [single_subdomain_or_error(mesh)],
-    up = Vec((T(0.0), T(0.0), T(-1.0))),
-    solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
-) where {T}
-    @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
-    ip_collection = LagrangeCollection{1}()
-    qr_collection = QuadratureRuleCollection(2)
-    cv_collection = CellValueCollection(qr_collection, ip_collection)
+rotational_value(cs::LVCoordinateSystem, cv, qp, cellindex::Int, coordinate_dofs) =
+    wrap_rotational(
+        function_value(cv, qp, cs.u_rotational[celldofsview(cs.dh_rotational, cellindex)]),
+    )
+rotational_value(cs, cv, qp, cellindex::Int, coordinate_dofs) =
+    function_value(cv, qp, cs.u_rotational[coordinate_dofs])
 
-    dh = DofHandler(mesh)
-    for name in subdomains
-        add_subdomain!(dh, name, [ApproximationDescriptor(:coordinates, ip_collection)])
-    end
-    Ferrite.close!(dh)
 
-    # Assemble Laplacian
-    # TODO use bilinear operator for performance
+"""
+Assemble the scalar Laplacian on all subdomains of `dh`.
+"""
+function _assemble_laplacian(dh::DofHandler, ip_collection)
+    cv_collection = CellValueCollection(QuadratureRuleCollection(2), ip_collection)
     K = allocate_matrix(dh)
     assembler = start_assemble(K)
     for sdh in dh.subdofhandlers
-        cellvalues = getcellvalues(cv_collection, getcells(mesh, first(sdh.cellset)))
+        cellvalues = getcellvalues(cv_collection, getcells(get_grid(dh), first(sdh.cellset)))
         n_basefuncs = getnbasefunctions(cellvalues)
         Ke = zeros(n_basefuncs, n_basefuncs)
         @inbounds for cell in CellIterator(sdh)
             fill!(Ke, 0)
-
             reinit!(cellvalues, cell)
-
             for qp in QuadratureIterator(cellvalues)
                 dΩ = getdetJdV(cellvalues, qp)
-
                 for i = 1:n_basefuncs
                     ∇v = shape_gradient(cellvalues, qp, i)
                     for j = 1:n_basefuncs
@@ -134,77 +150,554 @@ function compute_lv_coordinate_system(
                     end
                 end
             end
-
             assemble!(assembler, celldofs(cell), Ke)
         end
     end
+    return K
+end
 
-    # Transmural coordinate
-    begin
-        ch = ConstraintHandler(dh);
-        dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
-        Ferrite.add!(ch, dbc);
-        dbc = Dirichlet(:coordinates, getfacetset(mesh, "Epicardium"), (x, t) -> 1)
-        Ferrite.add!(ch, dbc);
-        close!(ch)
-        update!(ch, 0.0);
-
-        K_transmural = copy(K)
-        f = zeros(ndofs(dh))
-
-        apply!(K_transmural, f, ch)
-        sol = solve(LinearSolve.LinearProblem(K_transmural, f), solver)
-        transmural = sol.u
+"""
+Solve `Δu = 0` on `dh` with the given Dirichlet data, each entry a `set => value` pair where the set
+is either a facetset or a nodeset. `K` is the (unconstrained) Laplacian and is left untouched.
+"""
+function _solve_dirichlet_laplace(K, dh::DofHandler, solver, constraints)
+    ch = ConstraintHandler(dh)
+    for (set, value) in constraints
+        Ferrite.add!(ch, Dirichlet(:coordinates, set, (x, t) -> value))
     end
+    close!(ch)
+    update!(ch, 0.0)
 
-    # Apicobasal coordinate
-    begin
-        ch = ConstraintHandler(dh);
-        dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 1)
-        Ferrite.add!(ch, dbc);
-        dbc = Dirichlet(:coordinates, getnodeset(mesh, "ApexInOut"), (x, t) -> 0)
-        Ferrite.add!(ch, dbc);
-        close!(ch)
-        update!(ch, 0.0);
+    A = copy(K)
+    f = zeros(ndofs(dh))
+    apply!(A, f, ch)
+    return solve(LinearSolve.LinearProblem(A, f), solver).u
+end
 
-        K_apicobasal = K
-        f = zeros(ndofs(dh))
-
-        apply!(K_apicobasal, f, ch)
-        sol = solve(LinearSolve.LinearProblem(K_apicobasal, f), solver)
-        apicobasal = sol.u
-    end
-
-    rotational = zeros(ndofs(dh))
-    rotational .= NaN
-
-    qrn  = NodalQuadratureRuleCollection(ip_collection) # FIXME ip_collection from grid
-    cvcn = CellValueCollection(qrn, ip_collection)
+"""
+Lumped L² projection of `∇u` onto the dofs of `dh`, together with the lumped mass `mᵢ = ∫ ϕᵢ dΩ`
+that weights it. Both are returned in dof order. Writing the mass as a quadrature rather than as a
+per-cell volume share is what lets this serve tetrahedral, hexahedral and wedge meshes alike.
+"""
+function _lumped_gradient(dh::DofHandler, ip_collection, u::AbstractVector{<:Real})
+    cv_collection = CellValueCollection(QuadratureRuleCollection(2), ip_collection)
+    grad = [zero(Vec{3, Float64}) for _ = 1:ndofs(dh)]
+    mass = zeros(Float64, ndofs(dh))
     for sdh in dh.subdofhandlers
-        cellvalues = getcellvalues(cvcn, getcells(mesh, first(sdh.cellset)))
+        cellvalues = getcellvalues(cv_collection, getcells(get_grid(dh), first(sdh.cellset)))
         @inbounds for cell in CellIterator(sdh)
             reinit!(cellvalues, cell)
-            coords = getcoordinates(cell)
             dofs = celldofs(cell)
-
+            ue = u[dofs]
             for qp in QuadratureIterator(cellvalues)
                 dΩ = getdetJdV(cellvalues, qp)
-
-                x_dof = spatial_coordinate(cellvalues, qp, coords)
-
-                x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
-                xlen = norm(x_planar)
-                if xlen < 1e-8
-                    rotational[dofs[qp.i]] = 0.0
-                else
-                    x = x_planar / xlen
-                    rotational[dofs[qp.i]] = 1/2 + atan(x[1], x[2])/(2π) # TODO tilted coordinate system
+                ∇u = function_gradient(cellvalues, qp, ue)
+                for (k, d) in enumerate(dofs)
+                    w = shape_value(cellvalues, qp, k) * dΩ
+                    grad[d] += ∇u * w
+                    mass[d] += w
                 end
             end
         end
     end
+    @inbounds for i in eachindex(grad)
+        mass[i] > 0 && (grad[i] /= mass[i])
+    end
+    return grad, mass
+end
 
-    return LVCoordinateSystem(dh, ip_collection, T.(transmural), T.(apicobasal), T.(rotational))
+"""
+    apicobasal_from_laplace(dh, ip_collection, u; nbins = 200)
+
+Recalibrate the apicobasal Laplace field `u` (0 on the apex, 1 on the base, natural boundary
+conditions on the endocardium and epicardium) to arc length along its own trajectories.
+
+Along a trajectory of `u` we have `ds = du/‖∇u‖`, so the arc length from level `u` to the base is
+`∫_u^1 dū/‖∇u‖`. Averaging `‖∇u‖` over each level set turns that into a one-dimensional quadrature,
+
+    F(u) = ∫_u^1 dū / ⟨‖∇u‖⟩(ū)        ab = 1 − F(u)/F(0)
+
+Three properties follow, and together they are what the coordinate system needs:
+
+- `ab` is a monotone function of `u`, so `∇ab ∥ ∇u`. The chart
+  `(transmural, rotational, apicobasal)` can never reverse orientation through the apicobasal
+  coordinate.
+- `ab` is exactly 1 on the base and exactly 0 on the apex Dirichlet set of `u`, on every mesh, so
+  two meshes of different anatomies agree on where the ends of the coordinate are.
+- The parametrisation is arc length, not the harmonic field's own bunching. That bunching is severe:
+  pinning `u = 0` at the apex is a point Dirichlet condition in 3D, whose solution behaves like a
+  point source, so the raw field sits near 1 over most of the ventricle and burns half its range in
+  the last few percent of wall next to the apex.
+"""
+function apicobasal_from_laplace(
+    dh::DofHandler,
+    ip_collection,
+    u_laplace::AbstractVector{<:Real};
+    nbins::Int = 200,
+)
+    u = clamp.(Float64.(u_laplace), 0.0, 1.0)
+    grad, weight = _lumped_gradient(dh, ip_collection, u)
+    gradnorm = norm.(grad)
+
+    # ⟨‖∇u‖⟩ per level-set bin, volume weighted.
+    edges = range(0.0, 1.0; length = nbins + 1)
+    du = 1.0 / nbins
+    bin(v) = clamp(searchsortedlast(edges, v), 1, nbins)
+    num = zeros(nbins)
+    den = zeros(nbins)
+    for i in eachindex(u)
+        b = bin(u[i])
+        num[b] += weight[i] * gradnorm[i]
+        den[b] += weight[i]
+    end
+    # Bins with no dofs inherit a populated neighbour so the quadrature never divides by zero;
+    # sweeping both ways covers empty bins at either end.
+    g = [den[b] > 0 ? num[b] / den[b] : 0.0 for b = 1:nbins]
+    for b = 2:nbins
+        g[b] == 0 && (g[b] = g[b-1])
+    end
+    for b = (nbins-1):-1:1
+        g[b] == 0 && (g[b] = g[b+1])
+    end
+
+    F = zeros(nbins + 1)
+    for b = nbins:-1:1
+        F[b] = F[b+1] + du / max(g[b], eps())
+    end
+    total = F[1]
+    total > 0 || return fill(0.0, length(u))
+
+    return [
+        begin
+            b = bin(ui)
+            λ = (ui - edges[b]) / du
+            clamp(1.0 - (F[b] + λ * (F[b+1] - F[b])) / total, 0.0, 1.0)
+        end for ui in u
+    ]
+end
+
+_has_facetset(mesh::SimpleMesh, name::String) = haskey(Ferrite.getfacetsets(mesh.grid), name)
+_has_facetset(grid::AbstractGrid, name::String) = haskey(Ferrite.getfacetsets(grid), name)
+
+"""
+Cylindrical frame around the long axis of a ventricle. `e₁` is the direction of azimuth 0 and
+`e₁ × e₂ = axis`, so the azimuth increases in the right-handed sense around the long axis.
+"""
+struct AzimuthalFrame
+    origin::Vec{3, Float64}
+    axis::Vec{3, Float64}
+    e₁::Vec{3, Float64}
+    e₂::Vec{3, Float64}
+end
+
+function AzimuthalFrame(
+    origin::Vec{3, Float64},
+    axis::Vec{3, Float64},
+    zero_direction::Vec{3, Float64},
+)
+    l = axis / norm(axis)
+    e₁ = zero_direction - (zero_direction ⋅ l) * l
+    norm(e₁) < sqrt(eps(Float64)) && throw(
+        ArgumentError("The azimuth reference direction must not be collinear with the long axis."),
+    )
+    e₁ /= norm(e₁)
+    return AzimuthalFrame(origin, l, e₁, l × e₁)
+end
+
+"Azimuth of `x` in `[0, 2π)`, or `nothing` if `x` sits on the long axis where it does not exist."
+function azimuth(frame::AzimuthalFrame, x::Vec{3, Float64}, tol::Float64 = 0.0)
+    d = x - frame.origin
+    d -= (d ⋅ frame.axis) * frame.axis
+    norm(d) ≤ tol && return nothing
+    return mod(atan(d ⋅ frame.e₂, d ⋅ frame.e₁), 2π)
+end
+
+_to_f64(x) = Vec{3, Float64}((x[1], x[2], x[3]))
+
+"""
+Mean radial direction of the facets in `name`, or `nothing` when the set is missing, empty or not a
+radial sheet. Averaging the unit directions rather than the angles is what makes this immune to the
+wrap of the azimuth.
+"""
+function _sheet_direction(grid::AbstractGrid, name::String, frame::AzimuthalFrame)
+    _has_facetset(grid, name) || return nothing
+    direction = zero(Vec{3, Float64})
+    for nodeid in _facetset_node_ids(grid, getfacetset(grid, name))
+        d = _to_f64(get_node_coordinate(getnodes(grid, nodeid))) - frame.origin
+        d -= (d ⋅ frame.axis) * frame.axis
+        norm(d) < eps() && continue
+        direction += d / norm(d)
+    end
+    norm(direction) < 0.5 && return nothing
+    return direction / norm(direction)
+end
+
+"Is `θ` inside the shorter of the two arcs delimited by `θa` and `θp`?"
+function _in_minor_arc(θ::Float64, θa::Float64, θp::Float64)
+    Δ = mod(θp - θa, 2π)
+    if Δ ≤ π
+        return mod(θ - θa, 2π) ≤ Δ
+    else
+        return mod(θ - θp, 2π) ≤ 2π - Δ
+    end
+end
+
+"Volume-average position of a cell."
+function _cell_centroid(grid::AbstractGrid, cellid::Int)
+    nodeids = getcells(grid, cellid).nodes
+    centroid = zero(Vec{3, Float64})
+    for nodeid in nodeids
+        centroid += _to_f64(get_node_coordinate(getnodes(grid, nodeid)))
+    end
+    return centroid / length(nodeids)
+end
+
+"""
+Split the cells into septum and free wall by the arc they fall into.
+
+The two ridges are the lines along which the right ventricle attaches, and the septum is the wall
+between them -- the shorter of the two arcs, since the septum spans roughly a third of the
+circumference. This is the same rule that produced the ridges in the first place, so a mesh
+annotated by the ridge extraction is classified back into the same two regions.
+
+Cells whose centroid sits within half an element of a ridge are the ones this can get wrong, and
+there it matters: the rotational coordinate jumps by a full turn across the posterior ridge, so a
+misclassified cell there carries `r ≈ 1` where its neighbours carry `r ≈ 0`.
+"""
+function _septal_cells(
+    grid::AbstractGrid,
+    frame::AzimuthalFrame,
+    θ_anterior::Float64,
+    θ_posterior::Float64,
+)
+    septal = falses(getncells(grid))
+    for cellid = 1:getncells(grid)
+        θ = azimuth(frame, _cell_centroid(grid, cellid))
+        θ === nothing && continue
+        septal[cellid] = _in_minor_arc(θ, θ_anterior, θ_posterior)
+    end
+    return septal
+end
+
+"Node ids of the two ridges, with the nodes they share near the apex removed from both."
+function _ridge_nodes(grid::AbstractGrid, anterior::String, posterior::String)
+    ant = _facetset_node_ids(grid, getfacetset(grid, anterior))
+    post = _facetset_node_ids(grid, getfacetset(grid, posterior))
+    # The two ridge sheets share the handful of nodes where they converge towards the apex. They
+    # cannot be pinned to 0 and 1 at once, so they are left out of both Dirichlet sets and the
+    # Laplace solve interpolates them: the rotational coordinate genuinely has no value there.
+    shared = intersect(Set(ant), Set(post))
+    return OrderedSet{Int}(n for n in ant if !(n in shared)),
+    OrderedSet{Int}(n for n in post if !(n in shared))
+end
+
+"""
+Rotational coordinate in the sense of Cobiveco: solve `Δv = 0` with `v = 0` on the posterior ridge
+and `v = 1` on the anterior ridge, then map the free wall onto `[0, 2/3]` and the septum onto
+`[2/3, 1]`.
+
+The two ridges cut the myocardium in two, so `v` is solved independently on each half and rises
+monotonically from one ridge to the other on both. The mapping stitches the halves into a single
+chart around the ventricle: it is continuous across the anterior ridge, where both branches give
+2/3, and jumps by a full turn across the posterior ridge, where the free wall gives 0 and the septum
+gives 1. Since the region is a property of the cell, the discontinuous dofs carry the jump exactly.
+"""
+function _compute_rotational_from_ridges!(
+    u::Vector{Float64},
+    dh_rotational::DofHandler,
+    dh::DofHandler,
+    K,
+    solver,
+    ridge_anterior_nodes::OrderedSet{Int},
+    ridge_posterior_nodes::OrderedSet{Int},
+    septal::BitVector,
+)
+    v = _solve_dirichlet_laplace(
+        K,
+        dh,
+        solver,
+        [(ridge_posterior_nodes, 0.0), (ridge_anterior_nodes, 1.0)],
+    )
+    clamp!(v, 0.0, 1.0)
+
+    for sdh in dh.subdofhandlers
+        for cell in CellIterator(sdh)
+            dofs = celldofs(cell)
+            dofs_rotational = celldofsview(dh_rotational, cellid(cell))
+            is_septal = septal[cellid(cell)]
+            @inbounds for i in eachindex(dofs)
+                vi = v[dofs[i]]
+                u[dofs_rotational[i]] = is_septal ? 1 - vi / 3 : 2vi / 3
+            end
+        end
+    end
+    return u
+end
+
+"Unwrap the angles of one element in place so that the branch cut falls outside of it."
+function _unwrap_cell_angles!(angles::Vector{Float64}, defined::Vector{Bool})
+    i0 = findfirst(defined)
+    if i0 === nothing
+        # The whole element sits on the long axis, where the angle does not exist.
+        fill!(angles, 0.0)
+        return angles
+    end
+    reference = angles[i0]
+    total = 0.0
+    count = 0
+    @inbounds for i in eachindex(angles)
+        defined[i] || continue
+        angles[i] = reference + rem(angles[i] - reference, 1.0, RoundNearest)
+        total += angles[i]
+        count += 1
+    end
+    mean = total / count
+    # Only the differences within the element carry information -- the element as a whole is free to
+    # sit on any turn. Nodes exactly on the seam land on either side of the branch cut depending on
+    # rounding, so pick the turn deterministically instead of letting that decide it.
+    turn = floor(mean)
+    @inbounds for i in eachindex(angles)
+        angles[i] = defined[i] ? angles[i] - turn : mean - turn
+    end
+    return angles
+end
+
+"""
+Rotational coordinate as the plain azimuth around the long axis, `r = θ/2π`.
+
+This is the fallback for meshes that carry no ridge annotation. It is *not* the same chart as the
+ridge based one: it distributes the coordinate by angle rather than by
+the position of the right ventricular insertions, so two meshes only agree under it if they are
+aligned the same way in space.
+
+The angles are unwrapped per element, which puts the branch cut on element interfaces instead of
+smearing it across a layer of elements. Where the cut lands is decided by `frame.e₁` -- the annotated
+seam when there is one.
+"""
+function _compute_rotational_from_azimuth!(
+    u::Vector{Float64},
+    dh::DofHandler,
+    ip_collection,
+    frame::AzimuthalFrame,
+)
+    grid = get_grid(dh)
+    cv_collection =
+        CellValueCollection(NodalQuadratureRuleCollection(ip_collection), ip_collection)
+    angles = Float64[]
+    defined = Bool[]
+    for sdh in dh.subdofhandlers
+        cellvalues = getcellvalues(cv_collection, getcells(grid, first(sdh.cellset)))
+        n_basefuncs = getnbasefunctions(cellvalues)
+        resize!(angles, n_basefuncs)
+        resize!(defined, n_basefuncs)
+        for cell in CellIterator(sdh)
+            reinit!(cellvalues, cell)
+            coords = getcoordinates(cell)
+            dofs = celldofs(cell)
+            # Nodes closer to the long axis than this carry no angular information. The threshold
+            # scales with the element so that it is a statement about the element, not about the
+            # units of the mesh.
+            tol = 1.0e-6 * maximum(norm(x - first(coords)) for x in coords)
+            for qp in QuadratureIterator(cellvalues)
+                θ = azimuth(frame, _to_f64(spatial_coordinate(cellvalues, qp, coords)), tol)
+                defined[qp.i] = θ !== nothing
+                angles[qp.i] = θ === nothing ? 0.0 : θ / (2π)
+            end
+            _unwrap_cell_angles!(angles, defined)
+            @inbounds for i = 1:n_basefuncs
+                u[dofs[i]] = angles[i]
+            end
+        end
+    end
+    return u
+end
+
+"""
+Fill the rotational coordinate, preferring the ridge based chart and falling back to the plain
+azimuth when the mesh carries no ridges.
+"""
+function _compute_rotational!(
+    u::Vector{Float64},
+    dh_rotational::DofHandler,
+    ip_collection_rotational,
+    dh::DofHandler,
+    K,
+    solver,
+    frame::AzimuthalFrame,
+    ridge_anterior::Union{Nothing, String},
+    ridge_posterior::Union{Nothing, String},
+)
+    grid = get_grid(dh)
+    asked_for_ridges = ridge_anterior !== nothing && ridge_posterior !== nothing
+    if !asked_for_ridges ||
+       !_has_facetset(grid, ridge_anterior) ||
+       !_has_facetset(grid, ridge_posterior)
+        # Passing `nothing` says the mesh is known to have no ridges; missing sets that were asked
+        # for are worth complaining about, because the fallback silently answers a different question.
+        asked_for_ridges && @warn "No ridge annotation ('$ridge_anterior' and '$ridge_posterior') on the mesh, falling back to the plain azimuth around the long axis. That is a different chart than the ridge based one, so this coordinate is not comparable with one computed on an annotated mesh."
+        return _compute_rotational_from_azimuth!(u, dh_rotational, ip_collection_rotational, frame)
+    end
+
+    direction_anterior = _sheet_direction(grid, ridge_anterior, frame)
+    direction_posterior = _sheet_direction(grid, ridge_posterior, frame)
+    (direction_anterior === nothing || direction_posterior === nothing) && error(
+        "The ridge facetsets '$ridge_anterior' and '$ridge_posterior' do not describe radial sheets around the long axis, so the septum cannot be identified.",
+    )
+    θ_anterior = azimuth(frame, frame.origin + direction_anterior)::Float64
+    θ_posterior = azimuth(frame, frame.origin + direction_posterior)::Float64
+
+    septal = _septal_cells(grid, frame, θ_anterior, θ_posterior)
+    anterior_nodes, posterior_nodes = _ridge_nodes(grid, ridge_anterior, ridge_posterior)
+    return _compute_rotational_from_ridges!(
+        u,
+        dh_rotational,
+        dh,
+        K,
+        solver,
+        anterior_nodes,
+        posterior_nodes,
+        septal,
+    )
+end
+
+"""
+Resolve the direction of azimuth zero for the fallback chart. An explicit `zero_direction` wins;
+otherwise the annotated seam is used, and failing that an arbitrary direction orthogonal to the long
+axis -- in which case the branch cut lands wherever the geometry puts it.
+"""
+function _azimuth_zero_direction(
+    grid::AbstractGrid,
+    origin::Vec{3, Float64},
+    longitudinal::Vec{3, Float64},
+    seams::Vector{String},
+    zero_direction::Union{Nothing, Vec{3}},
+)
+    zero_direction !== nothing && return _to_f64(zero_direction)
+    provisional = AzimuthalFrame(origin, longitudinal, _any_orthogonal(longitudinal))
+    for seam in seams
+        direction = _sheet_direction(grid, seam, provisional)
+        direction !== nothing && return direction
+    end
+    return _any_orthogonal(longitudinal)
+end
+
+"""
+    compute_lv_coordinate_system(mesh::SimpleMesh)
+
+Compute the transmural, apicobasal and rotational coordinates of a left ventricle.
+
+Requires a mesh with facetsets
+    * Base
+    * Epicardium
+    * Endocardium
+and a nodeset
+    * ApexInOut
+
+and the two internal facetsets marking the lines along which the right ventricle attaches
+    * SRidgeAnt
+    * SRidgePost
+which the idealized generators emit and the ridge extraction of a segmented anatomy produces.
+
+The coordinates are
+
+  * `transmural`: harmonic, 0 on the endocardium and 1 on the epicardium.
+  * `apicobasal`: harmonic between the apex and the base, recalibrated to arc length by
+    [`apicobasal_from_laplace`](@ref) -- without that step the raw harmonic field is useless as a
+    coordinate, see its docstring.
+  * `rotational`: the Cobiveco chart, 0 on the posterior ridge, 2/3 on the anterior ridge and back
+    to 1 at the posterior ridge through the septum. It is anchored on the ridges rather than on the
+    orientation of the mesh in space, which is what makes it comparable between different hearts.
+    Stored discontinuously so that the jump at the posterior ridge is exact, see
+    [`LVCoordinateSystem`](@ref).
+
+Meshes without ridges fall back to the plain azimuth around the long axis, which is *not* the same
+chart: it distributes the coordinate by angle rather than by the position of the right ventricular
+insertions, so two hearts only agree under it if they happen to be aligned the same way in space.
+Pass `ridge_anterior = ridge_posterior = nothing` to ask for that fallback deliberately.
+"""
+function compute_lv_coordinate_system(
+    mesh::SimpleMesh{3, <:Any, T};
+    subdomains::Vector{String} = [single_subdomain_or_error(mesh)],
+    axes::LVAxes = compute_lv_axes(mesh),
+    ridge_anterior::Union{Nothing, String} = "SRidgeAnt",
+    ridge_posterior::Union{Nothing, String} = "SRidgePost",
+    rotational_zero_direction::Union{Nothing, Vec{3}} = nothing,
+    apicobasal_bins::Int = 200,
+    solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
+) where {T}
+    ip_collection = LagrangeCollection{1}()
+    ip_collection_rotational = DiscontinuousLagrangeCollection{1}()
+
+    dh = DofHandler(mesh)
+    dh_rotational = DofHandler(mesh)
+    for name in subdomains
+        add_subdomain!(dh, name, [ApproximationDescriptor(:coordinates, ip_collection)])
+        add_subdomain!(
+            dh_rotational,
+            name,
+            [ApproximationDescriptor(:coordinates, ip_collection_rotational)],
+        )
+    end
+    Ferrite.close!(dh)
+    Ferrite.close!(dh_rotational)
+
+    # TODO use bilinear operator for performance
+    K = _assemble_laplacian(dh, ip_collection)
+
+    transmural = _solve_dirichlet_laplace(
+        K,
+        dh,
+        solver,
+        [(getfacetset(mesh, "Endocardium"), 0.0), (getfacetset(mesh, "Epicardium"), 1.0)],
+    )
+    # The Krylov solve overshoots the Dirichlet values by a few ulps, which would make the coordinate
+    # leave its own range.
+    clamp!(transmural, 0.0, 1.0)
+
+    apicobasal_laplace = _solve_dirichlet_laplace(
+        K,
+        dh,
+        solver,
+        [(getfacetset(mesh, "Base"), 1.0), (getnodeset(mesh, "ApexInOut"), 0.0)],
+    )
+    apicobasal =
+        apicobasal_from_laplace(dh, ip_collection, apicobasal_laplace; nbins = apicobasal_bins)
+
+    longitudinal = _to_f64(axes.longitudinal)
+    origin = _to_f64(axes.base_center)
+    frame = AzimuthalFrame(
+        origin,
+        longitudinal,
+        _azimuth_zero_direction(
+            mesh,
+            origin,
+            longitudinal,
+            ["RotationalSeam", something(ridge_posterior, "SRidgePost")],
+            rotational_zero_direction,
+        ),
+    )
+    rotational = zeros(ndofs(dh_rotational))
+    _compute_rotational!(
+        rotational,
+        dh_rotational,
+        ip_collection_rotational,
+        dh,
+        K,
+        solver,
+        frame,
+        ridge_anterior,
+        ridge_posterior,
+    )
+
+    return LVCoordinateSystem(
+        dh,
+        ip_collection,
+        T.(transmural),
+        T.(apicobasal),
+        dh_rotational,
+        ip_collection_rotational,
+        T.(rotational),
+    )
 end
 
 """
@@ -215,6 +708,14 @@ Requires a mesh with facetsets
     * Epicardium
     * Endocardium
     * Myocardium
+
+Unlike [`compute_lv_coordinate_system`](@ref) this is a ring section with no apex, so the long axis
+cannot be derived from the geometry and is given by `up` instead. The apicobasal coordinate is the
+height along `up`, rescaled into `[apicobasal_lower, apicobasal_upper]`. The rotational coordinate
+is built exactly as in the LV case: from the two ridges when the section carries them, and from the
+plain azimuth around `up` otherwise, which is what a plain ring gets. Either way it is stored
+discontinuously, so its jump sits on an element interface instead of being smeared across a layer of
+elements.
 """
 function compute_midmyocardial_section_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T},
@@ -222,71 +723,45 @@ function compute_midmyocardial_section_coordinate_system(
     up = Vec((T(0.0), T(0.0), T(1.0))),
     apicobasal_lower = 0.4,
     apicobasal_upper = 0.6,
+    ridge_anterior::Union{Nothing, String} = "SRidgeAnt",
+    ridge_posterior::Union{Nothing, String} = "SRidgePost",
+    rotational_zero_direction::Union{Nothing, Vec{3}} = nothing,
     solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
 ) where {T}
-    @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
-    qr_collection = QuadratureRuleCollection(2)
-    cv_collection = CellValueCollection(qr_collection, ip_collection)
+    ip_collection_rotational = DiscontinuousLagrangeCollection{1}()
 
     dh = DofHandler(mesh)
+    dh_rotational = DofHandler(mesh)
     for name in subdomains
         add_subdomain!(dh, name, [ApproximationDescriptor(:coordinates, ip_collection)])
+        add_subdomain!(
+            dh_rotational,
+            name,
+            [ApproximationDescriptor(:coordinates, ip_collection_rotational)],
+        )
     end
     Ferrite.close!(dh)
+    Ferrite.close!(dh_rotational)
 
-    # Assemble Laplacian
     # TODO use bilinear operator from FerriteOperators to parallelize assembly
-    K = allocate_matrix(dh)
+    K = _assemble_laplacian(dh, ip_collection)
 
-    assembler = start_assemble(K)
-    for sdh in dh.subdofhandlers
-        cellvalues = getcellvalues(cv_collection, getcells(mesh, first(sdh.cellset)))
-        n_basefuncs = getnbasefunctions(cellvalues)
-        Ke = zeros(n_basefuncs, n_basefuncs)
-        @inbounds for cell in CellIterator(sdh)
-            fill!(Ke, 0)
-
-            reinit!(cellvalues, cell)
-
-            for qp in QuadratureIterator(cellvalues)
-                dΩ = getdetJdV(cellvalues, qp)
-
-                for i = 1:n_basefuncs
-                    ∇v = shape_gradient(cellvalues, qp, i)
-                    for j = 1:n_basefuncs
-                        ∇u = shape_gradient(cellvalues, qp, j)
-                        Ke[i, j] += (∇v ⋅ ∇u) * dΩ
-                    end
-                end
-            end
-
-            assemble!(assembler, celldofs(cell), Ke)
-        end
-    end
-
-    # Transmural coordinate
-    ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
-    Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Epicardium"), (x, t) -> 1)
-    Ferrite.add!(ch, dbc);
-    close!(ch)
-    update!(ch, 0.0);
-
-    K_transmural = K
-    f = zeros(ndofs(dh))
-
-    apply!(K_transmural, f, ch)
-    sol = solve(LinearSolve.LinearProblem(K_transmural, f), solver)
-    transmural = sol.u
+    transmural = _solve_dirichlet_laplace(
+        K,
+        dh,
+        solver,
+        [(getfacetset(mesh, "Endocardium"), 0.0), (getfacetset(mesh, "Epicardium"), 1.0)],
+    )
+    # The Krylov solve overshoots the Dirichlet values by a few ulps, which would make the coordinate
+    # leave its own range.
+    clamp!(transmural, 0.0, 1.0)
 
     # Apicobasal coordinate
     apicobasal = zeros(ndofs(dh))
-    apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
+    apply_analytical!(apicobasal, dh, :coordinates, x -> x ⋅ up)
     # Normalize
     apicobasal .-= minimum(apicobasal)
-    apicobasal = abs.(apicobasal)
     apicobasal ./= maximum(apicobasal)
     # Scale coordinate system into range
     apicobasal .*= (apicobasal_upper - apicobasal_lower)
@@ -294,42 +769,87 @@ function compute_midmyocardial_section_coordinate_system(
     apicobasal .+= apicobasal_lower
 
     # Rotational coordinate
-    rotational = zeros(ndofs(dh))
-    rotational .= NaN
+    longitudinal = _to_f64(up)
+    longitudinal /= norm(longitudinal)
+    coords = _node_coordinates(mesh)
+    origin = _to_f64(sum(coords) / length(coords))
+    frame = AzimuthalFrame(
+        origin,
+        longitudinal,
+        _azimuth_zero_direction(
+            mesh,
+            origin,
+            longitudinal,
+            ["RotationalSeam", something(ridge_posterior, "SRidgePost")],
+            rotational_zero_direction,
+        ),
+    )
+    rotational = zeros(ndofs(dh_rotational))
+    _compute_rotational!(
+        rotational,
+        dh_rotational,
+        ip_collection_rotational,
+        dh,
+        K,
+        solver,
+        frame,
+        ridge_anterior,
+        ridge_posterior,
+    )
 
-    qrn  = NodalQuadratureRuleCollection(ip_collection) # FIXME ip_collection from grid
-    cvcn = CellValueCollection(qrn, ip_collection)
-    for sdh in dh.subdofhandlers
-        cellvalues = getcellvalues(cvcn, getcells(mesh, first(sdh.cellset)))
-        @inbounds for cell in CellIterator(sdh)
-            reinit!(cellvalues, cell)
-            coords = getcoordinates(cell)
-            dofs = celldofs(cell)
-            for qp in QuadratureIterator(cellvalues)
-                dΩ = getdetJdV(cellvalues, qp)
-
-                x_dof = spatial_coordinate(cellvalues, qp, coords)
-
-                x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
-                x = x_planar / norm(x_planar)
-
-                rotational[dofs[qp.i]] = 1/2 + atan(x[1], x[2])/(2π) # TODO tilted coordinate system
-            end
-        end
-    end
-
-    return LVCoordinateSystem(dh, ip_collection, T.(transmural), T.(apicobasal), T.(rotational))
+    return LVCoordinateSystem(
+        dh,
+        ip_collection,
+        T.(transmural),
+        T.(apicobasal),
+        dh_rotational,
+        ip_collection_rotational,
+        T.(rotational),
+    )
 end
 
 """
     vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
 
 Store the LV coordinate system in a vtk file.
+
+The rotational coordinate jumps across the seam, which a continuous VTK grid cannot represent -- it
+has one value per node, and the seam nodes are shared. On such a file the circular embedding
+`(cos 2πr, sin 2πr)` is written instead, which is single valued everywhere and carries the same
+information. Open the file with `write_discontinuous = true` to get the coordinate itself.
 """
 function vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
     Ferrite.write_solution(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
-    Ferrite.write_solution(vtk, cs.dh, cs.u_rotational, "rotational_")
     Ferrite.write_solution(vtk, cs.dh, cs.u_transmural, "transmural_")
+    if Ferrite.write_discontinuous(vtk)
+        Ferrite.write_solution(vtk, cs.dh_rotational, cs.u_rotational, "rotational_")
+    else
+        sine, cosine = _nodal_rotational_embedding(cs)
+        Ferrite.write_solution(vtk, cs.dh, sine, "rotational_sin_")
+        Ferrite.write_solution(vtk, cs.dh, cosine, "rotational_cos_")
+    end
+end
+
+"""
+The rotational coordinate as `(sin 2πr, cos 2πr)` on the continuous dofs of `cs.dh`. Elements
+disagree on `r` only by whole turns, so both are single valued and scattering them nodewise is
+lossless.
+"""
+function _nodal_rotational_embedding(cs::LVCoordinateSystem{T}) where {T}
+    sine = zeros(T, ndofs(cs.dh))
+    cosine = zeros(T, ndofs(cs.dh))
+    for sdh in cs.dh.subdofhandlers
+        for cell in CellIterator(sdh)
+            dofs = celldofs(cell)
+            dofs_rotational = celldofsview(cs.dh_rotational, cellid(cell))
+            @inbounds for i in eachindex(dofs)
+                r = cs.u_rotational[dofs_rotational[i]]
+                sine[dofs[i]] = sinpi(2r)
+                cosine[dofs[i]] = cospi(2r)
+            end
+        end
+    end
+    return sine, cosine
 end
 
 """

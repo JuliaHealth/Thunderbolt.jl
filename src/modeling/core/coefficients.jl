@@ -269,9 +269,10 @@ function evaluate_coefficient(
     return x
 end
 
-struct LVCoordinateSystemCache{CS <: LVCoordinateSystem, CV}
+struct LVCoordinateSystemCache{CS <: LVCoordinateSystem, CV, CVR}
     cs::CS
     cv::CV
+    cv_rotational::CVR
 end
 
 duplicate_for_device(device, cache::LVCoordinateSystemCache) = cache
@@ -282,14 +283,10 @@ function setup_coefficient_cache(
     sdh::SubDofHandler,
 ) where {T}
     cell   = get_first_cell(sdh)
-    ip     = getcoordinateinterpolation(cs, cell)
-    ip_geo = ip^3
-    fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
+    ip = Thunderbolt.getcoordinateinterpolation(cs, cell)
+    ip_geo = getcoordinateinterpolation(cs, cell)^3
     Nξs    = size(fv.Nξ)
-    return LVCoordinateSystemCache(
-        cs,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
-    )
+    return Thunderbolt.LVCoordinateSystemCache(cs, CellValues(qr, ip, ip_geo), CellValues(qr, ip, ip_geo))
 end
 
 function evaluate_coefficient(
@@ -298,19 +295,23 @@ function evaluate_coefficient(
     qp::QuadraturePoint{ref_shape, T},
     t,
 ) where {ref_shape, T}
-    @unpack cv, cs = coeff
-    @unpack dh     = cs
+    @unpack cv, cv_rotational, cs = coeff
     x1             = zero(T)
     x2             = zero(T)
     x3             = zero(T)
-    dofs           = celldofsview(dh, cellid(geometry_cache))
+    dofs           = celldofsview(cs.dh, cellid(geometry_cache))
     @inbounds for i = 1:getnbasefunctions(cv)
         val = shape_value(cv, qp, i)::T
         x1 += val * cs.u_transmural[dofs[i]]
         x2 += val * cs.u_apicobasal[dofs[i]]
-        x3 += val * cs.u_rotational[dofs[i]]
     end
-    return LVCoordinate(x1, x2, x3)
+    # The rotational coordinate lives on its own discontinuous dofs, which is what keeps the
+    # interpolant affine across the seam; wrapping brings the result back into [0, 1).
+    dofs_rotational = celldofsview(cs.dh_rotational, cellid(geometry_cache))
+    @inbounds for i = 1:getnbasefunctions(cv_rotational)
+        x3 += shape_value(cv_rotational, qp, i)::T * cs.u_rotational[dofs_rotational[i]]
+    end
+    return LVCoordinate(x1, x2, wrap_rotational(x3))
 end
 
 struct BiVCoordinateSystemCache{CS <: BiVCoordinateSystem, CV}

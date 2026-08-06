@@ -318,9 +318,13 @@ export
     BiVCoordinateSystem,
     BiVCoordinate,
     CartesianCoordinateSystem,
+    LVAxes,
+    compute_lv_axes,
     compute_lv_coordinate_system,
     compute_midmyocardial_section_coordinate_system,
+    apicobasal_from_laplace,
     getcoordinateinterpolation,
+    getrotationalinterpolation,
     vtk_coordinate_system,
     # Discretization
     semidiscretize,

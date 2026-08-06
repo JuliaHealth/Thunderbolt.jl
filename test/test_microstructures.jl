@@ -10,7 +10,13 @@ using Test, Thunderbolt, Tensors
     qr_collection = QuadratureRuleCollection(2)
     ip_collection = LagrangeCollection{1}()^3
 
-    ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid)
+    # A ring has no right ventricle attached, so it carries no ridges and the rotational coordinate
+    # falls back to the plain azimuth around `up`.
+    ring_cs = compute_midmyocardial_section_coordinate_system(
+        ring_grid;
+        ridge_anterior = nothing,
+        ridge_posterior = nothing,
+    )
 
     cartesian_coefficient = CartesianCoordinateSystem(ring_grid)
     qr = getquadraturerule(qr_collection, getcells(ring_grid, 1))

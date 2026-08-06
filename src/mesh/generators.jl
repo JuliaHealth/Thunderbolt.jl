@@ -4,6 +4,10 @@
 Generates an idealized full-hexahedral ring with linear ansatz. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
 The number of elements for the cylindrical system can be controlled by the first three input parameters.
 The remaining parameters control the spatial dimensions and the ring shape.
+
+A ring has no right ventricle attached, so it carries no ridges and
+[`compute_midmyocardial_section_coordinate_system`](@ref) falls back to the plain azimuth on it. The
+internal facetset `RotationalSeam` at ``φ = 0`` says where that azimuth is allowed to jump.
 """
 function generate_ring_mesh(
     num_elements_circumferential::Int,
@@ -89,6 +93,9 @@ function generate_ring_mesh(
     offset                   += length(cell_array[:, end, :][:])
     facetsets["Base"]        = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:, :, end][:])) .+ offset]);
     offset                   += length(cell_array[:, :, end][:])
+    # The ring closes on itself, so any azimuthal coordinate on it has to jump somewhere. This
+    # internal sheet at φ = 0 is where it does -- see [`compute_midmyocardial_section_coordinate_system`](@ref).
+    facetsets["RotationalSeam"] = OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1, :, :][:]);
 
     nodesets = Dict{String, OrderedSet{Int}}()
     nodesets["MyocardialAnchor1"] = OrderedSet{Int}([node_array[1, 1, 1]])
@@ -461,10 +468,17 @@ function generate_quadratic_open_ring_mesh(
 end
 
 """
-    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5))
+    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5), septum_fraction = 1//3)
 
 Generate an idealized left ventricle as a truncated ellipsoid.
 The number of elements per axis are controlled by the first three parameters.
+
+The mesh carries the two internal facetsets `SRidgePost` and `SRidgeAnt` that
+[`compute_lv_coordinate_system`](@ref) needs. An idealized ventricle has no right ventricle to
+attach to, so the ridges are placed by convention: `SRidgePost` at `φ = 0` and `SRidgeAnt` such that
+the septum between them covers `septum_fraction` of the circumference. They snap to the nearest
+element interface, so the split is exact only when `num_elements_circumferential * septum_fraction`
+is an integer.
 """
 function generate_ideal_lv_mesh(
     num_elements_circumferential::Int,
@@ -477,6 +491,7 @@ function generate_ideal_lv_mesh(
     apex_outer::T = Float64(1.5),
     with_control_point::Bool = false,
     use_wedges_for_the_apex = true,
+    septum_fraction = 1//3,
 ) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
     ne_tot = num_elements_circumferential*num_elements_radial*num_elements_logintudinal;
@@ -568,6 +583,12 @@ function generate_ideal_lv_mesh(
     offset                   += length(cell_array[:, end, :][:])
     facetsets["Base"]        = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:, :, end][:])) .+ offset]);
     offset                   += length(cell_array[:, :, end][:])
+    # The two internal sheets that stand in for the right ventricular insertions. Both run from the
+    # base down to the singular apex edge, where the azimuth stops existing, so together they cut
+    # the ventricle into a septum and a free wall.
+    i_ant                       = clamp(round(Int, num_elements_circumferential*septum_fraction), 1, num_elements_circumferential-1) + 1
+    facetsets["SRidgePost"]     = OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1, :, :][:]);
+    facetsets["SRidgeAnt"]      = OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[i_ant, :, :][:]);
     nodesets["Apex"]         = OrderedSet{Int}()
     nodesets["ApexInOut"]    = OrderedSet{Int}()
 
@@ -597,6 +618,8 @@ function generate_ideal_lv_mesh(
         j == 1 && push!(facetsets["Endocardium"], FacetIndex(length(cells), 1))
         j == num_elements_radial && push!(facetsets["Epicardium"], FacetIndex(length(cells), 5))
         j == num_elements_radial && push!(nodesets["Apex"], singular_index+1)
+        i == 1     && push!(facetsets["SRidgePost"], FacetIndex(length(cells), 2))
+        i == i_ant && push!(facetsets["SRidgeAnt"],  FacetIndex(length(cells), 2))
     end
 
     if with_control_point
@@ -674,16 +697,28 @@ function _ellipsoid_point(θ, φ, rp;
     return Vec((x, y, z))
 end
 
+"""
+Generate an idealized left ventricle as a truncated ellipsoid, all-hexahedral, with an O-grid cap
+covering the apex instead of a fan of wedges around a singular edge.
+
+Like [`generate_ideal_lv_mesh`](@ref) it carries the `SRidgePost` and `SRidgeAnt` facetsets, but
+they stop at the O-grid core. The core is a regular patch across the apex, so no facet sheet inside
+it continues the ridges, and the rotational coordinate of
+[`compute_lv_coordinate_system`](@ref) degrades over the core -- roughly the apical eighth of the
+ventricle. Use the fan variant where the coordinate has to be accurate right into the apex.
+"""
 function generate_ideal_lv_mesh_hex(
     num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int;
     inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2),
     apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5), septum_flatness::T = Float64(0.6),
     axis_ratio::T = Float64(1.2), eccentricity::T = Float64(0.0),
     core_size = clamp(1 - 2π/num_elements_circumferential, 0.35, 0.9), core_roundness = 0.45,
+    septum_fraction = 1//3,
 ) where {T}
     num_elements_circumferential % 4 == 0 || throw(ArgumentError(
         "the O-grid apex needs num_elements_circumferential divisible by 4, got $num_elements_circumferential"))
     m = num_elements_circumferential ÷ 4
+    i_ant = clamp(round(Int, num_elements_circumferential*septum_fraction), 1, num_elements_circumferential-1) + 1
 
     n_nodes_c = num_elements_circumferential
     n_nodes_r = num_elements_radial + 1
@@ -730,6 +765,12 @@ function generate_ideal_lv_mesh_hex(
         "Endocardium" => OrderedSet{FacetIndex}(FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]),
         "Epicardium"  => OrderedSet{FacetIndex}(FacetIndex(cl, 4) for cl in cell_array[:,end,:][:]),
         "Base"        => OrderedSet{FacetIndex}(FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]),
+        # The two internal sheets standing in for the right ventricular insertions, see
+        # [`compute_lv_coordinate_system`](@ref). Unlike the fan variant they stop at the O-grid
+        # core: the core is a regular patch covering the apex, so no facet sheet inside it separates
+        # the two sides, and the rotational coordinate is smeared over the core instead.
+        "SRidgePost"  => OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]),
+        "SRidgeAnt"   => OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[i_ant,:,:][:]),
     )
 
     # Apex cells are extruded transmurally rather than longitudinally, so their
@@ -742,6 +783,8 @@ function generate_ideal_lv_mesh_hex(
                                  node_array[i,j+1,1], node_array[i_next,j+1,1], core_array[an,bn,j+1], core_array[a,b,j+1])))
         j == 1                       && push!(facetsets["Endocardium"], FacetIndex(length(cells), 1))
         j == num_elements_radial     && push!(facetsets["Epicardium"],  FacetIndex(length(cells), 6))
+        i == 1                       && push!(facetsets["SRidgePost"], FacetIndex(length(cells), 5))
+        i == i_ant                   && push!(facetsets["SRidgeAnt"],  FacetIndex(length(cells), 5))
     end
     for j in 1:num_elements_radial, b in 1:m, a in 1:m
         push!(cells, Hexahedron((core_array[a,b,j],   core_array[a+1,b,j],   core_array[a+1,b+1,j],   core_array[a,b+1,j],
