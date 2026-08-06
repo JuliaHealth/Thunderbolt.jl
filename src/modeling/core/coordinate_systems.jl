@@ -224,6 +224,9 @@ function compute_midmyocardial_section_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T},
     subdomains::Vector{String} = [single_subdomain_or_error(mesh)];
     up = Vec((T(0.0), T(0.0), T(1.0))),
+    apicobasal_lower = 0.4,
+    apicobasal_upper = 0.6,
+    solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
 ) where {T}
     @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
@@ -237,7 +240,7 @@ function compute_midmyocardial_section_coordinate_system(
     Ferrite.close!(dh)
 
     # Assemble Laplacian
-    # TODO use bilinear operator
+    # TODO use bilinear operator from FerriteOperators to parallelize assembly
     K = allocate_matrix(dh)
 
     assembler = start_assemble(K)
@@ -279,16 +282,20 @@ function compute_midmyocardial_section_coordinate_system(
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
+    sol = solve(LinearSolve.LinearProblem(K_transmural, f), solver)
     transmural = sol.u
 
     # Apicobasal coordinate
     apicobasal = zeros(ndofs(dh))
     apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
+    # Normalize
     apicobasal .-= minimum(apicobasal)
     apicobasal = abs.(apicobasal)
     apicobasal ./= maximum(apicobasal)
-    apicobasal .*= 0.15
+    # Scale coordinate system into range
+    apicobasal .*= (apicobasal_upper - apicobasal_lower)
+    # Shift coordinate system
+    apicobasal .+= apicobasal_lower
 
     # Rotational coordinate
     rotational = zeros(ndofs(dh))
