@@ -43,16 +43,24 @@ solution_size(f::NullFunction) = f.ndofs
 
 This acts as as a launch-pad for batches of ODE steps.
 """
-struct PointwiseODEFunction{ODEType, xType, IndexVectorType} <: AbstractPointwiseFunction
+struct PointwiseODEFunction{ODEType, xType, IndexVectorType, L} <: AbstractPointwiseFunction
     ode::ODEType
     x::xType
     # Indices of the states associated with this
     associated_states::IndexVectorType
-    # The name this block of state is published under, from the model that introduced it. Only ever read
-    # at setup and post-processing time; `f.ode` and `f.x` are the parts that reach a kernel, and neither
-    # this struct nor this field is adapted, so it costs nothing on the GPU.
+    # The name this block of state is published under, from the model that introduced it.
     name::Symbol
+    # How this block is arranged. Recorded rather than inferred, so a function is self-describing: a
+    # standalone one is state blocked, one nested in a `PointwiseMultiODEFunction` is point blocked, and
+    # nothing has to guess which from the enclosing type. `setup_solver_cache` still hardcodes the
+    # matching `reshape`; the two can be tied together once the GPU paths are testable again.
+    # Only read at setup and post-processing time -- neither this struct nor these fields are adapted,
+    # so they cost nothing on the GPU.
+    layout::L
 end
+
+PointwiseODEFunction(ode, x, associated_states, name::Symbol) =
+    PointwiseODEFunction(ode, x, associated_states, name, StateBlockedLayout())
 
 solution_size(f::PointwiseODEFunction) = length(f.associated_states)
 
@@ -213,7 +221,6 @@ internal_variable_range(dh::Ferrite.AbstractDofHandler, lvh::InternalVariableHan
     (ndofs(dh)+1):(ndofs(dh)+ndofs(lvh))
 internal_variable_range(f::AbstractSolidMechanicsFunction) = internal_variable_range(f.dh, f.lvh)
 
-solution_variables(f::NullFunction) = SolutionVariable[]
 solution_variables(f::AffineODEFunction) = _field_variables(f.dh)
 solution_variables(f::AffineSteadyStateFunction) = _field_variables(f.dh)
 
@@ -244,7 +251,7 @@ function _internal_state_variables(
     isempty(infos) && return SolutionVariable[]
 
     nqp = getnquadpoints(getquadraturerule(integrator.qrc, sdh))
-    cells = QuadratureStateCell[]
+    cells = StateBlock[]
     for cell in CellIterator(sdh)
         cid = cellid(cell)
         # Take the per-point size from what the handler actually allocated rather than re-deriving it
@@ -270,10 +277,7 @@ function _internal_state_variables(
     offset = 0
     for info in infos
         components = collect((offset+1):(offset+info.size))
-        push!(
-            vars,
-            LocalStateVariable(info.name, material_model, points, components, [info.name], nothing),
-        )
+        push!(vars, LocalStateVariable(info.name, material_model, points, components, nothing))
         offset += info.size
     end
     return vars
@@ -337,32 +341,24 @@ end
 # Pointwise state. The transmembrane potential is excluded from the *name*: it is a field the enclosing
 # problem solves for, and in an operator split it aliases one slot of every point's state vector. A
 # standalone pointwise problem therefore publishes its recovery states only.
-solution_variables(f::PointwiseODEFunction) = _pointwise_variables(f, StateBlockedLayout())
+function solution_variables(f::PointwiseODEFunction)
+    ode        = f.ode
+    nstates    = num_states(ode)
+    npoints    = solution_size(f) ÷ nstates
+    φidx       = transmembranepotential_index(ode)
+    components = [i for i = 1:nstates if i != φidx]
+    points     = BlockedStridedStatePoints([StateBlock(0, npoints, nstates, f.layout)])
+    return SolutionVariable[LocalStateVariable(f.name, ode, points, components, f.x)]
+end
 
+# Like every other composite, this asks its children for their own frame and translates. `associated_states`
+# is the child's block of this function's vector, which is exactly the index set `translate` needs.
 function solution_variables(f::PointwiseMultiODEFunction)
     vars = SolutionVariable[]
     for g in f.functions
-        append!(vars, _pointwise_variables(g, PointBlockedLayout()))
+        append!(vars, (translate(v, g.associated_states) for v in solution_variables(g)))
     end
     return merge_and_check_unique(vars)
-end
-
-function _pointwise_variables(f::PointwiseODEFunction, layout)
-    ode        = f.ode
-    nstates    = num_states(ode)
-    npoints    = length(f.associated_states) ÷ nstates
-    block      = StateBlock(first(f.associated_states) - 1, npoints, nstates, layout)
-    φidx       = transmembranepotential_index(ode)
-    components = [i for i = 1:nstates if i != φidx]
-    names      = collect(state_symbols(ode))
-    return SolutionVariable[LocalStateVariable(
-        f.name,
-        ode,
-        BlockedStridedStatePoints([block]),
-        components,
-        names[components],
-        f.x,
-    )]
 end
 
 # Ionic models declare their default as a value; materials declare theirs in place. Bridging the two here

@@ -359,27 +359,14 @@ function semidiscretize(
     )
 end
 
-"""
-    _pointwise_state_slot(layout, offset, npoints, nstates, point, state)
-
-Position in the pointwise state vector of `state` at `point`, for a block of `npoints` points carrying
-`nstates` values each, based at the 0-based `offset`.
-
-Both electrophysiology paths derive their heat dof map from this one formula, so the single- and
-multi-subdomain cases cannot disagree about where the transmembrane potential lives.
-"""
-_pointwise_state_slot(::StateBlockedLayout, offset, npoints, nstates, point, state) =
-    offset + (state - 1) * npoints + point
-_pointwise_state_slot(::PointBlockedLayout, offset, npoints, nstates, point, state) =
-    offset + (point - 1) * nstates + state
-
-# The cell model's `x`, evaluated once per state point. `compute_nodal_values` uses the delta property of
-# the interpolation, so this is the ordinary coefficient protocol specialised to nodal points. `cellset`
-# keeps a subdomain's evaluation off its neighbours -- and off any interface `SubDofHandler`, whose
-# interpolation has no reference coordinates to evaluate at.
-_cell_coordinates(model, dh, φsym, cellset = nothing) =
-    model.cell_coordinates === nothing ? nothing :
-    compute_nodal_values(model.cell_coordinates, dh, φsym; cellset)
+# The cell model's `x`, one value per state point. The state points are the dof locations of the
+# transmembrane potential field, so this is `evaluate_coefficient_at_dof_locations` restricted to the
+# subdomain -- which also keeps it off any interface `SubDofHandler`, whose interpolation has no
+# reference coordinates to evaluate at.
+function _cell_coordinates(model, dh, φsym, cellset = nothing)
+    cs = reaction_coordinate_system(model)
+    return cs === nothing ? nothing : evaluate_coefficient_at_dof_locations(cs, dh, φsym; cellset)
+end
 
 function semidiscretize(
     split::ReactionDiffusionSplit{<:MonodomainModel},
@@ -389,13 +376,7 @@ function semidiscretize(
     epmodel = split.model
     φsym = reaction_solution_symbol(epmodel)
 
-    heat_model = TransientDiffusionModel(
-        ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
-        epmodel.stim,
-        φsym,
-    )
-
-    heatfun = semidiscretize(heat_model, discretization, mesh)
+    heatfun = semidiscretize(semidiscretize_map_diffusion_part(epmodel), discretization, mesh)
 
     dh = heatfun.dh
     ndofsφ = ndofs(dh)
@@ -408,16 +389,16 @@ function semidiscretize(
         ion,
         _cell_coordinates(epmodel, dh, φsym),
         1:(nstates_per_point*ndofsφ),
-        epmodel.internal_state_symbol,
+        reaction_state_symbol(epmodel),
+        StateBlockedLayout(),
     )
-    # A single `PointwiseODEFunction` is state blocked, so the transmembrane potential occupies one
-    # contiguous stretch -- but which one depends on where the cell model keeps it, not on an assumption
-    # that it comes first.
+    # The transmembrane potential occupies one stretch of the state block, but which one depends on where
+    # the cell model keeps it -- not on an assumption that it comes first. Asking the point set the
+    # descriptor layer publishes is what keeps this index set and `solution_indices(f, φsym)` identical by
+    # construction rather than by a test noticing afterwards.
+    φpoints = solution_variable(odefun, reaction_state_symbol(epmodel)).points
     φidx = transmembranepotential_index(ion)
-    heat_dofrange = [
-        _pointwise_state_slot(StateBlockedLayout(), 0, ndofsφ, nstates_per_point, j, φidx) for
-        j = 1:ndofsφ
-    ]
+    heat_dofrange = [state_range(φpoints, j)[φidx] for j = 1:ndofsφ]
     ode_dofrange = 1:(nstates_per_point*ndofsφ)
     #
     semidiscrete_ode = GenericSplitFunction(
@@ -490,56 +471,62 @@ function semidiscretize(
     )
     @assert length(epmodel_symbols) == 1 "All EP models in a domain split must share the same transmembrane potential symbol, got $(epmodel_symbols)."
     φsym = first(epmodel_symbols)
-    # Coordinates are per subdomain now, so they live on the individual `PointwiseODEFunction`s below --
-    # which is what the solver caches read anyway. The multi function's own field stays empty.
-    xφ = nothing
     # `heat_dofrange` is indexed by *dof of the heat problem*, because `view(u, heat_dofrange)` is what the
     # heat sub-integrator solves on: entry `j` has to be dof `j` of `dh`. Scattering into a preallocated
     # map rather than appending per subdomain is what guarantees that, independently of the order the
     # subdomain dictionary happens to iterate in.
     heat_dofrange = zeros(Int, ndofs(dh))
     for (name, model) in bulk_models
-        if has_pointwise_reaction_part(model) # Bulk models without a reaction part need no ODE block
-            ion = reaction_model(model)
-            # Extract dofs associated with subdomain
-            subdofs = collect_dofs_on_subdomain(dh, mesh, name)
-            # Compute range for states
-            mindof, maxdof = extrema(subdofs)
-            @assert length(mindof:maxdof) == length(subdofs) "$(mindof:maxdof) does not match length(subdofs)=$(length(subdofs)) => Subdomain is not isolated. "
-            nstates = num_states(ion)
-            npoints = length(subdofs)
-            # The state vector is packed subdomain by subdomain in iteration order, *not* by
-            # global dof index, because the number of states per point varies between subdomains.
-            # Hence the range is derived from the running offset.
-            state_range = (offset+1):(offset+nstates*npoints)
-            @debug "Mapping state range on $name to $state_range from $(mindof:maxdof)"
+        # Bulk models without a reaction part need no ODE block
+        has_pointwise_reaction_part(model) || continue
+        ion = reaction_model(model)
+        # Extract dofs associated with subdomain
+        subdofs = collect_dofs_on_subdomain(dh, mesh, name)
+        # Compute range for states
+        mindof, maxdof = extrema(subdofs)
+        @assert length(mindof:maxdof) == length(subdofs) "$(mindof:maxdof) does not match length(subdofs)=$(length(subdofs)) => Subdomain is not isolated. "
+        nstates = num_states(ion)
+        npoints = length(subdofs)
+        # The state vector is packed subdomain by subdomain in iteration order, *not* by
+        # global dof index, because the number of states per point varies between subdomains.
+        # Hence the range is derived from the running offset.
+        substates = (offset+1):(offset+nstates*npoints)
+        @debug "Mapping state range on $name to $substates from $(mindof:maxdof)"
 
-            xsub = _cell_coordinates(model, dh, φsym, getcellset(mesh, name))
-            xsub === nothing || (xsub = view(xsub, mindof:maxdof))
+        xsub = _cell_coordinates(model, dh, φsym, getcellset(mesh, name))
+        xsub === nothing || (xsub = view(xsub, mindof:maxdof))
 
-            # Create ode function for subdomain
-            push!(
-                inner_functions,
-                PointwiseODEFunction(ion, xsub, state_range, model.internal_state_symbol),
-            )
+        # Create ode function for subdomain. Children of a `PointwiseMultiODEFunction` are point
+        # blocked, and now say so themselves rather than leaving the parent to assume it.
+        push!(
+            inner_functions,
+            PointwiseODEFunction(
+                ion,
+                xsub,
+                substates,
+                reaction_state_symbol(model),
+                PointBlockedLayout(),
+            ),
+        )
 
-            # Map heat dofs. The children of a `PointwiseMultiODEFunction` are point blocked.
-            φidx = transmembranepotential_index(ion)
-            for (k, dof) in enumerate(subdofs)
-                heat_dofrange[dof] =
-                    _pointwise_state_slot(PointBlockedLayout(), offset, npoints, nstates, k, φidx)
-            end
-
-            # Update total number of dofs in split
-            offset += npoints*nstates
+        # Map heat dofs by indexing the very block the descriptor layer publishes, so the split's
+        # index set and `solution_indices(f, φsym)` cannot drift apart.
+        block = StateBlock(offset, npoints, nstates, PointBlockedLayout())
+        φidx = transmembranepotential_index(ion)
+        for (k, dof) in enumerate(subdofs)
+            heat_dofrange[dof] = state_range(block, k)[φidx]
         end
+
+        # Update total number of dofs in split
+        offset += npoints*nstates
     end
     any(iszero, heat_dofrange) && error(
         "The transmembrane potential field carries dofs that no bulk model claims, so the heat problem " *
         "would read uninitialised state. Every dof of $(repr(φsym)) has to lie on a subdomain with a " *
         "pointwise reaction part.",
     )
-    ionicfun = PointwiseMultiODEFunction(inner_functions, xφ)
+    # Coordinates live on the individual children, which is where the solver caches read them.
+    ionicfun = PointwiseMultiODEFunction(inner_functions, nothing)
     ionic_dofrange = 1:offset
 
     # NOTE: these two index sets deliberately *overlap* - `heat_dofrange` picks the transmembrane

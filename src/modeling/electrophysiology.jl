@@ -201,7 +201,7 @@ can peel off into its own subproblem?
 This is a trait rather than an `isa AbstractEPModel` check so that models outside Thunderbolt's own
 type hierarchy - including types owned by other packages, which cannot be retrofitted with a
 supertype - can declare the capability. Models answering `true` must also implement
-[`reaction_model`](@ref) and [`reaction_solution_symbol`](@ref).
+[`reaction_model`](@ref), [`reaction_solution_symbol`](@ref) and [`reaction_state_symbol`](@ref).
 """
 has_pointwise_reaction_part(model) = false
 has_pointwise_reaction_part(::AbstractEPModel) = true
@@ -221,6 +221,22 @@ The field variable the reaction part of `model` acts on, for models with
 [`has_pointwise_reaction_part`](@ref).
 """
 function reaction_solution_symbol end
+
+"""
+    reaction_state_symbol(model)
+
+The name the reaction part's local state is published under, for models with
+[`has_pointwise_reaction_part`](@ref).
+"""
+function reaction_state_symbol end
+
+"""
+    reaction_coordinate_system(model)
+
+The coordinate the reaction model is handed as its `x`, as a coefficient, or `nothing` when it ignores
+its coordinate. Defaults to `nothing` so a model need only implement it if it cares.
+"""
+reaction_coordinate_system(model) = nothing
 
 abstract type AbstractStimulationProtocol <: AbstractSourceTerm end;
 
@@ -348,26 +364,8 @@ MonodomainModel(χ, Cₘ, κ, stim, ion, φsym::Symbol, ssym::Symbol) =
 get_field_variable_names(model::MonodomainModel) = (model.transmembrane_solution_symbol,)
 
 reaction_solution_symbol(model::MonodomainModel) = model.transmembrane_solution_symbol
-
-# The cell state is quadrature-point-local state in exactly the sense the solid mechanics materials mean
-# it, so it is declared through the same interface. The transmembrane potential is excluded: it is a field
-# the heat problem solves for, and it aliases one slot of every point's local state vector.
-function gather_internal_variable_infos(model::MonodomainModel)
-    return (InternalVariableInfo(model.internal_state_symbol, num_states(model.ion) - 1),)
-end
-
-"""
-    internal_state_components(model) -> Vector{Int}
-
-Which slots of a point's local state vector the model's *internal* state occupies, i.e. everything except
-the transmembrane potential. Not necessarily contiguous - `ParametrizedAlievPanfilovModel` carries the
-potential at index 2 of 2, so its internal state is slot 1.
-"""
-function internal_state_components(model::MonodomainModel)
-    ion = reaction_model(model)
-    φidx = transmembranepotential_index(ion)
-    return [i for i = 1:num_states(ion) if i != φidx]
-end
+reaction_state_symbol(model::MonodomainModel) = model.internal_state_symbol
+reaction_coordinate_system(model::MonodomainModel) = model.cell_coordinates
 
 """
     ReactionDiffusionSplit(model)

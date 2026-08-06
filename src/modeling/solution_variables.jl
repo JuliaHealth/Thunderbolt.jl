@@ -78,24 +78,25 @@ and layout.
 This is what an operator-split electrophysiology problem produces: subdomains carry different cell models,
 so neither the number of states nor the stride is global, and no single `reshape` describes the storage.
 """
-struct BlockedStridedStatePoints{B <: StateBlock} <: StatePointSet
-    blocks::Vector{B}
-    # first_point[b] is the global index of block b's first point, so that a global point index can be
-    # resolved to (block, point-within-block) by a single search.
+struct BlockedStridedStatePoints <: StatePointSet
+    blocks::Vector{StateBlock}
+    # Cumulative point offsets with the usual `n+1` sentinel, so that a global point index resolves to
+    # (block, point-within-block) by one search, and the total point count is just the last entry.
     first_point::Vector{Int}
 end
 
-function BlockedStridedStatePoints(blocks::Vector{<:StateBlock})
-    first_point = Vector{Int}(undef, length(blocks))
+function BlockedStridedStatePoints(blocks::AbstractVector{<:StateBlock})
+    first_point = Vector{Int}(undef, length(blocks) + 1)
     running = 1
     for (i, b) in enumerate(blocks)
         first_point[i] = running
         running += b.npoints
     end
-    return BlockedStridedStatePoints(blocks, first_point)
+    first_point[end] = running
+    return BlockedStridedStatePoints(collect(StateBlock, blocks), first_point)
 end
 
-npoints(p::BlockedStridedStatePoints) = isempty(p.blocks) ? 0 : sum(b -> b.npoints, p.blocks)
+npoints(p::BlockedStridedStatePoints) = last(p.first_point) - 1
 
 @inline function state_range(p::BlockedStridedStatePoints, k::Int)
     b = searchsortedlast(p.first_point, k)
@@ -106,54 +107,24 @@ shift(p::BlockedStridedStatePoints, by::Int) =
     BlockedStridedStatePoints([shift(b, by) for b in p.blocks], p.first_point)
 
 """
+    QuadratureStatePoints(blocks)
+
+Quadrature-point-local state: one point per quadrature point of every cell that carries any.
+
+This is the same structure as any other pointwise state — one cell's block is `nqp` points of
+`size_per_qp` values each, stored point after point — so it is a [`BlockedStridedStatePoints`](@ref) of
+[`StateBlock`](@ref)s under `PointBlockedLayout`, not a separate kind.
+"""
+QuadratureStatePoints(blocks::AbstractVector{<:StateBlock}) = BlockedStridedStatePoints(blocks)
+
+"""
     QuadratureStateCell(offset, nqp, size_per_qp)
 
 One cell's worth of quadrature-point-local state, based at the absolute 0-based `offset` that
 `FerriteOperators.internal_variable_offset` reports.
 """
-struct QuadratureStateCell
-    offset::Int
-    nqp::Int
-    size_per_qp::Int
-end
-
-@inline function state_range(c::QuadratureStateCell, q::Int)
-    first_slot = c.offset + (q - 1) * c.size_per_qp + 1
-    return first_slot:1:(first_slot+c.size_per_qp-1)
-end
-
-shift(c::QuadratureStateCell, by::Int) = QuadratureStateCell(c.offset + by, c.nqp, c.size_per_qp)
-
-"""
-    QuadratureStatePoints(cells)
-
-Quadrature-point-local state, one entry per quadrature point of every cell that carries any. Ragged by
-construction: mixed grids give different cells different quadrature counts and different per-point sizes.
-"""
-struct QuadratureStatePoints <: StatePointSet
-    cells::Vector{QuadratureStateCell}
-    first_point::Vector{Int}
-end
-
-function QuadratureStatePoints(cells::Vector{QuadratureStateCell})
-    first_point = Vector{Int}(undef, length(cells))
-    running = 1
-    for (i, c) in enumerate(cells)
-        first_point[i] = running
-        running += c.nqp
-    end
-    return QuadratureStatePoints(cells, first_point)
-end
-
-npoints(p::QuadratureStatePoints) = isempty(p.cells) ? 0 : sum(c -> c.nqp, p.cells)
-
-@inline function state_range(p::QuadratureStatePoints, k::Int)
-    c = searchsortedlast(p.first_point, k)
-    return state_range(p.cells[c], k - p.first_point[c] + 1)
-end
-
-shift(p::QuadratureStatePoints, by::Int) =
-    QuadratureStatePoints([shift(c, by) for c in p.cells], p.first_point)
+QuadratureStateCell(offset::Int, nqp::Int, size_per_qp::Int) =
+    StateBlock(offset, nqp, size_per_qp, PointBlockedLayout())
 
 # ---------------------------------------------------------------------------------------------------
 # Descriptors
@@ -196,7 +167,7 @@ struct FieldVariable{DH, I} <: SolutionVariable
 end
 
 """
-    LocalStateVariable(name, model, points, components, component_names, coordinates)
+    LocalStateVariable(name, model, points, components, coordinates)
 
 State owned by a model and attached to a set of evaluation points -- ionic cell state, sarcomere state,
 viscoelastic history. These are the same mechanism at different point sets, which is why they share a
@@ -214,7 +185,6 @@ struct LocalStateVariable{M, P <: StatePointSet, X} <: SolutionVariable
     model::M
     points::P
     components::Vector{Int}
-    component_names::Vector{Symbol}
     coordinates::X
 end
 
@@ -302,7 +272,6 @@ function translate(v::LocalStateVariable, indices)
         v.model,
         shift(v.points, first(indices) - 1),
         v.components,
-        v.component_names,
         v.coordinates,
     )
 end
@@ -348,8 +317,6 @@ function solution_variable(f, name)
     )
     return vars[idx]
 end
-
-has_solution_variable(f, name) = any(v -> variable_name(v) == name, solution_variables(f))
 
 """
     solution_indices(f, name) -> AbstractVector{Int}
@@ -420,7 +387,7 @@ end
 
 function setvariable!(u::AbstractVector, v::FieldVariable, coeff)
     a = field_view(u, v)
-    evaluate_coefficient_at_dofs!(a, coeff, v.dh, v.name)
+    evaluate_coefficient_at_dof_locations!(a, coeff, v.dh, v.name)
     return u
 end
 
@@ -464,44 +431,10 @@ end
         return (vals,)
     end
     length(vals) == length(v.components) || error(
-        "Setting $(repr(v.name)) expects $(length(v.components)) value(s) per point " *
-        "($(join(repr.(v.component_names), ", "))), got $(length(vals)).",
+        "Setting $(repr(v.name)) expects $(length(v.components)) value(s) per point, " *
+        "got $(length(vals)).",
     )
     return vals
-end
-
-"""
-    evaluate_coefficient_at_dofs!(a, coefficient, dh, field_name)
-
-Evaluate `coefficient` at the dof positions of `field_name` and write the results into the
-`DofHandler`-indexed vector `a`.
-
-Uses the delta property of nodal interpolations, exactly as `compute_nodal_values` does, so it goes
-through the ordinary `setup_coefficient_cache`/`evaluate_coefficient` protocol and works for any
-coefficient rather than only coordinate systems.
-"""
-function evaluate_coefficient_at_dofs!(
-    a::AbstractVector,
-    coefficient,
-    dh::DofHandler,
-    field_name::Symbol,
-)
-    for sdh in dh.subdofhandlers
-        field_name ∈ sdh.field_names || continue
-        ip = Ferrite.getfieldinterpolation(sdh, field_name)
-        rdim = Ferrite.getrefdim(ip)
-        positions = Vec{rdim, Float64}.(Ferrite.reference_coordinates(ip))
-        qr = QuadratureRule{Ferrite.getrefshape(ip)}([1.0 for _ in positions], positions)
-        cc = setup_coefficient_cache(coefficient, qr, sdh)
-        drange = Ferrite.dof_range(sdh, field_name)
-        for cell in CellIterator(sdh)
-            dofs = @view celldofs(cell)[drange]
-            for qp in QuadratureIterator(qr)
-                a[dofs[qp.i]] = evaluate_coefficient(cc, cell, qp, NaN)
-            end
-        end
-    end
-    return a
 end
 
 # ---------------------------------------------------------------------------------------------------
@@ -547,19 +480,15 @@ function merge_variables(a::LocalStateVariable, b::LocalStateVariable)
         a.model,
         _merge_points(a.points, b.points),
         a.components,
-        a.component_names,
         _merge_coordinates(a.coordinates, b.coordinates),
     )
 end
 
 _merge_points(a::BlockedStridedStatePoints, b::BlockedStridedStatePoints) =
     BlockedStridedStatePoints(vcat(a.blocks, b.blocks))
-_merge_points(a::QuadratureStatePoints, b::QuadratureStatePoints) =
-    QuadratureStatePoints(vcat(a.cells, b.cells))
 _merge_points(a::StatePointSet, b::StatePointSet) =
     error("Cannot merge state points of type $(typeof(a)) and $(typeof(b)).")
 
-_merge_coordinates(::Nothing, ::Nothing) = nothing
 _merge_coordinates(a, b) = (a === nothing || b === nothing) ? nothing : vcat(a, b)
 
 function merge_variables(a::FieldVariable, b::FieldVariable)

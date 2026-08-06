@@ -144,47 +144,78 @@ function duplicate_for_device(device, cache::ConductivityToDiffusivityCoefficien
 end
 
 """
-    compute_nodal_values(csc, dh, field_name; cellset = nothing)
+    evaluate_coefficient_at_dof_locations(coefficient, dh, field_name; cellset = nothing)
+    evaluate_coefficient_at_dof_locations!(a, coefficient, dh, field_name; cellset = nothing)
 
-Evaluate a coordinate system at the dof positions of `field_name`.
+Evaluate `coefficient` at the spatial locations `field_name`'s degrees of freedom sit at, returning (or
+filling) a vector indexed by dof of `dh`.
+
+**These are the nodes of the ansatz space, not the nodes of the mesh.** The locations come from the
+*field* interpolation's reference coordinates mapped through the geometric interpolation, so a quadratic
+ansatz on a linear mesh also evaluates at edge midpoints and cell centres — 25 locations on a 9-node
+`Quadrilateral` patch, not 9. The two coincide only for a first-order Lagrange field on a matching
+geometry, which is why the name says "dof locations" rather than "nodal".
+
+Only meaningful for interpolations with the delta property — Lagrange and friends, where a dof's value
+*is* the function value at its location. That is the same restriction `Ferrite.apply_analytical!`
+documents, and it is why the quadrature rule below can use the reference coordinates as its points.
+
+Works for any coefficient, not just coordinate systems: the evaluation goes through the ordinary
+`setup_coefficient_cache` / `evaluate_coefficient` protocol, and only the choice of quadrature points is
+special. The allocating form additionally needs `value_type(coefficient)` to size its output, which today
+only the coordinate systems implement — pass your own vector to the in-place form otherwise.
 
 `cellset` restricts the evaluation to the `SubDofHandler`s living on those cells. That matters on a mixed
-grid: an interface `SubDofHandler` may carry the same field, but its interpolation has no reference
+grid: an interface `SubDofHandler` may carry the same field while its interpolation has no reference
 coordinates, so evaluating there is neither meaningful nor possible. Entries outside the set are left
-undefined -- the caller asked only for its own subdomain.
+untouched.
 """
-function compute_nodal_values(
-    csc::CoordinateSystemCoefficient,
+evaluate_coefficient_at_dof_locations(
+    coefficient,
+    dh::DofHandler,
+    field_name::Symbol;
+    cellset = nothing,
+) = evaluate_coefficient_at_dof_locations!(
+    Vector{value_type(coefficient)}(UndefInitializer(), ndofs(dh)),
+    coefficient,
+    dh,
+    field_name;
+    cellset,
+)
+
+@doc (@doc evaluate_coefficient_at_dof_locations)
+function evaluate_coefficient_at_dof_locations!(
+    a::AbstractVector,
+    coefficient,
     dh::DofHandler,
     field_name::Symbol;
     cellset = nothing,
 )
-    Tv = value_type(csc)
-    nodal_values = Vector{Tv}(UndefInitializer(), ndofs(dh))
-    T = eltype(Tv)
     for sdh in dh.subdofhandlers
         field_name ∈ sdh.field_names || continue
         cellset === nothing || first(sdh.cellset) ∈ cellset || continue
         ip = Ferrite.getfieldinterpolation(sdh, field_name)
         rdim = Ferrite.getrefdim(ip)
-        positions = Vec{rdim, T}.(Ferrite.reference_coordinates(ip))
+        # The positions live in reference space, so their element type comes from the interpolation --
+        # not from whatever the coefficient evaluates to. Tying the two together breaks for any
+        # coefficient whose values are not floats, e.g. a cell index.
+        positions = Vec{rdim}.(Ferrite.reference_coordinates(ip))
+        T = eltype(eltype(positions))
         #! format: off
         # This little trick uses the delta property of interpolations
         qr = QuadratureRule{Ferrite.getrefshape(ip)}([T(1.0) for _ = 1:length(positions)], positions)
         #! format: on
-        cc = setup_coefficient_cache(csc, qr, sdh)
-        _compute_nodal_values!(nodal_values, qr, cc, sdh)
-    end
-    return nodal_values
-end
-
-function _compute_nodal_values!(nodal_values, qr, cc, sdh)
-    for cell in CellIterator(sdh)
-        dofs = celldofs(cell)
-        for qp in QuadratureIterator(qr)
-            nodal_values[dofs[qp.i]] = evaluate_coefficient(cc, cell, qp, NaN)
+        cc = setup_coefficient_cache(coefficient, qr, sdh)
+        # A field need not occupy the first dofs of a cell, so address it through its own dof range.
+        drange = Ferrite.dof_range(sdh, field_name)
+        for cell in CellIterator(sdh)
+            dofs = @view celldofs(cell)[drange]
+            for qp in QuadratureIterator(qr)
+                a[dofs[qp.i]] = evaluate_coefficient(cc, cell, qp, NaN)
+            end
         end
     end
+    return a
 end
 
 struct CellIndexCoordinateSystemCache end

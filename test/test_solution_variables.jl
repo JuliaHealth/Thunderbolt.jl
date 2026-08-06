@@ -8,10 +8,10 @@ using FerriteInterfaceElements
 
 const T = Thunderbolt
 
-# Coordinates of the transmembrane potential dofs, for checking analytical initialisation.
+# Locations of the transmembrane potential's dofs, for checking analytical initialisation.
 function dof_coordinates(form, φsym)
     dh = form.functions[1].dh
-    return T.compute_nodal_values(CartesianCoordinateSystem(dh.grid), dh, φsym)
+    return T.evaluate_coefficient_at_dof_locations(CartesianCoordinateSystem(dh.grid), dh, φsym)
 end
 
 # A 2D box with a monodomain model on it. `ion` and `coords` are what the individual tests vary.
