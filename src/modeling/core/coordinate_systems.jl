@@ -97,6 +97,7 @@ function compute_lv_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T};
     subdomains::Vector{String} = [single_subdomain_or_error(mesh)],
     up = Vec((T(0.0), T(0.0), T(-1.0))),
+    solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
 ) where {T}
     @assert abs.(up) ≈ Vec((T(0.0), T(0.0), T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
@@ -152,17 +153,12 @@ function compute_lv_coordinate_system(
         f = zeros(ndofs(dh))
 
         apply!(K_transmural, f, ch)
-        sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
+        sol = solve(LinearSolve.LinearProblem(K_transmural, f), solver)
         transmural = sol.u
     end
 
     # Apicobasal coordinate
     begin
-        # apicobasal = zeros(ndofs(dh))
-        # apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
-        # apicobasal .-= minimum(apicobasal)
-        # apicobasal = abs.(apicobasal)
-        # apicobasal ./= maximum(apicobasal)
         ch = ConstraintHandler(dh);
         dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 1)
         Ferrite.add!(ch, dbc);
@@ -175,7 +171,7 @@ function compute_lv_coordinate_system(
         f = zeros(ndofs(dh))
 
         apply!(K_apicobasal, f, ch)
-        sol = solve(LinearSolve.LinearProblem(K_apicobasal, f), LinearSolve.KrylovJL_CG())
+        sol = solve(LinearSolve.LinearProblem(K_apicobasal, f), solver)
         apicobasal = sol.u
     end
 
