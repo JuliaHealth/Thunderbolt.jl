@@ -326,6 +326,7 @@ function create_microstructure_model(
                 apicobasal_direction =
                     apicobasal_direction -
                     (apicobasal_direction ⋅ transmural_direction) * transmural_direction # We do this fix to ensure local orthogonality
+                apicobasal_direction /= norm(apicobasal_direction)
                 circumferential_direction = transmural_direction × apicobasal_direction
                 circumferential_direction /= norm(circumferential_direction)
                 axes = LVCoordinate(;
