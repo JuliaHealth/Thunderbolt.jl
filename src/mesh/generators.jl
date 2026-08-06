@@ -615,6 +615,54 @@ function generate_ideal_lv_mesh(
     )
 end
 
+# Utils for the hex LV mesh
+"""
+Perimeter of the O-grid core, as `nc` points of the unit disk in which the apex
+cap is parametrized. The points sit at the same angles as the nodes of the first
+longitudinal ring, so the cells joining core to ring are radial.
+
+The shape interpolates between the inscribed diamond (`roundness = 0`, giving a
+perfectly square core but a strongly varying gap to the ring) and the circle
+(`roundness = 1`, where the four corners flatten to 180° and the core
+degenerates). The corners stay at the four cardinal angles either way.
+"""
+function _ogrid_perimeter(nc::Int, size, roundness)
+    return map(0:nc-1) do k
+        φ = 2π*k/nc
+        ρ = (1 - roundness)/(abs(cos(φ)) + abs(sin(φ))) + roundness
+        size*ρ*Vec((cos(φ), sin(φ)))
+    end
+end
+
+"""
+Lattice index `(a, b)` of the core node carrying perimeter position `k`, walking
+the four sides of the `(m+1)×(m+1)` core counterclockwise from the corner at
+angle 0.
+"""
+function _ogrid_perimeter_index(k::Int, m::Int)
+    k = mod(k, 4m)
+    k <= m  && return (k+1, 1)
+    k <= 2m && return (m+1, k-m+1)
+    k <= 3m && return (3m-k+1, m+1)
+    return (1, 4m-k+1)
+end
+
+"Core of the O-grid: transfinite interpolation of its four perimeter sides."
+function _ogrid_core(nc::Int, size, roundness)
+    m = nc ÷ 4
+    P = _ogrid_perimeter(nc, size, roundness)
+    at(k) = P[mod(k, nc) + 1]
+    lattice = Matrix{eltype(P)}(undef, m+1, m+1)
+    for b in 1:(m+1), a in 1:(m+1)
+        u = (a-1)/m; v = (b-1)/m
+        south = at(a-1); north = at(3m-(a-1)); west = at(-(b-1)); east = at(m+b-1)
+        lattice[a,b] = (1-v)*south + v*north + (1-u)*west + u*east -
+                       ((1-u)*(1-v)*at(0) + u*(1-v)*at(m) + (1-u)*v*at(3m) + u*v*at(2m))
+    end
+    return lattice
+end
+
+
 function _ellipsoid_point(θ, φ, rp;
     inner_radius, outer_radius, apex_inner, apex_outer, septum_flatness, axis_ratio, eccentricity)
     radius1 = (inner_radius*(1.0-rp) + outer_radius*rp)*axis_ratio
