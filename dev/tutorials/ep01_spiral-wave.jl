@@ -10,42 +10,13 @@ stimulation_protocol = NoStimulationProtocol();
 
 cell_model = Thunderbolt.FHNModel();
 
-function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
-    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    heatfun = f.functions[1]
-    heat_dofrange = f.solution_indices[1]
-    odefun = f.functions[2]
-    ionic_model = odefun.ode
-
-    φ₀ = @view u₀[heat_dofrange];
-    # TODO extraction these via utility functions
-    dh = heatfun.dh
-    s₀flat = @view u₀[(ndofs(dh)+1):end];
-    # Should not be reshape but some array of arrays fun, because in general (e.g. for heterogeneous tissues) we cannot reshape into a matrix
-    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
-
-    for cell in CellIterator(dh)
-        _celldofs = celldofs(cell)
-        φₘ_celldofs = _celldofs[dof_range(dh, :φₘ)]
-        # TODO query coordinate directly from the cell model
-        coordinates = getcoordinates(cell)
-        for (i, (x₁, x₂)) in zip(φₘ_celldofs,coordinates)
-            if x₁ <= 1.25 && x₂ <= 1.25
-                φ₀[i] = 1.0
-            end
-            if x₂ >= 1.25
-                s₀[i,1] = 0.1
-            end
-        end
-    end
-end;
-
 ep_model = MonodomainModel(
     Cₘ,
     χ,
     κ,
     stimulation_protocol,
     cell_model,
+    CartesianCoordinateSystem(mesh),
     :φₘ, :s,
 );
 
@@ -56,8 +27,14 @@ spatial_discretization_method = FiniteElementDiscretization(
 )
 odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh);
 
-u₀ = zeros(Float32, solution_size(odeform))
-spiral_wave_initializer!(u₀, odeform);
+u₀ = create_initial_condition(odeform, Float32);
+
+setvariable!(u₀, odeform, :φₘ) do x
+    (x[1] ≤ 1.25 && x[2] ≤ 1.25) ? 1.0f0 : 0.0f0
+end
+setvariable!(u₀, odeform, :s) do x
+    x[2] ≥ 1.25 ? 0.1f0 : 0.0f0
+end;
 
 heat_timestepper = BackwardEulerSolver(
     inner_solver=KrylovJL_CG(atol=1e-6, rtol=1e-5),
@@ -80,11 +57,10 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 integrator = init(problem, timestepper, dt=dt₀);
 
 io = ParaViewWriter("EP01_spiral_wave")
+φₘ = solution_variable(odeform, :φₘ)
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    (; dh) = odeform.functions[1]
-    φ = u[odeform.solution_indices[1]]
-    store_timestep!(io, t, dh.grid) do file
-        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+    store_timestep!(io, t, mesh) do file
+        Thunderbolt.store_timestep_field!(file, t, u, φₘ)
     end
 end;
 

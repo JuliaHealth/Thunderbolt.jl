@@ -4,7 +4,7 @@ using OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
 fluid_model_init = RSAFDQ2022LumpedCicuitModel()
 u0 = zeros(Thunderbolt.num_states(fluid_model_init))
-Thunderbolt.default_initial_condition!(u0, fluid_model_init)
+Thunderbolt.default_initial_state!(u0, fluid_model_init)
 prob = ODEProblem((du, u, p, t) -> Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 100*fluid_model_init.THB), fluid_model_init)
 sol = solve(prob, Tsit5())
 
@@ -109,10 +109,10 @@ chamber_solver = HomotopyPathSolver(
 blood_circuit_solver = Tsit5()
 timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
-u₀ = zeros(solution_size(splitform))
-u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
-u₀fluid_view = @view  u₀[OS.get_solution_indices(splitform, 2)]
-u₀fluid_view .= u₀fluid
+u₀ = create_initial_condition(splitform)
+for (sym, val) in zip(Thunderbolt.state_symbols(fluid_model), u₀fluid)
+    setvariable!(u₀, splitform, sym, val)
+end
 
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
 integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
@@ -148,18 +148,20 @@ integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
 # display(f2)
 
 io = ParaViewWriter("CM03_3d0d-coupling");
+displacement = solution_variable(splitform, :displacement)
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    chamber_function = OS.get_operator(splitform, 1)
-    (; dh) = chamber_function.structural_function
-    store_timestep!(io, t, dh.grid)
-    usolid_view = @view u[OS.get_solution_indices(splitform, 1)]
-    Thunderbolt.store_timestep_field!(io, t, dh, usolid_view, :displacement)
-    Thunderbolt.finalize_timestep!(io, t)
+    store_timestep!(io, t, mesh) do file
+        Thunderbolt.store_timestep_field!(file, t, u, displacement)
+    end
 
+    # The chamber pressure is a genuine unknown of the coupled problem, and the chamber volume is a
+    # state of the 0D circuit, so both can simply be read out by name.
+    # Note that `:Vₗᵥ` is the *0D* volume; the tying constrains it to match the 3D chamber volume at
+    # convergence, but the two differ along the homotopy path.
+    @info "$t: pₗᵥ = $(getvariable(u, splitform, :pₗᵥ)), Vₗᵥ = $(getvariable(u, splitform, :Vₗᵥ))"
     # if t > 0.0
-    #     lv = chamber_function.tying_info.chambers[1]
-    #     append!(vlv.val, lv.V⁰ᴰval)
-    #     append!(plv.val, u[lv.pressure_dof_index_global])
+    #     append!(vlv.val, getvariable(u, splitform, :Vₗᵥ))
+    #     append!(plv.val, getvariable(u, splitform, :pₗᵥ))
     #     notify(vlv)
     #     notify(plv)
     # end

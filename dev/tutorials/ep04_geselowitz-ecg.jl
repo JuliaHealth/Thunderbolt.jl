@@ -1,26 +1,5 @@
 using Thunderbolt, LinearAlgebra, StaticArrays, OrdinaryDiffEqOperatorSplitting
 
-function steady_state_initializer!(u₀, f::GenericSplitFunction)
-    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    heatfun = f.functions[1]
-    heat_dofrange = f.solution_indices[1]
-    odefun = f.functions[2]
-    ionic_model = odefun.ode
-
-    φ₀ = @view u₀[heat_dofrange];
-    # TODO extraction these via utility functions
-    dh = heatfun.dh
-    s₀flat = @view u₀[(ndofs(dh)+1):end];
-    # Should not be reshape but some array of arrays fun
-    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
-    default_values = Thunderbolt.default_initial_state(ionic_model)
-
-    φ₀ .= default_values[1]
-    for i ∈ 1:(Thunderbolt.num_states(ionic_model)-1)
-        s₀[:, i] .= default_values[i+1]
-    end
-end
-
 Base.@kwdef struct UniformEndocardialActivation <: Function
     transmural_depth::Float64 = 0.15
 end
@@ -81,8 +60,8 @@ heart_odeform = semidiscretize(
     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
     heart_mesh,
 )
-u₀ = zeros(Float64, solution_size(heart_odeform))
-steady_state_initializer!(u₀, heart_odeform)
+
+u₀ = create_initial_condition(heart_odeform)
 dt₀ = 0.01
 dtvis = 0.5
 Tₘₐₓ = 50.0
@@ -108,15 +87,14 @@ geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(
 )
 
 io = ParaViewWriter("ep04_ecg")
+φₘ = solution_variable(heart_odeform, :φₘ)
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    dh = heart_odeform.functions[1].dh
-    φ = u[heart_odeform.solution_indices[1]]
-    store_timestep!(io, t, dh.grid) do file
-        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+    store_timestep!(io, t, heart_mesh) do file
+        Thunderbolt.store_timestep_field!(file, t, u, φₘ)
     end
 
     # To compute the ECG we just need to update the ecg cache
-    Thunderbolt.update_ecg!(geselowitz_ecg, φ)
+    Thunderbolt.update_ecg!(geselowitz_ecg, getvariable(u, φₘ))
     # which then allows us to evaluate the leads like this
     electrode_values = Thunderbolt.evaluate_ecg(geselowitz_ecg)
     @info "$t: Lead 1=$(electrode_values[1]) | Lead 2= $(electrode_values[2])"

@@ -18,7 +18,7 @@ using OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
 
 fluid_model_init = RSAFDQ2022LumpedCicuitModel()
 u0 = zeros(Thunderbolt.num_states(fluid_model_init))
-Thunderbolt.default_initial_condition!(u0, fluid_model_init)
+Thunderbolt.default_initial_state!(u0, fluid_model_init)
 prob = ODEProblem((du, u, p, t) -> Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 100*fluid_model_init.THB), fluid_model_init)
 sol = solve(prob, Tsit5())
 # #plot(sol, idxs=[1,2,3,4], tspan=(99*fluid_model_init.THB, 100*fluid_model_init.THB))
@@ -133,10 +133,15 @@ chamber_solver = HomotopyPathSolver(
 blood_circuit_solver = Tsit5()
 timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
 
-u₀ = zeros(solution_size(splitform))
-u₀solid_view = @view  u₀[OS.get_solution_indices(splitform, 1)]
-u₀fluid_view = @view  u₀[OS.get_solution_indices(splitform, 2)]
-u₀fluid_view .= u₀fluid
+# The coupled problem publishes every quantity it holds by name, so the pre-paced circuit state can be
+# transferred one state at a time instead of by slicing the solution vector.
+u₀ = create_initial_condition(splitform)
+for (sym, val) in zip(Thunderbolt.state_symbols(fluid_model), u₀fluid)
+    setvariable!(u₀, splitform, sym, val)
+end
+# !!! tip
+#     `solution_variable_names(splitform)` lists what is available here: the displacement field, the
+#     chamber pressure `:pₗᵥ` introduced by the coupler, and the twelve circuit states.
 
 problem = OperatorSplittingProblem(splitform, u₀, tspan)
 integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
@@ -173,25 +178,24 @@ integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
 # !!! todo
 #     recover online visualization of the pressure volume loop
 
-# !!! todo
-#     The post-processing API is not yet finished.
-#     Please revisit the tutorial later to see how to post-process the simulation online.
-#     Right now the solution is just exported into VTK, such that users can visualize the solution in e.g. ParaView.
-
 # Now we can finally solve the coupled problem in time.
+# The displacement field and the chamber quantities are all reached by name, so the loop never touches
+# the internals of the split. The descriptor is looked up once, outside the loop.
 io = ParaViewWriter("CM03_3d0d-coupling");
+displacement = solution_variable(splitform, :displacement)
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    chamber_function = OS.get_operator(splitform, 1)
-    (; dh) = chamber_function.structural_function
-    store_timestep!(io, t, dh.grid)
-    usolid_view = @view u[OS.get_solution_indices(splitform, 1)]
-    Thunderbolt.store_timestep_field!(io, t, dh, usolid_view, :displacement)
-    Thunderbolt.finalize_timestep!(io, t)
+    store_timestep!(io, t, mesh) do file
+        Thunderbolt.store_timestep_field!(file, t, u, displacement)
+    end
 
+    ## The chamber pressure is a genuine unknown of the coupled problem, and the chamber volume is a
+    ## state of the 0D circuit, so both can simply be read out by name.
+    ## Note that `:Vₗᵥ` is the *0D* volume; the tying constrains it to match the 3D chamber volume at
+    ## convergence, but the two differ along the homotopy path.
+    @info "$t: pₗᵥ = $(getvariable(u, splitform, :pₗᵥ)), Vₗᵥ = $(getvariable(u, splitform, :Vₗᵥ))"
     ## if t > 0.0
-    ##     lv = chamber_function.tying_info.chambers[1]
-    ##     append!(vlv.val, lv.V⁰ᴰval)
-    ##     append!(plv.val, u[lv.pressure_dof_index_global])
+    ##     append!(vlv.val, getvariable(u, splitform, :Vₗᵥ))
+    ##     append!(plv.val, getvariable(u, splitform, :pₗᵥ))
     ##     notify(vlv)
     ##     notify(plv)
     ## end

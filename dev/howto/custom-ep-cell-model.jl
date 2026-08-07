@@ -9,9 +9,9 @@ Base.@kwdef struct HeterogeneousFHNModel{T, T2} <: Thunderbolt.AbstractIonicMode
 end
 HeterogeneousFHNModel(::Type{T}, e::F) where {T,F} = HeterogeneousFHNModel{T,F}(0.1,0.5,1.0,0.0,e)
 
-Thunderbolt.transmembranepotential_index(cell_model::HeterogeneousFHNModel) = 1
+Thunderbolt.num_states(::Type{<:HeterogeneousFHNModel}) = 2
 
-Thunderbolt.num_states(::HeterogeneousFHNModel) = 1
+Thunderbolt.state_symbols(::Type{<:HeterogeneousFHNModel}) = (:φₘ, :s)
 
 Thunderbolt.default_initial_state(::HeterogeneousFHNModel) = [0.0, 0.0]
 
