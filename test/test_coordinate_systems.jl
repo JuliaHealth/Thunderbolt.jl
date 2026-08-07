@@ -385,8 +385,10 @@ end
             m,
             Vec{3, Float64}(ax.apex),
             Vec{3, Float64}(ax.longitudinal),
-            0.1 * abs((Vec{3, Float64}(ax.base_center) - Vec{3, Float64}(ax.apex)) ⋅
-                      Vec{3, Float64}(ax.longitudinal)),
+            0.1 * abs(
+                (Vec{3, Float64}(ax.base_center) - Vec{3, Float64}(ax.apex)) ⋅
+                Vec{3, Float64}(ax.longitudinal),
+            ),
             ("Endocardium", "Epicardium"),
         )
         @test !isempty(cap)
