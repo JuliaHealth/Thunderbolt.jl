@@ -157,13 +157,20 @@ function _assemble_laplacian(dh::DofHandler, ip_collection)
 end
 
 """
-Solve `Δu = 0` on `dh` with the given Dirichlet data, each entry a `set => value` pair where the set
-is either a facetset or a nodeset. `K` is the (unconstrained) Laplacian and is left untouched.
+Solve `Δu = 0` on the single scalar field of `dh` with the given Dirichlet data, each entry a
+`(set, value)` pair where the set is either a facetset or a nodeset. `K` is the (unconstrained)
+Laplacian and is left untouched.
 """
-function _solve_dirichlet_laplace(K, dh::DofHandler, solver, constraints)
+function _solve_dirichlet_laplace(
+    K,
+    dh::DofHandler,
+    solver,
+    constraints;
+    field_name::Symbol = first(Ferrite.getfieldnames(dh)),
+)
     ch = ConstraintHandler(dh)
     for (set, value) in constraints
-        Ferrite.add!(ch, Dirichlet(:coordinates, set, (x, t) -> value))
+        Ferrite.add!(ch, Dirichlet(field_name, set, (x, t) -> value))
     end
     close!(ch)
     update!(ch, 0.0)

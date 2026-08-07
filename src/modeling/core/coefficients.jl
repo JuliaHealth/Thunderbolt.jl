@@ -285,7 +285,6 @@ function setup_coefficient_cache(
     cell   = get_first_cell(sdh)
     ip = Thunderbolt.getcoordinateinterpolation(cs, cell)
     ip_geo = getcoordinateinterpolation(cs, cell)^3
-    Nξs    = size(fv.Nξ)
     return Thunderbolt.LVCoordinateSystemCache(cs, CellValues(qr, ip, ip_geo), CellValues(qr, ip, ip_geo))
 end
 
