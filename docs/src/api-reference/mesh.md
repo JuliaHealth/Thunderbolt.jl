@@ -18,6 +18,24 @@ LVCoordinateSystem
 LVCoordinate
 BiVCoordinateSystem
 BiVCoordinate
+LocalCoordinateAxes
+setup_coordinate_axes_cache
+evaluate_coordinate_axes
+LVAxes
+compute_lv_axes
+compute_lv_coordinate_system
+compute_midmyocardial_section_coordinate_system
+apicobasal_from_laplace
+vtk_coordinate_system
+```
+
+## [Long Axis](@id long-axis-api)
+
+```@docs
+LongAxisInfo
+compute_long_axis
+fit_basal_plane
+compute_principal_axis
 ```
 
 ## [Mesh Generators](@id mesh-generator-api)

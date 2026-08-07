@@ -196,6 +196,15 @@ include("discretization/rsafdq-operator.jl")
 
 # TODO put exports into the individual submodules above!
 export
+    # Angle between two directions about an axis, left hand rule
+    compute_relative_rotation,
+    # Long axis of a ventricular geometry
+    LongAxisInfo,
+    compute_long_axis,
+    fit_basal_plane,
+    compute_principal_axis
+
+export
     # Devices
     SequentialCPUDevice,
     PolyesterDevice,
@@ -206,6 +215,7 @@ export
     FieldCoefficient,
     SpectralTensorCoefficient,
     SpatiallyHomogeneousDataField,
+    setup_coefficient_cache,
     evaluate_coefficient,
     # Collections
     LagrangeCollection,
@@ -318,9 +328,16 @@ export
     BiVCoordinateSystem,
     BiVCoordinate,
     CartesianCoordinateSystem,
+    LocalCoordinateAxes,
+    setup_coordinate_axes_cache,
+    evaluate_coordinate_axes,
+    LVAxes,
+    compute_lv_axes,
     compute_lv_coordinate_system,
     compute_midmyocardial_section_coordinate_system,
+    apicobasal_from_laplace,
     getcoordinateinterpolation,
+    getrotationalinterpolation,
     vtk_coordinate_system,
     # Discretization
     semidiscretize,

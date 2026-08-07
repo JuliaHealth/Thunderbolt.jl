@@ -35,6 +35,18 @@ Base.getindex(it::QuadratureValuesIterator, i) = iterate(it, i)
 # AbstractQuadratureValues
 abstract type AbstractQuadratureValues end
 
+# Ferrite's own accumulator seeds dispatch on `Ferrite.AbstractValues`, which these are not -- they
+# are a single quadrature point rather than a whole cell -- so they get the same definitions here.
+Ferrite.function_value_init(qp_v::AbstractQuadratureValues, ::AbstractVector{T}) where {T} =
+    zero(Ferrite.shape_value_type(qp_v)) * zero(T)
+
+Ferrite.function_gradient_init(qp_v::AbstractQuadratureValues, ::AbstractVector{T}) where {T} =
+    zero(Ferrite.shape_gradient_type(qp_v)) * zero(T)
+Ferrite.function_gradient_init(
+    qp_v::AbstractQuadratureValues,
+    ::AbstractVector{T},
+) where {T <: AbstractVector} = zero(T) ⊗ zero(Ferrite.shape_gradient_type(qp_v))
+
 function Ferrite.function_value(
     qp_v::AbstractQuadratureValues,
     u::AbstractVector,
@@ -42,9 +54,9 @@ function Ferrite.function_value(
 )
     n_base_funcs = getnbasefunctions(qp_v)
     length(dof_range) == n_base_funcs ||
-        throw_incompatible_dof_length(length(dof_range), n_base_funcs)
+        Ferrite.throw_incompatible_dof_length(length(dof_range), n_base_funcs)
     @boundscheck checkbounds(u, dof_range)
-    val = function_value_init(qp_v, u)
+    val = Ferrite.function_value_init(qp_v, u)
     @inbounds for (i, j) in pairs(dof_range)
         val += shape_value(qp_v, i) * u[j]
     end
@@ -58,9 +70,9 @@ function Ferrite.function_gradient(
 )
     n_base_funcs = getnbasefunctions(qp_v)
     length(dof_range) == n_base_funcs ||
-        throw_incompatible_dof_length(length(dof_range), n_base_funcs)
+        Ferrite.throw_incompatible_dof_length(length(dof_range), n_base_funcs)
     @boundscheck checkbounds(u, dof_range)
-    grad = function_gradient_init(qp_v, u)
+    grad = Ferrite.function_gradient_init(qp_v, u)
     @inbounds for (i, j) in pairs(dof_range)
         grad += shape_gradient(qp_v, i) * u[j]
     end
@@ -86,7 +98,7 @@ function Ferrite.function_divergence(
     u::AbstractVector,
     dof_range = eachindex(u),
 )
-    return divergence_from_gradient(function_gradient(qp_v, u, dof_range))
+    return Ferrite.divergence_from_gradient(function_gradient(qp_v, u, dof_range))
 end
 
 function Ferrite.function_curl(
@@ -94,15 +106,15 @@ function Ferrite.function_curl(
     u::AbstractVector,
     dof_range = eachindex(u),
 )
-    return curl_from_gradient(function_gradient(qp_v, u, dof_range))
+    return Ferrite.curl_from_gradient(function_gradient(qp_v, u, dof_range))
 end
 
 function Ferrite.spatial_coordinate(qp_v::AbstractQuadratureValues, x::AbstractVector{<:Vec})
-    n_base_funcs = getngeobasefunctions(qp_v)
-    length(x) == n_base_funcs || throw_incompatible_coord_length(length(x), n_base_funcs)
+    n_base_funcs = Ferrite.getngeobasefunctions(qp_v)
+    length(x) == n_base_funcs || Ferrite.throw_incompatible_coord_length(length(x), n_base_funcs)
     vec = zero(eltype(x))
     @inbounds for i = 1:n_base_funcs
-        vec += geometric_value(qp_v, i) * x[i]
+        vec += Ferrite.geometric_value(qp_v, i) * x[i]
     end
     return vec
 end
@@ -122,19 +134,20 @@ end
 @inline quadrature_point_values(fe_v::Ferrite.AbstractValues, q_point, args...) =
     QuadratureValues(fe_v, q_point)
 
-@propagate_inbounds Ferrite.getngeobasefunctions(qv::QuadratureValues) = getngeobasefunctions(qv.v)
+@propagate_inbounds Ferrite.getngeobasefunctions(qv::QuadratureValues) =
+    Ferrite.getngeobasefunctions(qv.v)
 @propagate_inbounds Ferrite.geometric_value(qv::QuadratureValues, i) =
-    geometric_value(qv.v, qv.q_point, i)
+    Ferrite.geometric_value(qv.v, qv.q_point, i)
 Ferrite.geometric_interpolation(qv::QuadratureValues) = geometric_interpolation(qv.v)
 
 Ferrite.getdetJdV(qv::QuadratureValues) = @inbounds getdetJdV(qv.v, qv.q_point)
 
 # Accessors for function values
 Ferrite.getnbasefunctions(qv::QuadratureValues) = getnbasefunctions(qv.v)
-Ferrite.function_interpolation(qv::QuadratureValues) = function_interpolation(qv.v)
-Ferrite.function_difforder(qv::QuadratureValues) = function_difforder(qv.v)
-Ferrite.shape_value_type(qv::QuadratureValues) = shape_value_type(qv.v)
-Ferrite.shape_gradient_type(qv::QuadratureValues) = shape_gradient_type(qv.v)
+Ferrite.function_interpolation(qv::QuadratureValues) = Ferrite.function_interpolation(qv.v)
+Ferrite.function_difforder(qv::QuadratureValues) = Ferrite.function_difforder(qv.v)
+Ferrite.shape_value_type(qv::QuadratureValues) = Ferrite.shape_value_type(qv.v)
+Ferrite.shape_gradient_type(qv::QuadratureValues) = Ferrite.shape_gradient_type(qv.v)
 
 @propagate_inbounds Ferrite.shape_value(qv::QuadratureValues, i::Int) =
     shape_value(qv.v, qv.q_point, i)
@@ -244,8 +257,7 @@ Ferrite.getnbasefunctions(siv::StaticInterpolationValues) = getnbasefunctions(si
 ) where {N}
     fecv_J = zero(Ferrite.otimes_returntype(eltype(x), eltype(ip_values.dNdξ)))
     @inbounds for j = 1:N
-        #fecv_J += x[j] ⊗ geo_mapping.dMdξ[j, q_point]
-        fecv_J += Ferrite.otimes_helper(x[j], ip_values.dNdξ[j, q_point])
+        fecv_J += x[j] ⊗ ip_values.dNdξ[j, q_point]
     end
     return Ferrite.MappingValues(fecv_J, nothing)
 end
@@ -274,7 +286,7 @@ end
 )
     Jinv = Ferrite.calculate_Jinv(Ferrite.getjacobian(mapping_values))
     Nx = funvals.Nξ[:, q_point]
-    dNdx = map(dNdξ -> Ferrite.dothelper(dNdξ, Jinv), funvals.dNdξ[:, q_point])
+    dNdx = map(dNdξ -> dNdξ ⋅ Jinv, funvals.dNdξ[:, q_point])
     return Nx, dNdx
 end
 
@@ -297,10 +309,17 @@ end
 function StaticCellValues(cv::CellValues)
     fv = StaticInterpolationValues(cv.fun_values)
     gm = StaticInterpolationValues(cv.geo_mapping)
-    weights = ntuple(i -> getweights(cv.qr)[i], getnquadpoints(cv))
-    #positions = ntuple(i ->  getpoints(cv.qr)[i].data, getnquadpoints(qr))
-    ξs = ntuple(i -> getpoints(cv.qr)[i], getnquadpoints(qr))
-    return StaticCellValues(fv, gm, weights, ξs)
+    nqp = getnquadpoints(cv)
+    weights = ntuple(i -> Ferrite.getweights(cv.qr)[i], nqp)
+    ξs = ntuple(i -> Ferrite.getpoints(cv.qr)[i], nqp)
+    # Spelled out rather than left to an outer constructor, whose `T`/`dim` would be unbound for an
+    # empty quadrature rule.
+    return StaticCellValues{typeof(fv), typeof(gm), nqp, eltype(weights), length(first(ξs))}(
+        fv,
+        gm,
+        weights,
+        ξs,
+    )
 end
 
 # function StaticCellValues(cv::CellValues, ::Val{SaveCoords}=Val(true)) where SaveCoords
@@ -320,16 +339,21 @@ Ferrite.getngeobasefunctions(cv::StaticCellValues) = getnbasefunctions(cv.gm)
     nothing # Nothing to do on reinit if x is not saved.
 end
 
-@inline function quadrature_point_values(fe_v::StaticCellValues, q_point::Int)
-    return _quadrature_point_values(fe_v, q_point, fe_v.x, detJ -> throw_detJ_not_pos(detJ))
-end
+# No `quadrature_point_values(::StaticCellValues, q_point)` without coordinates: the cell geometry
+# is deliberately not stored, which is what makes these values immutable and device transferable,
+# so every query has to be handed the cell coordinates.
 
 @inline function quadrature_point_values(
     fe_v::StaticCellValues,
     q_point::Int,
     cell_coords::AbstractVector,
 )
-    return _quadrature_point_values(fe_v, q_point, cell_coords, detJ -> throw_detJ_not_pos(detJ))
+    return _quadrature_point_values(
+        fe_v,
+        q_point,
+        cell_coords,
+        detJ -> Ferrite.throw_detJ_not_pos(detJ),
+    )
 end
 
 @inline function quadrature_point_values(

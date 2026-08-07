@@ -29,7 +29,7 @@ end
 # useful bound is therefore cores ÷ threads-per-worker, not cores. Measured on a 16-core box:
 # 4 jobs = 190 s, the 11-job default = 340 s, serial = 520 s. Explicit `--jobs=N` still wins.
 const INTEGRATION_THREADS = max(1, min(4, Sys.CPU_THREADS ÷ 4))
-default_jobs() = clamp(Sys.CPU_THREADS ÷ INTEGRATION_THREADS, 1, ParallelTestRunner.default_njobs())
+default_jobs() = clamp(Sys.CPU_THREADS ÷ INTEGRATION_THREADS, 1, 4)
 
 argv = copy(ARGS)
 any(startswith("--jobs"), argv) || push!(argv, "--jobs=$(default_jobs())")
