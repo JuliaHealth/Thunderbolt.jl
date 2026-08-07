@@ -306,22 +306,20 @@ struct StaticCellValues{FV, GM, Nqp, T, dim}
 end
 
 
-function StaticCellValues(
-    fv::FV,
-    gm::GM,
-    weights::NTuple{Nqp, T},
-    ξs::NTuple{Nqp, Vec{dim, T}},
-) where {FV, GM, Nqp, T, dim}
-    return StaticCellValues{FV, GM, Nqp, T, dim}(fv, gm, weights, ξs)
-end
-
 function StaticCellValues(cv::CellValues)
     fv = StaticInterpolationValues(cv.fun_values)
     gm = StaticInterpolationValues(cv.geo_mapping)
     nqp = getnquadpoints(cv)
     weights = ntuple(i -> Ferrite.getweights(cv.qr)[i], nqp)
     ξs = ntuple(i -> Ferrite.getpoints(cv.qr)[i], nqp)
-    return StaticCellValues(fv, gm, weights, ξs)
+    # Spelled out rather than left to an outer constructor: inferring `T`/`dim` from the tuple types
+    # alone is ambiguous for an empty quadrature rule, which Aqua rightly rejects.
+    return StaticCellValues{typeof(fv), typeof(gm), nqp, eltype(weights), length(first(ξs))}(
+        fv,
+        gm,
+        weights,
+        ξs,
+    )
 end
 
 # function StaticCellValues(cv::CellValues, ::Val{SaveCoords}=Val(true)) where SaveCoords
