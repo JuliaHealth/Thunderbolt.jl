@@ -29,6 +29,15 @@ apicobasal_from_laplace
 vtk_coordinate_system
 ```
 
+## [Long Axis](@id long-axis-api)
+
+```@docs
+LongAxisInfo
+compute_long_axis
+fit_basal_plane
+compute_principal_axis
+```
+
 ## [Mesh Generators](@id mesh-generator-api)
 
 ```@docs

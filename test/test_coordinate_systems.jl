@@ -60,8 +60,7 @@ end
 
         # Supplying the basal plane instead of the facetset gives the same axis. The normal points
         # from the apex towards the base, which here is towards -z.
-        from_plane =
-            compute_lv_axes(mesh, Vec((0.0, 0.0, -0.4)), Vec((0.0, 0.0, -1.0)))
+        from_plane = compute_lv_axes(mesh, Vec((0.0, 0.0, -0.4)), Vec((0.0, 0.0, -1.0)))
         @test from_plane.longitudinal ≈ axes.longitudinal atol = 1.0e-8
         @test from_plane.apex ≈ axes.apex atol = 1.0e-8
 
@@ -79,10 +78,7 @@ end
         mesh = generate_ring_mesh(16, 2, 6)
         ipc = LagrangeCollection{1}()
         dh = DofHandler(mesh)
-        Thunderbolt.add_subdomain!(
-            dh,
-            [Thunderbolt.ApproximationDescriptor(:coordinates, ipc)],
-        )
+        Thunderbolt.add_subdomain!(dh, [Thunderbolt.ApproximationDescriptor(:coordinates, ipc)])
         Ferrite.close!(dh)
         K = Thunderbolt._assemble_laplacian(dh, ipc)
         u = Thunderbolt._solve_dirichlet_laplace(
@@ -245,11 +241,7 @@ end
             )
             cartesian = Thunderbolt.duplicate_for_device(
                 PolyesterDevice(),
-                Thunderbolt.setup_coefficient_cache(
-                    CartesianCoordinateSystem(mesh),
-                    qr,
-                    sdh,
-                ),
+                Thunderbolt.setup_coefficient_cache(CartesianCoordinateSystem(mesh), qr, sdh),
             )
             for cell in CellIterator(sdh), qp in QuadratureIterator(qr)
                 coordinate = evaluate_coefficient(cache, cell, qp, 0.0)
@@ -273,13 +265,23 @@ end
         origin = Vec{3, Float64}(axes.base_center)
         longitudinal = Vec{3, Float64}(axes.longitudinal)
         provisional = Thunderbolt.AzimuthalFrame(
-            origin, longitudinal, Thunderbolt._any_orthogonal(longitudinal))
-        frame = Thunderbolt.AzimuthalFrame(origin, longitudinal,
-            Thunderbolt._sheet_direction(mesh, "SRidgePost", provisional))
-        θa = Thunderbolt.azimuth(frame, frame.origin +
-            Thunderbolt._sheet_direction(mesh, "SRidgeAnt", frame))
-        θp = Thunderbolt.azimuth(frame, frame.origin +
-            Thunderbolt._sheet_direction(mesh, "SRidgePost", frame))
+            origin,
+            longitudinal,
+            Thunderbolt._any_orthogonal(longitudinal),
+        )
+        frame = Thunderbolt.AzimuthalFrame(
+            origin,
+            longitudinal,
+            Thunderbolt._sheet_direction(mesh, "SRidgePost", provisional),
+        )
+        θa = Thunderbolt.azimuth(
+            frame,
+            frame.origin + Thunderbolt._sheet_direction(mesh, "SRidgeAnt", frame),
+        )
+        θp = Thunderbolt.azimuth(
+            frame,
+            frame.origin + Thunderbolt._sheet_direction(mesh, "SRidgePost", frame),
+        )
 
         septal = Thunderbolt._septal_cells_by_partition(mesh, "SRidgeAnt", "SRidgePost")
         @test septal !== nothing
@@ -293,7 +295,10 @@ end
         # The O-grid cap has no facet sheet continuing the ridges through its core, so there is no
         # partition to recover and the arc rule has to take over.
         @test Thunderbolt._septal_cells_by_partition(
-            Thunderbolt.generate_ideal_lv_mesh_hex(12, 2, 4), "SRidgeAnt", "SRidgePost") === nothing
+            Thunderbolt.generate_ideal_lv_mesh_hex(12, 2, 4),
+            "SRidgeAnt",
+            "SRidgePost",
+        ) === nothing
     end
 
     @testset "Ideal LV ridges, arbitrary circumferential count" begin
@@ -307,6 +312,47 @@ end
             # A smeared branch cut shows up as an element spanning nearly the whole range.
             @test max_element_rotational_spread(cs; skip_singular = true) < 3 / num_c
         end
+    end
+
+    @testset "Apicobasal coordinate at a fixed physical point" begin
+        # The discriminating test for the zero-capacity apex condition, and the one property the
+        # checks above cannot see.
+        #
+        # The apicobasal field is a Laplace solution pinned to 1 on the basal *surface* and 0 on an
+        # apex *nodeset*. A measure-zero Dirichlet set does not constrain a 3D Laplace problem, so
+        # the raw field jumps straight from 0 at the pinned node to ~0.6 at its neighbours and
+        # leaves two thirds of its own range carrying no dofs at all.
+        # `apicobasal_from_laplace` recalibrates by arc length, which repairs the endpoints and the
+        # epicardial meridian -- so a range check, a nodal check and the meridian test above all
+        # pass. What still catches it is asking for the coordinate at a *fixed physical point* and
+        # refining the mesh underneath it: a coordinate that means something geometric must not
+        # move.
+        nc, nr, nl0 = 12, 2, 4
+        coarse = generate_ideal_lv_mesh(nc, nr, nl0)
+        # Midwall nodes of the coarsest mesh. Refinement pushes the endocardium inward and the
+        # epicardium outward onto the true ellipsoid, so these stay strictly inside every finer one.
+        idx = reshape(collect(1:(nc*(nr+1)*(nl0+1))), (nc, nr + 1, nl0 + 1))
+        probes = [get_node_coordinate(coarse.grid, idx[1, 2, k]) for k = 1:(nl0+1)]
+
+        function at_probes(nl, apex_nodeset)
+            m = generate_ideal_lv_mesh(nc, nr, nl)
+            cs = compute_lv_coordinate_system(m; apex_nodeset)
+            return evaluate_at_points(PointEvalHandler(m.grid, probes), cs.dh, cs.u_apicobasal)
+        end
+        function drift(set)
+            reference = at_probes(16, set)
+            return maximum(maximum(abs.(at_probes(nl, set) .- reference)) for nl in (20, 24))
+        end
+
+        # Pinning both ends of the apical wall converges: between nl = 16 and nl = 24 the
+        # coordinate at a fixed point moves by under 0.05.
+        @test drift("ApexInOut") < 0.05
+
+        # Pinning the epicardial apex alone -- the default -- does not. The same probes jump by
+        # ~0.27 at nl = 24 and the sequence is not monotone, so this is not a discretization error
+        # that refinement removes. Two pinned nodes are measure zero as well; they are merely better
+        # conditioned here. A principled fix constrains an apical cap facetset.
+        @test_broken drift("Apex") < 0.05
     end
 
     @testset "Midmyocardial section coordinate system" begin
@@ -328,8 +374,8 @@ end
                     mod(atan(x[2], x[1]), 2π) / (2π),
                 )
                 min(d, 1 - d)
-            end for sdh in cs.dh_rotational.subdofhandlers for cell in CellIterator(sdh)
-            for (dof, x) in zip(celldofs(cell), getcoordinates(cell))
+            end for sdh in cs.dh_rotational.subdofhandlers for cell in CellIterator(sdh) for
+            (dof, x) in zip(celldofs(cell), getcoordinates(cell))
         ) < 1.0e-12
     end
 
@@ -400,7 +446,7 @@ end
         qp = first(Thunderbolt.QuadratureIterator(qr))
         axes_cache = Thunderbolt.setup_coordinate_axes_cache(cs, qr, sdh)
         @test (@inferred Thunderbolt.evaluate_coordinate_axes(axes_cache, cell, qp, 0.0)) isa
-            Thunderbolt.LocalCoordinateAxes{Float64}
+              Thunderbolt.LocalCoordinateAxes{Float64}
     end
 
     @testset "VTK output" begin

@@ -312,8 +312,8 @@ function StaticCellValues(cv::CellValues)
     nqp = getnquadpoints(cv)
     weights = ntuple(i -> Ferrite.getweights(cv.qr)[i], nqp)
     ξs = ntuple(i -> Ferrite.getpoints(cv.qr)[i], nqp)
-    # Spelled out rather than left to an outer constructor: inferring `T`/`dim` from the tuple types
-    # alone is ambiguous for an empty quadrature rule, which Aqua rightly rejects.
+    # Spelled out rather than left to an outer constructor, whose `T`/`dim` would be unbound for an
+    # empty quadrature rule.
     return StaticCellValues{typeof(fv), typeof(gm), nqp, eltype(weights), length(first(ξs))}(
         fv,
         gm,
@@ -349,7 +349,11 @@ end
     cell_coords::AbstractVector,
 )
     return _quadrature_point_values(
-        fe_v, q_point, cell_coords, detJ -> Ferrite.throw_detJ_not_pos(detJ))
+        fe_v,
+        q_point,
+        cell_coords,
+        detJ -> Ferrite.throw_detJ_not_pos(detJ),
+    )
 end
 
 @inline function quadrature_point_values(

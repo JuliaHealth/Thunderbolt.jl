@@ -81,19 +81,10 @@ value_type(::CellIndexCoordinateSystem) = Int
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
 rotational coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
 
-The transmural and apicobasal coordinates are continuous scalar fields and live on `dh`. The
-rotational coordinate wraps around the ventricle, so somewhere it has to jump from 1 back to 0 --
-on the posterior ridge, where the free wall reads 0 and the septum reads 1. A continuous nodal field
-cannot carry that jump: the ridge nodes are shared by the elements on both sides of it, so a single
-nodal value there forces the coordinate to ramp back through the entire range across one layer of
-elements. It is therefore stored on its own discontinuous dof handler `dh_rotational`, where each
-element carries its own copy of the ridge nodes and the jump sits exactly on the interface it
-belongs on.
-
-Consequently `u_rotational` is *not* dof-for-dof comparable with `u_transmural` and `u_apicobasal`,
-and it is only defined modulo 1: under the azimuthal fallback an element straddling the branch cut
-holds values slightly above 1 (or below 0) so that its interpolant stays affine.
-`evaluate_coefficient` wraps the interpolated value back into `[0, 1)`.
+The transmural and apicobasal coordinates are continuous fields on `dh`. The rotational coordinate
+wraps around the ventricle and therefore jumps somewhere, so it lives on its own discontinuous
+`dh_rotational`: `u_rotational` is *not* dof-for-dof comparable with the other two, and it is only
+defined modulo 1. Use [`evaluate_coefficient`](@ref), which wraps it back into `[0, 1)`.
 """
 struct LVCoordinateSystem{T, DH <: AbstractDofHandler, IPC, DHR <: AbstractDofHandler, IPCR} <:
        CoordinateSystemCoefficient
@@ -101,6 +92,8 @@ struct LVCoordinateSystem{T, DH <: AbstractDofHandler, IPC, DHR <: AbstractDofHa
     ip_collection::IPC # TODO special dof handler with type stable interpolation
     u_transmural::Vector{T}
     u_apicobasal::Vector{T}
+    # Discontinuous: the ridge nodes are shared by the elements on both sides of the jump, so a
+    # continuous field would have to ramp back through the whole range across one layer of elements.
     dh_rotational::DHR
     ip_collection_rotational::IPCR
     u_rotational::Vector{T}
@@ -253,17 +246,11 @@ Along a trajectory of `u` we have `ds = du/‖∇u‖`, so the arc length from l
 
     F(u) = ∫_u^1 dū / ⟨‖∇u‖⟩(ū)        ab = 1 − F(u)/F(0)
 
-Three properties follow, and together they are what the coordinate system needs:
-
-- `ab` is a monotone function of `u`, so `∇ab ∥ ∇u`. The chart
-  `(transmural, rotational, apicobasal)` can never reverse orientation through the apicobasal
-  coordinate.
-- `ab` is exactly 1 on the base and exactly 0 on the apex Dirichlet set of `u`, on every mesh, so
-  two meshes of different anatomies agree on where the ends of the coordinate are.
-- The parametrisation is arc length, not the harmonic field's own bunching. That bunching is severe:
-  pinning `u = 0` at the apex is a point Dirichlet condition in 3D, whose solution behaves like a
-  point source, so the raw field sits near 1 over most of the ventricle and burns half its range in
-  the last few percent of wall next to the apex.
+`ab` is monotone in `u`, so `∇ab ∥ ∇u` and the chart can never reverse orientation through the
+apicobasal coordinate. It is exactly 0 on the apex Dirichlet set and exactly 1 on the base on every
+mesh, so different anatomies agree on where the ends of the coordinate are. The recalibration is
+what makes it usable: the raw harmonic field bunches severely, since pinning `u = 0` at the apex is
+a point Dirichlet condition in 3D.
 """
 function apicobasal_from_laplace(
     dh::DofHandler,
@@ -390,7 +377,7 @@ since it spans roughly a third of the circumference.
 This is a fallback. It decides each cell from its centroid alone, so cells sitting within half an
 element of a ridge can go either way, and there it matters: the rotational coordinate jumps by a
 full turn across the posterior ridge, so a misclassified cell carries `r ≈ 1` where its neighbours
-carry `r ≈ 0`. Prefer [`_septal_cells_by_partition`](@ref), which does not guess.
+carry `r ≈ 0`. Prefer `_septal_cells_by_partition`, which does not guess.
 """
 function _septal_cells_by_arc(
     grid::AbstractGrid,
@@ -444,7 +431,7 @@ function _septal_cells_by_partition(
     neighbours = Dict{NTuple{3, Int}, Vector{Int}}()
     for cellid = 1:getncells(grid)
         cell = getcells(grid, cellid)
-        for local_facet in 1:Ferrite.nfacets(cell)
+        for local_facet = 1:Ferrite.nfacets(cell)
             push!(get!(neighbours, _facet_key(cell, local_facet), Int[]), cellid)
         end
     end
@@ -454,7 +441,7 @@ function _septal_cells_by_partition(
     while !isempty(frontier)
         cellid = pop!(frontier)
         cell = getcells(grid, cellid)
-        for local_facet in 1:Ferrite.nfacets(cell)
+        for local_facet = 1:Ferrite.nfacets(cell)
             key = _facet_key(cell, local_facet)
             key in blocked && continue
             for other in neighbours[key]
@@ -572,8 +559,7 @@ function _compute_rotational_from_azimuth!(
     frame::AzimuthalFrame,
 )
     grid = get_grid(dh)
-    cv_collection =
-        CellValueCollection(NodalQuadratureRuleCollection(ip_collection), ip_collection)
+    cv_collection = CellValueCollection(NodalQuadratureRuleCollection(ip_collection), ip_collection)
     angles = Float64[]
     defined = Bool[]
     for sdh in dh.subdofhandlers
@@ -590,11 +576,7 @@ function _compute_rotational_from_azimuth!(
             # units of the mesh.
             tol = 1.0e-6 * maximum(norm(x - first(coords)) for x in coords)
             for qp in QuadratureIterator(cellvalues)
-                θ = azimuth(
-                    frame,
-                    Vec{3, Float64}(spatial_coordinate(cellvalues, qp, coords)),
-                    tol,
-                )
+                θ = azimuth(frame, Vec{3, Float64}(spatial_coordinate(cellvalues, qp, coords)), tol)
                 defined[qp.i] = θ !== nothing
                 angles[qp.i] = θ === nothing ? 0.0 : θ / (2π)
             end
@@ -629,7 +611,8 @@ function _compute_rotational!(
        !_has_facetset(grid, ridge_posterior)
         # Passing `nothing` says the mesh is known to have no ridges; missing sets that were asked
         # for are worth complaining about, because the fallback silently answers a different question.
-        asked_for_ridges && @warn "No ridge annotation ('$ridge_anterior' and '$ridge_posterior') on the mesh, falling back to the plain azimuth around the long axis. That is a different chart than the ridge based one, so this coordinate is not comparable with one computed on an annotated mesh."
+        asked_for_ridges &&
+            @warn "No ridge annotation ('$ridge_anterior' and '$ridge_posterior') on the mesh, falling back to the plain azimuth around the long axis. That is a different chart than the ridge based one, so this coordinate is not comparable with one computed on an annotated mesh."
         return _compute_rotational_from_azimuth!(u, dh_rotational, ip_collection_rotational, frame)
     end
 
@@ -700,7 +683,7 @@ end
 
 """
 Rotational coordinate around the long axis through `origin`, on the discontinuous dofs of
-`dh_rotational`. See [`_compute_rotational!`](@ref) for the two charts it picks between.
+`dh_rotational`. See `_compute_rotational!` for the two charts it picks between.
 """
 function _rotational_coordinate(
     mesh,
@@ -785,30 +768,24 @@ which the idealized generators emit and the ridge extraction of a segmented anat
 
 Every one of those is a keyword, so a mesh that names its annotations differently needs no renaming.
 
-`apex_nodeset` pins the epicardial apex alone by default. Pinning both ends of the apical wall
-instead -- `apex_nodeset = "ApexInOut"` -- holds the coordinate at 0 through the whole thickness
-there, and the resulting plateau flattens the gradient that the arc length recalibration integrates
-against. How much it flattens depends on the shape and thickness of the apical cap, so two
-differently shaped ventricles come out distorted by different amounts: on a pair of idealized
-anatomies that moves the coordinate by a median of 0.06 on one of them and 0.004 on the other, and
-degrades the rotational agreement of a transfer between them from 0.003 to 0.089.
+`apex_nodeset` pins the epicardial apex alone. Pinning both ends of the apical wall instead
+(`apex_nodeset = "ApexInOut"`) holds the coordinate at 0 through the whole thickness there, which
+distorts the apicobasal coordinate by an amount that depends on the shape of the apical cap, and so
+differs between anatomies.
 
 The coordinates are
 
-  * `transmural`: harmonic, 0 on the endocardium and 1 on the epicardium.
-  * `apicobasal`: harmonic between the apex and the base, recalibrated to arc length by
-    [`apicobasal_from_laplace`](@ref) -- without that step the raw harmonic field is useless as a
-    coordinate, see its docstring.
+  * `transmural`: 0 on the endocardium, 1 on the epicardium.
+  * `apicobasal`: 0 at the apex, 1 at the base, parametrized by arc length, see
+    [`apicobasal_from_laplace`](@ref).
   * `rotational`: the Cobiveco chart, 0 on the posterior ridge, 2/3 on the anterior ridge and back
-    to 1 at the posterior ridge through the septum. It is anchored on the ridges rather than on the
-    orientation of the mesh in space, which is what makes it comparable between different hearts.
-    Stored discontinuously so that the jump at the posterior ridge is exact, see
-    [`LVCoordinateSystem`](@ref).
+    to 1 at the posterior ridge through the septum. Anchored on the ridges rather than on the
+    orientation of the mesh in space, which is what makes it comparable between hearts.
 
-Meshes without ridges fall back to the plain azimuth around the long axis, which is *not* the same
-chart: it distributes the coordinate by angle rather than by the position of the right ventricular
-insertions, so two hearts only agree under it if they happen to be aligned the same way in space.
-Pass `ridge_anterior = ridge_posterior = nothing` to ask for that fallback deliberately.
+Meshes without ridges fall back to the plain azimuth around the long axis. That is *not* the same
+chart -- it distributes the coordinate by angle rather than by the position of the right ventricular
+insertions -- so two hearts only agree under it if they are aligned the same way in space. Pass
+`ridge_anterior = ridge_posterior = nothing` to ask for it deliberately.
 """
 function compute_lv_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T};

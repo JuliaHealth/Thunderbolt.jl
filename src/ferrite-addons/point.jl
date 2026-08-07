@@ -9,6 +9,7 @@ struct Point <: AbstractCell{RefPoint}
 end
 Point(i::Int) = Point((i,))
 Ferrite.cell_to_vtkcell(::Type{Point}) = WriteVTK.VTKCellTypes.VTK_VERTEX
+Ferrite.nfacets(::Point) = 0
 
 Ferrite.getnbasefunctions(ip::Lagrange{RefPoint, 0}) = 1
 Ferrite.adjust_dofs_during_distribution(::Lagrange{RefPoint, 0}) = false

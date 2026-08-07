@@ -2,11 +2,7 @@
     setup_coefficient_cache(coefficient, qr::QuadratureRule, sdh::SubDofHandler)
 
 Build the cache that [`evaluate_coefficient`](@ref) reads `coefficient` from on the subdomain of
-`sdh`, with everything that depends only on the interpolation and `qr` -- the shape values -- worked
-out once instead of per quadrature point.
-
-The cache is immutable and carries no cell state, so evaluation needs no `reinit!` and
-`duplicate_for_device` can hand the same object to a device.
+`sdh`. The cache carries no cell state, so evaluation needs no `reinit!`.
 """
 function setup_coefficient_cache end
 
@@ -22,18 +18,14 @@ query, see [`evaluate_coordinate_axes`](@ref).
 function evaluate_coefficient end
 
 """
-Shape values of `ip` at the points of `qr`, in the static form that coefficient caches store: an
-`SMatrix` of values and nothing else, so that the loop bounds are compile time constants and the
-cache transfers to a device unchanged.
+Shape values of `ip` at the points of `qr`, as the `SMatrix`-backed values coefficient caches
+store: no gradients, so the loop bounds are compile time constants and the cache is device
+transferable.
 """
 function _static_interpolation_values(::Type{T}, ip, qr::QuadratureRule, ip_geo) where {T}
     fv = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
     Nξs = size(fv.Nξ)
-    return FerriteUtils.StaticInterpolationValues(
-        fv.ip,
-        SMatrix{Nξs[1], Nξs[2]}(fv.Nξ),
-        nothing,
-    )
+    return FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing)
 end
 
 """
@@ -329,10 +321,10 @@ function evaluate_coefficient(
     t,
 ) where {ref_shape, T}
     @unpack cv, cv_rotational, cs = coeff
-    x1             = zero(T)
-    x2             = zero(T)
-    x3             = zero(T)
-    dofs           = celldofsview(cs.dh, cellid(geometry_cache))
+    x1 = zero(T)
+    x2 = zero(T)
+    x3 = zero(T)
+    dofs = celldofsview(cs.dh, cellid(geometry_cache))
     @inbounds for i = 1:getnbasefunctions(cv)
         val = shape_value(cv, qp, i)::T
         x1 += val * cs.u_transmural[dofs[i]]
@@ -359,8 +351,8 @@ function setup_coefficient_cache(
     qr::QuadratureRule{<:Any, <:AbstractArray{T}},
     sdh::SubDofHandler,
 ) where {T}
-    cell   = get_first_cell(sdh)
-    ip     = getcoordinateinterpolation(cs, cell)
+    cell = get_first_cell(sdh)
+    ip   = getcoordinateinterpolation(cs, cell)
     return BiVCoordinateSystemCache(cs, _static_interpolation_values(T, ip, qr, ip^3))
 end
 
@@ -388,12 +380,10 @@ function evaluate_coefficient(
 end
 
 """
-Cache for [`evaluate_coordinate_axes`](@ref), built by [`setup_coordinate_axes_cache`](@ref).
+Cache for [`evaluate_coordinate_axes`](@ref).
 
-It is deliberately separate from the coefficient cache. The frame is spanned by the *gradients* of
-the coordinate fields, so it needs the geometric mapping that the coordinate values themselves do
-not, and folding it into the coefficient cache would tax every coefficient evaluation in the
-assembly loop for a query most callers never make.
+Separate from the coefficient cache because the frame needs shape function gradients and the
+geometric mapping, which evaluating the coordinates themselves does not.
 """
 struct LocalCoordinateAxesCache{CS, CV, GM}
     cs::CS
@@ -409,9 +399,8 @@ duplicate_for_device(device, cache::LocalCoordinateAxesCache) = cache
 Build the cache that [`evaluate_coordinate_axes`](@ref) reads the local frame from, mirroring
 [`setup_coefficient_cache`](@ref) for the coordinate values.
 
-Defined for the coordinate systems that carry a transmural and an apicobasal field, which is what
-the frame is spanned by -- [`LVCoordinateSystem`](@ref) and [`BiVCoordinateSystem`](@ref). A new
-coordinate system opts in by adding a method here.
+Defined for the coordinate systems carrying a transmural and an apicobasal field, which is what the
+frame is spanned by. A new coordinate system opts in by adding a method.
 """
 function setup_coordinate_axes_cache(
     cs::Union{LVCoordinateSystem, BiVCoordinateSystem},
@@ -432,12 +421,8 @@ end
 """
     evaluate_coordinate_axes(cache, geometry_cache::CellCache, qp::QuadraturePoint, t)
 
-The local orthonormal frame of the coordinate system at `qp`, as a
-[`LocalCoordinateAxes`](@ref) -- the counterpart of [`evaluate_coefficient`](@ref), which gives the
-coordinate values at the same point.
-
-The frame follows the geometry, so the cell mapping is evaluated per quadrature point from the
-coordinates in `geometry_cache`. That is the price of not storing gradients in the coefficient cache.
+The local orthonormal frame of the coordinate system at `qp`, as a [`LocalCoordinateAxes`](@ref).
+The counterpart of [`evaluate_coefficient`](@ref), which gives the coordinate values at that point.
 """
 function evaluate_coordinate_axes(
     cache::LocalCoordinateAxesCache,
