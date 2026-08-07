@@ -375,6 +375,27 @@ function default_initial_state!(Q::AbstractVector, model::RDQ20MFModel)
 end
 num_states(model::RDQ20MFModel) = 20
 
+"""
+Transition rates of the regulatory unit chain, indexed `[TL, TC, TR, CC]`, where the rate depends on
+the number of permissive neighbours `TL + TR - 2`.
+
+Immutable, and built in one expression rather than staged through a mutable buffer: the buffer does
+not reliably stay on the stack, and this sits in the innermost loop of every residual evaluation.
+"""
+@inline function _rdq20_transition_rates(p::RDQ20MFModel)
+    return @SArray [
+        let permissive_neighbors = TL + TR - 2
+            if TC == 2
+                p.Kbasic * p.γ^(2-permissive_neighbors)
+            elseif CC == 1
+                p.Q * p.Kbasic * p.γ^permissive_neighbors / p.μ
+            else
+                p.Q * p.Kbasic * p.γ^permissive_neighbors
+            end
+        end for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
+    ]
+end
+
 function rhs_fast!(dRU, uRU::SArray{Tuple{2, 2, 2, 2}}, λ, Ca, t, p::RDQ20MFModel)
     # Initialize helper rates
     sarcomere_length = p.SL₀*λ
@@ -384,14 +405,7 @@ function rhs_fast!(dRU, uRU::SArray{Tuple{2, 2, 2, 2}}, λ, Ca, t, p::RDQ20MFMod
         p.Koff p.Koff / p.μ
     ]
 
-    dT = @MArray zeros(typeof(p.Q * p.Kbasic * p.γ / p.µ), 2, 2, 2, 2)
-    @inbounds for TL ∈ 1:2, TR ∈ 1:2
-        permissive_neighbors = TL + TR - 2
-        dT[TL, 2, TR, 1] = p.Kbasic * p.γ^(2-permissive_neighbors);
-        dT[TL, 2, TR, 2] = p.Kbasic * p.γ^(2-permissive_neighbors);
-        dT[TL, 1, TR, 1] = p.Q * p.Kbasic * p.γ^permissive_neighbors / p.μ;
-        dT[TL, 1, TR, 2] = p.Q * p.Kbasic * p.γ^permissive_neighbors;
-    end
+    dT = _rdq20_transition_rates(p)
 
     # Update RU
     ## Compute fluxes associated with center unit
@@ -405,11 +419,13 @@ function rhs_fast!(dRU, uRU::SArray{Tuple{2, 2, 2, 2}}, λ, Ca, t, p::RDQ20MFMod
     sΦT_C4 = sum(ΦT_C; dims = 4)
 
     ## Compute rates associated with left unit
+    # `zero(eltype(...))` rather than a literal `0.0`: under ForwardDiff duals a Float64 branch
+    # makes each element a `Union{Float64, Dual}`, which boxes all downstream SArray arithmetic.
     flux_tot_L = sum(sΦT_C4; dims = 3)
     prob_tot_L = sum(suRU4; dims = 3)
     dT_L = @SMatrix [
         prob_tot_L[TL, TC, 1, 1] > 1e-12 ? flux_tot_L[TL, TC, 1, 1] / prob_tot_L[TL, TC, 1, 1] :
-        0.0 for TL ∈ 1:2, TC ∈ 1:2
+        zero(eltype(flux_tot_L)) for TL ∈ 1:2, TC ∈ 1:2
     ]
 
     ## Compute rates associated with right unit
@@ -417,7 +433,7 @@ function rhs_fast!(dRU, uRU::SArray{Tuple{2, 2, 2, 2}}, λ, Ca, t, p::RDQ20MFMod
     prob_tot_R = sum(suRU4; dims = 1)
     dT_R = @SMatrix [
         prob_tot_R[1, TC, TR, 1] > 1e-12 ? flux_tot_R[1, TC, TR, 1] / prob_tot_R[1, TC, TR, 1] :
-        0.0 for TR ∈ 1:2, TC ∈ 1:2
+        zero(eltype(flux_tot_R)) for TR ∈ 1:2, TC ∈ 1:2
     ]
 
     ## Compute fluxes associated with external units
@@ -445,14 +461,7 @@ function rhs_fast(uRU::SArray{Tuple{2, 2, 2, 2}}, λ, Ca, t, p::RDQ20MFModel)
         p.Koff p.Koff / p.μ
     ]
 
-    dT = @MArray zeros(typeof(p.Q * p.Kbasic * p.γ / p.µ), 2, 2, 2, 2)
-    @inbounds for TL ∈ 1:2, TR ∈ 1:2
-        permissive_neighbors = TL + TR - 2
-        dT[TL, 2, TR, 1] = p.Kbasic * p.γ^(2-permissive_neighbors);
-        dT[TL, 2, TR, 2] = p.Kbasic * p.γ^(2-permissive_neighbors);
-        dT[TL, 1, TR, 1] = p.Q * p.Kbasic * p.γ^permissive_neighbors / p.μ;
-        dT[TL, 1, TR, 2] = p.Q * p.Kbasic * p.γ^permissive_neighbors;
-    end
+    dT = _rdq20_transition_rates(p)
 
     # Update RU
     ## Compute fluxes associated with center unit
@@ -466,11 +475,13 @@ function rhs_fast(uRU::SArray{Tuple{2, 2, 2, 2}}, λ, Ca, t, p::RDQ20MFModel)
     sΦT_C4 = sum(ΦT_C; dims = 4)
 
     ## Compute rates associated with left unit
+    # `zero(eltype(...))` rather than a literal `0.0`: under ForwardDiff duals a Float64 branch
+    # makes each element a `Union{Float64, Dual}`, which boxes all downstream SArray arithmetic.
     flux_tot_L = sum(sΦT_C4; dims = 3)
     prob_tot_L = sum(suRU4; dims = 3)
     dT_L = @SMatrix [
         prob_tot_L[TL, TC, 1, 1] > 1e-12 ? flux_tot_L[TL, TC, 1, 1] / prob_tot_L[TL, TC, 1, 1] :
-        0.0 for TL ∈ 1:2, TC ∈ 1:2
+        zero(eltype(flux_tot_L)) for TL ∈ 1:2, TC ∈ 1:2
     ]
 
     ## Compute rates associated with right unit
@@ -478,7 +489,7 @@ function rhs_fast(uRU::SArray{Tuple{2, 2, 2, 2}}, λ, Ca, t, p::RDQ20MFModel)
     prob_tot_R = sum(suRU4; dims = 1)
     dT_R = @SMatrix [
         prob_tot_R[1, TC, TR, 1] > 1e-12 ? flux_tot_R[1, TC, TR, 1] / prob_tot_R[1, TC, TR, 1] :
-        0.0 for TR ∈ 1:2, TC ∈ 1:2
+        zero(eltype(flux_tot_R)) for TR ∈ 1:2, TC ∈ 1:2
     ]
 
     ## Compute fluxes associated with external units
@@ -530,14 +541,7 @@ function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
 
     rhs_fast!(dRU, uRU, λ, Ca, t, p)
 
-    dT = @MArray zeros(2, 2, 2, 2)
-    @inbounds for TL ∈ 1:2, TR ∈ 1:2
-        permissive_neighbors = TL + TR - 2
-        dT[TL, 2, TR, 1] = p.Kbasic * p.γ^(2-permissive_neighbors);
-        dT[TL, 2, TR, 2] = p.Kbasic * p.γ^(2-permissive_neighbors);
-        dT[TL, 1, TR, 1] = p.Q * p.Kbasic * p.γ^permissive_neighbors / p.μ;
-        dT[TL, 1, TR, 2] = p.Q * p.Kbasic * p.γ^permissive_neighbors;
-    end
+    dT = _rdq20_transition_rates(p)
 
     flux_PN = 0.0
     flux_NP = 0.0
@@ -548,15 +552,17 @@ function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
         flux_NP += uRU[TL, 1, TR, CC] * dT[TL, 1, TR, CC]
     end
 
+    # `zero(flux_PN)`, not `0.0`: with dual-typed state a Float64 branch turns `k_PN`/`k_NP` into
+    # `Union{Float64, Dual}`, which boxes the whole `XB_A` construction below.
     k_PN = if permissivity >= 1e-12
         flux_PN / permissivity
     else
-        0.0
+        zero(flux_PN)
     end
     k_NP = if 1.0 - permissivity >= 1e-12
         flux_NP / (1.0 - permissivity)
     else
-        0.0
+        zero(flux_NP)
     end
 
     #           q(v) = α|v|
@@ -592,16 +598,18 @@ internal_state_in_bounds(::RDQ20MFModel, Q) = all(≥(0), view(Q, 1:16))
 function fraction_single_overlap(model::RDQ20MFModel, λ)
     SL = λ*model.SL₀
     LMh = (model.LM - model.LB) * 0.5;
+    # `one(SL)`/`zero(SL)` rather than literals: `λ` is dual-typed on the stress AD paths, and a
+    # Float64 branch would make the return type a `Union{Float64, Dual}`.
     if (SL > model.LA && SL <= model.LM)
         return (SL - model.LA) / LMh;
     elseif (SL > model.LM && SL <= 2 * model.LA - model.LB)
         return (SL + model.LM - 2 * model.LA) * 0.5 / LMh;
     elseif (SL > 2 * model.LA - model.LB && SL <= 2 * model.LA + model.LB)
-        return 1.0;
+        return one(SL);
     elseif (SL > 2 * model.LA + model.LB && SL <= 2 * model.LA + model.LM)
         return (model.LM + 2 * model.LA - SL) * 0.5 / LMh;
     else
-        return 0.0;
+        return zero(SL);
     end
 end
 

@@ -53,6 +53,22 @@ function setup_local_solve_reports(dh, lvh, ndofs_per_quadrature_point::Int, cel
 end
 
 """
+Tag for the dual numbers of the local solve -- both the Newton's Jacobian and the corrector's
+derivative. It exists so the configs carrying the dual work buffers can be built once at setup
+instead of once per quadrature point solve, which is what `ForwardDiff` does when it is not handed
+one. The two are never active at the same time: the corrector runs after the Newton has converged.
+
+Naming the tag rather than deriving it from the residual closure is what makes that possible: the
+closure is created per quadrature point, so a tag derived from it is not available at setup. It is a
+custom tag in ForwardDiff's sense, so `checktag` passes it through.
+
+The safety this gives up -- detection of perturbation confusion under nested differentiation -- the
+local solve does not have to begin with: [`GenericLocalNonlinearSolverCache`](@ref) holds `Float64`
+buffers, so a dual from an outer differentiation cannot reach this Newton in the first place.
+"""
+struct LocalSolveADTag end
+
+"""
     GenericLocalNonlinearSolverCache
 
 Immutable: everything that changes during a solve lives in the arrays it holds, the outer solver's
@@ -68,6 +84,8 @@ Base.@kwdef struct GenericLocalNonlinearSolverCache{
     CorrectorRhsType,
     ReportsType,
     TolType,
+    JacobianConfigType,
+    DerivativeConfigType,
 }
     params::GenericLocalNonlinearSolver
     J::JacobianType
@@ -75,19 +93,46 @@ Base.@kwdef struct GenericLocalNonlinearSolverCache{
     rhs_corrector::CorrectorRhsType
     reports::ReportsType = nothing
     outer_tol::TolType = [0.0]
+    # Dual work buffers for the local Jacobian and for the corrector, see `LocalSolveADTag`.
+    jacobian_config::JacobianConfigType = nothing
+    derivative_config::DerivativeConfigType = nothing
 end
 
+"""
+The `ForwardDiff.JacobianConfig` a local problem of `n` unknowns needs, tagged with
+[`LocalSolveADTag`](@ref).
+"""
+setup_local_jacobian_config(residual::AbstractVector) = ForwardDiff.JacobianConfig(
+    nothing,
+    residual,
+    residual,
+    ForwardDiff.Chunk(residual),
+    LocalSolveADTag(),
+)
+
+"""
+The `ForwardDiff.DerivativeConfig` the corrector solves need -- they differentiate the same residual
+with respect to a single scalar. Tagged with [`LocalSolveADTag`](@ref).
+"""
+setup_local_derivative_config(residual::AbstractVector{T}) where {T} =
+    ForwardDiff.DerivativeConfig(nothing, residual, zero(T), LocalSolveADTag())
+
 function duplicate_for_device(device, cache::GenericLocalNonlinearSolverCache)
+    residual = duplicate_for_device(device, cache.residual)
     GenericLocalNonlinearSolverCache(;
         params        = cache.params,
         J             = duplicate_for_device(device, cache.J),
-        residual      = duplicate_for_device(device, cache.residual),
+        residual      = residual,
         rhs_corrector = duplicate_for_device(device, cache.rhs_corrector),
         # Both are deliberately shared rather than copied: workers write disjoint report slots and a
         # failure must survive the worker, and the tolerance is written once per outer iteration and
         # has to reach every worker.
         reports   = cache.reports,
         outer_tol = cache.outer_tol,
+        # Not shared: the configs *are* the scratch the derivatives are evaluated into, so two
+        # workers sharing one would overwrite each other's duals.
+        jacobian_config   = setup_local_jacobian_config(residual),
+        derivative_config = setup_local_derivative_config(residual),
     )
 end
 
