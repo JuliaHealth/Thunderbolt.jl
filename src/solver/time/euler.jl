@@ -214,12 +214,15 @@ function _setup_local_solver_cache(
     # cannot be served by a single cache.
     singleQsize = internal_variable_size(material_model, nothing, nothing)
     @debug "Setting up local nonlinear solver with size(Q)=$(singleQsize) for material $(material_model)" _group=:nlsolve
+    residual = zeros(singleQsize)
     return GenericLocalNonlinearSolverCache(;
         params = local_solver,
         J = zeros(singleQsize, singleQsize),
-        residual = zeros(singleQsize),
+        residual = residual,
         rhs_corrector = zeros(singleQsize),
         reports = setup_local_solve_reports(dh, lvh, singleQsize, cellset),
+        jacobian_config = setup_local_jacobian_config(residual),
+        derivative_config = setup_local_derivative_config(residual),
     )
 end
 function _setup_local_solver_cache(
