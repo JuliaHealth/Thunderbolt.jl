@@ -585,10 +585,13 @@ function generate_ideal_lv_mesh(
     offset                   += length(cell_array[:, :, end][:])
     # The two internal sheets that stand in for the right ventricular insertions. Both run from the
     # base down to the singular apex edge, where the azimuth stops existing, so together they cut
-    # the ventricle into a septum and a free wall.
+    # the ventricle into a septum (circumferential index below `i_ant`) and a free wall. Each facet
+    # is stored on its *septal* cell, which is the orientation the coordinate system reads the two
+    # regions off -- hence facet 5, the low-angle side, on the first septal cell and facet 3, the
+    # high-angle side, on the last one.
     i_ant                       = clamp(round(Int, num_elements_circumferential*septum_fraction), 1, num_elements_circumferential-1) + 1
     facetsets["SRidgePost"]     = OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1, :, :][:]);
-    facetsets["SRidgeAnt"]      = OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[i_ant, :, :][:]);
+    facetsets["SRidgeAnt"]      = OrderedSet{FacetIndex}(FacetIndex(cl, 3) for cl in cell_array[i_ant-1, :, :][:]);
     nodesets["Apex"]         = OrderedSet{Int}()
     nodesets["ApexInOut"]    = OrderedSet{Int}()
 
@@ -618,8 +621,8 @@ function generate_ideal_lv_mesh(
         j == 1 && push!(facetsets["Endocardium"], FacetIndex(length(cells), 1))
         j == num_elements_radial && push!(facetsets["Epicardium"], FacetIndex(length(cells), 5))
         j == num_elements_radial && push!(nodesets["Apex"], singular_index+1)
-        i == 1     && push!(facetsets["SRidgePost"], FacetIndex(length(cells), 2))
-        i == i_ant && push!(facetsets["SRidgeAnt"],  FacetIndex(length(cells), 2))
+        i == 1       && push!(facetsets["SRidgePost"], FacetIndex(length(cells), 2))
+        i == i_ant-1 && push!(facetsets["SRidgeAnt"],  FacetIndex(length(cells), 3))
     end
 
     if with_control_point
@@ -770,7 +773,7 @@ function generate_ideal_lv_mesh_hex(
         # core: the core is a regular patch covering the apex, so no facet sheet inside it separates
         # the two sides, and the rotational coordinate is smeared over the core instead.
         "SRidgePost"  => OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]),
-        "SRidgeAnt"   => OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[i_ant,:,:][:]),
+        "SRidgeAnt"   => OrderedSet{FacetIndex}(FacetIndex(cl, 3) for cl in cell_array[i_ant-1,:,:][:]),
     )
 
     # Apex cells are extruded transmurally rather than longitudinally, so their
@@ -784,7 +787,7 @@ function generate_ideal_lv_mesh_hex(
         j == 1                       && push!(facetsets["Endocardium"], FacetIndex(length(cells), 1))
         j == num_elements_radial     && push!(facetsets["Epicardium"],  FacetIndex(length(cells), 6))
         i == 1                       && push!(facetsets["SRidgePost"], FacetIndex(length(cells), 5))
-        i == i_ant                   && push!(facetsets["SRidgeAnt"],  FacetIndex(length(cells), 5))
+        i == i_ant-1                 && push!(facetsets["SRidgeAnt"],  FacetIndex(length(cells), 3))
     end
     for j in 1:num_elements_radial, b in 1:m, a in 1:m
         push!(cells, Hexahedron((core_array[a,b,j],   core_array[a+1,b,j],   core_array[a+1,b+1,j],   core_array[a,b+1,j],

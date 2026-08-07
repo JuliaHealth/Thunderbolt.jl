@@ -102,36 +102,47 @@ end
 
         @testset "transmural" begin
             @test all(0.0 .≤ cs.u_transmural .≤ 1.0)
+            # Exactly, not to the solver's tolerance: a harmonic coordinate that stops at
+            # 1 - 3e-10 on the surface it is pinned to is one whose endpoints depend on the solver.
             for (cellid, local_facet) in getfacetset(mesh, "Endocardium")
                 for nodeid in Ferrite.facets(getcells(mesh, cellid))[local_facet]
-                    @test cs.u_transmural[n2d[nodeid]] ≈ 0.0 atol = 1.0e-8
+                    @test cs.u_transmural[n2d[nodeid]] == 0.0
                 end
             end
             for (cellid, local_facet) in getfacetset(mesh, "Epicardium")
                 for nodeid in Ferrite.facets(getcells(mesh, cellid))[local_facet]
-                    @test cs.u_transmural[n2d[nodeid]] ≈ 1.0 atol = 1.0e-8
+                    @test cs.u_transmural[n2d[nodeid]] == 1.0
                 end
             end
         end
 
         @testset "apicobasal" begin
             @test all(0.0 .≤ cs.u_apicobasal .≤ 1.0)
-            for nodeid in getnodeset(mesh, "ApexInOut")
-                @test cs.u_apicobasal[n2d[nodeid]] ≈ 0.0 atol = 1.0e-8
+            for nodeid in getnodeset(mesh, "Apex")
+                @test cs.u_apicobasal[n2d[nodeid]] == 0.0
             end
             for (cellid, local_facet) in getfacetset(mesh, "Base")
                 for nodeid in Ferrite.facets(getcells(mesh, cellid))[local_facet]
-                    @test cs.u_apicobasal[n2d[nodeid]] ≈ 1.0 atol = 1.0e-8
+                    @test cs.u_apicobasal[n2d[nodeid]] == 1.0
                 end
             end
+
+            # The apical end of the coordinate is an annotation, not a hardcoded name. Pinning the
+            # whole apical wall rather than just its epicardial end is a materially different
+            # coordinate -- see the docstring for why it is not the default.
+            through_wall = compute_lv_coordinate_system(mesh; apex_nodeset = "ApexInOut")
+            for nodeid in getnodeset(mesh, "ApexInOut")
+                @test through_wall.u_apicobasal[n2d[nodeid]] == 0.0
+            end
+            @test maximum(abs, through_wall.u_apicobasal - cs.u_apicobasal) > 0.01
 
             # The coordinate is arc length along the wall, so refining the mesh has to bring it
             # closer to the normalized arc length of an epicardial meridian. The raw harmonic field
             # does the opposite of that: it is pinned at a single node, behaves like a point source,
             # and spends half its range on the last few percent of wall next to the apex.
-            function meridian_error(nc, nr, nl)
+            function meridian_error(nc, nr, nl; apex_nodeset)
                 m = generate_ideal_lv_mesh(nc, nr, nl)
-                c = compute_lv_coordinate_system(m)
+                c = compute_lv_coordinate_system(m; apex_nodeset)
                 dofof = node_to_dof(c.dh)
                 nodes = reshape(collect(1:(nc*(nr+1)*(nl+1))), (nc, nr + 1, nl + 1))
                 ids = [nodes[1, end, k] for k = 1:(nl+1)]
@@ -142,10 +153,17 @@ end
                 ab = [c.u_apicobasal[dofof[i]] for i in vcat(apexid, ids)]
                 return maximum(abs.(ab .- s))
             end
-            coarse = meridian_error(16, 2, 5)
-            fine = meridian_error(16, 2, 20)
-            @test fine < coarse / 2
-            @test fine < 0.05
+            # A meridian is a fair proxy for a trajectory of `ua` only where the level sets are
+            # proper apical caps, which is what pinning both ends of the apical wall buys. The
+            # default pins the epicardial apex alone, which skews them and loosens the proxy near
+            # the tip -- a cost it more than repays in agreement between two differently shaped
+            # ventricles, see the docstring. Both converge; they converge to different places.
+            for (set, tol) in (("ApexInOut", 0.05), ("Apex", 0.08))
+                coarse = meridian_error(16, 2, 5; apex_nodeset = set)
+                fine = meridian_error(16, 2, 20; apex_nodeset = set)
+                @test fine < coarse
+                @test fine < tol
+            end
         end
 
         @testset "rotational" begin
@@ -242,6 +260,40 @@ end
                 @test 0.0 ≤ coordinate.apicobasal ≤ 1.0
             end
         end
+    end
+
+    @testset "The ridges determine the septum without geometry" begin
+        # The ridge sheets are the interface between the two regions, so the partition they induce
+        # *is* the segmentation -- no centroid needs to be classified. On a mesh whose ridges cut it
+        # cleanly the two agree; where they disagree it is the arc rule that is wrong, since a cell
+        # within half an element of a ridge can fall on either side of it.
+        num_c = 12
+        mesh = generate_ideal_lv_mesh(num_c, 2, 4)
+        axes = compute_lv_axes(mesh)
+        origin = Thunderbolt._to_f64(axes.base_center)
+        longitudinal = Thunderbolt._to_f64(axes.longitudinal)
+        provisional = Thunderbolt.AzimuthalFrame(
+            origin, longitudinal, Thunderbolt._any_orthogonal(longitudinal))
+        frame = Thunderbolt.AzimuthalFrame(origin, longitudinal,
+            Thunderbolt._sheet_direction(mesh, "SRidgePost", provisional))
+        θa = Thunderbolt.azimuth(frame, frame.origin +
+            Thunderbolt._sheet_direction(mesh, "SRidgeAnt", frame))
+        θp = Thunderbolt.azimuth(frame, frame.origin +
+            Thunderbolt._sheet_direction(mesh, "SRidgePost", frame))
+
+        septal = Thunderbolt._septal_cells_by_partition(mesh, "SRidgeAnt", "SRidgePost")
+        @test septal !== nothing
+        @test septal == Thunderbolt._septal_cells_by_arc(mesh, frame, θa, θp)
+        # A third of the circumference, and the ridge facets sit on the septal side of the cut.
+        @test count(septal) / getncells(mesh) ≈ 1 / 3 atol = 0.02
+        for name in ("SRidgeAnt", "SRidgePost"), (cellid, _) in getfacetset(mesh, name)
+            @test septal[cellid]
+        end
+
+        # The O-grid cap has no facet sheet continuing the ridges through its core, so there is no
+        # partition to recover and the arc rule has to take over.
+        @test Thunderbolt._septal_cells_by_partition(
+            Thunderbolt.generate_ideal_lv_mesh_hex(12, 2, 4), "SRidgeAnt", "SRidgePost") === nothing
     end
 
     @testset "Ideal LV ridges, arbitrary circumferential count" begin
