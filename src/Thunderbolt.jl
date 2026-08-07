@@ -196,6 +196,13 @@ include("discretization/rsafdq-operator.jl")
 
 # TODO put exports into the individual submodules above!
 export
+    # Long axis of a ventricular geometry
+    LongAxisInfo,
+    compute_long_axis,
+    fit_basal_plane,
+    compute_principal_axis
+
+export
     # Devices
     SequentialCPUDevice,
     PolyesterDevice,

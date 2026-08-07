@@ -138,10 +138,24 @@ end
 orthogonalize_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3}) =
     orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂), v₃/norm(v₃))
 
-# Compute the relative rotation of `v_from_in` to `v_to` around `n` using the left hand rule.
+"""
+    compute_relative_rotation(v_from_in, v_to, n)
+
+Relative rotation of `v_from_in` onto `v_to` about `n`, using the left hand rule. `v_from_in` is
+folded onto the acute side first, so the magnitude is at most 90° and a sign flip of the reference
+direction does not change the result.
+
+The magnitude comes from `atan(‖a×b‖, a⋅b)` rather than `acos(a⋅b)`. A previous formulation clamped
+the dot product to ±0.9999 before `acos`, which imposed a hard floor of `acos(0.9999) = 0.8103°` on
+every returned magnitude: near-parallel vectors came back as ±0.81° with essentially arbitrary sign.
+That is harmless for angles of tens of degrees but destroys anything of order 1°. `atan` is exact,
+well conditioned at both 0 and π, needs no clamp, and is insensitive to the inputs not being exactly
+normalized.
+"""
 function compute_relative_rotation(v_from_in::Vec{3}, v_to::Vec{3}, n::Vec{3})
     v_from = sign(v_from_in ⋅ v_to) * v_from_in
-    sign((v_from × v_to) ⋅ n) * acos(clamp(v_from ⋅ v_to, -0.9999, 0.9999))
+    axb = v_from × v_to
+    return sign(axb ⋅ n) * atan(norm(axb), v_from ⋅ v_to)
 end
 
 """

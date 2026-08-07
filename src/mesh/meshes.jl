@@ -23,6 +23,7 @@ elementtypes(grid::Grid{3, QuadraticTetrahedron}) = @SVector [QuadraticTetrahedr
 include("simple_meshes.jl")
 include("tools.jl")
 include("generators.jl")
+include("long_axis.jl")
 
 Ferrite.PointEvalHandler(
     mesh::SimpleMesh{sdim},
