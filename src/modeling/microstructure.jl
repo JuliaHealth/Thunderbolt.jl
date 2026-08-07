@@ -208,7 +208,7 @@ in addition to given helix, transversal and sheetlet angles. The theory is based
 function compute_local_microstructure(
     p::ODB25LTMicrostructureParameters,
     x::Union{LVCoordinate, BiVCoordinate},
-    axes::Union{LVCoordinate, BiVCoordinate},
+    axes::LocalCoordinateAxes,
 )
     (; αendo, αepi, βendo, βepi, γendo, γepi) = p
 
@@ -304,56 +304,17 @@ function create_microstructure_model(
     n_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets, sizes)
 
     qrs = NodalQuadratureRuleCollection(ip_collection.base)
-    cvs = CellValueCollection(qrs, ip_collection.base)
     for sdh in dh.subdofhandlers
         is_sdh_on_any_subdomain(sdh, subdomains) || continue
 
-        first_cell = getcells(Ferrite.get_grid(dh), first(sdh.cellset))
-        cv = getcellvalues(cvs, first_cell)
+        qr = getquadraturerule(qrs, sdh)
+        coordinate_cache = setup_coefficient_cache(coordinate_system, qr, sdh)
+        axes_cache = setup_coordinate_axes_cache(coordinate_system, qr, sdh)
         for cell in CellIterator(sdh)
             cellindex = cellid(cell)
-            reinit!(cv, cell)
-            dof_indices = celldofs(cell)
-
-            for qp in QuadratureIterator(cv)
-                # TODO grab these via some interface!
-                apicobasal_direction =
-                    function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
-                apicobasal_direction /= norm(apicobasal_direction)
-                transmural_direction =
-                    function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
-                transmural_direction /= norm(transmural_direction)
-                apicobasal_direction =
-                    apicobasal_direction -
-                    (apicobasal_direction ⋅ transmural_direction) * transmural_direction # We do this fix to ensure local orthogonality
-                apicobasal_direction /= norm(apicobasal_direction)
-                circumferential_direction = transmural_direction × apicobasal_direction
-                circumferential_direction /= norm(circumferential_direction)
-                axes = LVCoordinate(;
-                    transmural = transmural_direction,
-                    rotational = circumferential_direction,
-                    apicobasal = apicobasal_direction,
-                )
-                # TODO grab these via some interface!
-                x = LVCoordinate(;
-                    transmural = function_value(
-                        cv,
-                        qp,
-                        coordinate_system.u_transmural[dof_indices],
-                    ),
-                    rotational = rotational_value(
-                        coordinate_system,
-                        cv,
-                        qp,
-                        cellindex,
-                        dof_indices,
-                    ),
-                    apicobasal = function_value(
-                        cv,
-                        qp,
-                        coordinate_system.u_apicobasal[dof_indices],
-                    ),
-                )
+            for qp in QuadratureIterator(qr)
+                x = evaluate_coefficient(coordinate_cache, cell, qp, 0.0)
+                axes = evaluate_coordinate_axes(axes_cache, cell, qp, 0.0)
 
                 coeff = compute_local_microstructure(parameters, x, axes)
 

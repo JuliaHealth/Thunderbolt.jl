@@ -1,4 +1,42 @@
 """
+    setup_coefficient_cache(coefficient, qr::QuadratureRule, sdh::SubDofHandler)
+
+Build the cache that [`evaluate_coefficient`](@ref) reads `coefficient` from on the subdomain of
+`sdh`, with everything that depends only on the interpolation and `qr` -- the shape values -- worked
+out once instead of per quadrature point.
+
+The cache is immutable and carries no cell state, so evaluation needs no `reinit!` and
+`duplicate_for_device` can hand the same object to a device.
+"""
+function setup_coefficient_cache end
+
+"""
+    evaluate_coefficient(cache, geometry_cache::CellCache, qp::QuadraturePoint, t)
+
+Value of the cached coefficient at quadrature point `qp` of the cell in `geometry_cache`, at time
+`t`. `cache` comes from [`setup_coefficient_cache`](@ref).
+
+For a coordinate system this is the coordinate itself; the local frame it induces is a separate
+query, see [`evaluate_coordinate_axes`](@ref).
+"""
+function evaluate_coefficient end
+
+"""
+Shape values of `ip` at the points of `qr`, in the static form that coefficient caches store: an
+`SMatrix` of values and nothing else, so that the loop bounds are compile time constants and the
+cache transfers to a device unchanged.
+"""
+function _static_interpolation_values(::Type{T}, ip, qr::QuadratureRule, ip_geo) where {T}
+    fv = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
+    Nξs = size(fv.Nξ)
+    return FerriteUtils.StaticInterpolationValues(
+        fv.ip,
+        SMatrix{Nξs[1], Nξs[2]}(fv.Nξ),
+        nothing,
+    )
+end
+
+"""
     FieldCoefficient(data, interpolation)
 
 A constant in time data field, interpolated per element with a given interpolation.
@@ -32,11 +70,9 @@ function _create_field_coefficient_cache(
 ) where {T}
     cell = get_first_cell(sdh)
     ip = getinterpolation(coefficient.ip_collection, cell)
-    fv = Ferrite.FunctionValues{0}(T, ip, qr, ip^3)
-    Nξs = size(fv.Nξ)
     return FieldCoefficientCache(
         coefficient.elementwise_data,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
+        _static_interpolation_values(T, ip, qr, ip^3),
     )
 end
 
@@ -48,11 +84,9 @@ function _create_field_coefficient_cache(
 ) where {T}
     cell = get_first_cell(sdh)
     ip = getinterpolation(coefficient.ip_collection, cell)
-    fv = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip)
-    Nξs = size(fv.Nξ)
     return FieldCoefficientCache(
         coefficient.elementwise_data,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
+        _static_interpolation_values(T, ip.ip, qr, ip),
     )
 end
 
@@ -246,12 +280,8 @@ function setup_coefficient_cache(
 ) where {T}
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(cs, cell)
-    fv = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip) # We scalarize the interpolation again as an optimization step
-    Nξs = size(fv.Nξ)
-    return CartesianCoordinateSystemCache(
-        cs,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
-    )
+    # We scalarize the interpolation again as an optimization step
+    return CartesianCoordinateSystemCache(cs, _static_interpolation_values(T, ip.ip, qr, ip))
 end
 
 function evaluate_coefficient(
@@ -283,9 +313,13 @@ function setup_coefficient_cache(
     sdh::SubDofHandler,
 ) where {T}
     cell   = get_first_cell(sdh)
-    ip = Thunderbolt.getcoordinateinterpolation(cs, cell)
-    ip_geo = getcoordinateinterpolation(cs, cell)^3
-    return Thunderbolt.LVCoordinateSystemCache(cs, CellValues(qr, ip, ip_geo), CellValues(qr, ip, ip_geo))
+    ip     = getcoordinateinterpolation(cs, cell)
+    ip_geo = ip^3
+    return LVCoordinateSystemCache(
+        cs,
+        _static_interpolation_values(T, ip, qr, ip_geo),
+        _static_interpolation_values(T, getrotationalinterpolation(cs, cell), qr, ip_geo),
+    )
 end
 
 function evaluate_coefficient(
@@ -327,13 +361,7 @@ function setup_coefficient_cache(
 ) where {T}
     cell   = get_first_cell(sdh)
     ip     = getcoordinateinterpolation(cs, cell)
-    ip_geo = ip^3
-    fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
-    Nξs    = size(fv.Nξ)
-    return BiVCoordinateSystemCache(
-        cs,
-        FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing),
-    )
+    return BiVCoordinateSystemCache(cs, _static_interpolation_values(T, ip, qr, ip^3))
 end
 
 function evaluate_coefficient(
@@ -357,6 +385,97 @@ function evaluate_coefficient(
         x4 += val * cs.u_transventricular[dofs[i]]
     end
     return BiVCoordinate(x1, x2, x3, x4)
+end
+
+"""
+Cache for [`evaluate_coordinate_axes`](@ref), built by [`setup_coordinate_axes_cache`](@ref).
+
+It is deliberately separate from the coefficient cache. The frame is spanned by the *gradients* of
+the coordinate fields, so it needs the geometric mapping that the coordinate values themselves do
+not, and folding it into the coefficient cache would tax every coefficient evaluation in the
+assembly loop for a query most callers never make.
+"""
+struct LocalCoordinateAxesCache{CS, CV, GM}
+    cs::CS
+    cv::CV
+    gm::GM
+end
+
+duplicate_for_device(device, cache::LocalCoordinateAxesCache) = cache
+
+"""
+    setup_coordinate_axes_cache(cs, qr::QuadratureRule, sdh::SubDofHandler)
+
+Build the cache that [`evaluate_coordinate_axes`](@ref) reads the local frame from, mirroring
+[`setup_coefficient_cache`](@ref) for the coordinate values.
+
+Defined for the coordinate systems that carry a transmural and an apicobasal field, which is what
+the frame is spanned by -- [`LVCoordinateSystem`](@ref) and [`BiVCoordinateSystem`](@ref). A new
+coordinate system opts in by adding a method here.
+"""
+function setup_coordinate_axes_cache(
+    cs::Union{LVCoordinateSystem, BiVCoordinateSystem},
+    qr::QuadratureRule{<:Any, <:AbstractArray{T}},
+    sdh::SubDofHandler,
+) where {T}
+    ip = getcoordinateinterpolation(cs, get_first_cell(sdh))
+    # The `CellValues` is built once per subdomain and thrown away; only the static values are kept,
+    # so that evaluation needs no `reinit!` and the cache transfers to a device unchanged.
+    cv = CellValues(qr, ip, ip^3)
+    return LocalCoordinateAxesCache(
+        cs,
+        FerriteUtils.StaticInterpolationValues(cv.fun_values),
+        FerriteUtils.StaticInterpolationValues(cv.geo_mapping),
+    )
+end
+
+"""
+Inverse of the cell Jacobian `J = ∑ⱼ xⱼ ⊗ ∇Mⱼ` at quadrature point `q_point`, which turns reference
+shape function gradients into spatial ones via `∇N = ∇ξN ⋅ J⁻¹`.
+
+TODO drop this in favour of `CellValues` and `function_gradient`, which do exactly this, once
+FerriteOperators has been updated to support it. The `reinit!` that comes with `CellValues` then
+belongs once per cell rather than per quadrature point, so the query loses its stateless signature.
+"""
+@inline function _inverse_jacobian(
+    gm::FerriteUtils.StaticInterpolationValues,
+    q_point::Int,
+    x::AbstractVector{<:Vec},
+)
+    @inbounds J = x[1] ⊗ gm.dNdξ[1, q_point]
+    @inbounds for j = 2:getnbasefunctions(gm)
+        J += x[j] ⊗ gm.dNdξ[j, q_point]
+    end
+    return Ferrite.calculate_Jinv(J)
+end
+
+"""
+    evaluate_coordinate_axes(cache, geometry_cache::CellCache, qp::QuadraturePoint, t)
+
+The local orthonormal frame of the coordinate system at `qp`, as a
+[`LocalCoordinateAxes`](@ref) -- the counterpart of [`evaluate_coefficient`](@ref), which gives the
+coordinate values at the same point.
+
+The frame follows the geometry, so the cell Jacobian is inverted per quadrature point from the
+coordinates in `geometry_cache`. That is the price of not storing gradients in the coefficient cache.
+"""
+function evaluate_coordinate_axes(
+    cache::LocalCoordinateAxesCache,
+    geometry_cache::CellCache,
+    qp::QuadraturePoint{<:Any, T},
+    t,
+) where {T}
+    @unpack cs, cv, gm = cache
+    Jinv = _inverse_jacobian(gm, qp.i, getcoordinates(geometry_cache))
+    dofs = celldofsview(cs.dh, cellid(geometry_cache))
+    ∇transmural = zero(Vec{3, T})
+    ∇apicobasal = zero(Vec{3, T})
+    @inbounds for i = 1:getnbasefunctions(cv)
+        dNdx = cv.dNdξ[i, qp.i] ⋅ Jinv
+        ∇transmural += dNdx * cs.u_transmural[dofs[i]]
+        ∇apicobasal += dNdx * cs.u_apicobasal[dofs[i]]
+    end
+    return _local_axes(∇transmural, ∇apicobasal)
 end
 
 """

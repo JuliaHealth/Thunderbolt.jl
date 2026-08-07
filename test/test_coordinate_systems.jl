@@ -270,8 +270,8 @@ end
         num_c = 12
         mesh = generate_ideal_lv_mesh(num_c, 2, 4)
         axes = compute_lv_axes(mesh)
-        origin = Thunderbolt._to_f64(axes.base_center)
-        longitudinal = Thunderbolt._to_f64(axes.longitudinal)
+        origin = Vec{3, Float64}(axes.base_center)
+        longitudinal = Vec{3, Float64}(axes.longitudinal)
         provisional = Thunderbolt.AzimuthalFrame(
             origin, longitudinal, Thunderbolt._any_orthogonal(longitudinal))
         frame = Thunderbolt.AzimuthalFrame(origin, longitudinal,
@@ -331,6 +331,76 @@ end
             end for sdh in cs.dh_rotational.subdofhandlers for cell in CellIterator(sdh)
             for (dof, x) in zip(celldofs(cell), getcoordinates(cell))
         ) < 1.0e-12
+    end
+
+    @testset "Local coordinate axes" begin
+        # The frame is what downstream needs to build a microstructure on, so what matters is that
+        # it really is a right-handed orthonormal frame anchored on the anatomy -- on every element
+        # type of a mixed mesh, and for both ventricular coordinate systems.
+        mesh = generate_ideal_lv_mesh(8, 2, 4)
+        cs = compute_lv_coordinate_system(mesh)
+        # An LVCoordinateSystem and a BiVCoordinateSystem span the frame from the same two fields.
+        biv = BiVCoordinateSystem(
+            cs.dh,
+            cs.u_transmural,
+            cs.u_apicobasal,
+            copy(cs.u_transmural),
+            copy(cs.u_apicobasal),
+        )
+
+        for (name, system) in (("LV", cs), ("BiV", biv))
+            @testset "$name" begin
+                orthonormal = true
+                righthanded = true
+                outward = true
+                for sdh in system.dh.subdofhandlers
+                    qr = getquadraturerule(QuadratureRuleCollection(2), sdh)
+                    cache = Thunderbolt.setup_coordinate_axes_cache(system, qr, sdh)
+                    geo = CellValues(
+                        qr,
+                        Ferrite.geometric_interpolation(Thunderbolt.get_first_cell(sdh)),
+                    )
+                    for cell in CellIterator(sdh)
+                        coords = getcoordinates(cell)
+                        reinit!(geo, cell)
+                        for qp in Thunderbolt.QuadratureIterator(qr)
+                            a = Thunderbolt.evaluate_coordinate_axes(cache, cell, qp, 0.0)
+                            orthonormal &=
+                                norm(a.transmural) ≈ 1 &&
+                                norm(a.apicobasal) ≈ 1 &&
+                                norm(a.rotational) ≈ 1 &&
+                                abs(a.transmural ⋅ a.apicobasal) < 1.0e-12 &&
+                                abs(a.transmural ⋅ a.rotational) < 1.0e-12 &&
+                                abs(a.apicobasal ⋅ a.rotational) < 1.0e-12
+                            righthanded &=
+                                norm(a.transmural × a.apicobasal - a.rotational) < 1.0e-12
+                            # Transmural runs endocardium -> epicardium, i.e. away from the long
+                            # axis. Skip the apical cap, where "away from the axis" is meaningless.
+                            x = spatial_coordinate(geo, qp.i, coords)
+                            radial = Vec((x[1], x[2], 0.0))
+                            norm(radial) < 0.4 && continue
+                            outward &= a.transmural ⋅ (radial / norm(radial)) > 0
+                        end
+                    end
+                end
+                @test orthonormal
+                @test righthanded
+                @test outward
+            end
+        end
+
+        # The axes are an opt-in query: asking only for coordinates must not drag in the gradients
+        # and the geometric mapping that the frame needs.
+        sdh = first(cs.dh.subdofhandlers)
+        qr = getquadraturerule(QuadratureRuleCollection(2), sdh)
+        @test Thunderbolt.setup_coefficient_cache(cs, qr, sdh).cv.dNdξ === nothing
+        @test Thunderbolt.setup_coordinate_axes_cache(cs, qr, sdh).cv.dNdξ !== nothing
+
+        cell = first(CellIterator(sdh))
+        qp = first(Thunderbolt.QuadratureIterator(qr))
+        axes_cache = Thunderbolt.setup_coordinate_axes_cache(cs, qr, sdh)
+        @test (@inferred Thunderbolt.evaluate_coordinate_axes(axes_cache, cell, qp, 0.0)) isa
+            Thunderbolt.LocalCoordinateAxes{Float64}
     end
 
     @testset "VTK output" begin

@@ -490,7 +490,6 @@ function generate_ideal_lv_mesh(
     apex_inner::T = Float64(1.3),
     apex_outer::T = Float64(1.5),
     with_control_point::Bool = false,
-    use_wedges_for_the_apex = true,
     septum_fraction = 1//3,
 ) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
@@ -507,30 +506,21 @@ function generate_ideal_lv_mesh(
     radii_in_percent = range(0.0, stop = 1.0, length = n_nodes_r)
     # z axis expressed as the angle between the apicobasal vector and the current layer from apex (0.0) to base ((1.0+longitudinal_upper)*π/2)
     longitudinal_angle = range(0, stop = (1.0+longitudinal_upper)*π/2, length = n_nodes_l+1)
+    # The fan variant is the rotationally symmetric member of the ellipsoid family shared with
+    # [`generate_ideal_lv_mesh_hex`](@ref): no septal flattening, circular cross section.
+    point(θ, φ, rp) = _ellipsoid_point(
+        θ, φ, rp;
+        inner_radius, outer_radius, apex_inner, apex_outer,
+        septum_flatness = 0.0, axis_ratio = 1.0, eccentricity = 0.0,
+    )
+
+    # Rings from the one above the apex up to the base, circumferential index fastest.
     nodes = Node{3, T}[]
-    # Add nodes up to apex
-    for θ ∈ longitudinal_angle[2:(end-1)],
-        radius_percent ∈ radii_in_percent,
-        φ ∈ circumferential_angle[1:(end-1)]
-        # thickness_inner = inner_radius*longitudinal_percent + apex_inner*(1.0-longitudinal_percent)
-        # thickness_outer = outer_radius*longitudinal_percent + apex_outer*(1.0-longitudinal_percent)
-        # radius = radius_percent*thickness_outer + (1.0-radius_percent)*thickness_inner
-        radius = inner_radius*(1.0-radius_percent) + outer_radius*(radius_percent)
-        # cylindrical -> carthesian
-        z =
-            θ < π/2 ? (apex_inner*(1.0-radius_percent) + apex_outer*(radius_percent))*cos(θ) :
-            apex_outer*cos(θ)
-        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), z)))
-    end
-
-    # Add flat base
-    for θ ∈ longitudinal_angle[end],
+    for θ ∈ longitudinal_angle[2:end],
         radius_percent ∈ radii_in_percent,
         φ ∈ circumferential_angle[1:(end-1)]
 
-        radius = inner_radius*(1.0-radius_percent) + outer_radius*(radius_percent)
-        # cylindrical -> carthesian
-        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), apex_outer*cos(θ))))
+        push!(nodes, Node(point(θ, φ, radius_percent)))
     end
 
     # Generate all cells but the apex
@@ -598,8 +588,7 @@ function generate_ideal_lv_mesh(
     # Add apex nodes
     push!(nodesets["ApexInOut"], length(nodes)+1)
     for radius_percent ∈ radii_in_percent
-        radius = apex_inner*(1.0-radius_percent) + apex_outer*(radius_percent)
-        push!(nodes, Node((0.0, 0.0, radius)))
+        push!(nodes, Node(point(0.0, 0.0, radius_percent)))
     end
     push!(nodesets["ApexInOut"], length(nodes))
 
@@ -689,6 +678,13 @@ function _ogrid_core(nc::Int, size, roundness)
 end
 
 
+"""
+Point of the idealized ventricular wall at longitudinal angle `θ` (0 at the apex), circumferential
+angle `φ` and transmural fraction `rp` (0 endocardial, 1 epicardial). `septum_flatness`, `axis_ratio`
+and `eccentricity` deform the truncated ellipsoid towards an anatomical shape; at
+`septum_flatness = eccentricity = 0` and `axis_ratio = 1` it is the plain surface of revolution that
+[`generate_ideal_lv_mesh`](@ref) uses.
+"""
 function _ellipsoid_point(θ, φ, rp;
     inner_radius, outer_radius, apex_inner, apex_outer, septum_flatness, axis_ratio, eccentricity)
     radius1 = (inner_radius*(1.0-rp) + outer_radius*rp)*axis_ratio

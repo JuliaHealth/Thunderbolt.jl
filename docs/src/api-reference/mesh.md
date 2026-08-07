@@ -18,6 +18,9 @@ LVCoordinateSystem
 LVCoordinate
 BiVCoordinateSystem
 BiVCoordinate
+LocalCoordinateAxes
+setup_coordinate_axes_cache
+evaluate_coordinate_axes
 LVAxes
 compute_lv_axes
 compute_lv_coordinate_system

@@ -211,6 +211,7 @@ function compute_long_axis(
     mesh::SimpleMesh{3};
     axis_from::Symbol = :basal_plane,
     apex_nodeset = "Apex",
+    far_facetset = nothing,
     base_facetset = "Base",
     second_restriction = nothing,
     volumetric_domain_name = first(mesh.volumetric_subdomains.keys),
@@ -218,9 +219,17 @@ function compute_long_axis(
     axis_from ∈ (:basal_plane, :apex_base, :inertia) ||
         throw(ArgumentError("axis_from must be one of :basal_plane, :apex_base, :inertia; got :$axis_from"))
 
-    apexnodes = getnodeset(mesh, apex_nodeset)
-    isempty(apexnodes) && throw(ArgumentError("Nodeset \"$apex_nodeset\" is empty; cannot derive a long axis."))
-    apex = sum(get_node_coordinate(mesh.grid.nodes[n]) for n in apexnodes) / length(apexnodes)
+    # The far end of the axis. A ventricle has an annotated apex; a ring has none, but it does have a
+    # second planar face opposite the base whose centroid serves the same purpose. Everything below
+    # needs only *a point on the axis at the far end*, not an apex specifically.
+    apex = if far_facetset !== nothing
+        fit_basal_plane(mesh; domain_name = far_facetset, second_restriction)[2]
+    else
+        apexnodes = getnodeset(mesh, apex_nodeset)
+        isempty(apexnodes) && throw(ArgumentError(
+            "Nodeset \"$apex_nodeset\" is empty and no `far_facetset` was given; cannot derive a long axis."))
+        sum(get_node_coordinate(mesh.grid.nodes[n]) for n in apexnodes) / length(apexnodes)
+    end
 
     # Estimator 1 — apex to area-weighted base centroid. Signed by construction.
     base_normal_raw, base_center, base_rms_residual =

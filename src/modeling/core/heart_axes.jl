@@ -34,7 +34,7 @@ function LVAxes(
     base_center::Vec{3, T},
 ) where {T}
     l = longitudinal / norm(longitudinal)
-    r = lateral - (lateral ⋅ l) * l
+    r = orthogonalize(lateral, l)
     nr = norm(r)
     nr < sqrt(eps(T)) &&
         throw(ArgumentError("LVAxes: `lateral` must not be collinear with `longitudinal`."))
@@ -50,7 +50,13 @@ function Base.show(io::IO, ::MIME"text/plain", axes::LVAxes)
     print(io, "  base_center:     ", axes.base_center)
 end
 
-_node_coordinates(grid::AbstractGrid) = [get_node_coordinate(node) for node in getnodes(grid)]
+"""
+Zero-copy view of the node coordinates of `grid`, in node order. A `Node` wraps nothing but its
+coordinate, so the node vector reinterprets directly instead of being copied.
+"""
+_node_coordinates(grid::AbstractGrid) = _node_coordinates(getnodes(grid))
+_node_coordinates(nodes::AbstractVector{Node{sdim, T}}) where {sdim, T} =
+    reinterpret(Vec{sdim, T}, nodes)
 
 function _facetset_node_ids(grid::AbstractGrid, facetset)
     ids = OrderedSet{Int}()
@@ -93,8 +99,7 @@ function _principal_short_axis(
 ) where {T}
     cov = zeros(T, 3, 3)
     for x in points
-        d = x - centroid
-        d -= (d ⋅ longitudinal) * longitudinal
+        d = orthogonalize(x - centroid, longitudinal)
         for i = 1:3, j = 1:3
             cov[i, j] += d[i] * d[j]
         end
@@ -102,7 +107,7 @@ function _principal_short_axis(
     eig = eigen(Symmetric(cov))
     k = argmax(eig.values)
     candidate = Vec{3, T}((eig.vectors[1, k], eig.vectors[2, k], eig.vectors[3, k]))
-    candidate -= (candidate ⋅ longitudinal) * longitudinal
+    candidate = orthogonalize(candidate, longitudinal)
     if norm(candidate) < sqrt(eps(T))
         candidate = _any_orthogonal(longitudinal)
     end
@@ -169,7 +174,7 @@ function compute_lv_axes(
     (base_center - centroid) ⋅ normal < 0 && (normal = -normal)
 
     apex_point = if apex === nothing
-        coords[argmin([(x - base_center) ⋅ normal for x in coords])]
+        coords[findmin(x -> (x - base_center) ⋅ normal, coords)[2]]
     else
         apex_nodes = collect(getnodeset(grid, apex))
         isempty(apex_nodes) && error("compute_lv_axes: nodeset '$apex' is empty.")

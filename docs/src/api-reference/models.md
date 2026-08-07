@@ -12,6 +12,7 @@ FieldCoefficient
 AnalyticalCoefficient
 SpectralTensorCoefficient
 SpatiallyHomogeneousDataField
+setup_coefficient_cache
 evaluate_coefficient
 ElastodynamicsModel
 ```
