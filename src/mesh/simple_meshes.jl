@@ -1,4 +1,4 @@
-struct VolumetricSubdomainDesriptor
+struct VolumetricSubdomainDescriptor
     data::OrderedDict{Type, OrderedSet{CellIndex}}
 end
 
@@ -16,15 +16,15 @@ function _show_descriptor(io, descriptor)
     print(io, "cells")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", descriptor::VolumetricSubdomainDesriptor)
+function Base.show(io::IO, ::MIME"text/plain", descriptor::VolumetricSubdomainDescriptor)
     _show_descriptor(io, descriptor)
 end
 
-struct SurfaceSubdomainDesriptor
+struct SurfaceSubdomainDescriptor
     data::OrderedDict{Type, OrderedSet{FacetIndex}}
 end
 
-function Base.show(io::IO, ::MIME"text/plain", descriptor::SurfaceSubdomainDesriptor)
+function Base.show(io::IO, ::MIME"text/plain", descriptor::SurfaceSubdomainDescriptor)
     _show_descriptor(io, descriptor)
 end
 
@@ -33,11 +33,11 @@ struct InterfaceIndex
     b::FacetIndex
 end
 
-struct InterfaceSubdomainDesriptor
+struct InterfaceSubdomainDescriptor
     data::OrderedDict{Type, OrderedSet{InterfaceIndex}}
 end
 
-function Base.show(io::IO, ::MIME"text/plain", descriptor::InterfaceSubdomainDesriptor)
+function Base.show(io::IO, ::MIME"text/plain", descriptor::InterfaceSubdomainDescriptor)
     _show_descriptor(io, descriptor)
 end
 
@@ -55,9 +55,9 @@ struct SimpleMesh{sdim, C <: AbstractCell, T <: Real} <: AbstractGrid{sdim}
     medges::OrderedDict{NTuple{2, Int}, Int} # Maps "sortedge"-representation to id
     mvertices::OrderedDict{Int, Int} # Maps node to id
     number_of_cells_by_type::OrderedDict{DataType, Int}
-    volumetric_subdomains::OrderedDict{String, VolumetricSubdomainDesriptor}
-    surface_subdomains::OrderedDict{String, SurfaceSubdomainDesriptor}
-    interface_subdomains::OrderedDict{String, InterfaceSubdomainDesriptor}
+    volumetric_subdomains::OrderedDict{String, VolumetricSubdomainDescriptor}
+    surface_subdomains::OrderedDict{String, SurfaceSubdomainDescriptor}
+    interface_subdomains::OrderedDict{String, InterfaceSubdomainDescriptor}
 end
 
 function Base.show(io::IO, ::MIME"text/plain", mesh::SimpleMesh)
@@ -194,7 +194,7 @@ function to_mesh(grid::Grid)
     end
 
     # We split the subdomains by element type to support mixed grids
-    volumetric_subdomains = OrderedDict{String, VolumetricSubdomainDesriptor}()
+    volumetric_subdomains = OrderedDict{String, VolumetricSubdomainDescriptor}()
     for (name, cellset) in grid.cellsets
         next_split_set = OrderedDict{Type, OrderedSet{CellIndex}}()
         for cellidx in cellset
@@ -204,7 +204,7 @@ function to_mesh(grid::Grid)
             end
             union!(next_split_set[celltype], [CellIndex(cellidx)])
         end
-        volumetric_subdomains[name] = VolumetricSubdomainDesriptor(next_split_set)
+        volumetric_subdomains[name] = VolumetricSubdomainDescriptor(next_split_set)
     end
 
     # If we have no subdomains defined on the mesh, then we still split the mesh up so we can handle mixed grids properly
@@ -216,10 +216,10 @@ function to_mesh(grid::Grid)
             end
             union!(next_split_set[celltype], [CellIndex(cellidx)])
         end
-        volumetric_subdomains[""] = VolumetricSubdomainDesriptor(next_split_set)
+        volumetric_subdomains[""] = VolumetricSubdomainDescriptor(next_split_set)
     end
 
-    surface_subdomains = OrderedDict{String, SurfaceSubdomainDesriptor}()
+    surface_subdomains = OrderedDict{String, SurfaceSubdomainDescriptor}()
     for (name, facetset) in grid.facetsets
         next_split_set = OrderedDict{Type, OrderedSet{FacetIndex}}()
         for facetidx in facetset
@@ -229,10 +229,10 @@ function to_mesh(grid::Grid)
             end
             union!(next_split_set[celltype], [facetidx])
         end
-        surface_subdomains[name] = SurfaceSubdomainDesriptor(next_split_set)
+        surface_subdomains[name] = SurfaceSubdomainDescriptor(next_split_set)
     end
 
-    interface_subdomains = OrderedDict{String, InterfaceSubdomainDesriptor}()
+    interface_subdomains = OrderedDict{String, InterfaceSubdomainDescriptor}()
 
     return SimpleMesh(
         grid,
