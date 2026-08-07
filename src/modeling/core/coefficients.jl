@@ -430,33 +430,13 @@ function setup_coordinate_axes_cache(
 end
 
 """
-Inverse of the cell Jacobian `J = ∑ⱼ xⱼ ⊗ ∇Mⱼ` at quadrature point `q_point`, which turns reference
-shape function gradients into spatial ones via `∇N = ∇ξN ⋅ J⁻¹`.
-
-TODO drop this in favour of `CellValues` and `function_gradient`, which do exactly this, once
-FerriteOperators has been updated to support it. The `reinit!` that comes with `CellValues` then
-belongs once per cell rather than per quadrature point, so the query loses its stateless signature.
-"""
-@inline function _inverse_jacobian(
-    gm::FerriteUtils.StaticInterpolationValues,
-    q_point::Int,
-    x::AbstractVector{<:Vec},
-)
-    @inbounds J = x[1] ⊗ gm.dNdξ[1, q_point]
-    @inbounds for j = 2:getnbasefunctions(gm)
-        J += x[j] ⊗ gm.dNdξ[j, q_point]
-    end
-    return Ferrite.calculate_Jinv(J)
-end
-
-"""
     evaluate_coordinate_axes(cache, geometry_cache::CellCache, qp::QuadraturePoint, t)
 
 The local orthonormal frame of the coordinate system at `qp`, as a
 [`LocalCoordinateAxes`](@ref) -- the counterpart of [`evaluate_coefficient`](@ref), which gives the
 coordinate values at the same point.
 
-The frame follows the geometry, so the cell Jacobian is inverted per quadrature point from the
+The frame follows the geometry, so the cell mapping is evaluated per quadrature point from the
 coordinates in `geometry_cache`. That is the price of not storing gradients in the coefficient cache.
 """
 function evaluate_coordinate_axes(
@@ -466,14 +446,14 @@ function evaluate_coordinate_axes(
     t,
 ) where {T}
     @unpack cs, cv, gm = cache
-    Jinv = _inverse_jacobian(gm, qp.i, getcoordinates(geometry_cache))
+    mapping = Ferrite.calculate_mapping(gm, qp.i, getcoordinates(geometry_cache))
+    _, dNdx = FerriteUtils.calculate_mapped_values(cv, qp.i, mapping)
     dofs = celldofsview(cs.dh, cellid(geometry_cache))
     ∇transmural = zero(Vec{3, T})
     ∇apicobasal = zero(Vec{3, T})
-    @inbounds for i = 1:getnbasefunctions(cv)
-        dNdx = cv.dNdξ[i, qp.i] ⋅ Jinv
-        ∇transmural += dNdx * cs.u_transmural[dofs[i]]
-        ∇apicobasal += dNdx * cs.u_apicobasal[dofs[i]]
+    @inbounds for i in eachindex(dNdx)
+        ∇transmural += dNdx[i] * cs.u_transmural[dofs[i]]
+        ∇apicobasal += dNdx[i] * cs.u_apicobasal[dofs[i]]
     end
     return _local_axes(∇transmural, ∇apicobasal)
 end
