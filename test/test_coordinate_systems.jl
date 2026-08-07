@@ -315,18 +315,17 @@ end
     end
 
     @testset "Apicobasal coordinate at a fixed physical point" begin
-        # The discriminating test for the zero-capacity apex condition, and the one property the
+        # The discriminating test for the apical Dirichlet condition, and the one property the
         # checks above cannot see.
         #
-        # The apicobasal field is a Laplace solution pinned to 1 on the basal *surface* and 0 on an
-        # apex *nodeset*. A measure-zero Dirichlet set does not constrain a 3D Laplace problem, so
-        # the raw field jumps straight from 0 at the pinned node to ~0.6 at its neighbours and
-        # leaves two thirds of its own range carrying no dofs at all.
-        # `apicobasal_from_laplace` recalibrates by arc length, which repairs the endpoints and the
-        # epicardial meridian -- so a range check, a nodal check and the meridian test above all
-        # pass. What still catches it is asking for the coordinate at a *fixed physical point* and
-        # refining the mesh underneath it: a coordinate that means something geometric must not
-        # move.
+        # Pinned on a nodeset, the apicobasal field has a measure-zero Dirichlet set: zero capacity
+        # for a 3D Laplace problem, so it jumps from 0 at the pinned node straight to ~0.69 at its
+        # neighbours and leaves two thirds of its own range carrying no dofs.
+        # `apicobasal_from_laplace` then integrates over a range it has no data for. It still
+        # repairs the endpoints and the epicardial meridian, so a range check, a nodal check and
+        # the meridian test above all pass either way. What catches it is asking for the coordinate
+        # at a *fixed physical point* and refining the mesh underneath it: a coordinate that means
+        # something geometric must not move.
         nc, nr, nl0 = 12, 2, 4
         coarse = generate_ideal_lv_mesh(nc, nr, nl0)
         # Midwall nodes of the coarsest mesh. Refinement pushes the endocardium inward and the
@@ -334,25 +333,64 @@ end
         idx = reshape(collect(1:(nc*(nr+1)*(nl0+1))), (nc, nr + 1, nl0 + 1))
         probes = [get_node_coordinate(coarse.grid, idx[1, 2, k]) for k = 1:(nl0+1)]
 
-        function at_probes(nl, apex_nodeset)
+        function at_probes(nl; kwargs...)
             m = generate_ideal_lv_mesh(nc, nr, nl)
-            cs = compute_lv_coordinate_system(m; apex_nodeset)
+            cs = compute_lv_coordinate_system(m; kwargs...)
             return evaluate_at_points(PointEvalHandler(m.grid, probes), cs.dh, cs.u_apicobasal)
         end
-        function drift(set)
-            reference = at_probes(16, set)
-            return maximum(maximum(abs.(at_probes(nl, set) .- reference)) for nl in (20, 24))
+        function drift(; kwargs...)
+            reference = at_probes(16; kwargs...)
+            return maximum(maximum(abs.(at_probes(nl; kwargs...) .- reference)) for nl in (20, 24))
         end
 
-        # Pinning both ends of the apical wall converges: between nl = 16 and nl = 24 the
-        # coordinate at a fixed point moves by under 0.05.
-        @test drift("ApexInOut") < 0.05
+        # The default pins a nodeset and does NOT converge: the same probes jump by ~0.27 at
+        # nl = 24 and the sequence is not monotone, so this is not a discretization error that
+        # refinement removes. Kept as the default because the cap below is worse -- see the
+        # docstring of `compute_lv_coordinate_system`.
+        @test_broken drift() < 0.02
 
-        # Pinning the epicardial apex alone -- the default -- does not. The same probes jump by
-        # ~0.27 at nl = 24 and the sequence is not monotone, so this is not a discretization error
-        # that refinement removes. Two pinned nodes are measure zero as well; they are merely better
-        # conditioned here. A principled fix constrains an apical cap facetset.
-        @test_broken drift("Apex") < 0.05
+        # An apical cap fixes the coordinate. A surface has positive capacity where a node has none.
+        @test drift(apical_cap_fraction = 0.1) < 0.02
+        # ...and the size of it is then the only free parameter left, so guard that too. It has to
+        # be a plane cut normal to the long axis, not a ball around the apex: a ball meets the
+        # curved wall in a staircase whose shape changes with the mesh, and drifts by 0.2.
+        @test drift(apical_cap_fraction = 0.15) < 0.05
+
+        # But the cap makes its own surface a level set of the coordinate, so `∇apicobasal` lines up
+        # with `∇transmural` underneath it and the local frame is round-off. This is why the cap is
+        # not the default, and pinning it here is what stops anyone flipping that without noticing.
+        function worst_frame_deviation(nl; kwargs...)
+            m = generate_ideal_lv_mesh(nc, nr, nl)
+            cs = compute_lv_coordinate_system(m; kwargs...)
+            worst = 0.0
+            for sdh in cs.dh.subdofhandlers
+                qr = getquadraturerule(QuadratureRuleCollection(2), sdh)
+                cache = Thunderbolt.setup_coordinate_axes_cache(cs, qr, sdh)
+                for cell in CellIterator(sdh), qp in Thunderbolt.QuadratureIterator(qr)
+                    a = Thunderbolt.evaluate_coordinate_axes(cache, cell, qp, 0.0)
+                    worst = max(worst, abs(a.transmural ⋅ a.apicobasal))
+                end
+            end
+            return worst
+        end
+        @test worst_frame_deviation(16) < 1.0e-12
+        @test worst_frame_deviation(16; apical_cap_fraction = 0.1) > 0.1
+
+        # An annotated cap overrides the derivation, and a missing one is an error rather than a
+        # silent fallback to something that does not converge.
+        m = generate_ideal_lv_mesh(nc, nr, 8)
+        @test_throws ArgumentError compute_lv_coordinate_system(m; apex_facetset = "NoSuchSet")
+        ax = compute_lv_axes(m)
+        cap = Thunderbolt._apical_cap_facets(
+            m,
+            Vec{3, Float64}(ax.apex),
+            Vec{3, Float64}(ax.longitudinal),
+            0.1 * abs((Vec{3, Float64}(ax.base_center) - Vec{3, Float64}(ax.apex)) ⋅
+                      Vec{3, Float64}(ax.longitudinal)),
+            ("Endocardium", "Epicardium"),
+        )
+        @test !isempty(cap)
+        @test all(fi -> fi ∉ getfacetset(m, "Base"), cap)
     end
 
     @testset "Midmyocardial section coordinate system" begin

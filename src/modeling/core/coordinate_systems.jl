@@ -750,6 +750,79 @@ function _azimuth_zero_direction(
 end
 
 """
+Facets of `surface_names` lying within `height` of the apex, measured along the long axis.
+
+This is the apical end of the apicobasal Laplace problem. A *nodeset* cannot serve: a measure-zero
+Dirichlet set has zero capacity for a 3D Laplace problem and does not constrain the solution in any
+neighbourhood, so the field jumps from the pinned value straight to its unconstrained one at the
+neighbouring dofs and leaves most of its own range carrying no dofs at all --
+[`apicobasal_from_laplace`](@ref) then has nothing to integrate over that range.
+
+The cut is a plane normal to the long axis rather than a ball around the apex. A ball intersects the
+curved wall in a staircase whose shape changes with the mesh, and the coordinate inherits that: at a
+fixed physical point a ball cap of the same physical size moved by up to 0.2 between resolutions
+where the plane cut moves by 0.01.
+"""
+function _apical_cap_facets(
+    grid::AbstractGrid,
+    apex::Vec{3, Float64},
+    longitudinal::Vec{3, Float64},
+    height::Float64,
+    surface_names,
+)
+    coords = _node_coordinates(grid)
+    below(nodeid) = (Vec{3, Float64}(coords[nodeid]) - apex) ⋅ longitudinal ≤ height
+    cap = OrderedSet{FacetIndex}()
+    for name in surface_names
+        _has_facetset(grid, name) || continue
+        for facetindex in getfacetset(grid, name)
+            (cellid, local_facet) = facetindex
+            all(below, Ferrite.facets(getcells(grid, cellid))[local_facet]) &&
+                push!(cap, facetindex)
+        end
+    end
+    return cap
+end
+
+"""
+The Dirichlet set for the apical end of the apicobasal coordinate: an explicitly annotated facetset
+if one is named, otherwise a cap derived from the geometry, and only if that comes out empty -- a
+mesh too coarse to hold one -- the nodeset, which is what the coordinate used to be pinned with.
+"""
+function _apical_constraint(
+    mesh,
+    axes::LVAxes,
+    apex_facetset::Union{Nothing, String},
+    apex_nodeset::String,
+    cap_fraction::Real,
+    surface_names,
+)
+    if apex_facetset !== nothing
+        _has_facetset(mesh, apex_facetset) ||
+            throw(ArgumentError("No facetset \"$apex_facetset\" on this mesh."))
+        return getfacetset(mesh, apex_facetset)
+    end
+    apex = Vec{3, Float64}(axes.apex)
+    longitudinal = Vec{3, Float64}(axes.longitudinal)
+    if cap_fraction > 0
+        chamber_length = abs((Vec{3, Float64}(axes.base_center) - apex) ⋅ longitudinal)
+        cap = _apical_cap_facets(
+            mesh,
+            apex,
+            longitudinal,
+            cap_fraction * chamber_length,
+            surface_names,
+        )
+        isempty(cap) || return cap
+        @warn "No facet of $(collect(surface_names)) fits inside an apical cap of " *
+              "$(cap_fraction) of the chamber length, so the apicobasal coordinate falls back to " *
+              "pinning the nodeset \"$apex_nodeset\". That set has zero capacity and the " *
+              "coordinate will not be mesh independent -- refine, or raise `apical_cap_fraction`."
+    end
+    return getnodeset(mesh, apex_nodeset)
+end
+
+"""
     compute_lv_coordinate_system(mesh::SimpleMesh)
 
 Compute the transmural, apicobasal and rotational coordinates of a left ventricle.
@@ -758,9 +831,6 @@ Requires a mesh with facetsets
     * Base
     * Epicardium
     * Endocardium
-and a nodeset pinning the apical end of the apicobasal coordinate
-    * Apex
-
 and the two internal facetsets marking the lines along which the right ventricle attaches
     * SRidgeAnt
     * SRidgePost
@@ -768,10 +838,36 @@ which the idealized generators emit and the ridge extraction of a segmented anat
 
 Every one of those is a keyword, so a mesh that names its annotations differently needs no renaming.
 
-`apex_nodeset` pins the epicardial apex alone. Pinning both ends of the apical wall instead
-(`apex_nodeset = "ApexInOut"`) holds the coordinate at 0 through the whole thickness there, which
-distorts the apicobasal coordinate by an amount that depends on the shape of the apical cap, and so
-differs between anatomies.
+# The apical end of the apicobasal coordinate, and why it is still a nodeset
+
+By default it is pinned on `apex_nodeset`. **That is known to be wrong, and is kept only because the
+alternative currently on offer is worse.** A point or a pair of points has zero H¹-capacity in 3D, so
+it does not constrain the solution in any neighbourhood: on an idealized ventricle the field jumps
+from 0 at the apex node straight to 0.687 at its neighbours, leaving two thirds of the coordinate
+range carrying no dofs at all for [`apicobasal_from_laplace`](@ref) to integrate over. The visible
+consequence is that the coordinate at a fixed physical point is *not* mesh independent -- it moves by
+up to 0.27 between resolutions, non-monotonically.
+
+`apical_cap_fraction > 0` pins an apical cap instead: the endocardial and epicardial facets within
+that fraction of the chamber length of the apex, measured along the long axis. A surface has positive
+capacity, and it works as advertised for the coordinate -- the empty range collapses from 136 bins to
+6 and the drift at a fixed midwall point from 0.27 to 0.011. `apex_facetset` pins an annotated cap
+instead of deriving one.
+
+**It is not the default because it destroys the local frame under the cap.** Pinning the coordinate
+on a wall-parallel surface makes that surface a level set, so `∇apicobasal ∥ ∇transmural` there, and
+[`evaluate_coordinate_axes`](@ref) orthogonalizes one against the other -- what survives is
+round-off. Measured on the idealized ventricle, the frame's worst orthonormality deviation goes from
+2e-15 to 0.84. That frame is what the microstructure is built on, so the cap trades a coordinate that
+is wrong by 0.27 for fibers that are wrong at the apex.
+
+Note the endocardium contributes nothing here: on a truncated ellipsoid it has no facets within 10%
+of the apex, so the derived cap is epicardial whether or not the endocardium is offered.
+
+The fix this is waiting for is a pinned surface **transverse** to the wall -- an internal disc near
+the apex, which is what a level set of the coordinate actually looks like there -- rather than one
+parallel to it. Failing that, two fields: the nodeset-pinned one for the frame, whose gradient is
+sound everywhere, and a capped one for the value.
 
 The coordinates are
 
@@ -792,6 +888,8 @@ function compute_lv_coordinate_system(
     subdomains::Vector{String} = [single_subdomain_or_error(mesh)],
     axes::LVAxes = compute_lv_axes(mesh),
     apex_nodeset::String = "Apex",
+    apex_facetset::Union{Nothing, String} = nothing,
+    apical_cap_fraction::Real = 0.0,
     base_name::String = "Base",
     epicardium_name::String = "Epicardium",
     endocardium_name::String = "Endocardium",
@@ -811,11 +909,19 @@ function compute_lv_coordinate_system(
 
     transmural = _transmural_coordinate(mesh, K, dh, solver, endocardium_name, epicardium_name)
 
+    apical = _apical_constraint(
+        mesh,
+        axes,
+        apex_facetset,
+        apex_nodeset,
+        apical_cap_fraction,
+        (endocardium_name, epicardium_name),
+    )
     apicobasal_laplace = _solve_dirichlet_laplace(
         K,
         dh,
         solver,
-        [(getfacetset(mesh, base_name), 1.0), (getnodeset(mesh, apex_nodeset), 0.0)],
+        [(getfacetset(mesh, base_name), 1.0), (apical, 0.0)],
     )
     apicobasal =
         apicobasal_from_laplace(dh, ip_collection, apicobasal_laplace; nbins = apicobasal_bins)
