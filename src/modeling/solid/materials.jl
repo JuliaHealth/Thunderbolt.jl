@@ -1416,10 +1416,15 @@ function solve_internal_timestep(
     #     dsdt = sarcomere_rhs(s,λ,t)
     # <=> (sₜ₁ - sₜ₀) / Δt = sarcomere_rhs(sₜ₁,λₜ₁,t1)
 
+    # Reached outside the closure so it captures the leaf model rather than all of `material_model`
+    # -- see the closure-specialization note in CLAUDE.md.
+    contraction_model = material_model.contraction_model
+
+    # `sarcomere_rhs!` writes every entry of its output, so the rate is formed in `R` itself. A
+    # temporary here is a fresh `Vector{Dual}` on every chunk evaluation of the Jacobian below.
     function local_residual!(R, Q, λ, dλdt)
-        dQ = zeros(eltype(Q), length(Q)) # TODO preallocate during setup
-        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, t, material_model.contraction_model)
-        @.. R = (Q - Qprev) / Δt - dQ
+        sarcomere_rhs!(R, Q, λ, dλdt, Ca, t, contraction_model)
+        @.. R = (Q - Qprev) / Δt - R
         return nothing
     end
 
@@ -1431,6 +1436,10 @@ function solve_internal_timestep(
     cid = cellid(geometry_cache)
     R = lcache.residual
     J = lcache.J
+    # The dual work buffers come from the cache rather than being rebuilt here: `ForwardDiff.jacobian!`
+    # allocates a fresh config per call otherwise, which is the bulk of what a local solve allocates.
+    # See `LocalSolveADTag` for why the tag is a named one and what that costs.
+    jcfg = lcache.jacobian_config
     # Inexact Newton: the outer solve writes the square of its own residual norm into `outer_tol`, so
     # the local problems are solved loosely while the global iterate is far from the solution and at
     # full accuracy once it is close. `params.tol` is the floor -- the local residual is an absolute
@@ -1438,13 +1447,17 @@ function solve_internal_timestep(
     # useful nor reachable within `max_iters`. `outer_tol = 0` means "no relaxation".
     rtol = max(lcache.params.tol, lcache.outer_tol[1])
     for newton_iter = 1:lcache.params.max_iters
-        ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
+        ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q, jcfg)
         local_residual!(R, Q, λ, dλdt)
         residualnorm = norm(R)
         # A singular local Jacobian must be reported as a failure rather than escape as an exception
         # -- `J \ R` would throw -- so that the step is rejected and an adaptive integrator can retry
         # it at a shorter `dt`.
-        Jfac = lu(J; check = false)
+        #
+        # `lu!` consumes `J`, which is what the next iteration's `jacobian!` refills anyway. After the
+        # loop the factorization -- not the matrix -- is what the corrector solves want, so it is the
+        # factorization that gets returned; see `_sarcomere_corrector`.
+        Jfac = lu!(J; check = false)
         if !issuccess(Jfac)
             record_local_solve!(
                 lcache,
@@ -1455,16 +1468,18 @@ function solve_internal_timestep(
             )
             @debug "Local Newton hit a singular Jacobian at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
                 :nlsolve
-            return Q, J
+            return Q, Jfac
         end
-        Q .-= Jfac \ R
+        # `R` holds the increment after this, and is refilled by the next residual evaluation.
+        ldiv!(Jfac, R)
+        Q .-= R
         if residualnorm < rtol
             break
         elseif newton_iter == lcache.params.max_iters
             record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.MaxIters, residualnorm)
             @debug "Local Newton hit max iterations at cell $cid qp $(qp.i). ||r|| = $residualnorm (rtol = $rtol)" _group =
                 :nlsolve
-            return Q, J
+            return Q, Jfac
         elseif isnan(residualnorm)
             record_local_solve!(
                 lcache,
@@ -1475,22 +1490,23 @@ function solve_internal_timestep(
             )
             @debug "Local Newton diverged at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
                 :nlsolve
-            return Q, J
+            return Q, Jfac
         end
     end
-    ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q)
+    ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q, jcfg)
     residualnorm = norm(R)
+    Jfac = lu!(J; check = false)
     # A converged but inadmissible state is still a failure: the usual cause is a step too long for
     # the internal variable's own dynamics, so it is reported as one an adaptive integrator could
     # act on by shortening `dt`.
-    if !internal_state_in_bounds(material_model.contraction_model, Q)
+    if !internal_state_in_bounds(contraction_model, Q)
         record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Infeasible, residualnorm)
         @debug "Local Newton converged to an inadmissible state at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
             :nlsolve
-        return Q, J
+        return Q, Jfac
     end
     record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Success, residualnorm)
-    return Q, J
+    return Q, Jfac
 end
 
 # Fiber stretch `λ = |F ⋅ f₀|`. Takes the fiber direction rather than the whole coefficient bundle so
@@ -1507,6 +1523,9 @@ Newton solve of the sarcomere's local problem, shared by the rate-free and rate-
 
 The stretch and its rate are computed by the *caller*, because the two paths need different
 derivatives of `λ`: the rate-free one only its gradient, the rate-coupled one also its Hessian.
+
+Returns the converged state, the *factorized* local Jacobian at that state -- which is what the
+corrector solves consume, see [`_sarcomere_corrector`](@ref) -- and the calcium concentration.
 """
 function _solve_local_sarcomere(
     material_model::ActiveStressModel,
@@ -1521,7 +1540,7 @@ function _solve_local_sarcomere(
     Δt,
 )
     Ca = evaluate_coefficient(state_cache.model_cache.calcium_cache, geometry_cache, qp, time)
-    Q, J = solve_internal_timestep(
+    Q, Jfac = solve_internal_timestep(
         material_model,
         state_cache,
         geometry_cache,
@@ -1534,21 +1553,27 @@ function _solve_local_sarcomere(
         time,
         Δt,
     )
-    return Q, J, Ca
+    return Q, Jfac, Ca
 end
 
-# One corrector solve `∂Q/∂x` for a frozen scalar `x`, given the converged state and its Jacobian.
-# `rhs_corrector` is scratch that the linear solve consumes immediately, so successive corrector
-# solves may reuse it.
-@inline function _sarcomere_corrector(state_cache, J, local_residual_rhs_wrap!, x)
-    R     = state_cache.local_solver_cache.residual
-    ∂fₗ∂x = state_cache.local_solver_cache.rhs_corrector
-    ForwardDiff.derivative!(∂fₗ∂x, local_residual_rhs_wrap!, R, x)
-    return J \ -∂fₗ∂x
+# One corrector solve `∂Q/∂x` for a frozen scalar `x`, given the converged state and the *factorized*
+# Jacobian the local Newton left behind -- factorizing here would repeat work already done, once per
+# corrector. `rhs_corrector` is scratch that the linear solve consumes immediately, so successive
+# corrector solves may reuse it.
+@inline function _sarcomere_corrector(state_cache, Jfac, local_residual_rhs_wrap!, x)
+    lcache = state_cache.local_solver_cache
+    R      = lcache.residual
+    ∂fₗ∂x  = lcache.rhs_corrector
+    # Cached dual buffers, as in the Newton above -- see `LocalSolveADTag`.
+    ForwardDiff.derivative!(∂fₗ∂x, local_residual_rhs_wrap!, R, x, lcache.derivative_config)
+    # Negated in place, since the scratch is consumed here. The *result* must be a fresh vector: the
+    # rate-coupled path below holds two correctors at once.
+    ∂fₗ∂x .= .-∂fₗ∂x
+    return Jfac \ ∂fₗ∂x
 end
 
 # Whether the local solve at *this* quadrature point succeeded. The sensitivity solves below it
-# operate on the Jacobian it left behind, so they must not run on a point that failed.
+# operate on the Jacobian factorization it left behind, so they must not run on a point that failed.
 @inline _local_solve_ok(state_cache, geometry_cache, qp) =
     !_local_solve_failed(
         local_solve_report(state_cache.local_solver_cache, cellid(geometry_cache), qp.i),
@@ -1571,7 +1596,7 @@ function solve_local_constraint(
     # A zero rate poses the rate-free local problem, `dₜQ = L(F, Q)`.
     dλdt = zero(λ)
 
-    Q, J, Ca = _solve_local_sarcomere(
+    Q, Jfac, Ca = _solve_local_sarcomere(
         material_model,
         state_cache,
         geometry_cache,
@@ -1593,12 +1618,11 @@ function solve_local_constraint(
     active_stress_model = material_model.active_stress_model
 
     function local_residual_rhs_wrap!(R, λ)
-        dQ = zeros(eltype(λ), length(Q)) # TODO preallocate during setup
-        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, contraction_model)
-        @.. R = (Q - Qknownflat) / Δt - dQ
+        sarcomere_rhs!(R, Q, λ, dλdt, Ca, time, contraction_model)
+        @.. R = (Q - Qknownflat) / Δt - R
         return nothing
     end
-    dQdλ = _sarcomere_corrector(state_cache, J, local_residual_rhs_wrap!, λ)
+    dQdλ = _sarcomere_corrector(state_cache, Jfac, local_residual_rhs_wrap!, λ)
 
     return Q,
     _solve_local_sarcomere_dQdF(
@@ -1657,7 +1681,7 @@ function solve_local_constraint(
     dλdt = dλdF ⊡ Ḟ
     ∂dλdt∂F = ∂²λ∂F² ⊡ Ḟ
 
-    Q, J, Ca = _solve_local_sarcomere(
+    Q, Jfac, Ca = _solve_local_sarcomere(
         material_model,
         state_cache,
         geometry_cache,
@@ -1675,20 +1699,18 @@ function solve_local_constraint(
     active_stress_model = material_model.active_stress_model
 
     function local_residual_rhs_wrap!(R, λ)
-        dQ = zeros(eltype(λ), length(Q)) # TODO preallocate during setup
-        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, contraction_model)
-        @.. R = (Q - Qknownflat) / Δt - dQ
+        sarcomere_rhs!(R, Q, λ, dλdt, Ca, time, contraction_model)
+        @.. R = (Q - Qknownflat) / Δt - R
         return nothing
     end
-    dQdλ = _sarcomere_corrector(state_cache, J, local_residual_rhs_wrap!, λ)
+    dQdλ = _sarcomere_corrector(state_cache, Jfac, local_residual_rhs_wrap!, λ)
 
     function local_residual_rate_wrap!(R, dλdt)
-        dQ = zeros(eltype(dλdt), length(Q)) # TODO preallocate during setup
-        sarcomere_rhs!(dQ, Q, λ, dλdt, Ca, time, contraction_model)
-        @.. R = (Q - Qknownflat) / Δt - dQ
+        sarcomere_rhs!(R, Q, λ, dλdt, Ca, time, contraction_model)
+        @.. R = (Q - Qknownflat) / Δt - R
         return nothing
     end
-    dQddλdt = _sarcomere_corrector(state_cache, J, local_residual_rate_wrap!, dλdt)
+    dQddλdt = _sarcomere_corrector(state_cache, Jfac, local_residual_rate_wrap!, dλdt)
 
     # `_solve_local_sarcomere_dQdF(dQdX, dXdY, …)` is the contribution of the `X` chain to `∂P/∂Y`,
     # so the three chain-rule terms are three calls differing only in their first two arguments, all
