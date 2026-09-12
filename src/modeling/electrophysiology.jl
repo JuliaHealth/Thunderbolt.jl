@@ -165,6 +165,63 @@ end
 end
 
 """
+    gating_symbols(ionic_model)             -> NTuple{NG, Symbol}
+    gating_symbols(::Type{<:AbstractIonicModel})
+
+Which of a model's [`state_symbols`](@ref) are declared to follow the gate normal form
+
+    dx/dt = (x∞(φₘ) - x) / τ(φₘ)     ⟺     x' = λ(x - y∞),   λ = -1/τ,
+
+for some transmembrane potential φₘ. Declaring a state here is opt-in: it permits exponential
+integration of that state, it does not change how [`cell_rhs!`](@ref) integrates it. Models
+with `NG = length(gating_symbols(model)) > 0` must also implement [`gate_coefficients`](@ref).
+Defaults to `()`.
+
+Names are a property of the model *type*, so implementations dispatch on the type and the
+instance form forwards.
+"""
+gating_symbols(model::AbstractIonicModel) = gating_symbols(typeof(model))
+gating_symbols(::Type{<:AbstractIonicModel}) = ()
+
+"""
+    gate_coefficients(model, φ, x, t) -> (λ::SVector{NG,T}, y∞::SVector{NG,T})
+
+`λ` and `y∞` of the gate normal form (see [`gating_symbols`](@ref)) for the states declared by
+`gating_symbols(model)`, in that declaration order, at transmembrane potential `φ`, local state
+`x` and time `t`. Required whenever `NG = length(gating_symbols(model)) > 0`.
+"""
+function gate_coefficients end
+
+"""
+    gating_indices(ionic_model) -> NTuple{NG, Int}
+
+Positions of [`gating_symbols`](@ref) within [`state_symbols`](@ref), derived so that the two
+cannot disagree. Same literal-folding pattern as [`transmembranepotential_index`](@ref), applied
+per declared gate.
+"""
+@inline function gating_indices(ionic_model::AbstractIonicModel)
+    gsyms = gating_symbols(ionic_model)
+    ssyms = state_symbols(ionic_model)
+    return ntuple(i -> _gating_index(gsyms[i], ssyms, ionic_model), length(gsyms))
+end
+
+@inline function _gating_index(gsym::Symbol, state_syms, ionic_model)
+    idx = findfirst(==(gsym), state_syms)
+    idx === nothing && _gating_symbol_not_found(gsym, ionic_model)
+    return idx
+end
+
+@noinline function _gating_symbol_not_found(gsym, ionic_model)
+    return error(
+        "Cannot locate the gating variable $(repr(gsym)) in $(nameof(typeof(ionic_model))): it " *
+        "is declared by `gating_symbols`, but `state_symbols` returns " *
+        "$(state_symbols(ionic_model)) and does not contain it. Implement " *
+        "`Thunderbolt.state_symbols(::Type{<:$(nameof(typeof(ionic_model)))})` naming every " *
+        "declared gate, or correct `Thunderbolt.gating_symbols` for this model.",
+    )
+end
+
+"""
 Models where all states are described by Hodgkin-Huxley type ion channels.
 """
 abstract type HodgkinHuxleyTypeModel <: AbstractIonicModel end;

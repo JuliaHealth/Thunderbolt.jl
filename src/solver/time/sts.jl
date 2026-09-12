@@ -214,3 +214,12 @@ function sts_sweep!(rhs!, Ya, Yb, du, y0, t0, τ, s::Integer, fam::AbstractSTSFa
     end
     return isodd(s) ? Ya : Yb
 end
+
+"""
+    exponential_gate_step(x, λ, y∞, η)
+
+Exact value at `η` of `dx/dt = λ(x - y∞)` (the gate normal form of [`gating_symbols`](@ref)):
+`x(η) = y∞ + (x - y∞)e^{ηλ} = x + (e^{ηλ} - 1)(x - y∞)`, written with `expm1` because `e^{ηλ} - 1`
+cancels catastrophically for the small `ηλ` an inner STS sub-step produces.
+"""
+@inline exponential_gate_step(x, λ, y∞, η) = x + expm1(η * λ) * (x - y∞)

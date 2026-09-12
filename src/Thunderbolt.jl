@@ -341,6 +341,9 @@ export
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
     ReactionDiffusionSplit,
+    gating_symbols,
+    gate_coefficients,
+    gating_indices,
     # Circuit
     RSAFDQ2022LumpedCicuitModel,
     MTKLumpedCicuitModel,

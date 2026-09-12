@@ -49,16 +49,54 @@ end
 
 const PCG2019 = ParametrizedPCG2019Model{Float64};
 
-function cell_rhs_fast!(du, φ, state, x, t, p::ParametrizedPCG2019Model{T}) where {T}
-    sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
+# Shared between `cell_rhs_fast!`/`cell_rhs_slow!` and `gate_coefficients`: each `_pcg2019_*_gate`
+# returns the (x∞, τ) pair of one state's gate normal form dx/dt = (x∞(φ) - x)/τ(φ). Factored out
+# of the two `cell_rhs_*!` bodies verbatim -- same expressions, same evaluation order.
+@inline _pcg2019_sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 
+@inline function _pcg2019_h_gate(φ, p::ParametrizedPCG2019Model)
+    @unpack E_h, k_h, τ_h0, δ_h = p
+    τ_h = (2.0 * τ_h0 * exp(δ_h * (φ - E_h) / k_h)) / (1.0 + exp((φ - E_h) / k_h))
+    h∞ = _pcg2019_sigmoid(φ, E_h, k_h, 1.0)
+    return h∞, τ_h
+end
+
+@inline function _pcg2019_m_gate(φ, p::ParametrizedPCG2019Model)
+    @unpack E_m, k_m, τ_m = p
+    m∞ = _pcg2019_sigmoid(φ, E_m, k_m, -1.0)
+    return m∞, τ_m
+end
+
+@inline function _pcg2019_f_gate(φ, p::ParametrizedPCG2019Model)
+    @unpack E_f, k_f, τ_f = p
+    f∞ = _pcg2019_sigmoid(φ, E_f, k_f, 1.0)
+    return f∞, τ_f
+end
+
+@inline function _pcg2019_s_gate(φ, p::ParametrizedPCG2019Model)
+    @unpack E_s, k_s, τ_s = p
+    s∞ = _pcg2019_sigmoid(φ, E_s, k_s, 1.0)
+    return s∞, τ_s
+end
+
+@inline function _pcg2019_xs_gate(φ, p::ParametrizedPCG2019Model)
+    @unpack E_xs, k_xs, τ_xs = p
+    xs∞ = _pcg2019_sigmoid(φ, E_xs, k_xs, -1.0)
+    return xs∞, τ_xs
+end
+
+@inline function _pcg2019_xr_gate(φ, p::ParametrizedPCG2019Model)
+    @unpack E_xr, k_xr, τ_xr = p
+    xr∞ = _pcg2019_sigmoid(φ, E_xr, k_xr, -1.0)
+    return xr∞, τ_xr
+end
+
+function cell_rhs_fast!(du, φ, state, x, t, p::ParametrizedPCG2019Model{T}) where {T}
     C_m = T(1.0) # TODO pass!
 
-    @unpack g_Na, g_K1, g_to, g_CaL, g_Kr, g_Ks           = p
-    @unpack E_K, E_Na, E_Ca, E_r, E_d, E_z, E_y, E_h, E_m = p
-    @unpack k_r, k_d, k_z, k_y, k_h, k_m                  = p
-
-    @unpack τ_h0, δ_h, τ_m = p
+    @unpack g_Na, g_K1, g_to, g_CaL, g_Kr, g_Ks = p
+    @unpack E_K, E_Na, E_Ca, E_r, E_d, E_z, E_y = p
+    @unpack k_r, k_d, k_z, k_y                  = p
 
     h  = state[1]
     m  = state[2]
@@ -68,10 +106,10 @@ function cell_rhs_fast!(du, φ, state, x, t, p::ParametrizedPCG2019Model{T}) whe
     xr = state[6]
 
     # Instantaneous gates
-    r∞ = sigmoid(φ, E_r, k_r, -1.0)
-    d∞ = sigmoid(φ, E_d, k_d, -1.0)
-    z∞ = sigmoid(φ, E_z, k_z, 1.0)
-    y∞ = sigmoid(φ, E_y, k_y, 1.0)
+    r∞ = _pcg2019_sigmoid(φ, E_r, k_r, -1.0)
+    d∞ = _pcg2019_sigmoid(φ, E_d, k_d, -1.0)
+    z∞ = _pcg2019_sigmoid(φ, E_z, k_z, 1.0)
+    y∞ = _pcg2019_sigmoid(φ, E_y, k_y, 1.0)
 
     # Currents
     I_Na  = g_Na * m * m * m * h * h * (φ - E_Na)
@@ -85,36 +123,29 @@ function cell_rhs_fast!(du, φ, state, x, t, p::ParametrizedPCG2019Model{T}) whe
 
     du[1] = -I_total/C_m
 
-    τ_h = (2.0 * τ_h0 * exp(δ_h * (φ - E_h) / k_h)) / (1.0 + exp((φ - E_h) / k_h))
-    h∞ = sigmoid(φ, E_h, k_h, 1.0)
+    h∞, τ_h = _pcg2019_h_gate(φ, p)
     du[2] = (h∞-h)/τ_h
 
-    m∞ = sigmoid(φ, E_m, k_m, -1.0)
+    m∞, τ_m = _pcg2019_m_gate(φ, p)
     du[3] = (m∞-m)/τ_m
 end
 
 function cell_rhs_slow!(du, φ, state, x, t, p::ParametrizedPCG2019Model)
-    sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
-
-    @unpack E_f, E_s, E_xs, E_xr = p
-    @unpack k_f, k_s, k_xs, k_xr = p
-    @unpack τ_f, τ_s, τ_xs, τ_xr = p
-
     f  = state[3]
     s  = state[4]
     xs = state[5]
     xr = state[6]
 
-    f∞ = sigmoid(φ, E_f, k_f, 1.0)
+    f∞, τ_f = _pcg2019_f_gate(φ, p)
     du[4] = (f∞-f)/τ_f
 
-    s∞ = sigmoid(φ, E_s, k_s, 1.0)
+    s∞, τ_s = _pcg2019_s_gate(φ, p)
     du[5] = (s∞-s)/τ_s
 
-    xs∞ = sigmoid(φ, E_xs, k_xs, -1.0)
+    xs∞, τ_xs = _pcg2019_xs_gate(φ, p)
     du[6] = (xs∞-xs)/τ_xs
 
-    xr∞ = sigmoid(φ, E_xr, k_xr, -1.0)
+    xr∞, τ_xr = _pcg2019_xr_gate(φ, p)
     du[7] = (xr∞-xr)/τ_xr
 end
 
@@ -134,6 +165,21 @@ end
 
 num_states(::Type{<:ParametrizedPCG2019Model}) = 7
 state_symbols(::Type{<:ParametrizedPCG2019Model}) = (:φₘ, :h, :m, :f, :s, :xs, :xr)
+
+gating_symbols(::Type{<:ParametrizedPCG2019Model}) = (:h, :m, :f, :s, :xs, :xr)
+
+function gate_coefficients(p::ParametrizedPCG2019Model{T}, φ, x, t) where {T}
+    h∞, τ_h   = _pcg2019_h_gate(φ, p)
+    m∞, τ_m   = _pcg2019_m_gate(φ, p)
+    f∞, τ_f   = _pcg2019_f_gate(φ, p)
+    s∞, τ_s   = _pcg2019_s_gate(φ, p)
+    xs∞, τ_xs = _pcg2019_xs_gate(φ, p)
+    xr∞, τ_xr = _pcg2019_xr_gate(φ, p)
+    λ  = SVector{6,T}(-1/τ_h, -1/τ_m, -1/τ_f, -1/τ_s, -1/τ_xs, -1/τ_xr)
+    y∞ = SVector{6,T}(h∞, m∞, f∞, s∞, xs∞, xr∞)
+    return λ, y∞
+end
+
 function default_initial_state(p::ParametrizedPCG2019Model{T}) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 
