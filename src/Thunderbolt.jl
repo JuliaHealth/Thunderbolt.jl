@@ -396,6 +396,10 @@ export
     BackwardEulerSolver,
     NewmarkSolver,
     PIDController,
+    # Super-time-stepping families
+    RKC1,
+    RKL1,
+    RKG1,
     # Convergence driven step size control, usable with any solver answering `contraction_rate_cache`
     Deuflhard2004DiscreteContinuationController,
     Deuflhard2004_B_DiscreteContinuationControllerVariant,
