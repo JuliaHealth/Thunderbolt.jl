@@ -139,6 +139,14 @@ cell_timestepper = AdaptiveForwardEulerSubstepper(;
 # Now we can just instantiate the operator splitting algorithm of our choice.
 # Since our time integrators are both first order in time we opt for the standard first order accurrate operator splitting technique by Lie-Trotter (or Godunov).
 timestepper = LieTrotterGodunov((heat_timestepper, cell_timestepper));
+# !!! tip "An explicit stabilized alternative"
+#     `timestepper = EMRKC()` replaces this whole block -- both sub-timesteppers included -- with a
+#     single explicit, stabilized sweep over the same split.
+#     It is worth reaching for when the backward Euler stage above is the expensive part: emRKC takes
+#     no linear solve and hence no preconditioner, which is also what makes it cheap to run on a GPU.
+#     What it costs is a row-sum lumped mass matrix, so it does not solve quite the same
+#     semidiscretization as the consistent-mass solver above, and a fixed step size.
+#     Consult its docstring for the full list of limitations.
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.

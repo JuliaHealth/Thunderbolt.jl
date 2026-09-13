@@ -100,11 +100,18 @@ spectral radius:
   monolithic and the children exist for the splitting bookkeeping only.
 
 # Limitations
-Single domain only: the split has to be exactly one [`AffineODEFunction`](@ref) over one
-[`PointwiseODEFunction`](@ref), which is what `semidiscretize(ReactionDiffusionSplit(...))`
-produces for a [`MonodomainModel`](@ref). The mass matrix is row-sum lumped, so the spatial
-discretization must be one whose mass matrix that lumping is meaningful for (P1). The step size is
-fixed: there is no local error estimate here, only stability control.
+- Single domain only: the split has to be exactly one [`AffineODEFunction`](@ref) over one
+  [`PointwiseODEFunction`](@ref), which is what `semidiscretize(ReactionDiffusionSplit(...))`
+  produces for a [`MonodomainModel`](@ref).
+- The mass matrix is row-sum lumped (hence P1) and the ionic current enters pointwise at the dofs.
+  That is a different semidiscretization from the consistent-mass one [`BackwardEulerSolver`](@ref)
+  steps, and on a propagating front the O(h²) between the two is what dominates the difference
+  between the schemes -- at every step size, not only at coarse ones.
+- Fixed step size: the stage counts are stability control, not a local error estimate. Adaptivity
+  would come from an `OrdinaryDiffEqOperatorSplitting` controller over the parent integrator, which
+  is a follow-up rather than a knob here.
+- The stage counts resolve the STS families' real-axis stability boundaries. The complex part of the
+  spectrum is a gap in the underlying theory, and `rho_safety` is the only knob against it.
 """
 Base.@kwdef struct ExponentialMultirateSTSAlgorithm{
     OuterFamilyType <: AbstractSTSFamily,
