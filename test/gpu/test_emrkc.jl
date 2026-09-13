@@ -1,0 +1,143 @@
+# The emRKC step on the device, in the same two shapes `test_split.jl` runs the split solvers in:
+# host assembly mirrored into a `CuSparseMatrix`, and assembly on the device itself. The host arm is
+# the same problem in the same precision, stepped by the same algorithm, so the arms may only differ
+# in reduction order -- the spectral radius estimates, the sweeps and the pointwise stage kernels all
+# run the same Float32 arithmetic.
+#
+# Unlike `test_split.jl`'s form, this one carries a stimulus whose interval ends mid-run, so the
+# per-outer-stage source refresh -- reassembly on the host arm, reassembly plus upload on the
+# mirrored arm, device assembly on the device-assembled arm -- is actually exercised and actually
+# stops. The conductivity is the first EP tutorial's scaled by 1000: at the tutorial's value the
+# fast sweep degenerates to a single stage, and a multi-stage sweep is what rotates the inner stage
+# buffers through device arrays.
+
+import FerriteOperators
+
+function _emrkc_monodomain_form(;
+    n = 32,
+    assembly_strategy = Thunderbolt.default_strategy(),
+    qrcs = Dict{Symbol, Any}(),
+    stim_until = 2.5,
+)
+    mesh = generate_mesh(Quadrilateral, (n, n), Vec{2}((0.0, 0.0)), Vec{2}((2.5, 2.5)))
+    cs = CartesianCoordinateSystem(mesh)
+    ep_model = MonodomainModel(
+        ConstantCoefficient(1.0),
+        ConstantCoefficient(1.0),
+        ConstantCoefficient(SymmetricTensor{2, 2, Float64}((4.5e-2, 0.0, 2.0e-2))),
+        AnalyticalTransmembraneStimulationProtocol(
+            AnalyticalCoefficient(
+                (x, t) -> 0.5 * exp(-norm(x - Vec((1.25, 1.25)))^2) * cospi(t / 5),
+                cs,
+            ),
+            [SVector((0.0, stim_until))],
+        ),
+        Thunderbolt.ParametrizedFHNModel{Float32}(),
+        cs,
+        :φₘ,
+        :s,
+    )
+    return semidiscretize(
+        ReactionDiffusionSplit(ep_model),
+        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); qrcs, assembly_strategy),
+        mesh,
+    )
+end
+
+@testset "emRKC, host versus device" begin
+    stim_until = 2.5
+    odeform = _emrkc_monodomain_form(; stim_until)
+
+    u₀ = create_initial_condition(odeform, Float32)
+    setvariable!(u₀, odeform, :φₘ) do x
+        (x[1] ≤ 1.25 && x[2] ≤ 1.25) ? 1.0f0 : 0.0f0
+    end
+    setvariable!(u₀, odeform, :s) do x
+        x[2] ≥ 1.25 ? 0.1f0 : 0.0f0
+    end
+
+    tspan  = (0.0f0, 5.0f0)
+    Δt     = 1.0f0
+    nsteps = 5
+
+    # The interval boundary falls strictly inside the run: the steps starting at 0, 1 and 2 carry
+    # stage times inside the stimulus window and refresh the source, the ones starting at 3 and 4
+    # lie entirely beyond it and must not.
+    step_starts = Δt .* (0:(nsteps-1))
+    @test any(≤(stim_until), step_starts) && any(>(stim_until), step_starts)
+
+    build(form, u0, VT, SpMatType) = init(
+        OperatorSplittingProblem(form, u0, tspan),
+        EMRKC(solution_vector_type = VT, system_matrix_type = SpMatType);
+        dt = Δt,
+    )
+
+    # As in `test_split.jl`: which device assembles is the model side's `assembly_strategy`, and the
+    # device assembler exists for the CSC format only; the element precision is elected on the
+    # quadrature collection.
+    devform = _emrkc_monodomain_form(;
+        stim_until,
+        assembly_strategy = device_assembly_strategy(),
+        qrcs = Dict(:φₘ => QuadratureRuleCollection(Float32, 2)),
+    )
+
+    cpu = build(odeform, copy(u₀), Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
+    gpu = build(odeform, CuVector(u₀), CuVector{Float32}, CuCSR)
+    gpu_assembled = build(devform, CuVector(u₀), CuVector{Float32}, CuCSC)
+
+    # Host assembly mirrors, device assembly owns its matrix outright -- same split as the backward
+    # Euler stage in `test_split.jl`, here on the rate operator's diffusion matrix and on the
+    # source. The payload checks are what say the source actually lives on the device: a silently
+    # host-resident source would fail the trajectory comparison only through a crash or a stale
+    # zero, not through a type.
+    @test cpu.cache isa Thunderbolt.EMRKCCache
+    @test cpu.cache.source_op isa Thunderbolt.LinearFerriteOperator
+    @test gpu.cache.op.K isa Thunderbolt.MirroredBilinearOperator
+    @test gpu.cache.op.invM isa CuVector{Float32}
+    @test gpu.cache.source_op isa Thunderbolt.MirroredLinearOperator
+    @test FerriteOperators.operator_payload(gpu.cache.source_op) isa CuVector{Float32}
+    let c = gpu_assembled.cache
+        @test c.op.K isa Thunderbolt.BilinearFerriteOperator
+        @test c.op.K.A isa CuCSC
+        @test c.op.invM isa CuVector{Float32}
+        @test FerriteOperators.operator_payload(c.source_op) isa CuVector{Float32}
+    end
+
+    sizing(integ) = Thunderbolt._emrkc_step_sizing(integ.alg, Δt, integ.cache.ρS, integ.cache.ρF)
+
+    φₘ = solution_variable(odeform, :φₘ)
+    for step = 1:nsteps
+        step!(cpu)
+        step!(gpu)
+        step!(gpu_assembled)
+
+        if step == 1
+            # The first step estimated both spectral radii (`rho_recompute = :once`), on every arm
+            # over its own operators. The estimates may differ in reduction order, so the integer
+            # stage counts they are rounded into are compared rather than the raw radii; the window
+            # η is a function of the outer count alone and must then agree exactly.
+            s_cpu, η_cpu, m_cpu = sizing(cpu)
+            @test m_cpu > 1 # the inner sweep really rotates its stage buffers (see header note)
+            for integ in (gpu, gpu_assembled)
+                @test isfinite(integ.cache.ρS) && integ.cache.ρS > 0
+                @test isfinite(integ.cache.ρF) && integ.cache.ρF > 0
+                s, η, m = sizing(integ)
+                @test (s, m) == (s_cpu, m_cpu)
+                @test η == η_cpu
+            end
+        end
+
+        @test gpu.t == cpu.t
+        @test gpu_assembled.t == cpu.t
+        # Same tolerance and same reasoning as `test_split.jl`: all arms run the same Float32
+        # arithmetic with the same stage counts (asserted above), so what separates them is
+        # reduction order -- CUSPARSE and CUBLAS on the device arms, plus the colored sweep's
+        # accumulation order on the device assembled one.
+        @test getvariable(Array(gpu.u), φₘ) ≈ getvariable(cpu.u, φₘ) rtol = 1.0f-5
+        @test getvariable(Array(gpu_assembled.u), φₘ) ≈ getvariable(cpu.u, φₘ) rtol = 1.0f-5
+    end
+    @test Array(gpu.u) ≈ cpu.u rtol = 1.0f-5
+    @test Array(gpu_assembled.u) ≈ cpu.u rtol = 1.0f-5
+    # The wave moved, so the agreement above is not three copies of the initial condition.
+    @test cpu.u ≉ u₀
+end

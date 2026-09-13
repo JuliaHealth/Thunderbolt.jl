@@ -65,5 +65,6 @@ else
         include("test_pointwise.jl")
         include("test_diffusion.jl")
         include("test_split.jl")
+        include("test_emrkc.jl")
     end
 end

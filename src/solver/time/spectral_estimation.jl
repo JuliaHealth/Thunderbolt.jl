@@ -25,8 +25,9 @@ eigenvector the iteration cannot then escape.
 function SpectralRadiusWorkspace(template::AbstractVector)
     T = real(eltype(template))
     v = similar(template)
-    v .= one(eltype(template))
-    length(v) > 1 && (v[end] += one(eltype(template)))
+    # One broadcast, not a scalar write into `v[end]`: a device vector forbids scalar indexing, and
+    # the seed values are the same ones either way.
+    v .= one(eltype(template)) .+ (eachindex(v) .== lastindex(v))
     v ./= norm(v)
     w = similar(template)
     return SpectralRadiusWorkspace(v, w, zero(T), 0)
