@@ -98,6 +98,22 @@ function sts_stage_count(::RKG1, z)
 end
 
 """
+    sts_stability_boundary(fam::AbstractSTSFamily, s::Integer) -> Float64
+
+The real stability boundary of an `s`-stage sweep: the largest `z` with `|R_s(-z)| ≤ 1`.
+
+Forward partner of [`sts_stage_count`](@ref), which inverts it, so
+`sts_stage_count(fam, sts_stability_boundary(fam, s)) == s` for every family and every `s` the
+family admits. A multirate scheme needs the forward direction: once `s` is fixed, the averaged
+force it integrates may be at most this stiff, which is what sizes the averaging window.
+"""
+function sts_stability_boundary end
+
+sts_stability_boundary(fam::RKC1, s::Integer) = (2 - 4fam.ε / 3) * float(s)^2
+sts_stability_boundary(::RKL1, s::Integer) = float(s)^2 + float(s)
+sts_stability_boundary(::RKG1, s::Integer) = float(s) * (float(s) + 3) / 2
+
+"""
     sts_coefficient_state(fam::AbstractSTSFamily, s::Integer, ::Type{T})
     sts_stage_coefficients(fam::AbstractSTSFamily, state, j::Integer) -> ((μⱼ, νⱼ, μ̃ⱼ, cⱼ), state′)
 
@@ -137,7 +153,7 @@ end
 function _chebyshev1_at_degree(ω0, s)
     Tjm2, Tjm1 = 1.0, ω0
     Tjm2p, Tjm1p = 0.0, 1.0
-    for _ in 2:s
+    for _ = 2:s
         Tj = 2ω0 * Tjm1 - Tjm2
         Tjp = 2Tjm1 + 2ω0 * Tjm1p - Tjm2p
         Tjm2, Tjm1 = Tjm1, Tj
@@ -185,7 +201,8 @@ sts_coefficient_state(::RKG1, s::Integer, ::Type{T}) where {T} =
 function sts_stage_coefficients(::RKG1, st::RKLGCoeffState, j::Integer)
     # bⱼ(j) = 2/((j+1)(j+2)); νⱼ needs bⱼ₋₂, which is singular at j = 1 (no Yⱼ₋₂ there anyway).
     bj(k) = 2.0 / ((k + 1) * (k + 2))
-    μ, ν = j == 1 ? (1.0, 0.0) : ((2j + 1) / j * bj(j) / bj(j - 1), -(j + 1) / j * bj(j) / bj(j - 2))
+    μ, ν =
+        j == 1 ? (1.0, 0.0) : ((2j + 1) / j * bj(j) / bj(j - 1), -(j + 1) / j * bj(j) / bj(j - 2))
     μ̃ = μ * st.w1
     c = μ * st.cjm1 + ν * st.cjm2 + μ̃
     return (μ, ν, μ̃, c), RKLGCoeffState(st.w1, st.cjm1, c)
@@ -204,7 +221,7 @@ warmed up, for an `rhs!` that itself does not allocate.
 """
 function sts_sweep!(rhs!, Ya, Yb, du, y0, t0, τ, s::Integer, fam::AbstractSTSFamily)
     st = sts_coefficient_state(fam, s, eltype(y0))
-    for j in 1:s
+    for j = 1:s
         Yjm1 = j == 1 ? y0 : (isodd(j - 1) ? Ya : Yb)
         Yjm2 = j <= 2 ? y0 : (isodd(j - 2) ? Ya : Yb)
         dest = isodd(j) ? Ya : Yb
