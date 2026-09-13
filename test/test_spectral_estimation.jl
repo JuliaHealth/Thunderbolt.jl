@@ -77,6 +77,60 @@ end
     @test ws.iters_done ≤ first_iters
 end
 
+@testset "estimate_rho!: runaway guard" begin
+    # `apply!` that ignores `v` entirely and always returns the same (bad) result -- a stand-in for
+    # an operator evaluated somewhere it should not have been trusted, where reseeding the iterate
+    # and retrying cannot possibly help either.
+    struct ConstantApply{T}
+        value::T
+        calls::Ref{Int}
+    end
+    ConstantApply(value) = ConstantApply(value, Ref(0))
+    function (f::ConstantApply)(w, v)
+        f.calls[] += 1
+        fill!(w, f.value)
+        return w
+    end
+
+    @testset "non-finite result retries once, then errors" for badvalue in (Inf, NaN)
+        ws = SpectralRadiusWorkspace(zeros(5))
+        bad_apply! = ConstantApply(badvalue)
+        e = @test_throws ErrorException estimate_rho!(ws, bad_apply!)
+        @test occursin("non-finite", e.value.msg)
+        @test occursin("retrying once", e.value.msg)
+        @test bad_apply!.calls[] == 2 # the attempt, then the retry -- both fail on their first iterate
+    end
+
+    @testset "a finite but absurd jump vs. the previous estimate also triggers the guard" begin
+        ws = SpectralRadiusWorkspace(zeros(3))
+        ws.ρ = 1.0 # a modest "previous" estimate to jump away from
+        huge_apply! = ConstantApply(1.0e30)
+        e = @test_throws ErrorException estimate_rho!(ws, huge_apply!)
+        @test occursin("jump", e.value.msg)
+        @test occursin("retrying once", e.value.msg)
+    end
+
+    @testset "describe context reaches the error" begin
+        ws = SpectralRadiusWorkspace(zeros(4))
+        e = @test_throws ErrorException estimate_rho!(
+            ws,
+            ConstantApply(Inf);
+            describe = () -> " EMRKC-specific context.",
+        )
+        @test occursin("EMRKC-specific context.", e.value.msg)
+    end
+
+    @testset "a benign estimator is unaffected" begin
+        # The guard sits on the same success path every other testset in this file already
+        # exercises (dense negative-definite matrices, the FE heat problem, warm start, Float32):
+        # those passing unchanged is the regression check that ordinary use never retries.
+        A = Diagonal([-1.0, -10.0, -100.0])
+        ws = SpectralRadiusWorkspace(zeros(3))
+        ρ = estimate_rho!(ws, DenseApply(A))
+        @test ρ ≈ 1.1 * 100.0 rtol = 0.05
+    end
+end
+
 # A tiny FE heat problem, assembled exactly as `Thunderbolt._assemble_laplacian` does: a
 # bilinear integrator handed to `setup_operator`, assembled by `update_operator!`, read back
 # through FerriteOperators' documented `get_matrix` accessor.

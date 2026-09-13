@@ -66,7 +66,7 @@ Exponential multirate super-time-stepping for a reaction-diffusion split, follow
 
 One step evaluates an *averaged force* through a stabilized inner sweep and drives an outer
 [`AbstractSTSFamily`](@ref) sweep with it, so the stiff diffusion never dictates the outer step
-size. States declared by [`gating_symbols`](@ref) are integrated exponentially and removed from
+size. States declared by `gating_symbols` are integrated exponentially and removed from
 the slow force, which is what the `e` in emRKC buys: the outer stage count then follows the
 *remaining* reaction stiffness instead of the gates'.
 
@@ -79,13 +79,13 @@ spectral radius:
 
 # Fields
 - `outer`, `inner`: the STS families of the two sweeps ([`RKC1`](@ref) by default).
-- `gates`: `:all`, or a `Tuple` of [`gating_symbols`](@ref) to integrate exponentially. `()` is the
+- `gates`: `:all`, or a `Tuple` of `gating_symbols` to integrate exponentially. `()` is the
   degenerate mRKC-without-exponential mode, which runs *any* cell model, including one that
   declares no gates at all.
 - `solution_vector_type`, `system_matrix_type`: what the mass, diffusion and source operators are
   assembled into, as for [`BackwardEulerSolver`](@ref).
 - `rho_recompute`: `:once` (the paper's default), `n::Int` for every `n` steps, or a callable --
-  see [`_should_reestimate`](@ref). A step failure and the first step after an `init`/`reinit!`
+  see `_should_reestimate`. A step failure and the first step after an `init`/`reinit!`
   always force a re-estimate.
 - `rho_safety`: multiplies *every* `ρ` this algorithm uses, estimated or overridden. The default
   `1.1` is the hedge against the complex part of the spectrum, which the real-axis stability
@@ -100,7 +100,7 @@ spectral radius:
   monolithic and the children exist for the splitting bookkeeping only.
 
 # Limitations
-- Single domain only: the split has to be exactly one [`AffineODEFunction`](@ref) over one
+- Single domain only: the split has to be exactly one `AffineODEFunction` over one
   [`PointwiseODEFunction`](@ref), which is what `semidiscretize(ReactionDiffusionSplit(...))`
   produces for a [`MonodomainModel`](@ref).
 - The mass matrix is row-sum lumped (hence P1) and the ionic current enters pointwise at the dofs.
@@ -590,9 +590,20 @@ function _emrkc_rho_S!(mode::Symbol, cache::EMRKCCache, alg, u, t)
         cache.ws_S,
         _EMRKCSlowJacobianApply(cache, u, t, _emrkc_fd_perturbation(u));
         safety = alg.rho_safety,
+        describe = () -> _emrkc_rho_S_runaway_context(u, alg),
         _emrkc_estimator_options(alg.rho_recompute)...,
     )
 end
+
+# `estimate_rho!`'s generic runaway guard knows neither the state a Jacobian-free difference was
+# taken at nor `EMRKC`'s own knobs; this names both for its error message. The FD probe reads the
+# slow force near `u`, so a jump or non-finite result that survives a reseeded retry most likely
+# means `u` has drifted somewhere that force is not smooth (a gating discontinuity, say), not a
+# fluke of the power iteration itself.
+_emrkc_rho_S_runaway_context(u, alg) = " The state norm is ‖u‖ = $(norm(u)); the likely cause is " *
+    "state drift or a non-smooth right-hand side at this evaluation point. Consider a different " *
+    "`rho_recompute` policy (currently $(repr(alg.rho_recompute))) or bypassing the estimator " *
+    "with a raw-number `rho_S_estimate` override."
 
 _emrkc_rho_type(cache::EMRKCCache) = typeof(cache.ρS)
 

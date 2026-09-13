@@ -13,6 +13,7 @@ import Thunderbolt:
     PassiveChildSolver,
     PassiveChildCache,
     _emrkc_step_sizing,
+    _emrkc_rho_S_runaway_context,
     sts_stage_count,
     sts_stability_boundary,
     gate_coefficients,
@@ -426,6 +427,17 @@ end
         i = DiffEqBase.init(prob, bad; dt = 0.1, verbose = false)
         @test_throws ErrorException DiffEqBase.step!(i)
     end
+end
+
+@testset "ρ_S runaway context names the state norm and the escape-hatch knobs" begin
+    # `estimate_rho!`'s own guard (retry-then-error on a non-finite/absurd estimate; see
+    # test_spectral_estimation.jl) knows neither of these -- this is what `_emrkc_rho_S!` appends
+    # so the error a drifted-state blow-up raises is actionable rather than generic.
+    alg = EMRKC(rho_recompute = 3)
+    msg = _emrkc_rho_S_runaway_context([3.0, 4.0], alg)
+    @test occursin("5.0", msg)                    # ‖u‖ = ‖[3, 4]‖
+    @test occursin("rho_recompute", msg) && occursin("currently 3", msg)
+    @test occursin("rho_S_estimate", msg)         # the raw-number override knob
 end
 
 @testset "ρ recompute policy" begin
