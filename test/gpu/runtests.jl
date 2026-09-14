@@ -1,9 +1,10 @@
 using Test
 using CUDA
 
-# This suite needs a FerriteOperators newer than the registered 0.4.0 -- the KernelAbstractionsDevice
-# GPU surface below is unreleased (do/gpu) -- which is why `[sources]` in this environment's
-# Project.toml points FerriteOperators at a local checkout; run with
+# This suite's device surface (KernelAbstractionsDevice) needs FerriteOperators 0.4.1, which IS
+# registered -- see the root Project.toml's `FerriteOperators` compat bound. `[sources]` in this
+# environment's Project.toml still points FerriteOperators at a local checkout regardless (Dennis's
+# environment choice, not a release requirement); run with
 # `julia --project=test/gpu test/gpu/runtests.jl`.
 #
 # Everything below needs a device. Without one the suite reports that it did nothing rather than

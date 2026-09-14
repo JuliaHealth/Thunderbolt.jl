@@ -455,9 +455,9 @@ end
     DiffEqBase.step!(integ)
     @test integ.cache.steps_since_estimate == 0
 
-    # `n::Int` re-estimates every n steps.
+    # `n::Int` re-estimates every n steps: with n = 2, steps 1, 3, 5, ... re-estimate.
     integ = DiffEqBase.init(prob, EMRKC(rho_recompute = 2); dt = 0.1, verbose = false)
-    for expected in (0, 1, 2, 0, 1)
+    for expected in (0, 1, 0, 1, 0)
         DiffEqBase.step!(integ)
         @test integ.cache.steps_since_estimate == expected
     end
@@ -548,4 +548,25 @@ end
     @test integ.sol.retcode != SciMLBase.ReturnCode.Success
     @test integ.t == 0.0 # no step was ever accepted
     @test all(isfinite, integ.u)
+end
+
+@testset "A divergence under a re-estimating policy fails the step, not an uncaught error" begin
+    # The scenario the outer-sweep NaN check above cannot reach: with `:once`, `_emrkc_refresh_rho!`
+    # never re-estimates past the first step, so a mid-run divergence only ever shows up as a NaN in
+    # the outer sweep. With a re-estimating `rho_recompute`, the SAME divergence is discovered
+    # earlier, inside `estimate_rho!`'s own runaway guard -- and before this fix that guard's
+    # `error` crashed out of `_perform_step!` uncaught, bypassing `force_stepfail` entirely.
+    prob, _ = emrkc_problem(n = 3, ion = Thunderbolt.PCG2019(), tspan = (0.0, 1.0))
+    integ = DiffEqBase.init(prob, EMRKC(rho_recompute = 1); dt = 1.0e-3, verbose = false)
+
+    # A couple of ordinary steps first, so the run is mid-flight (`parent.iter > 1`, the case this
+    # fix actually changes) when the state is corrupted below.
+    DiffEqBase.step!(integ)
+    DiffEqBase.step!(integ)
+
+    integ.u .= 1.0e120 # same overflow trigger as the FHN case above
+    DiffEqBase.solve!(integ)
+
+    @test integ.sol.retcode == SciMLBase.ReturnCode.Failure
+    @test integ.u == fill(1.0e120, length(integ.u)) # untouched by the failed step attempt
 end

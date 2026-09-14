@@ -84,9 +84,9 @@ spectral radius:
   declares no gates at all.
 - `solution_vector_type`, `system_matrix_type`: what the mass, diffusion and source operators are
   assembled into, as for [`BackwardEulerSolver`](@ref).
-- `rho_recompute`: `:once` (the paper's default), `n::Int` for every `n` steps, or a callable --
-  see `_should_reestimate`. A step failure and the first step after an `init`/`reinit!`
-  always force a re-estimate.
+- `rho_recompute`: `:once` (this implementation's default -- see below), `n::Int` for every `n`
+  steps, or a callable -- see `_should_reestimate`. A step failure and the first step after an
+  `init`/`reinit!` always force a re-estimate.
 - `rho_safety`: multiplies *every* `ρ` this algorithm uses, estimated or overridden. The default
   `1.1` is the hedge against the complex part of the spectrum, which the real-axis stability
   boundaries of the STS families do not cover.
@@ -112,6 +112,13 @@ spectral radius:
   is a follow-up rather than a knob here.
 - The stage counts resolve the STS families' real-axis stability boundaries. The complex part of the
   spectrum is a gap in the underlying theory, and `rho_safety` is the only knob against it.
+- `rho_recompute = :once` (the default) estimates ρ_S/ρ_F once, at `t = 0`, and trusts that
+  estimate for the whole run -- with deliberately tightened estimator tolerances
+  (`reltol = 1.0e-4`, `maxiters = 200`) to keep that one estimate honest. The reference
+  implementation this algorithm follows has no such mode: it re-estimates both radii every 5
+  steps by default. A frozen `t = 0` estimate under-stages a run whose true ρ_S grows: measured
+  on a PCG2019 propagating front, ρ_S moved up to ~4.4x over the run. `rho_recompute = n` or a
+  callable re-estimates periodically instead.
 """
 Base.@kwdef struct ExponentialMultirateSTSAlgorithm{
     OuterFamilyType <: AbstractSTSFamily,
@@ -552,10 +559,10 @@ function _emrkc_refresh_rho!(cache::EMRKCCache, alg, parent, t)
 end
 
 # `:once` pays for the estimate exactly once per run and then trusts it for every remaining step,
-# so it gets a tighter stopping rule than the repeated policies: S3 measured the default
-# reltol = 1e-2 plateauing around 13% below the true radius on a near-degenerate spectrum, which
-# eats through `rho_safety = 1.1` in the understating -- that is, destabilizing -- direction. A
-# policy that re-estimates can afford the loose rule because it gets more chances.
+# so it gets a tighter stopping rule than the repeated policies: the loose default reltol = 1e-2
+# can plateau well below the true radius on a near-degenerate spectrum, eating through
+# `rho_safety = 1.1` in the understating -- that is, destabilizing -- direction. A policy that
+# re-estimates can afford the loose rule because it gets more chances.
 _emrkc_estimator_options(policy) =
     policy === :once ? (maxiters = 200, reltol = 1.0e-4) : (maxiters = 50, reltol = 1.0e-2)
 
@@ -664,6 +671,15 @@ end
 
 function (force::_EMRKCAveragedForce)(fbar, Y, t)
     (; cache, alg, η, m) = force
+    # `cache.fbarV` is a view into `cache.fbar` specifically (built once in `OS.init_cache`), not
+    # into whatever buffer `sts_sweep!` happens to pass as `fbar` here. The full-width write below
+    # and the `cache.fbarV` write on the transmembrane rows would then land in two different
+    # arrays, half-writing the one `sts_sweep!` actually reads back as `du`.
+    fbar === cache.fbar || error(
+        "_EMRKCAveragedForce must be called with `du === cache.fbar`: `cache.fbarV` only aliases " *
+        "`cache.fbar`, and writing through it while `fbar` pointed elsewhere would silently drop " *
+        "the transmembrane rows of the averaged force.",
+    )
     V = cache.Vrange
 
     # (1) y_E: the outer stage value with the selected gates integrated exactly over η.
@@ -708,9 +724,21 @@ function OS._perform_step!(parent, children::Tuple, cache::EMRKCCache, dt)
     alg = parent.alg
     t   = parent.t
 
-    @timeit_debug "spectral radii" _emrkc_refresh_rho!(cache, alg, parent, t)
-
-    s, η, m = _emrkc_step_sizing(alg, dt, cache.ρS, cache.ρF)
+    # A divergence caught here (the runaway guard inside `estimate_rho!`, or a stage count that
+    # overflows `max_stages` or `Int` itself) is a step failure like the NaN check below, not an
+    # uncaught crash -- but only once there is a step to fail: on the very first attempt of a run
+    # (`parent.iter ≤ 1`) nothing has been accepted yet, so the same errors stay loud instead of
+    # being swallowed into a silent, immediate `ReturnCode.Failure`.
+    s, η, m = try
+        @timeit_debug "spectral radii" _emrkc_refresh_rho!(cache, alg, parent, t)
+        _emrkc_step_sizing(alg, dt, cache.ρS, cache.ρF)
+    catch e
+        if !(e isa ErrorException) || parent.iter ≤ 1
+            rethrow()
+        end
+        parent.force_stepfail = true
+        return
+    end
 
     @timeit_debug "outer sweep" Ys = sts_sweep!(
         _EMRKCAveragedForce(cache, alg, η, m),
@@ -751,10 +779,16 @@ most `2/η`, and equating the two gives the largest window -- hence the cheapest
 outer sweep can still carry.
 
 Both radii already carry `rho_safety`.
+
+`η` is converted to `typeof(Δt)`: [`sts_stability_boundary`](@ref) always computes in `Float64`
+(it is a scalar, evaluated once per step, not worth a `T` parameter of its own), but `η` itself
+feeds the per-point inner sweep once per outer stage, so it must not promote that sweep's
+broadcasts back up to `Float64` under a `Float32` run.
 """
 function _emrkc_step_sizing(alg, Δt, ρS, ρF)
+    T = typeof(Δt)
     s = _emrkc_stage_count(alg.outer, Δt * ρS, alg, :outer)
-    η = 2 * Δt / sts_stability_boundary(alg.outer, s)
+    η = 2Δt / T(sts_stability_boundary(alg.outer, s))
     m = _emrkc_stage_count(alg.inner, η * ρF, alg, :inner)
     return s, η, m
 end

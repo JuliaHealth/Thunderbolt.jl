@@ -60,11 +60,23 @@ step, `ρ` a spectral radius estimate; any safety margin is the caller's respons
 """
 function sts_stage_count end
 
+# `ceil(Int, x)` throws an opaque `InexactError` once `x` exceeds `typemax(Int)`; a `z` that
+# large only arises from a diverged state or an unusable `rho_*_estimate` override (or a NaN/Inf
+# `z`, which also fails `x < typemax(Int)`), so name that instead of the bare conversion crash.
+@inline function _sts_safe_ceil(z, x)
+    x < typemax(Int) || error(
+        "sts_stage_count: the stage count for z = $z does not fit in a machine `Int`. This " *
+        "almost always means a diverged state or an unusable `rho_*_estimate` override, not a " *
+        "genuine stiffness measure.",
+    )
+    return ceil(Int, x)
+end
+
 # s = ceil(√(z/β)), β = 2 - 4ε/3: the standard asymptotic RKC stage-count law (van der Houwen
 # & Sommeijer 1980; Verwer, Hundsdorfer & Sommeijer, Numer. Math. 57 (1990) 157-178).
 function sts_stage_count(fam::RKC1, z)
     β = 2 - 4fam.ε / 3
-    return max(1, ceil(Int, sqrt(z / β)))
+    return max(1, _sts_safe_ceil(z, sqrt(z / β)))
 end
 
 # Smallest odd s with z ≤ s² + s. This is the RKL1 stability boundary of Meyer, Balsara &
@@ -73,7 +85,7 @@ end
 # [-1,1] with equality only at the endpoints; z ≤ s²+s is exactly where 1+w₁z reaches -1.
 # Matches OrdinaryDiffEqStabilizedRK's RKL1 stage-count law verbatim.
 function sts_stage_count(::RKL1, z)
-    s = max(1, ceil(Int, (sqrt(1 + 4z) - 1) / 2))
+    s = max(1, _sts_safe_ceil(z, (sqrt(1 + 4z) - 1) / 2))
     return isodd(s) ? s : s + 1
 end
 
@@ -94,7 +106,7 @@ end
 # unstable, just needlessly conservative by roughly a factor √2 in s. We use the
 # literature-derived s(s+3)/2 here.
 function sts_stage_count(::RKG1, z)
-    return max(1, ceil(Int, (sqrt(9 + 8z) - 3) / 2))
+    return max(1, _sts_safe_ceil(z, (sqrt(9 + 8z) - 3) / 2))
 end
 
 """
@@ -121,9 +133,10 @@ On-the-fly scalar recurrence for the order-1 stage coefficients of an `s`-stage 
 `sts_coefficient_state` builds the initial state (before stage `j = 1`); `state` is then
 threaded sequentially through `sts_stage_coefficients` calls for `j = 1, …, s` -- calling out
 of order or skipping a stage is not supported. `cⱼ` is the stage time fraction
-(`t0 + cⱼτ`; `cₛ == 1`). All scalars are computed in `Float64` regardless of `T`; `T` names
-the state-vector eltype the caller intends and is otherwise unused here -- the conversion
-happens at the broadcast in [`sts_sweep!`](@ref).
+(`t0 + cⱼτ`; `cₛ == 1`). `T` names the state-vector eltype the caller intends, and every
+scalar this recurrence produces is computed in `T` -- including a family struct's own fields
+(e.g. `RKC1.ε`), which are converted to `T` once here rather than left to promote broadcasts in
+[`sts_sweep!`](@ref) back up to their own (commonly `Float64`) type.
 """
 function sts_coefficient_state end
 
@@ -132,27 +145,28 @@ See [`sts_coefficient_state`](@ref) -- this is the second half of that same cont
 """
 function sts_stage_coefficients end
 
-struct RKC1CoeffState
-    ω0::Float64
-    ω1::Float64
-    Tjm2::Float64 # Tⱼ₋₂(ω0), ready for the next sts_stage_coefficients call
-    Tjm1::Float64 # Tⱼ₋₁(ω0)
-    cjm2::Float64
-    cjm1::Float64
+struct RKC1CoeffState{T}
+    ω0::T
+    ω1::T
+    Tjm2::T # Tⱼ₋₂(ω0), ready for the next sts_stage_coefficients call
+    Tjm1::T # Tⱼ₋₁(ω0)
+    cjm2::T
+    cjm1::T
 end
 
 function sts_coefficient_state(fam::RKC1, s::Integer, ::Type{T}) where {T}
-    ω0 = 1.0 + fam.ε / s^2
+    ε = T(fam.ε)
+    ω0 = one(T) + ε / T(s)^2
     # T_s(ω0) and T_s′(ω0) at the full degree s, via the Chebyshev recurrence and its
     # derivative recurrence, to seed ω1 = T_s(ω0)/T_s′(ω0) once for the whole sweep.
-    Ts, Tsp = s == 1 ? (ω0, 1.0) : _chebyshev1_at_degree(ω0, s)
+    Ts, Tsp = s == 1 ? (ω0, one(T)) : _chebyshev1_at_degree(ω0, s)
     ω1 = Ts / Tsp
-    return RKC1CoeffState(ω0, ω1, 1.0, ω0, 0.0, 0.0)
+    return RKC1CoeffState{T}(ω0, ω1, one(T), ω0, zero(T), zero(T))
 end
 
-function _chebyshev1_at_degree(ω0, s)
-    Tjm2, Tjm1 = 1.0, ω0
-    Tjm2p, Tjm1p = 0.0, 1.0
+function _chebyshev1_at_degree(ω0::T, s) where {T}
+    Tjm2, Tjm1 = one(T), ω0
+    Tjm2p, Tjm1p = zero(T), one(T)
     for _ = 2:s
         Tj = 2ω0 * Tjm1 - Tjm2
         Tjp = 2Tjm1 + 2ω0 * Tjm1p - Tjm2p
@@ -162,50 +176,50 @@ function _chebyshev1_at_degree(ω0, s)
     return Tjm1, Tjm1p
 end
 
-function sts_stage_coefficients(::RKC1, st::RKC1CoeffState, j::Integer)
+function sts_stage_coefficients(::RKC1, st::RKC1CoeffState{T}, j::Integer) where {T}
     (; ω0, ω1) = st
     if j == 1
         μ̃ = ω1 / ω0
-        return (1.0, 0.0, μ̃, μ̃), RKC1CoeffState(ω0, ω1, st.Tjm2, st.Tjm1, 0.0, μ̃)
+        return (one(T), zero(T), μ̃, μ̃), RKC1CoeffState{T}(ω0, ω1, st.Tjm2, st.Tjm1, zero(T), μ̃)
     end
     Tj = 2ω0 * st.Tjm1 - st.Tjm2
-    bj, bjm1, bjm2 = 1 / Tj, 1 / st.Tjm1, 1 / st.Tjm2
+    bj, bjm1, bjm2 = one(T) / Tj, one(T) / st.Tjm1, one(T) / st.Tjm2
     μ = 2ω0 * bj / bjm1
     ν = -bj / bjm2
     μ̃ = 2ω1 * bj / bjm1
     c = μ * st.cjm1 + ν * st.cjm2 + μ̃
-    return (μ, ν, μ̃, c), RKC1CoeffState(ω0, ω1, st.Tjm1, Tj, st.cjm1, c)
+    return (μ, ν, μ̃, c), RKC1CoeffState{T}(ω0, ω1, st.Tjm1, Tj, st.cjm1, c)
 end
 
 # RKL1 and RKG1 both have a closed form bⱼ(j) (no incremental polynomial recurrence needed),
 # so their coefficient state is just the family's w1 plus the running stage-time pair.
-struct RKLGCoeffState
-    w1::Float64
-    cjm2::Float64
-    cjm1::Float64
+struct RKLGCoeffState{T}
+    w1::T
+    cjm2::T
+    cjm1::T
 end
 
 sts_coefficient_state(::RKL1, s::Integer, ::Type{T}) where {T} =
-    RKLGCoeffState(2.0 / (s^2 + s), 0.0, 0.0)
+    RKLGCoeffState{T}(T(2) / T(s^2 + s), zero(T), zero(T))
 
-function sts_stage_coefficients(::RKL1, st::RKLGCoeffState, j::Integer)
-    μ, ν = (2j - 1) / j, -(j - 1) / j # reduces to (1, 0) at j = 1
+function sts_stage_coefficients(::RKL1, st::RKLGCoeffState{T}, j::Integer) where {T}
+    μ, ν = T(2j - 1) / T(j), -T(j - 1) / T(j) # reduces to (1, 0) at j = 1
     μ̃ = μ * st.w1
     c = μ * st.cjm1 + ν * st.cjm2 + μ̃
-    return (μ, ν, μ̃, c), RKLGCoeffState(st.w1, st.cjm1, c)
+    return (μ, ν, μ̃, c), RKLGCoeffState{T}(st.w1, st.cjm1, c)
 end
 
 sts_coefficient_state(::RKG1, s::Integer, ::Type{T}) where {T} =
-    RKLGCoeffState(4.0 / (s * (s + 3)), 0.0, 0.0)
+    RKLGCoeffState{T}(T(4) / T(s * (s + 3)), zero(T), zero(T))
 
-function sts_stage_coefficients(::RKG1, st::RKLGCoeffState, j::Integer)
+function sts_stage_coefficients(::RKG1, st::RKLGCoeffState{T}, j::Integer) where {T}
     # bⱼ(j) = 2/((j+1)(j+2)); νⱼ needs bⱼ₋₂, which is singular at j = 1 (no Yⱼ₋₂ there anyway).
-    bj(k) = 2.0 / ((k + 1) * (k + 2))
-    μ, ν =
-        j == 1 ? (1.0, 0.0) : ((2j + 1) / j * bj(j) / bj(j - 1), -(j + 1) / j * bj(j) / bj(j - 2))
+    bj(k) = T(2) / (T(k + 1) * T(k + 2))
+    μ, ν = j == 1 ? (one(T), zero(T)) :
+        (T(2j + 1) / T(j) * bj(j) / bj(j - 1), -T(j + 1) / T(j) * bj(j) / bj(j - 2))
     μ̃ = μ * st.w1
     c = μ * st.cjm1 + ν * st.cjm2 + μ̃
-    return (μ, ν, μ̃, c), RKLGCoeffState(st.w1, st.cjm1, c)
+    return (μ, ν, μ̃, c), RKLGCoeffState{T}(st.w1, st.cjm1, c)
 end
 
 """
@@ -218,8 +232,15 @@ the now-consumed `Yⱼ₋₂`); `y0` is read-only throughout and never one of th
 Returns whichever of `Ya`/`Yb` holds `Yₛ` -- callers must not assume it is always `Ya`.
 `s == 1` degenerates to a single forward-Euler step of size `μ̃₁τ`. Allocation-free once
 warmed up, for an `rhs!` that itself does not allocate.
+
+`Ya`, `Yb`, `du` and `y0` must all have equal `length` -- checked via `@boundscheck`, since the
+per-stage broadcast below is `@inbounds` and a short buffer would otherwise be a silent
+out-of-bounds write rather than a bounds error.
 """
 function sts_sweep!(rhs!, Ya, Yb, du, y0, t0, τ, s::Integer, fam::AbstractSTSFamily)
+    @boundscheck (length(Ya) == length(Yb) == length(du) == length(y0)) ||
+        throw(DimensionMismatch("sts_sweep!: Ya, Yb, du and y0 must have equal length; got " *
+            "$(length(Ya)), $(length(Yb)), $(length(du)), $(length(y0))."))
     st = sts_coefficient_state(fam, s, eltype(y0))
     for j = 1:s
         Yjm1 = j == 1 ? y0 : (isodd(j - 1) ? Ya : Yb)
@@ -238,5 +259,10 @@ end
 Exact value at `η` of `dx/dt = λ(x - y∞)` (the gate normal form of [`gating_symbols`](@ref)):
 `x(η) = y∞ + (x - y∞)e^{ηλ} = x + (e^{ηλ} - 1)(x - y∞)`, written with `expm1` because `e^{ηλ} - 1`
 cancels catastrophically for the small `ηλ` an inner STS sub-step produces.
+
+Intended for decay gates, `λ ≤ 0`. At `λ > 0`, or at `λ = 0` with an infinite `y∞`, the result can
+be non-finite (`expm1` growing without bound, or `Inf * 0`); nothing here guards against that --
+the caller's `isfinite` check on the swept state (e.g. `EMRKC`'s step, which fails the step rather
+than write a non-finite solution) is where it is caught.
 """
 @inline exponential_gate_step(x, λ, y∞, η) = x + expm1(η * λ) * (x - y∞)

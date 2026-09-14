@@ -42,8 +42,12 @@ RKG1
 Thunderbolt.sts_sweep!
 Thunderbolt.sts_stage_count
 Thunderbolt.sts_stability_boundary
+Thunderbolt.ExponentialMultirateSTSAlgorithm
 EMRKC
 Thunderbolt.PassiveChildSolver
+gating_symbols
+gate_coefficients
+gating_indices
 ```
 
 ## Operator Splitting Adaptivity

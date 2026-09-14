@@ -47,7 +47,9 @@ end
 @testset "Exactness: PCG2019 gate primitive vs analytic exponential decay" begin
     p = Thunderbolt.PCG2019()
     for φ in _FROZEN_PHI
-        λ, y∞ = gate_coefficients(p, φ, _GATE_STATE, 0.0)
+        # `x` is the FULL local state row (φ, then the gates), as production passes it -- not the
+        # gates-only vector `_GATE_STATE` is on its own.
+        λ, y∞ = gate_coefficients(p, φ, SVector(φ, _GATE_STATE...), 0.0)
         for i in eachindex(λ), η in (1.0e-3, 0.1, 1.0, 10.0, 100.0)
             x0 = _GATE_STATE[i]
             expected = y∞[i] + (x0 - y∞[i]) * exp(η * λ[i])
@@ -60,7 +62,7 @@ end
 @testset "Exactness: FHN gate primitive vs analytic exponential decay" begin
     p = Thunderbolt.FHNModel()
     for φ in (-1.0, 0.0, 0.3, 0.7, 1.5)
-        λ, y∞ = gate_coefficients(p, φ, SVector(0.2), 0.0)
+        λ, y∞ = gate_coefficients(p, φ, SVector(φ, 0.2), 0.0) # full row: (φ, s)
         x0 = 0.2
         for η in (1.0e-3, 0.1, 1.0, 10.0, 100.0)
             expected = y∞[1] + (x0 - y∞[1]) * exp(η * λ[1])
@@ -73,7 +75,7 @@ end
 @testset "expm1 regression: η = 1e-12·τ keeps full precision" begin
     p = Thunderbolt.PCG2019()
     for φ in _FROZEN_PHI
-        λ, y∞ = gate_coefficients(p, φ, _GATE_STATE, 0.0)
+        λ, y∞ = gate_coefficients(p, φ, SVector(φ, _GATE_STATE...), 0.0)
         for i in eachindex(λ)
             τ = -1 / λ[i]
             η = 1.0e-12 * τ
@@ -101,7 +103,7 @@ end
             u = vcat(φ, Vector(_GATE_STATE))
             du = zeros(7)
             Thunderbolt.cell_rhs!(du, u, nothing, 0.0, p)
-            λ, y∞ = gate_coefficients(p, φ, _GATE_STATE, 0.0)
+            λ, y∞ = gate_coefficients(p, φ, u, 0.0) # full row, as production passes it
             for (k, idx) in enumerate(gating_indices(p))
                 x0 = _GATE_STATE[k]
                 fd = central_fd(x0, λ[k], y∞[k])
@@ -116,7 +118,7 @@ end
             u = [φ, s0]
             du = zeros(2)
             Thunderbolt.cell_rhs!(du, u, nothing, 0.0, p)
-            λ, y∞ = gate_coefficients(p, φ, SVector(s0), 0.0)
+            λ, y∞ = gate_coefficients(p, φ, u, 0.0) # full row, as production passes it
             idx = only(gating_indices(p))
             fd = central_fd(s0, λ[1], y∞[1])
             @test fd ≈ du[idx] rtol = 1.0e-6
@@ -223,11 +225,12 @@ end
 @testset "Float32 eltype" begin
     p32 = Thunderbolt.ParametrizedPCG2019Model{Float32}()
     φ = 0.0f0
-    x = SVector{6,Float32}(0.1f0, 0.2f0, 0.3f0, 0.4f0, 0.5f0, 0.6f0)
+    x = SVector{7,Float32}(φ, 0.1f0, 0.2f0, 0.3f0, 0.4f0, 0.5f0, 0.6f0) # full row: (φ, gates...)
     λ, y∞ = gate_coefficients(p32, φ, x, 0.0f0)
     @test λ isa SVector{6,Float32}
     @test y∞ isa SVector{6,Float32}
 
-    got = exponential_gate_step.(x, λ, y∞, 0.01f0)
+    gates = SVector{6,Float32}(x[2], x[3], x[4], x[5], x[6], x[7]) # the gate rows of the full row
+    got = exponential_gate_step.(gates, λ, y∞, 0.01f0)
     @test eltype(got) == Float32
 end

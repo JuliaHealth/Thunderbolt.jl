@@ -133,6 +133,24 @@ end
     end
 end
 
+@testset "Extreme z raises a pointed error, not InexactError" begin
+    # z this large pushes the stage count past typemax(Int); `ceil(Int, ...)` on that would throw
+    # an opaque InexactError. Threshold is family-dependent (~3.4e37 for RKC1 at ε = 0.05); 1e40
+    # clears it for all three families.
+    for fam in (RKC1(0.05), RKL1(), RKG1())
+        e = @test_throws ErrorException sts_stage_count(fam, 1.0e40)
+        @test !(e.value isa InexactError)
+        @test occursin("does not fit", e.value.msg)
+    end
+end
+
+@testset "sts_sweep!: mismatched buffer lengths raise DimensionMismatch" begin
+    y0, Ya, Yb, du = [1.0, 2.0], [0.0, 0.0], [0.0, 0.0], [0.0] # du too short
+    @test_throws DimensionMismatch sts_sweep!(
+        LinearDecay(-1.0), Ya, Yb, du, y0, 0.0, 0.1, 2, RKC1(0.05),
+    )
+end
+
 @testset "Internal consistency: c_s == 1" begin
     for fam in families(), s in (1, 2, 3, 5, 10, 20)
         st = sts_coefficient_state(fam, s, Float64)
@@ -143,7 +161,7 @@ end
     end
 end
 
-@testset "Float32 state matches Float64 to 1e-6" begin
+@testset "Float32 state matches Float64 to 1e-5" begin
     for fam in families(), s in (1, 2, 5, 10)
         zmax = boundary_magnitude(fam, s)
         τλ = -0.5 * zmax
@@ -154,10 +172,31 @@ end
         y0s, Yas, Ybs, dus = Float32[1.0], Float32[0.0], Float32[0.0], Float32[0.0]
         Yf32 = sts_sweep!(LinearDecay(Float32(τλ)), Yas, Ybs, dus, y0s, 0.0f0, 1.0f0, s, fam)
 
-        # atol: frac = 0.5 lands exactly on the polynomials' midpoint argument, which is a root
-        # for every odd s here -- Float64 and Float32 then agree in absolute terms (both are
-        # near their own rounding floor) but not in the meaningless ratio of two near-zero numbers.
-        @test Float64(Yf32[1]) ≈ Yf64[1] rtol = 1.0e-6 atol = 1.0e-6
+        # rtol/atol: the coefficient recurrence itself now runs in Float32 (not just the final
+        # broadcast -- see the Float32 purity fix below), so up to `s = 10` stages of single
+        # precision genuinely accumulate more rounding error than the previous, impure Float32
+        # path (Float64 coefficients truncated only at the end) ever showed here. atol also
+        # covers frac = 0.5 landing exactly on the polynomials' midpoint argument, a root for
+        # every odd s here, where both sides are near their own rounding floor and the ratio of
+        # two near-zero numbers is meaningless.
+        @test Float64(Yf32[1]) ≈ Yf64[1] rtol = 1.0e-5 atol = 1.0e-5
+        @test eltype(Yf32) == Float32
+    end
+end
+
+@testset "Float32 purity: coefficients and sweep stay Float32, not promoted to Float64" begin
+    for fam in families(), s in (1, 2, 5, 10)
+        # `fam.ε` (RKC1) is a `Float64` field by default (`RKC1(0.05)`); the coefficient state
+        # must convert it to `T`, not let it promote every downstream scalar back to Float64.
+        st = sts_coefficient_state(fam, s, Float32)
+        for j = 1:s
+            (μ, ν, μ̃, c), st = sts_stage_coefficients(fam, st, j)
+            @test μ isa Float32 && ν isa Float32 && μ̃ isa Float32 && c isa Float32
+        end
+
+        y0, Ya, Yb, du = Float32[1.0], Float32[0.0], Float32[0.0], Float32[0.0]
+        Y = sts_sweep!(LinearDecay(-1.0f0), Ya, Yb, du, y0, 0.0f0, 0.01f0, s, fam)
+        @test eltype(Y) == Float32
     end
 end
 

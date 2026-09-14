@@ -31,6 +31,11 @@
 #    same calls `OrdinaryDiffEqOperatorSplitting`'s own `_perform_step!` makes, which separates the
 #    linear solve from the pointwise reaction. emRKC has no linear solve to separate out; what is
 #    reported in its place is the stage structure `(s, m)` that stands in for one.
+#  * Knife edge: roughly half of the reported speedup is the step size each method lands on, and that
+#    half sits right at the accuracy band's edge, not in its middle. In one measured run (2.38x host,
+#    2.68x device), the splitting arm's step size missed the band by 5%; run one step smaller instead,
+#    the gap closes to 1.76x (host) / 1.40x (device). The other half is per step and is not a knife
+#    edge: emRKC takes no linear solve, which is the bulk of a splitting step (54-76% above).
 #
 # This is a benchmark, not a CI gate: the numbers are reported as measured, whichever way they fall.
 #

@@ -120,6 +120,20 @@ end
         @test occursin("EMRKC-specific context.", e.value.msg)
     end
 
+    @testset "maxiters exhaustion is a silent, documented under-estimate" begin
+        # A well separated spectrum still cannot reach reltol = 1e-15 in 2 iterations -- power
+        # iteration's per-step error is bounded by the eigenvalue ratio (1/10 here), so 2 steps
+        # gets nowhere near 1e-15 relative, guaranteeing exhaustion without tripping the (separate)
+        # non-finite/jump guard above. A legitimate estimator hitting this on a real problem (an
+        # under-budgeted `maxiters`/`reltol` pair, not a bad operator) has to keep working, not
+        # error -- confirmed on a real EMRKC step, not just this synthetic case.
+        A = Diagonal([-1.0, -10.0, -100.0])
+        ws = SpectralRadiusWorkspace(zeros(3))
+        ρ = estimate_rho!(ws, DenseApply(A); maxiters = 2, reltol = 1.0e-15)
+        @test isfinite(ρ) && ρ > 0
+        @test ws.iters_done == 2 # the exhaustion signal a caller can check itself
+    end
+
     @testset "a benign estimator is unaffected" begin
         # The guard sits on the same success path every other testset in this file already
         # exercises (dense negative-definite matrices, the FE heat problem, warm start, Float32):
@@ -217,10 +231,11 @@ end
     end
 
     @testset "n::Int" begin
+        # Period n: re-estimating exactly every n steps means steps_since ≥ n - 1 is due.
         @test _should_reestimate(3, -1, false) == true         # never yet
         @test _should_reestimate(3, 0, false) == false
-        @test _should_reestimate(3, 2, false) == false
-        @test _should_reestimate(3, 3, false) == true
+        @test _should_reestimate(3, 1, false) == false
+        @test _should_reestimate(3, 2, false) == true
         @test _should_reestimate(3, 5, false) == true
         @test _should_reestimate(3, 0, true) == true           # stepfail forces regardless
     end

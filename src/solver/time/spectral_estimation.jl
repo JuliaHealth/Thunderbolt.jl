@@ -65,6 +65,14 @@ current `ws.v` may itself be poisoned by the bad result), and raises an error --
 clamped value -- if the retry is no better. `describe` is appended verbatim to that error; a
 caller with more context than this generic operator (the state a Jacobian-free difference was
 evaluated at, its own knobs) can use it to name that in the message.
+
+Exhausting `maxiters` without meeting `reltol` returns silently rather than erroring -- a caller
+that wants to know can compare `ws.iters_done` against the `maxiters` it passed. The direction is
+never a surprise: power iteration converges monotonically to the dominant eigenvalue from below,
+so a value that never settled under-estimates the true radius, which `safety` was not sized to
+cover (unlike the sanity guard above, this is not a sign of a bad `apply!`, just an under-budgeted
+one -- a legitimate, if noisy, operator can need more than the default `maxiters` at a tight
+`reltol`, which is a normal, non-exceptional outcome this function does not get to judge).
 """
 function estimate_rho!(
     ws::SpectralRadiusWorkspace{VT, T},
@@ -76,10 +84,12 @@ function estimate_rho!(
     describe = () -> "",
 ) where {VT, T}
     ρ_prev = ws.ρ
-    ρ = T(safety) * _power_iterate!(ws, apply!, maxiters, T(reltol))
+    raw = _power_iterate!(ws, apply!, maxiters, T(reltol))
+    ρ = T(safety) * raw
     if !_rho_is_sane(ρ, ρ_prev, jump_factor)
         _reseed!(ws)
-        ρ = T(safety) * _power_iterate!(ws, apply!, maxiters, T(reltol))
+        raw = _power_iterate!(ws, apply!, maxiters, T(reltol))
+        ρ = T(safety) * raw
         _rho_is_sane(ρ, ρ_prev, jump_factor) || _rho_runaway_error(ρ, ρ_prev, jump_factor, describe)
     end
     ws.ρ = ρ
@@ -88,6 +98,9 @@ end
 
 # The iteration proper, factored out of `estimate_rho!` so the runaway guard can rerun it against
 # a reseeded `ws.v` without duplicating the loop. Pre-safety: `estimate_rho!` applies `safety`.
+# `ws.iters_done == maxiters` after the call is the (silent) under-estimation signal documented
+# on `estimate_rho!` -- the non-finite/null-space exit below is a definitive stop, not iteration
+# starvation, so it can still report fewer than `maxiters` even when nothing further would help.
 function _power_iterate!(ws::SpectralRadiusWorkspace{VT, T}, apply!, maxiters, tol) where {VT, T}
     v, w = ws.v, ws.w
     ρ = zero(T)
@@ -166,8 +179,9 @@ Whether ρ needs re-estimating this step. `steps_since` counts steps since the l
 estimate; a NEGATIVE value means none has run yet and, like a step failure (`stepfail`),
 always forces one regardless of `policy`. Otherwise:
 
-- `:once` -- never again (paper default: estimate once, trust it for the whole run).
-- `n::Int` -- every `n` steps (`steps_since ≥ n`).
+- `:once` -- never again (this implementation's default: estimate once, trust it for the whole
+  run; the reference implementation re-estimates every 5 steps and has no estimate-once mode).
+- `n::Int` -- every `n` steps (`steps_since ≥ n - 1`).
 - a callable -- `policy(steps_since)`.
 """
 function _should_reestimate(policy, steps_since, stepfail::Bool)
@@ -178,5 +192,5 @@ end
 _reestimate_due(policy::Symbol, steps_since) =
     policy === :once ? false :
     error("Unknown rho_recompute policy :$policy -- expected :once, an Int, or a callable.")
-_reestimate_due(n::Integer, steps_since) = steps_since ≥ n
+_reestimate_due(n::Integer, steps_since) = steps_since ≥ n - 1
 _reestimate_due(f, steps_since) = f(steps_since)

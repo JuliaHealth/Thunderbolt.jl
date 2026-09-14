@@ -189,6 +189,11 @@ gating_symbols(::Type{<:AbstractIonicModel}) = ()
 `λ` and `y∞` of the gate normal form (see [`gating_symbols`](@ref)) for the states declared by
 `gating_symbols(model)`, in that declaration order, at transmembrane potential `φ`, local state
 `x` and time `t`. Required whenever `NG = length(gating_symbols(model)) > 0`.
+
+`x` is the FULL local state row (every entry of [`state_symbols`](@ref), `φ` included), in
+`state_symbols` order -- what production (`EMRKC`'s gate stage) passes. `φ` is handed separately
+only because it is what every shipped implementation actually reads; nothing pins `x` to be
+narrower than the full row, and a model is free to read other states from it.
 """
 function gate_coefficients end
 
