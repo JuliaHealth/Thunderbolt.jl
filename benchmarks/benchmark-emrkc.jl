@@ -106,6 +106,15 @@
 #   (apparent order 0.91) gives Δt ≲ 0.0016 -- an extrapolation off an unconverged reference, not a
 #   certification. The carried 0.0068 is what is timed, pending a deeper ladder.
 #
+# STS FAMILY COMPARISON (RKC1 vs RKL1 vs RKG1, outer=inner=family, Δt=0.05, measured via
+# `EMRKC_LV_FAMILIES=1`; `lv_family_comparison`): all three in band at Δt=0.05, no ladder fallback.
+#   family   s   m   host s/sim-ms   device s/sim-ms   rel err (own Float64 ref, coarse mesh)
+#   RKC1     1  28        53.11232           0.57388                             0.003255
+#   RKL1     1  39        72.32883           0.75003                             0.002809
+#   RKG1     1  52        95.19491           0.98767                             0.004172
+# RKC1 cheapest on both host (1.36x/1.79x behind RKL1/RKG1) and device (1.31x/1.72x); no accuracy
+#   trade favors the extra cost. Default (RKC1) stands.
+#
 # LV GEOMETRY: `inner_radius`/`outer_radius` fix the wall at exactly 6 mm (40 transmural elements at
 # h = 150 µm) and `apex_inner`/`apex_outer` set the long axis independently, breaking the generator's
 # default proportions on purpose: keeping both h and the transmural count at ~1e6 elements is only
@@ -348,8 +357,12 @@ end
 
 # The two algorithms under test, as a downstream user would spell them; linear solver tolerances are
 # the first EP tutorial's. `gates = :all` is EMRKC's own default, spelled out so the choice is visible.
-emrkc(::Type{VT}, ::Type{MT}) where {VT, MT} =
-    EMRKC(solution_vector_type = VT, system_matrix_type = MT, gates = :all)
+# `outer`/`inner` default to `RKC1(0.05)`, `EMRKC`'s own default for both -- so every call site that
+# does not pass them is byte-identical to before this kwarg existed. They are independently settable
+# because `EMRKC` already exposes them that way (`outer`, `inner` fields of
+# `ExponentialMultirateSTSAlgorithm`); see `lv_family_comparison` for the STS-family comparison arms.
+emrkc(::Type{VT}, ::Type{MT}; outer = RKC1(0.05), inner = RKC1(0.05)) where {VT, MT} =
+    EMRKC(solution_vector_type = VT, system_matrix_type = MT, gates = :all, outer = outer, inner = inner)
 
 """
 `reaction = :substepper` (the default) is the production shape: `AdaptiveForwardEulerSubstepper` with
@@ -731,6 +744,11 @@ function run_model(cfg::LVConfig)
     # `EMRKC_LV_COARSE=0` skips it when re-timing already-certified step sizes.
     get(ENV, "EMRKC_LV_COARSE", "1") == "1" && lv_certify_step_sizes(cfg)
 
+    # `EMRKC_LV_FAMILIES=1` runs the RKC1/RKL1/RKG1 comparison (see `lv_family_comparison`) instead of
+    # the normal single-family (RKC1) certify+time path below. Off by default: the standard LV run is
+    # unchanged.
+    get(ENV, "EMRKC_LV_FAMILIES", "0") == "1" && return lv_family_comparison(cfg)
+
     ############ the timed mesh ############
     # `EMRKC_LV_TIMED=0` skips the ~1e6-element setup and timing, for certification-only iteration.
     get(ENV, "EMRKC_LV_TIMED", "1") == "1" || return nothing
@@ -936,6 +954,115 @@ function lv_certify_splitting(
     end
     @printf("  (carried Δt = %.4f for comparison)\n", Δt_carried)
     return nothing
+end
+
+####################################
+## STS family comparison (RKC1 vs RKL1 vs RKG1)
+####################################
+
+# Fallback Δt ladder for a family whose error at `cfg.Δt_emrkc` misses `BAND`: the same points
+# `lv_certify_step_sizes`'s header block reports for RKC1 (0.20/0.10/0.05/0.025). Error decreases
+# monotonically with Δt on that ladder for RKC1; checked, not assumed, for RKL1/RKG1 too.
+const LV_FAMILY_LADDER = (0.2, 0.1, 0.05, 0.025)
+
+"""
+Self-referenced coarse-LV band check for one STS family (`outer = inner = fam`, matching how a
+downstream user would pick a family) at `Δt_default`, the LV's carried `Δt_emrkc`. Falls back through
+`LV_FAMILY_LADDER` for the largest in-band Δt if `Δt_default` itself misses `BAND`. Returns
+`(Δt, err, ref_err)`; errors if no ladder point lands in band.
+"""
+function lv_family_band_check(cform64, cu64, cform32, cu32, φc64, φc32, fam, label, Δt_default)
+    alg64 = emrkc(Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64}; outer = fam, inner = fam)
+    alg32 = emrkc(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32}; outer = fam, inner = fam)
+    φ_ref, ref_err = reference(cform64, cu64, alg64, φc64, LV_TEND)
+
+    function trial(Δt)
+        got = solve_to_end(cform32, cu32, alg32, Float32(Δt), Float32(LV_TEND))
+        φ = getvariable(got.u, φc32)
+        ok = got.sol.retcode == SciMLBase.ReturnCode.Success && all(isfinite, φ)
+        return ok ? relerr(φ, φ_ref) : NaN
+    end
+
+    err = trial(Δt_default)
+    in_band = isfinite(err) && err ≤ BAND
+    @printf("    %-6s Δt = %5.3f  rel err = %-9.4g %s  (reference own error %.4g)\n", label, Δt_default,
+            err, in_band ? "in band" : "OUT OF BAND", ref_err)
+    in_band && return (Δt_default, err, ref_err)
+
+    println("    ", label, ": Δt = ", Δt_default, " out of band -- falling back through ",
+            LV_FAMILY_LADDER)
+    best = nothing
+    for Δt in LV_FAMILY_LADDER
+        Δt == Δt_default && continue
+        e = trial(Δt)
+        e_in_band = isfinite(e) && e ≤ BAND
+        @printf("    %-6s Δt = %5.3f  rel err = %-9.4g %s\n", label, Δt, e, e_in_band ? "in band" : "")
+        e_in_band && (best === nothing || Δt > best[1]) && (best = (Δt, e))
+    end
+    best === nothing && error(
+        "$label: no point in $LV_FAMILY_LADDER lands inside BAND = $BAND against its own reference " *
+        "(reference own error $ref_err).",
+    )
+    return (best[1], best[2], ref_err)
+end
+
+"""
+RKC1 (the shipped default) vs RKL1 vs RKG1 on the LV emRKC arm, both outer and inner set to the same
+family. Certifies each family's Δt on the coarse mesh (`lv_family_band_check`), then times host and
+device arms at that Δt on the timed mesh. Opt-in via `EMRKC_LV_FAMILIES=1`.
+"""
+function lv_family_comparison(cfg::LVConfig)
+    println("\n-- STS family comparison: coarse-mesh band check --")
+    cmesh, cms = lv_geometry(cfg.coarse_base)
+    cform64 = lv_form(Float64, cmesh, cms)
+    cu64    = lv_u0(cform64, Float64)
+    cform32 = lv_form(Float32, cmesh, cms)
+    cu32    = lv_u0(cform32, Float32)
+    φc64, φc32 = solution_variable(cform64, :φₘ), solution_variable(cform32, :φₘ)
+
+    families = (("RKC1", RKC1(0.05)), ("RKL1", RKL1()), ("RKG1", RKG1()))
+    certified = NamedTuple[]
+    for (label, fam) in families
+        Δt, err, ref_err =
+            lv_family_band_check(cform64, cu64, cform32, cu32, φc64, φc32, fam, label, cfg.Δt_emrkc)
+        push!(certified, (; label, fam, Δt, err, ref_err))
+    end
+    cmesh = cms = cform64 = cform32 = cu64 = cu32 = nothing
+    GC.gc()
+
+    println("\n-- STS family comparison: timed mesh --")
+    t0 = time()
+    mesh, ms = lv_geometry(cfg.base)
+    ncells, nnodes = Ferrite.getncells(mesh.grid), Ferrite.getnnodes(mesh.grid)
+    form = lv_form(Float32, mesh, ms)
+    u32  = lv_u0(form, Float32)
+    ugpu = CuVector(u32)
+    φₘ32 = solution_variable(form, :φₘ)
+    @printf("  %d hexahedra, %d nodes, %d states, setup %.0f s\n",
+            ncells, nnodes, Thunderbolt.solution_size(form), time() - t0)
+
+    arms = Arm[]
+    for (; label, fam, Δt) in certified
+        alg_h = emrkc(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32}; outer = fam, inner = fam)
+        ah, φh = run_arm("host emRKC $label", "emRKC $label", form, u32, alg_h, Float32(Δt), φₘ32,
+                          nothing, false, false; steps = LV_STEPS)
+        push!(arms, ah)
+        @printf("  host RSS after %s host arm: %.2f GiB\n", label, host_rss_gib())
+
+        alg_d = emrkc(CuVector{Float32}, CuCSR; outer = fam, inner = fam)
+        ad, _ = run_arm("device emRKC $label", "emRKC $label", form, ugpu, alg_d, Float32(Δt), φₘ32,
+                         φh, true, false; steps = LV_STEPS)
+        push!(arms, ad)
+        @printf("  device memory after %s device arm: %.2f GiB of %.2f GiB\n",
+                label, gpu_used_gib(), CUDA.total_memory() / 1024^3)
+    end
+
+    report(arms)
+    println("\nband errors (own Float64 reference per family, coarse mesh):")
+    for (; label, Δt, err, ref_err) in certified
+        @printf("  %-6s Δt = %.4f  rel err = %.4g  (reference own error %.4g)\n", label, Δt, err, ref_err)
+    end
+    return arms, certified
 end
 
 function lv_time_arms(cfg::LVConfig)
