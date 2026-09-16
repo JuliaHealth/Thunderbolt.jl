@@ -161,14 +161,18 @@
 #
 # == LV-PCG2019 (1031400 hexahedra, 1065057 nodes, 7455399 states) ==
 # arm                    Δt/ms      s/step   steps/s  s / sim ms  lin solve   cg its    stages    clocks
-# host emRKC             0.0500    2.65125       0.4    53.02502       none        -  s=1 m=28      host
-# host splitting         0.0068    1.22868       0.8   180.68839        84%     47.0         -      host
-# device emRKC           0.0500    0.02844      35.2     0.56883       none        -  s=1 m=28 1905/6800
-# device splitting       0.0068    0.04946      20.2     7.27423        94%     46.6         - 1890/6800
-# host->device: emRKC 93.22x, splitting 24.84x  |  emRKC vs splitting: 3.41x host, 12.79x device
-# CG iterations/step at Δt=0.0068, host: 83.5 unpreconditioned, 47.0 with Jacobi (1.78x)
-# host-vs-device agreement over 5 steps, both Float32: emRKC 3.38e-6, splitting 1.13e-6
-# memory: host peak 3.85 GiB of the 8 GiB cgroup (52% headroom), device 0.72 GiB of 7.60 (90%)
+# host emRKC             0.0500    2.65296       0.4    53.05925       none        -  s=1 m=28      host
+# host splitting         0.0068    1.69589       0.6   249.39491        64%     47.0         -      host
+# device emRKC           0.0500    0.03048      32.8     0.60956       none        -  s=1 m=28 1905/6800
+# device splitting       0.0068    0.05269      19.0     7.74867        88%     46.6         - 1890/6800
+# host->device: emRKC 87.04x, splitting 32.19x  |  emRKC vs splitting: 4.70x host, 12.71x device
+# CG iterations/step at Δt=0.0068, host: 83.5 unpreconditioned, 47.0 with Jacobi (1.78x, unchanged --
+#   conditioning comes from the diffusion operator, not the reaction solver)
+# host-vs-device agreement over 5 steps, both Float32: emRKC 3.30e-6, splitting 1.08e-6
+# memory: host peak 3.80 GiB of the 8 GiB cgroup (52% headroom), device 0.94 GiB of 7.60 (88%)
+# splitting's reaction solver is now `AdaptiveForwardEulerSubstepper` (production-shaped) and host
+# assembly's element/quadrature evaluation now genuinely follows Float32 -- see RE-CERTIFICATION,
+# ROUND 2 below for what changed, what that cost, and what it did not fix.
 #
 # ITEM 1 -- APEX MESH QUALITY, measured rather than assumed. At matched ~1.03M-element resolution,
 # `generate_ideal_lv_mesh` (the fan+`hexahedralize` this file uses) gives true 12-edge-per-hexahedron
@@ -236,7 +240,9 @@
 # tissue is genuinely mixed, which is what the per-step cost needs to see: 57.1% of it above -40 mV
 # with φₘ ∈ [-85, 21] mV under emRKC, 77.1% and [-88, 23] mV under splitting.
 #
-# WHAT THE LV ADDS to the sheet picture: emRKC's advantage is larger here than anywhere else in this
+# WHAT THE LV ADDS to the sheet picture (ratios below are this section's own, superseded by
+# RE-CERTIFICATION, ROUND 2's 4.70x host / 12.71x device -- the structural reason stands, the numbers
+# moved when the reaction solver did): emRKC's advantage is larger here than anywhere else in this
 # file -- 3.41x host and 12.79x device -- for the same structural reason as before: both methods pay
 # for the apical slivers, but they pay differently. emRKC absorbs them into its stage count (m=28 at
 # the certified Δt=0.05, one extra SpMV per stage), while the splitting arm pays through BOTH a step
@@ -279,6 +285,52 @@
 # of an unconverged/biased reference (moving the arm closer to the truth moves it further from a
 # reference that is not at the truth), not a contradiction. splitting's step size and its "uncertified"
 # label both stand.
+#
+# RE-CERTIFICATION, ROUND 2 (this slice) -- the RE-CERTIFICATION block above timed splitting with
+# `ForwardEulerCellSolver`: one Euler update at the OUTER Δt, no internal error control at all. TB's own
+# production config (`docs/src/literate-tutorials/ep01_spiral-wave.jl`, `benchmarks/benchmark-gpu-split.jl`)
+# uses `AdaptiveForwardEulerSubstepper(reaction_threshold = 0.1)` instead (`substeps = 10`, both structs'
+# own default), which decouples reaction accuracy from the outer step -- comparing the OTHER shape against
+# emRKC was not a fair baseline. `splitting()`'s default is now the substepper, config exactly as above.
+#  * Order-anomaly verdict: the file's own `AdaptiveForwardEulerSubstepper` is a real, separate type from
+#    the `ForwardEulerCellSolver` the RE-CERTIFICATION block above actually timed -- it was never in that
+#    arm's code path, so it could not be the RE-CERTIFICATION block's apparent-order-0.49 floor. Mechanism
+#    check instead: on the same Δt-halving ladder (0.05/0.025/0.0125) with the substepper now in, the L2
+#    relative-error apparent order is 0.786 and the arrival-time (50% tissue active) apparent order is
+#    0.874 -- NOT the clean L2≈0.5/arrival≈1 split a pure front-phase-error metric artifact would give
+#    (that was a candidate hypothesis for the old 0.49, tested here, not confirmed). Both metrics moved
+#    together and both improved sharply over the old ForwardEulerCellSolver's 0.49: most of the earlier
+#    sub-linear order came from timing the non-production reaction shape, not from the L2 metric's own
+#    sensitivity. Reported as measured; no further mechanism claimed.
+#  * Certification: the ladder was extended one more level under budget (Δt = 0.00625, capped), reference
+#    own error 0.0348 -- still ~3.5x above BAND, NOT converged within the budget spent on it. None of
+#    0.05/0.025/0.0125 (Float32, production config) land in BAND against that reference (0.197/0.099/0.037).
+#    Richardson fallback off the finest pair (apparent order 0.91): Δt ≲ 0.0016 -- SMALLER, not larger,
+#    than the carried 0.0068, and explicitly an extrapolation off an unconverged reference, not a
+#    certification. Splitting's Δt stays UNCERTIFIED; the file continues to time the carried Δt = 0.0068
+#    pending a real certification (deeper ladder, out of this slice's budget).
+#  * What this means for the RESULTS block above: the substepper's extra reaction sub-evaluations are
+#    priced in (host splitting: 1.696 vs 1.229 s/step, +38%; lin-solve share fell from 84% to 64% of the
+#    step because the OTHER side got more expensive, not because the solve did) WITHOUT its benefit -- a
+#    possibly larger certified Δt -- because certification did not converge. So host emRKC-vs-splitting
+#    grew again, 4.70x (was 3.41x with the old reaction shape); device is ~flat, 12.71x (was 12.79x). If a
+#    real certification eventually lands on a larger Δt than 0.0068, this ratio should fall; the Richardson
+#    fallback above points the other way (smaller), but is too uncertain to act on. Reported as measured.
+#
+# FLOAT32 HOST ASSEMBLY (this slice, scope addition): `ep01_form`/`lv_form` now pass an explicit
+# `qrcs = Dict(:φₘ => QuadratureRuleCollection(T, 2))` to `FiniteElementDiscretization` -- left at its
+# default, that quadrature collection is `Float64` regardless of `T` (FerriteOperators.jl's own contract:
+# `QuadratureRuleCollection`'s `T` is the precision ELEMENT evaluation runs in, independent of the
+# `value_type` the device accumulates the global system in), so shape-function and coefficient sampling
+# during assembly was silently running in double precision for every "Float32" arm -- host AND device,
+# since the sheet/LV `form`/`cform32` object is SHARED between them (`form_dev = form32`, `lv_time_arms`'s
+# single `form`). Both now genuinely evaluate in `T`. This does NOT change the global M/K `SparseMatrixCSC`
+# storage dtype: `allocate_matrix` takes its value type from the assembly strategy
+# (`FerriteOperators.jl`'s `default_strategy()`), a separate mechanism this slice did not touch -- so M/K
+# are still allocated Float64 regardless of `T`, confirmed by memory: host peak moved 3.85 -> 3.80 GiB, not
+# the ~875 MiB/arm (ITEM 3 below) that halving M/K storage would give. Making M/K's own storage follow `T`
+# is a `FerriteOperators.jl`-side follow-up, out of this slice's scope. Device memory rose slightly
+# (0.72 -> 0.94-0.93 GiB); not investigated further within budget.
 #
 # ITEM 3 -- MEMORY ATTRIBUTION (host, measured after setup of all four arms on this mesh, before
 # timing; `Base.summarysize` per retained object class; full per-arm table kept outside this file).
@@ -496,17 +548,24 @@ const MODEL_CONFIGS = String[strip(m) for m in split(get(ENV, "EMRKC_MODELS", "F
 function ep01_form(::Type{T}, cfg::ModelConfig) where {T}
     mesh = generate_mesh(Quadrilateral, (N, N), Vec{2}((0.0, 0.0)), Vec{2}((cfg.L, cfg.L)))
     model = MonodomainModel(
-        ConstantCoefficient(cfg.Cₘ),
-        ConstantCoefficient(cfg.χ),
-        ConstantCoefficient(cfg.κ),
+        ConstantCoefficient(T(cfg.Cₘ)),
+        ConstantCoefficient(T(cfg.χ)),
+        ConstantCoefficient(convert(SymmetricTensor{2, 2, T}, cfg.κ)),
         NoStimulationProtocol(),
         cfg.ion(T),
         CartesianCoordinateSystem(mesh),
         :φₘ, :s,
     )
+    # `qrcs`: the quadrature (hence element-evaluation) precision follows `T` explicitly -- left at the
+    # `FiniteElementDiscretization` default it is always `Float64` regardless of `T`, which is what kept
+    # the "Float32" host/device arms assembling in double precision (see the DEVICE PRECISION /
+    # Float32-host-assembly header notes).
     return semidiscretize(
         ReactionDiffusionSplit(model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+        FiniteElementDiscretization(
+            Dict(:φₘ => LagrangeCollection{1}());
+            qrcs = Dict(:φₘ => QuadratureRuleCollection(T, 2)),
+        ),
         mesh,
     )
 end
@@ -523,20 +582,36 @@ end
 emrkc(::Type{VT}, ::Type{MT}) where {VT, MT} =
     EMRKC(solution_vector_type = VT, system_matrix_type = MT, gates = :all)
 
+"""
+`reaction = :substepper` (the default) is the production shape: `AdaptiveForwardEulerSubstepper`
+with `reaction_threshold = 0.1` and the struct's own default `substeps = 10`, exactly what the ep01
+tutorial (`docs/src/literate-tutorials/ep01_spiral-wave.jl`) and `benchmarks/benchmark-gpu-split.jl`
+carry. Comparing splitting's plain-`ForwardEulerCellSolver` reaction (one Euler update at the *outer*
+Δt, no internal error control) against emRKC was not the production config -- the substepper decouples
+reaction stability/accuracy from the outer step the way a user's config actually would.
+`reaction = :plain` keeps the old single-step Euler reaction, for a labeled secondary comparison only.
+"""
 function splitting(
     ::Type{VT}, ::Type{MT}; atol = 1.0e-6, rtol = 1.0e-5, jacobi = true,
+    reaction = :substepper, reaction_threshold = 0.1, substeps = 10,
 ) where {VT, MT}
     T = eltype(VT)
     cg = jacobi ?
         KrylovJL_CG(atol = T(atol), rtol = T(rtol), precs = jacobi_precs) :
         KrylovJL_CG(atol = T(atol), rtol = T(rtol))
+    cell_solver = reaction === :substepper ?
+        AdaptiveForwardEulerSubstepper(
+            solution_vector_type = VT, reaction_threshold = T(reaction_threshold), substeps = substeps,
+        ) :
+        reaction === :plain ? ForwardEulerCellSolver(solution_vector_type = VT) :
+        error("splitting: unknown reaction = $reaction (:substepper or :plain)")
     return LieTrotterGodunov((
         BackwardEulerSolver(
             solution_vector_type = VT,
             system_matrix_type   = MT,
             inner_solver         = cg,
         ),
-        ForwardEulerCellSolver(solution_vector_type = VT),
+        cell_solver,
     ))
 end
 
@@ -854,10 +929,18 @@ in `κ/(Cₘχ)`, so the disagreement is invisible until someone gives them diff
 does. Struct order it is.
 """
 function lv_form(::Type{T}, mesh, microstructure; κ = nothing) where {T}
+    # σ follows `T` (genuine Float32 assembly, see `ep01_form`'s qrcs note); the microstructure's own
+    # f/s/n fields do not -- it is built once in Float64 and SHARED across every arm regardless of its
+    # precision (ITEM 3's memory attribution), so `SpectralTensorCoefficient(microstructure, ...)`
+    # still combines a Float64 field sample with a `T`-typed σ. That one Float64 factor per quadrature
+    # point promotes the diffusion tensor's own assembly back to Float64 even under `T = Float32`; the
+    # rest of the assembly (mass, reaction, σ's own scalars) is not affected. Making the microstructure
+    # itself precision-parametric would mean building and holding it twice (once per precision) instead
+    # of once shared -- a bigger, separately-scoped change, not made here.
     model = MonodomainModel(
-        ConstantCoefficient(LV_χ),
-        ConstantCoefficient(LV_Cₘ),
-        κ === nothing ? SpectralTensorCoefficient(microstructure, ConstantCoefficient(LV_σ)) : κ,
+        ConstantCoefficient(T(LV_χ)),
+        ConstantCoefficient(T(LV_Cₘ)),
+        κ === nothing ? SpectralTensorCoefficient(microstructure, ConstantCoefficient(T.(LV_σ))) : κ,
         NoStimulationProtocol(),
         Thunderbolt.ParametrizedPCG2019Model{T}(),
         CartesianCoordinateSystem(mesh),
@@ -865,7 +948,10 @@ function lv_form(::Type{T}, mesh, microstructure; κ = nothing) where {T}
     )
     return semidiscretize(
         ReactionDiffusionSplit(model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+        FiniteElementDiscretization(
+            Dict(:φₘ => LagrangeCollection{1}());
+            qrcs = Dict(:φₘ => QuadratureRuleCollection(T, 2)),
+        ),
         mesh,
     )
 end
@@ -901,6 +987,9 @@ function run_model(cfg::LVConfig)
     get(ENV, "EMRKC_LV_COARSE", "1") == "1" && lv_certify_step_sizes(cfg)
 
     ############ the timed mesh ############
+    # `EMRKC_LV_TIMED=0` skips the ~1e6-element setup+timing entirely, for certification-only
+    # iteration where the expensive mesh is not needed yet. The default runs it.
+    get(ENV, "EMRKC_LV_TIMED", "1") == "1" || return nothing
     return lv_time_arms(cfg)
 end
 
@@ -935,40 +1024,180 @@ function lv_certify_step_sizes(cfg::LVConfig)
 
     println("\n  self-referenced convergence at the carried step sizes (reference Float64, arms Float32):")
     cpu64_emrkc = emrkc(Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64})
-    cpu64_split = splitting(Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64};
-                            atol = 1.0e-12, rtol = 1.0e-10)
-    cpu32_split = splitting(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
-    for (name, Δt, ref_alg, arm_alg) in (
-        ("emRKC", cfg.Δt_emrkc, cpu64_emrkc, alg32),
-        ("splitting", cfg.Δt_split, cpu64_split, cpu32_split),
-    )
-        φ_ref, ref_err = reference(cform64, cu64, ref_alg, φc64, LV_TEND)
-        got = solve_to_end(cform32, cu32, arm_alg, Float32(Δt), Float32(LV_TEND))
-        φ = getvariable(got.u, φc32)
-        ok = got.sol.retcode == SciMLBase.ReturnCode.Success && all(isfinite, φ)
-        err = ok ? relerr(φ, φ_ref) : NaN
-        frac, lo, hi = ok ? activation_state(φ) : (NaN, NaN, NaN)
-        @printf("    %-10s Δt = %5.3f  rel err = %-9.4g %-8s\n",
-                name, Δt, err, ok ? (err ≤ BAND ? "in band" : "OUT OF BAND") : "FAILED")
-        # `ref_err` is `relerr(u(2·DTREF), u(DTREF))`, which for a first order method is also the
-        # reference's own error. Once that reaches `BAND` the reference cannot certify anything -- the
-        # arm is then being compared against something no more accurate than itself -- so say so rather
-        # than print an error that looks like a verdict. It doubles as a Richardson estimate of the
-        # step size that would be needed: E(Δt) ≈ (ref_err/DTREF)·Δt.
-        if ref_err ≥ BAND
-            @printf("               reference UNCONVERGED (own error %.3g ≥ band): the number above is\n",
-                    ref_err)
-            @printf("               not a verdict. Richardson: E(Δt) ≈ %.3g·Δt, so Δt ≲ %.4f for the band.\n",
-                    ref_err / DTREF, BAND * DTREF / ref_err)
-        else
-            @printf("               reference's own error %.3g\n", ref_err)
-        end
-        @printf("               t = %.0f ms: %.1f%% of tissue above -40 mV, φₘ ∈ [%.1f, %.1f] mV\n",
-                LV_TEND, 100frac, lo, hi)
+    φ_ref, ref_err = reference(cform64, cu64, cpu64_emrkc, φc64, LV_TEND)
+    got = solve_to_end(cform32, cu32, alg32, Float32(cfg.Δt_emrkc), Float32(LV_TEND))
+    φ = getvariable(got.u, φc32)
+    ok = got.sol.retcode == SciMLBase.ReturnCode.Success && all(isfinite, φ)
+    err = ok ? relerr(φ, φ_ref) : NaN
+    frac, lo, hi = ok ? activation_state(φ) : (NaN, NaN, NaN)
+    @printf("    %-10s Δt = %5.3f  rel err = %-9.4g %-8s\n",
+            "emRKC", cfg.Δt_emrkc, err, ok ? (err ≤ BAND ? "in band" : "OUT OF BAND") : "FAILED")
+    if ref_err ≥ BAND
+        @printf("               reference UNCONVERGED (own error %.3g ≥ band): the number above is\n",
+                ref_err)
+        @printf("               not a verdict. Richardson: E(Δt) ≈ %.3g·Δt, so Δt ≲ %.4f for the band.\n",
+                ref_err / DTREF, BAND * DTREF / ref_err)
+    else
+        @printf("               reference's own error %.3g\n", ref_err)
     end
+    @printf("               t = %.0f ms: %.1f%% of tissue above -40 mV, φₘ ∈ [%.1f, %.1f] mV\n",
+            LV_TEND, 100frac, lo, hi)
+    φ_ref = φ = nothing
+
+    lv_certify_splitting(cform64, cu64, cform32, cu32, φc64, φc32, cfg.Δt_split)
+
     cmesh = cms = cform64 = cform32 = cu64 = cu32 = nothing
     GC.gc()
     @printf("  host RSS after releasing the coarse mesh: %.2f GiB\n", host_rss_gib())
+    return nothing
+end
+
+####################################
+## Splitting certification: mechanism check + Δt-refinement ladder
+####################################
+
+"Fraction of tissue above -40 mV, the same threshold `activation_state` uses."
+active_fraction(φ) = count(>(-40.0), Vector(φ)) / length(φ)
+
+"""
+Solve to `tend`, tracking the active-tissue fraction every real step. Returns the linearly-interpolated
+time it first reaches `target` (`nothing` if it never does over `[0, tend]`) and the final φₘ -- one
+pass gives both the arrival time and the state the existing L2 metric uses, so the mechanism check and
+the certification reference share the same runs rather than doubling them.
+"""
+function solve_with_arrival(form, u0, alg, Δt, φₘ, tend; target = 0.5)
+    integrator = build(form, copy(u0), alg, Δt, oftype(Δt, tend))
+    t_prev = integrator.t
+    f_prev = active_fraction(getvariable(integrator.u, φₘ))
+    arrival = f_prev ≥ target ? t_prev : nothing
+    while integrator.t < tend
+        step!(integrator)
+        if arrival === nothing
+            f_now = active_fraction(getvariable(integrator.u, φₘ))
+            f_now ≥ target && (arrival = t_prev + (target - f_prev) / (f_now - f_prev) * (integrator.t - t_prev))
+            t_prev, f_prev = integrator.t, f_now
+        end
+    end
+    return arrival, copy(getvariable(Vector(integrator.u), φₘ))
+end
+
+"log2 of the ratio between two successive Δt-halving errors; NaN where that is not meaningful."
+apparent_order(e1, e2) = (e1 === nothing || e2 === nothing || e1 ≤ 0 || e2 ≤ 0) ? NaN : log2(e1 / e2)
+
+"""
+Mechanism check for the LV splitting arm's previously-measured sub-linear apparent convergence order
+(~0.49): runs a Δt-halving ladder and measures the apparent order of two different error metrics on the
+SAME sequence of solves -- the existing final-time L2 relative error, and the shift in arrival time (the
+first crossing of 50% active tissue). For a traveling front, final-time L2 error is dominated by the
+front's phase (timing) offset once that offset exceeds the front width; a first-order-accurate phase
+error then shows as an L2 order of ~0.5 (space-time relL2 between phase-shifted profiles scales like
+sqrt(shift)), even though the underlying time integration is first order. So: arrival order ≈ 1 with L2
+order ≈ 0.5 means the metric sits in that regime, not that the integrator is sub-linear; anything else
+is reported as measured, not reinterpreted into that story.
+
+Runs the production-shaped splitting arm (`reaction = :substepper`, the `splitting()` default) in
+Float64 with tight CG tolerance -- the same runs the certification reference is built from.
+"""
+function lv_mechanism_check(cform64, cu64, φc64, alg, Δts, tend)
+    println("\n  mechanism check for splitting's apparent order (Float64, reaction = :substepper):")
+    arrivals, φs = Float64[], Any[]
+    for Δt in Δts
+        arrival, φ = solve_with_arrival(cform64, cu64, alg, Δt, φc64, tend)
+        push!(arrivals, something(arrival, NaN))
+        push!(φs, φ)
+        @printf("    Δt = %6.4f  arrival(50%% active) = %s ms\n", Δt,
+                arrival === nothing ? "never" : @sprintf("%.4f", arrival))
+    end
+    l2_errs    = [relerr(φs[i], φs[i + 1]) for i = 1:(length(φs) - 1)]
+    arr_shifts = [abs(arrivals[i] - arrivals[i + 1]) for i = 1:(length(arrivals) - 1)]
+    for i in eachindex(l2_errs)
+        @printf("    Δt %.4f -> %.4f : L2 rel err %.4g, arrival shift %.4g ms\n",
+                Δts[i], Δts[i + 1], l2_errs[i], arr_shifts[i])
+    end
+    l2_order  = length(l2_errs)    >= 2 ? apparent_order(l2_errs[1], l2_errs[2])       : NaN
+    arr_order = length(arr_shifts) >= 2 ? apparent_order(arr_shifts[1], arr_shifts[2]) : NaN
+    @printf("    apparent order: L2 = %.3g, arrival-time = %.3g  %s\n", l2_order, arr_order,
+            (isfinite(l2_order) && isfinite(arr_order) && l2_order < 0.7 && arr_order > 0.8) ?
+            "-- consistent with the sqrt-of-phase-error regime" : "")
+    return (; Δts, l2_errs, arr_shifts, l2_order, arr_order, φs)
+end
+
+"""
+Certifies the production-shaped (`reaction = :substepper`) splitting arm's Δt on the coarse mesh: runs
+the mechanism-check ladder to build a Float64 reference, extends it (up to `max_extra` further
+halvings, budget-capped) using the fitted L2 order to predict how deep convergence needs, then tests
+`candidates` in the actual Float32/production configuration against the best available reference and
+reports the largest one whose error stays inside `BAND`. Always also reports the plain Richardson bound
+off the ladder's own data, as a stated fallback if the reference never converges within budget.
+"""
+function lv_certify_splitting(
+    cform64, cu64, cform32, cu32, φc64, φc32, Δt_carried;
+    ladder = (0.05, 0.025, 0.0125), candidates = (0.05, 0.025, 0.0125), max_extra = 1,
+    target_margin = 5.0,
+)
+    alg64 = splitting(Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64};
+                       atol = 1.0e-12, rtol = 1.0e-10)
+    mech = lv_mechanism_check(cform64, cu64, φc64, alg64, ladder, LV_TEND)
+    Δts, φs, l2_errs = collect(mech.Δts), mech.φs, mech.l2_errs
+
+    # Extend the ladder while the fitted order predicts it is worth it and the budget (`max_extra`
+    # further halvings) allows -- a non-positive/non-finite order means the ladder is not visibly
+    # converging, so extending it blindly is not justified; stop and fall back to Richardson instead.
+    extra = 0
+    while extra < max_extra && isfinite(mech.l2_order) && mech.l2_order > 0.05 &&
+        l2_errs[end] > BAND / target_margin
+        Δt_next = last(Δts) / 2
+        arrival, φ = solve_with_arrival(cform64, cu64, alg64, Δt_next, φc64, LV_TEND)
+        push!(Δts, Δt_next)
+        push!(φs, φ)
+        push!(l2_errs, relerr(φs[end - 1], φ))
+        @printf("    extended: Δt %.4f -> %.4f : L2 rel err %.4g\n", Δts[end - 1], Δts[end], l2_errs[end])
+        extra += 1
+    end
+    ref_err = l2_errs[end]
+    φ_ref   = φs[end]
+    converged = ref_err < BAND / target_margin
+    @printf("  reference after %d level(s) (finest Δt = %.5f): own error %.4g -- %s\n",
+            length(Δts), Δts[end], ref_err, converged ? "converged" : "NOT converged within budget")
+
+    println("\n  certifying splitting (Float32, production config, reaction = :substepper):")
+    best = nothing
+    for Δt in candidates
+        arm = splitting(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
+        got = solve_to_end(cform32, cu32, arm, Float32(Δt), Float32(LV_TEND))
+        φ = getvariable(got.u, φc32)
+        ok = got.sol.retcode == SciMLBase.ReturnCode.Success && all(isfinite, φ)
+        err = ok ? relerr(φ, φ_ref) : NaN
+        @printf("    Δt = %6.4f  rel err vs reference = %-10.4g %s\n", Δt, err,
+                ok ? (err ≤ BAND ? "in band" : "") : "FAILED")
+        ok && err ≤ BAND && (best === nothing || Δt > best[1]) && (best = (Δt, err))
+    end
+    if converged
+        if best === nothing
+            println("  NO candidate Δt in ", candidates, " lands inside BAND against the converged reference.")
+        else
+            @printf("  CERTIFIED: Δt = %.4f, err = %.4g against a converged reference (own error %.4g)\n",
+                    best[1], best[2], ref_err)
+        end
+    else
+        println("  Reference did not converge within budget -- the candidate table above is informative,",
+                " not a certification.")
+    end
+
+    # Fallback stated unconditionally, per the triage note: a Richardson bound off the arm's own ladder,
+    # labeled as such, usable if the reference above never converges. Refit the order from the finest
+    # available pair (more local than `mech.l2_order`, which is fixed to the first two ladder levels);
+    # `l2_errs[end] ≈ E(Δts[end])` under E(Δt) ≈ C·Δt^p, so E(Δt) = BAND at Δt = Δts[end]·(BAND/E)^(1/p).
+    p = length(l2_errs) >= 2 ? apparent_order(l2_errs[end - 1], l2_errs[end]) : NaN
+    if isfinite(p) && p > 0
+        richardson_dt = Δts[end] * (BAND / l2_errs[end])^(1 / p)
+        @printf("  Richardson-off-the-substepper-arm fallback: apparent order %.3g (finest pair)\n", p)
+        @printf("               E(Δt) ≈ C·Δt^%.3g with E(%.4f) = %.4g => Δt ≲ %.4f\n",
+                p, Δts[end], l2_errs[end], richardson_dt)
+    else
+        @printf("  Richardson fallback unavailable: apparent order %.3g is not usable for extrapolation.\n", p)
+    end
+    @printf("  (carried Δt = %.4f for comparison)\n", Δt_carried)
     return nothing
 end
 
