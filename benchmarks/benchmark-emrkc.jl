@@ -159,60 +159,52 @@
 # emRKC sweep: Δt=0.05/0.10/0.20 in band (err 0.00099/0.00139/0.00157), Δt=0.40 err=0.020 (out);
 #   0.20ms selected, inside the 0.2-0.4ms window the 0D probes anticipated
 #
-# == LV-PCG2019 (1026600 hexahedra, 1081605 nodes, 7571235 states) ==
+# == LV-PCG2019 (1031400 hexahedra, 1065057 nodes, 7455399 states) ==
 # arm                    Δt/ms      s/step   steps/s  s / sim ms  lin solve   cg its    stages    clocks
-# host emRKC             0.05      3.00537       0.3    60.10741       none        -  s=1 m=32      host
-# host splitting         0.01      1.64266       0.6   164.26647        88%     63.4         -      host
-# device emRKC           0.05      0.03175      31.5     0.63495       none        -  s=1 m=32 1905/6800
-# device splitting       0.01      0.06584      15.2     6.58447        97%     62.8         - 1890/6800
-# host->device: emRKC 94.66x, splitting 24.95x  |  emRKC vs splitting: 2.73x host, 10.37x device
-# CG iterations/step at Δt=0.01, host: 91.2 unpreconditioned, 63.4 with Jacobi (at Δt=0.10 it is
-#   329.8 unpreconditioned -> 160.0; the preconditioner is worth less at the smaller step because
-#   M - Δt K is already close to M there)
-# host-vs-device agreement over 5 steps, both Float32: emRKC 1.22e-5, splitting 4.40e-6
-# memory: host peak 3.82 GiB of the 8 GiB cgroup (52% headroom), device 0.73 GiB of 7.60 (90%)
+# host emRKC             0.0500    2.65125       0.4    53.02502       none        -  s=1 m=28      host
+# host splitting         0.0068    1.22868       0.8   180.68839        84%     47.0         -      host
+# device emRKC           0.0500    0.02844      35.2     0.56883       none        -  s=1 m=28 1905/6800
+# device splitting       0.0068    0.04946      20.2     7.27423        94%     46.6         - 1890/6800
+# host->device: emRKC 93.22x, splitting 24.84x  |  emRKC vs splitting: 3.41x host, 12.79x device
+# CG iterations/step at Δt=0.0068, host: 83.5 unpreconditioned, 47.0 with Jacobi (1.78x)
+# host-vs-device agreement over 5 steps, both Float32: emRKC 3.38e-6, splitting 1.13e-6
+# memory: host peak 3.85 GiB of the 8 GiB cgroup (52% headroom), device 0.72 GiB of 7.60 (90%)
 #
-# THE LV STEP SIZES ARE THE LV'S OWN, AND THAT IS THE MAIN RESULT OF THIS CONFIGURATION. The plan was
-# to carry the sheet's (emRKC 0.20 / splitting 0.10) on the grounds that they are reaction-limited and
-# therefore mesh independent, and to confirm that on a coarse LV of the same physics. The confirmation
-# failed, in both arms:
-#  * emRKC at Δt = 0.20 lands at 0.0715, seven times outside the band, against a reference whose own
-#    error is 0.00169 -- so that is a real verdict, not an artifact of the reference. Sweeping down:
-#    0.20 -> 0.0715, 0.10 -> 0.0155, 0.05 -> 0.00176 (in band, selected), 0.025 -> 0.000212. A factor
-#    of four below the sheet's.
-#  * splitting is worse and cannot be certified here at all. Its own reference is unconverged --
-#    `relerr(u(0.05), u(0.025))` is 0.0241, already outside the band the reference is meant to
-#    certify against -- so the arm's measured 0.0367 at Δt = 0.10 is not interpretable as a verdict.
-#    What that number *is* good for is a Richardson estimate: E(Δt) ≈ 0.96·Δt, giving Δt ≲ 0.010 for
-#    the band. The same estimator applied to emRKC predicts 0.148 where the direct sweep says 0.05, so
-#    it runs about 3x optimistic here; 0.010 should be read as an upper bound. The timed splitting arm
-#    runs at 0.01 on that basis, and unlike emRKC's 0.05 it is an ESTIMATED step size, not a certified
-#    one. Certifying it directly needs a reference at DTREF ≲ 0.003, which is ~3 hours of coarse-mesh
-#    Float64 stepping under this file's capped profile and was not spent.
-# Why the sheet's step sizes do not transfer: they were selected against a 2D planar front in a
-# domain where the diffusion is isotropic and every element is the same size. Neither holds here. The
-# apex fan's smallest edge is 3.2 µm against a 160 µm median -- a factor of fifty -- and ρS ∝ D/h², so
-# a handful of apical slivers set the diffusive spectral radius for the whole mesh. That is visible
-# directly in the stage count: m = 32 at Δt = 0.05, and m = 64 at the sheet's 0.20. It is visible again
-# in the conditioning, 329.8 unpreconditioned CG iterations per step at Δt = 0.10 against the sheet's
-# 114.8. `generate_ideal_lv_mesh_hex` would trade those slivers for an O-grid cap, at the cost of
-# degrading the rotational coordinate over the apical eighth -- which is where this protocol
-# stimulates, so it is the wrong trade here, but it is the knob to reach for if the stage count is
-# what hurts.
+# ITEM 1 -- APEX MESH QUALITY, measured rather than assumed. At matched ~1.03M-element resolution,
+# `generate_ideal_lv_mesh` (the fan+`hexahedralize` this file uses) gives true 12-edge-per-hexahedron
+# min/median/max 3.18/134.8/188.7 µm (median/min = 42). `generate_ideal_lv_mesh_hex`'s all-hex O-grid
+# cap, at the SAME target dimensions and a matched total element count (nc=348, nr=20, nl=125; nc has
+# to be divisible by 4; `septum_flatness`/`axis_ratio`/`eccentricity` zeroed to match the fan's forced
+# rotational symmetry, isolating the apex-meshing comparison from an unrelated shape change), gives
+# 1.41/132.3/221.7 µm (median/min = 94): its minimum edge is SMALLER, not larger, and its median/min
+# spread is more than double the fan's. A second probe at the fan's own pre-`hexahedralize` resolution
+# (176, 10, 73) locates the defect inside the O-grid CORE specifically: core-only edges run
+# 4.75/7.63/197.7 µm, a 26x spread WITHIN the core alone, so this is not one unlucky corner cell but a
+# structural property of the core's transfinite-interpolation mapping at this resolution. Per the
+# decision rule (switch only if the O-grid's minimum edge is materially better), the answer is: stay
+# on `generate_ideal_lv_mesh`. The alternative does not fix the apex, it relocates a same-order sliver
+# into the core and gives it a worse median/min spread. Mesh quality goes back to Dennis as a
+# `generate_ideal_lv_mesh_hex` core-mapping improvement task, not a config change here. (Note: earlier
+# runs of this file quoted a 160 µm median from an all-pairwise-node-distance proxy that folds in face
+# and body diagonals; the true-edge figures above are a methodology correction, not a mesh change --
+# both are measured on the OLD geometry for this comparison.)
 #
-# GEOMETRY, and where it departs from the brief. `generate_ideal_lv_mesh(174, 10, 73)` at the
-# generator's default proportions scaled by 9.88 mm, then `hexahedralize` -- which both halves h and
-# makes every cell a hexahedron, so the mesh is built at 2h and refined into the target. Equatorial
-# wall 2.96 mm over 20 elements (0.148 mm each), median edge 0.160 mm, wall volume 2.436 mL, mean cell
-# volume 2.37e-3 mm³ (h_eff 0.133 mm -- below the nominal 150 µm because the polar topology packs
-# elements toward the apex). The brief asked for h ≈ 150 µm AND ~1e6 elements AND a 6 mm wall at 40
-# elements transmural; with the generator's proportions preserved those are mutually exclusive. Wall
-# volume scales as s³, so a 6 mm wall means s = 20 mm and ~8.5e6 elements -- 8.3x this mesh, which
-# extrapolates to ~21 GiB of host RSS against an 8 GiB cgroup, and ~6.1 GiB of the card's 7.6, i.e.
-# under the 25% headroom floor. Element count was the free variable per the fallback rule, so h and
-# the proportions were kept and the ventricle is the size that 1e6 elements at 150 µm buys. Note that
-# memory never became the binding constraint at the size actually run (52% / 90% headroom): the
-# arithmetic did.
+# ITEM 2 -- CHAMBER RE-PROPORTIONING (Dennis's ruling, binding): keep h ≈ 150 µm AND full transmural
+# resolution (wall 6 mm ≈ 40 elements) and reach ~1e6 elements by shrinking the OTHER dimensions
+# instead. `generate_ideal_lv_mesh`'s four radii are no longer tied to one scale: `inner_radius`/
+# `outer_radius` fix the wall at exactly `outer_radius = inner_radius + 6` mm; `apex_inner`/
+# `apex_outer` set the long axis independently -- breaking the generator's default 0.7:1.0:1.3:1.5
+# proportions on purpose. Final dimensions: endocardial equatorial radius 3.112 mm (cavity, shrunk
+# from 6.916 mm), epicardial equatorial radius 9.112 mm (wall 6.000 mm exactly), apex_inner/apex_outer
+# 5.780/6.669 mm, apex-base length (outer surface) 8.73 mm (shrunk from 19.39 mm). base = (191, 20, 33)
+# before `hexahedralize`, coarse_base = (96, 10, 17). Result: 1,031,400 hexahedra, 1,065,057 nodes,
+# 7,455,399 states (7 states/node, PCG2019), 40 transmural elements at h = 150 µm exactly; median edge
+# (true-edge measure) 126.0 µm, wall volume 1.501 mL, mean cell volume 1.455e-3 mm³ (h_eff 113.3 µm --
+# the same "polar topology packs elements toward the apex" shortfall as before). The chamber is a
+# thick-walled, small, non-physiological ventricle by design -- the accepted trade for keeping h and
+# the transmural count. Memory never became the binding constraint here either (52% / 90% headroom on
+# the timed mesh, see MEMORY below): the arithmetic (this time shrinking the OTHER dimensions) is what
+# got it to ~1e6.
 #
 # DIFFUSION is genuinely orthotropic, not transversely isotropic: `SpectralTensorCoefficient` over an
 # `OrthotropicMicrostructureModel` built by `create_simple_microstructure_model` on the
@@ -227,7 +219,9 @@
 # m/s), and brackets it. Measured tissue data throughout, not a fit to this benchmark.
 # That the microstructure actually reaches the assembly is checked rather than assumed, on the coarse
 # mesh, by running the identical problem with a trace-matched isotropic tensor: the two disagree by
-# 0.214 after 20 steps. A microstructure that never arrived would agree to round-off.
+# 0.169 after 20 steps (0.214 on the previous mesh -- different geometry integrates differently; both
+# are comfortably above the round-off floor). A microstructure that never arrived would agree to
+# round-off.
 #
 # DEVICE PATH for the LV is host-assembled and mirrored, not device-assembled. The field-backed
 # `OrthotropicMicrostructureModel` stores its f/s/n vectors in host `ElementwiseData` with no adapt
@@ -235,33 +229,80 @@
 # and `MirroredBilinearOperator` uploads the nonzeros, which is a supported configuration and is what
 # the sheet device arms use too. Assembly is setup-only at fixed Δt, so this costs the timed arms
 # nothing. What it means for the numbers: the device arms solve with exactly the host's orthotropic
-# matrix, and the host-vs-device agreement above (1.2e-5 / 4.4e-6) is what says the upload is intact.
+# matrix, and the host-vs-device agreement above (3.4e-6 / 1.1e-6) is what says the upload is intact.
 #
 # PROTOCOL: an apex S1 written as an initial condition -- the apical 12% of the long axis raised to
 # 20 mV, the rest at PCG2019's resting default -- over a 15 ms window, no full beat. At 15 ms the
-# tissue is genuinely mixed, which is what the per-step cost needs to see: 41.5% of it above -40 mV
-# with φₘ ∈ [-85, 22] mV under emRKC, 53.8% and [-87, 33] mV under splitting.
+# tissue is genuinely mixed, which is what the per-step cost needs to see: 57.1% of it above -40 mV
+# with φₘ ∈ [-85, 21] mV under emRKC, 77.1% and [-88, 23] mV under splitting.
 #
 # WHAT THE LV ADDS to the sheet picture: emRKC's advantage is larger here than anywhere else in this
-# file -- 2.73x host and 10.37x device -- and for a reason the sheet cannot show. Both methods pay for
-# the apical slivers, but they pay differently: emRKC absorbs them into its stage count, which grows
-# as sqrt(Δt·ρS) and costs one extra SpMV per stage, while the splitting arm pays through a step size
-# five times smaller AND a linear solve that is 88-97% of its step. The device column is where that
-# compounds: a 63-iteration CG chain of dependent SpMVs and reductions maps onto this card far worse
-# than emRKC's 32 independent stabilized stages, hence 10.37x against 2.73x on the host.
+# file -- 3.41x host and 12.79x device -- for the same structural reason as before: both methods pay
+# for the apical slivers, but they pay differently. emRKC absorbs them into its stage count (m=28 at
+# the certified Δt=0.05, one extra SpMV per stage), while the splitting arm pays through BOTH a step
+# size about 7x smaller than emRKC's AND a linear solve that is 84-94% of its step. The device column
+# compounds it further: a 47-iteration CG chain of dependent SpMVs and reductions maps onto this card
+# far worse than emRKC's 28 independent stabilized stages, hence 12.79x against 3.41x on the host.
 #
-# WHAT MOVED SINCE THE PREVIOUS RUN of this file, and why -- the device arms and the splitting arms
-# both changed underneath, so none of the four PCG2019 numbers is comparable to its predecessor:
-#  * device emRKC is the clean read on the `Float32` fix alone, because emRKC has no linear solve and
-#    the preconditioner cannot touch it: 0.00732 s/step in `Float64` -> 0.00405 in genuine `Float32`,
-#    1.81x. FHN's device emRKC was already `Float32` and is unchanged (0.00098 -> 0.00099).
-#  * device splitting took both changes at once, 0.03091 -> 0.01111 (2.78x). Reading the 1.81x above
-#    across to it leaves roughly 1.5x for the preconditioner; that split is an inference from the
-#    emRKC arm, not a separate measurement.
-#  * host splitting took only the preconditioner (its arithmetic was already `Float32`): 0.40404 ->
-#    0.34435, 15%, off 1.93x fewer CG iterations. Iterations fall faster than time because
-#    preconditioned CG carries an extra vector and an extra application per iteration.
-#  * host emRKC is unchanged within noise (0.23364 -> 0.23544), as it should be.
+# WHAT MOVED SINCE THE PREVIOUS MESH (item 2's re-proportioning) -- every LV number above is fresh,
+# not comparable step-for-step to the old (174,10,73)-based mesh, but the DIRECTION of each change is
+# informative:
+#  * emRKC got CHEAPER: m dropped from 32 to 28 stages at the same Δt=0.05 (still certified directly,
+#    rel err 0.00326 vs 0.00176 before -- both comfortably in band), and s/step fell 12% (2.65 vs
+#    3.01) even though the new mesh has slightly MORE cells (1,031,400 vs 1,026,600) -- the smaller,
+#    thicker-walled proportions apparently lower the diffusive spectral radius ρS overall, not only at
+#    the apex.
+#  * splitting's step got SMALLER and stayed uncertified: Δt=0.0068 (Richardson-estimated) against the
+#    old mesh's Δt=0.01 -- see RE-CERTIFICATION below. Fewer, cheaper CG solves (47.0 vs 63.4
+#    preconditioned iterations) were not enough to offset the smaller step: splitting got 10% MORE
+#    expensive per simulated ms (180.7 vs 164.3 s/sim-ms, host), not less.
+#  * Net effect: emRKC's advantage over splitting GREW -- 3.41x host (was 2.73x), 12.79x device (was
+#    10.37x) -- driven entirely by splitting's smaller, less certain step size, not by any change to
+#    either method's per-step machinery.
+#  * host-vs-device agreement improved incidentally (3.4e-6/1.1e-6 vs 1.2e-5/4.4e-6); both are already
+#    far below anything that would matter, so this is noise, not a result.
+#
+# RE-CERTIFICATION (mandated by item 2's mesh change): emRKC's carried Δt=0.05 is CERTIFIED DIRECTLY
+# on the new mesh -- the full sweep was repeated: 0.20/0.10/0.05/0.025 give rel err
+# 0.1294/0.03402/0.003255/0.0005165, so 0.05 is again the largest in-band value. splitting remains
+# UNCERTIFIED: its DTREF=0.025 reference has NOT converged (own error 0.0369, worse than the old
+# mesh's 0.0241), and the code's own linear Richardson estimate (E(Δt) ≈ 1.48·Δt) gives Δt ≲ 0.0068,
+# which is what is timed. One level deeper was tried, per this slice's instruction: DTREF=0.0125 gives
+# own error 0.0262, STILL unconverged -- only a 29% improvement for a 2x refinement (ratio 0.71,
+# apparent local convergence order ≈ 0.49), well short of the ~50% a first-order method should shed.
+# That sub-linear behavior is itself informative: it suggests the COARSE MESH's own spatial error may
+# be becoming a Δt-independent floor at this refinement, not purely a time-stepping issue, so a still
+# finer DTREF may not converge either without also refining the coarse mesh -- the previous run's
+# "~3 hours, was not spent" estimate for DTREF ≲ 0.003 may now be optimistic. Worth flagging rather
+# than hiding: at the carried Δt=0.0068 the arm's error against the (unconverged) DTREF=0.025
+# reference is 0.0528, LARGER than the old Δt=0.01's 0.0342 -- non-monotonic in Δt, which is a symptom
+# of an unconverged/biased reference (moving the arm closer to the truth moves it further from a
+# reference that is not at the truth), not a contradiction. splitting's step size and its "uncertified"
+# label both stand.
+#
+# ITEM 3 -- MEMORY ATTRIBUTION (host, measured after setup of all four arms on this mesh, before
+# timing; `Base.summarysize` per retained object class; full per-arm table kept outside this file).
+# The mesh+DofHandler (257.6 MiB) and the three-field orthotropic microstructure (582.3 MiB,
+# `ElementwiseData` stored per-cell-LOCAL-node -- duplicated at cell boundaries, neither a shared
+# nodal array nor per-quadrature-point) are SHARED once across all four arms, not duplicated per arm
+# (852.1 MiB total shared graph). Per arm beyond that: host splitting alone retains THREE full-size
+# sparse matrices at once -- mass M and diffusion K, each a 437.7 MiB Float64 `SparseMatrixCSC`
+# (FerriteOperators' own assembly dtype, independent of the Float32 arms), PLUS the actual Float32
+# `ThreadedSparseMatrixCSR` combination M-ΔtK (218.8 MiB) the CG solve uses -- M and K are never freed
+# once that combination is built. Each device arm additionally carries a HOST-resident staging copy of
+# its own K (and, for splitting, M too) for `MirroredBilinearOperator`'s upload -- 437.7 MiB plus a
+# 107.4 MiB Float32 staging buffer per matrix -- while the device-native combined system matrix, CG
+# workspace and Jacobi preconditioner are genuinely GPU-resident and cost the host under 4 KiB each.
+# Holding all four arms' setup simultaneously (a deliberate stress test for this attribution, NOT what
+# the timed run does) peaks at host RSS 7.29 GiB / VmHWM 7.48 GiB / cgroup memory.peak 6.89 GiB of the
+# 8 GiB cap -- 6-9% headroom, uncomfortably close. The REAL timed run releases each arm via `GC.gc()`
+# before building the next (see `run_arm`), and its own measured peak is the 3.85 GiB / 52% headroom
+# quoted above -- comfortably inside the 25% floor. Memory levers, not applied here (Dennis's call):
+# Float32 host-arm M/K instead of Float64 would roughly halve their combined ~875 MiB per arm;
+# dropping M/K once the combined system matrix is assembled would save that same ~875 MiB per
+# host-splitting-shaped arm; releasing the device arms' host-side mirror staging copies (437.7-1090.2
+# MiB per arm) after the one-time upload would recover up to ~1.6 GiB across both device arms; a
+# Float32 microstructure would roughly halve its 582.3 MiB (shared, so a one-time saving).
 
 using Thunderbolt
 using CUDA
@@ -705,7 +746,7 @@ function report(arms)
             "stages", "clocks")
     println("-"^128)
     for a in arms
-        @printf("%-22s %-7.2f %9.5f %9.1f %11.5f %10s %9s %9s %9s\n",
+        @printf("%-22s %-7.4f %9.5f %9.1f %11.5f %10s %9s %9s %9s\n",
                 a.label, a.Δt, a.seconds_per_step, 1 / a.seconds_per_step,
                 a.seconds_per_step / a.Δt,
                 isnan(a.solve_fraction) ? "none" : @sprintf("%.0f%%", 100a.solve_fraction),
@@ -757,16 +798,22 @@ struct LVConfig
     Δt_split::Float64
 end
 
-# The unit-scale ideal LV scaled to a ventricle whose myocardium discretizes to ~1e6 hexahedra at
-# h ≈ 150 µm, with the generator's default proportions (wall/inner radius 0.3/0.7, long axis 1.3/1.5)
-# preserved. `generate_ideal_lv_mesh` emits a wedge fan over the apex, so the mesh is built at 2h and
+# `generate_ideal_lv_mesh` emits a wedge fan over the apex, so the mesh is built at 2h and
 # `hexahedralize`d: that both halves h and makes every cell a hexahedron, while keeping the fan
-# variant's apex -- `generate_ideal_lv_mesh_hex`'s O-grid cap degrades the rotational coordinate over
-# the apical eighth, which is exactly where this protocol stimulates and where the fibers therefore
-# have to be right.
-const LV_SCALE   = 9.88          # mm, the generator's dimensionless unit ventricle scaled to this
-const LV_Z_APEX  = 1.5LV_SCALE
-const LV_Z_BASE  = 1.5LV_SCALE * cospi(0.6)
+# variant's apex. `generate_ideal_lv_mesh_hex`'s O-grid cap was measured as an alternative (see the
+# ITEM 1 block below) and rejected: its apex is not merely coarser, it is a worse sliver than the
+# fan's, so the fan stays and the mesh-quality item is a generator-improvement task, not a config change.
+#
+# The chamber does NOT carry the generator's default proportions (wall/inner radius 0.3/0.7, long
+# axis 1.3/1.5) at one uniform scale -- see the ITEM 2 block for why that combination cannot hit
+# both h ≈ 150 µm and a 6 mm wall at ~1e6 elements. `inner_radius`/`outer_radius` fix the wall at
+# exactly 6 mm; `apex_inner`/`apex_outer` set the long axis independently.
+const LV_INNER_RADIUS = 3.1122   # mm, endocardial equatorial radius -- shrunk, non-physiological
+const LV_OUTER_RADIUS = LV_INNER_RADIUS + 6.0   # mm, wall fixed at 6 mm (40 elements transmural)
+const LV_APEX_INNER   = 5.7798   # mm
+const LV_APEX_OUTER   = 6.6690   # mm, sets the long axis: apex-base length = LV_APEX_OUTER*(1-cospi(0.6))
+const LV_Z_APEX  = LV_APEX_OUTER
+const LV_Z_BASE  = LV_APEX_OUTER * cospi(0.6)
 const LV_STIM_Z  = LV_Z_APEX - 0.12(LV_Z_APEX - LV_Z_BASE)
 const LV_TEND    = 15.0          # ms; the front transits the apical wall and starts apicobasal
 const LV_STEPS   = 5             # host-vs-device agreement steps on the timed mesh
@@ -789,8 +836,8 @@ gpu_used_gib() = (CUDA.total_memory() - CUDA.free_memory()) / 1024^3
 function lv_geometry(base)
     mesh = hexahedralize(generate_ideal_lv_mesh(
         base...;
-        inner_radius = 0.7LV_SCALE, outer_radius = 1.0LV_SCALE,
-        apex_inner = 1.3LV_SCALE, apex_outer = 1.5LV_SCALE, longitudinal_upper = 0.2,
+        inner_radius = LV_INNER_RADIUS, outer_radius = LV_OUTER_RADIUS,
+        apex_inner = LV_APEX_INNER, apex_outer = LV_APEX_OUTER, longitudinal_upper = 0.2,
     ))
     cs = compute_lv_coordinate_system(mesh)
     microstructure = create_simple_microstructure_model(
@@ -843,7 +890,8 @@ end
 
 function run_model(cfg::LVConfig)
     println("\n", "#"^128)
-    println("# ", cfg.name, "  (ideal LV, scale = ", LV_SCALE, " mm, PCG2019, gates = :all, device Float32)")
+    println("# ", cfg.name, "  (ideal LV, wall ", LV_OUTER_RADIUS - LV_INNER_RADIUS,
+            " mm, PCG2019, gates = :all, device Float32)")
     println("#"^128)
 
     ############ the coarse mesh: what certifies the step sizes ############
@@ -1122,9 +1170,9 @@ _lv_base(key, default) = Tuple(parse.(Int, split(get(ENV, key, default), ",")))
 # transfer (see the LV-PCG2019 block).
 AVAILABLE_MODELS["LV"] = LVConfig(
     "LV-PCG2019",
-    _lv_base("EMRKC_LV_BASE", "174,10,73"),
-    _lv_base("EMRKC_LV_COARSE_BASE", "87,5,37"),
-    0.05, 0.01,
+    _lv_base("EMRKC_LV_BASE", "191,20,33"),
+    _lv_base("EMRKC_LV_COARSE_BASE", "96,10,17"),
+    0.05, 0.0068,
 )
 
 function main()
