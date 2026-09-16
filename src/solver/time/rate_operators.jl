@@ -1,49 +1,27 @@
 #####################################################################
 #  Lumped-mass rate operators: f(x) = Mₗ⁻¹ K x                      #
 #####################################################################
-"""
-    LumpedMassRateOperator{KOpT, VT}(K, invM)
-
-The rate map `x ↦ Mₗ⁻¹Kx` of a lumped-mass semidiscretization, with the lumped inverse
-mass `invM` applied AFTER the unlumped action `K` rather than folded into a combined
-matrix. `K` need only support `mul!` -- a raw sparse matrix or any operator FerriteOperators
-defines `mul!` for both work.
-"""
+# The rate map `x ↦ Mₗ⁻¹Kx` of a lumped-mass semidiscretization. `invM` is applied AFTER the unlumped
+# action of `K`, so `K` need only support `mul!`.
 struct LumpedMassRateOperator{KOpT, VT <: AbstractVector}
     K::KOpT
     invM::VT
 end
 
-"""
-    mul_rate!(y, op::LumpedMassRateOperator, x)
-
-`y ← invM .* (K * x)`. THE SEAM every lumped-mass rate operator implements; a future
-block-diagonal-mass (DG) operator is the second implementor.
-"""
 function mul_rate!(y, op::LumpedMassRateOperator, x)
     mul!(y, op.K, x)
     y .*= op.invM
     return y
 end
 
-"""
-    add_source_rate!(y, op::LumpedMassRateOperator, b)
-
-`y ← y + invM .* b`. THE SEAM every lumped-mass rate operator implements alongside
-[`mul_rate!`](@ref).
-"""
 function add_source_rate!(y, op::LumpedMassRateOperator, b)
     y .+= op.invM .* b
     return y
 end
 
-"""
-    compute_lumped_inverse_mass!(invM, Mop, ones_tmp)
-
-Row-sum mass lumping: `invM ← 1 ./ (Mop * 𝟙)`, via a single operator product (no scalar
-indexing, so this runs on a device vector too). Errors if any row sum is non-positive --
-row-sum lumping is only exact for a P1 mass matrix, whose row sums are guaranteed positive.
-"""
+# Row-sum mass lumping `invM ← 1 ./ (Mop * 𝟙)`, through a single operator product so that it runs on
+# a device vector too. Row-sum lumping is only exact for a P1 mass matrix, whose row sums are
+# guaranteed positive, which is what the guard below checks.
 function compute_lumped_inverse_mass!(invM, Mop, ones_tmp)
     ones_tmp .= one(eltype(ones_tmp))
     mul!(invM, Mop, ones_tmp)

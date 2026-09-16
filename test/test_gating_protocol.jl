@@ -4,8 +4,6 @@ using StaticArrays
 
 import Thunderbolt: exponential_gate_step
 
-# Minimal LCG for the bit-identity regression below: `Random` is not a declared test dependency
-# of this package, and this test only needs varied inputs, not statistical quality.
 mutable struct _LCG
     state::UInt64
 end
@@ -14,13 +12,12 @@ function _lcg_value!(g::_LCG)
     return Float64(g.state >> 11) / Float64(UInt64(1) << 53) # in [0, 1)
 end
 
-# Frozen (φ, gate-state) samples spanning the physiological φ range, reused across the exactness,
-# expm1-regression and consistency testsets below.
+# Frozen (φ, gate-state) samples spanning the physiological φ range.
 const _FROZEN_PHI = (-90.0, -55.0, -20.0, 10.0, 40.0)
 const _GATE_STATE = SVector(0.05, 0.15, 0.35, 0.55, 0.75, 0.95) # h, m, f, s, xs, xr
 
-# A model whose declared gate does not name a real state, to exercise `gating_indices`'s
-# not-found error. `struct` must sit at top level, so it cannot live inside the `@testset` below.
+# A declared gate that names no real state, for `gating_indices`'s not-found error. `struct` must sit
+# at top level, so it cannot live inside the `@testset` below.
 struct _BogusGatingModel <: Thunderbolt.AbstractIonicModel end
 Thunderbolt.state_symbols(::Type{_BogusGatingModel}) = (:φₘ, :s1)
 Thunderbolt.gating_symbols(::Type{_BogusGatingModel}) = (:nope,)
@@ -32,23 +29,21 @@ Thunderbolt.gating_symbols(::Type{_BogusGatingModel}) = (:nope,)
     @test gating_symbols(Thunderbolt.FHNModel()) == (:s,)
     @test gating_indices(Thunderbolt.FHNModel()) == (2,)
 
-    # Default: no declared gates (degenerate coverage, e.g. Aliev-Panfilov).
+    # Default: no declared gates.
     @test gating_symbols(Thunderbolt.AlievPanfilovModel()) == ()
     @test gating_indices(Thunderbolt.AlievPanfilovModel()) == ()
 
     @test_throws ErrorException gating_indices(_BogusGatingModel())
 end
 
-# `atol` matters here as much as `rtol`: at large η a fast gate's exponential term underflows and
-# both sides converge on `y∞` through subtractive cancellation (`x - (x - y∞)`), so two correctly
-# rounded ~1e-16-absolute errors can differ by many orders of magnitude in *relative* terms once
-# `y∞` itself is tiny. `atol` catches that regime; `rtol` still governs it everywhere else.
+# `atol` matters as much as `rtol` below: at large η a fast gate's exponential term underflows and
+# both sides reach `y∞` through subtractive cancellation, where two correctly rounded ~1e-16 absolute
+# errors differ by orders of magnitude in *relative* terms.
 
 @testset "Exactness: PCG2019 gate primitive vs analytic exponential decay" begin
     p = Thunderbolt.PCG2019()
     for φ in _FROZEN_PHI
-        # `x` is the FULL local state row (φ, then the gates), as production passes it -- not the
-        # gates-only vector `_GATE_STATE` is on its own.
+        # `x` is the FULL local state row (φ, then the gates), as production passes it.
         λ, y∞ = gate_coefficients(p, φ, SVector(φ, _GATE_STATE...), 0.0)
         for i in eachindex(λ), η in (1.0e-3, 0.1, 1.0, 10.0, 100.0)
             x0 = _GATE_STATE[i]
@@ -80,9 +75,8 @@ end
             τ = -1 / λ[i]
             η = 1.0e-12 * τ
             x0 = _GATE_STATE[i]
-            # First-order Taylor limit, computed directly (no `exp` call): this is what `expm1`
-            # is supposed to reproduce to full precision at such a tiny `η*λ`, and what a naive
-            # `x + (exp(η*λ) - 1)*(x - y∞)` loses through catastrophic cancellation in `exp - 1`.
+            # First-order Taylor limit, computed without `exp`: what `expm1` must reproduce to full
+            # precision at such a tiny η·λ, and what `exp(η*λ) - 1` loses to cancellation.
             expected = x0 + η * λ[i] * (x0 - y∞[i])
             got = exponential_gate_step(x0, λ[i], y∞[i], η)
             @test got ≈ expected rtol = 1.0e-15
@@ -92,9 +86,8 @@ end
 
 @testset "Consistency: dη-derivative at η=0 matches cell_rhs!" begin
     η = 1.0e-6
-    # Central difference: PCG2019's fastest gate (τ_m = 0.12 ms) has |λ| ~ 8, and a one-sided
-    # difference's O(η) truncation term (~λ²η/2) is already a few ppm there -- comparable to the
-    # rtol below. Central differencing drops the truncation term to O(η²), several orders smaller.
+    # Central difference: PCG2019's fastest gate (τ_m = 0.12 ms) has |λ| ~ 8, where a one-sided
+    # difference's O(η) truncation term is already comparable to the rtol below.
     central_fd(x0, λi, y∞i) =
         (exponential_gate_step(x0, λi, y∞i, η) - exponential_gate_step(x0, λi, y∞i, -η)) / 2η
     @testset "PCG2019" begin
@@ -126,9 +119,9 @@ end
     end
 end
 
-# Pre-factoring reference: a verbatim copy of `cell_rhs_fast!`/`cell_rhs_slow!` as they read
-# before the shared `_pcg2019_*_gate` helpers were factored out, so the factoring can be checked
-# against the original expressions rather than against itself.
+# A verbatim copy of `cell_rhs_fast!`/`cell_rhs_slow!` as they read before the shared
+# `_pcg2019_*_gate` helpers were factored out, so the factoring is checked against the original
+# expressions rather than against itself.
 function _reference_cell_rhs_fast!(du, φ, state, x, t, p::Thunderbolt.ParametrizedPCG2019Model{T}) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 

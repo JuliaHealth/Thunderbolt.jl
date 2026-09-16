@@ -8,20 +8,16 @@ import SciMLBase
 
 # Observed order of convergence in time, and what the multirate machinery buys at a step size no
 # explicit scheme survives. A scheme that forms its averaged force from the wrong window still
-# *converges* -- to the wrong limit -- so the order measured here says nothing on its own about
-# which limit; that the limit is the right one is what `test/test_emrkc.jl` pins, against a
-# reference implementation of the paper's Algorithm 3.
+# converges, to the wrong limit, so the order measured here says nothing about WHICH limit -- that is
+# what `test/test_emrkc.jl` pins against a reference implementation of Algorithm 3.
 #
-# Every initial condition below is a smooth function of the coordinates rather than of the dof
-# index. The unresolved end of a stiff spectrum converges at no order at all, so an initial
-# condition with content there would measure the damping of modes none of these step sizes resolve.
+# Every initial condition below is a smooth function of the coordinates, not of the dof index: the
+# unresolved end of a stiff spectrum converges at no order at all, so content there would measure the
+# damping of modes none of these step sizes resolve.
 
-"""
-Ratios of successive solution differences under repeated step halving. A scheme of order `p` sends
-these to `2^p`. Same measure as `test/integration/test_temporal_convergence.jl` uses: the
-differences are norms of the *difference vectors*, so a sign change across components cannot be
-mistaken for convergence.
-"""
+# Ratios of successive solution differences under repeated step halving; a scheme of order `p` sends
+# these to `2^p`. The differences are norms of the *difference vectors*, so a sign change across
+# components cannot be mistaken for convergence.
 function convergence_ratios(solve_to_end, Δts)
     us = [solve_to_end(Δt) for Δt in Δts]
     diffs = [norm(us[i+1] .- us[i]) for i = 1:(length(us)-1)]
@@ -92,10 +88,9 @@ end
 #####################################################################
 
 @testset "Pure diffusion: first order, and stable far past the explicit limit" begin
-    # FHN with its reaction switched off (e = f = 0) leaves exactly the lumped mass heat equation
-    # with a source. The slow force vanishes identically, so the outer sweep degenerates to a
-    # single stage and the inner sweep carries the whole problem -- the arm where the multirate
-    # machinery is all there is.
+    # FHN with its reaction switched off (e = f = 0) is the lumped mass heat equation with a source.
+    # The slow force vanishes identically, so the outer sweep degenerates to a single stage and the
+    # inner sweep carries the whole problem.
     ion = Thunderbolt.ParametrizedFHNModel{Float64}(e = 0.0, f = 0.0)
     tspan = (0.0, 1.0)
     Δts = (0.05, 0.025, 0.0125, 0.00625, 0.003125)
@@ -124,14 +119,12 @@ end
     @test coarse.sol.retcode == SciMLBase.ReturnCode.Success
     @test all(isfinite, coarse.u)
     @test norm(coarse.u[V]) < norm(u₀[V])     # diffusion only: no growth
-    # Stable, and still in the right place -- loosely, because Δt_big covers the whole interval in
-    # under two steps and this is a first order scheme. Stability is the claim; accuracy at a
-    # hundred times the explicit limit is not.
+    # Stable and still in the right place, loosely: Δt_big covers the interval in under two steps of
+    # a first order scheme. Stability is the claim, not accuracy at a hundred times the limit.
     @test norm(coarse.u .- fine.u) < 0.5 * norm(fine.u)
 
-    # ... and that step size really is past the explicit limit: forcing a single inner stage makes
-    # the inner sweep a plain forward Euler step of size ≈ Δt, which grows where pure diffusion
-    # can only decay.
+    # ... and that step size really is past the explicit limit: a single inner stage makes the sweep
+    # a plain forward Euler step of size ≈ Δt, which grows where pure diffusion can only decay.
     explicit =
         emrkc_solve(odeform_free, u₀, EMRKC(gates = (), rho_F_estimate = 1.0e-12), Δt_big, tspan)
     @test explicit.sol.retcode != SciMLBase.ReturnCode.Success ||
@@ -144,10 +137,9 @@ end
     odeform = emrkc_monodomain(ion; n = 8, κ = 5.0)
     u₀ = emrkc_u0(odeform, ion)
 
-    # The refinement starts where the inner sweep already takes three stages and ends where it
-    # takes one. An observed order is only meaningful over step sizes that resolve what is being
-    # measured, and one step size above this window the inner sweep's own damping of the
-    # unresolved end of the diffusion spectrum still dominates the difference.
+    # The refinement starts where the inner sweep takes three stages and ends where it takes one.
+    # One step size above this window, the inner sweep's own damping of the unresolved end of the
+    # diffusion spectrum still dominates the difference.
     Δts = (0.025, 0.0125, 0.00625, 0.003125, 0.0015625)
     ratios = convergence_ratios(Δts) do Δt
         integ = emrkc_solve(odeform, u₀, EMRKC(), Δt, tspan)
@@ -159,9 +151,8 @@ end
 
 @testset "Partition invariance: the gate selection is a method choice, not a model change" begin
     # Which declared gates are integrated exponentially picks a different *method* for the same
-    # problem, so the three partitions must disagree at any finite Δt and agree in the limit -- and
-    # the disagreement is itself a first order quantity, since both methods are first order
-    # approximations of the same solution.
+    # problem, so the three partitions must disagree at any finite Δt and agree in the limit, with
+    # the disagreement itself a first order quantity.
     ion = Thunderbolt.PCG2019()
     tspan = (0.0, 1.0)
     odeform = emrkc_monodomain(ion; n = 8, κ = 5.0)

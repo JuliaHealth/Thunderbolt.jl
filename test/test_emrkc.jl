@@ -28,8 +28,8 @@ import Thunderbolt:
 #  Problem fixtures                                                 #
 #####################################################################
 
-# A monodomain problem small enough to reference-implement, with a smooth always-active stimulus so
-# that the source really is reassembled at every outer stage rather than elided by `needs_update`.
+# Small enough to reference-implement, with an always-active stimulus so the source is reassembled at
+# every outer stage rather than elided by `needs_update`.
 function emrkc_problem(;
     n = 4,
     ion = Thunderbolt.FHNModel(),
@@ -66,8 +66,8 @@ function emrkc_problem(;
 end
 
 # The cell model's resting state everywhere, plus a smooth bump and one spike on the transmembrane
-# potential. The spike gives the slow force's Jacobian a clearly dominant eigenvalue, which is what
-# makes the ρ_S power iteration below a sharp test rather than a race between near-degenerate modes.
+# potential. The spike gives the slow force's Jacobian a clearly dominant eigenvalue, without which
+# the ρ_S power iteration below would be a race between near-degenerate modes.
 function emrkc_initial_state(odeform, ion)
     u₀ = zeros(Float64, solution_size(odeform))
     nV = length(odeform.solution_indices[1])
@@ -88,13 +88,10 @@ end
 #####################################################################
 # Written straight from the paper (Rosilho de Souza, Grote, Pezzuto & Krause, arXiv:2401.01745,
 # Algorithm 3): direct, allocating, full width, with neither the V-row restriction nor the analytic
-# finish the production path optimizes with. It shares with production only what a *model* and an
-# *assembly* are -- `gate_coefficients`, `cell_rhs!` and the assembled operators -- and reimplements
-# every piece of the scheme itself, stage coefficients and stage count law included.
-#
-# The three placements a wrong wiring gets wrong are all visible here, and none of them is visible
-# in a convergence test: the exponential is taken with `η` (not Δt) once per OUTER stage, the inner
-# sweep starts at `y_E`, and the difference quotient is taken against the outer stage value `Y`.
+# finish the production path optimizes with. It shares with production only `gate_coefficients`,
+# `cell_rhs!` and the assembled operators, and reimplements every piece of the scheme itself,
+# stage coefficients and stage count law included -- so the three placements `_EMRKCAveragedForce`
+# names, none of them visible in a convergence test, are checked here independently.
 
 ref_stage_count(z, ε) = max(1, ceil(Int, sqrt(z / (2 - 4ε / 3))))
 
@@ -126,8 +123,7 @@ function ref_rkc1_coefficients(s::Int, ε::Float64)
     return μ, ν, μ̃, c
 end
 
-# Everything the reference needs about one problem, read off the production cache so that the two
-# integrate the same discretization.
+# Read off the production cache, so the two integrate the same discretization.
 struct RefContext{IonType, MatType, SrcType}
     ion::IonType
     K::MatType
@@ -185,8 +181,8 @@ function ref_gate_step(Y, t, η, ctx)
     return yE
 end
 
-# f_S: the cell right hand side with the exponentially integrated rows removed. No source -- that
-# is not part of the reaction and enters only on the transmembrane rows.
+# f_S: the cell right hand side with the exponentially integrated rows removed. No source: it is not
+# part of the reaction and enters only on the transmembrane rows.
 function ref_slow_force(y, t, ctx)
     fS = zeros(length(y))
     du = zeros(ctx.nstates)
@@ -213,8 +209,8 @@ function ref_averaged_force(Y, t, η, m, ctx)
         fS[ctx.V] .+= ctx.invM .* FerriteOperators.operator_payload(ctx.source_op)
     end
 
-    # The inner sweep, over the FULL state, starting from y_E, with f_S frozen: the rows the
-    # production path finishes analytically go through the recurrence here.
+    # The inner sweep over the FULL state, from y_E, with f_S frozen: the rows the production path
+    # finishes analytically go through the recurrence here.
     inner_rhs(w) = (r = copy(fS); r[ctx.V] .+= ctx.invM .* (ctx.K * w[ctx.V]); r)
     μ, ν, μ̃, _ = ref_rkc1_coefficients(m, ctx.εi)
     Wjm2, Wjm1 = copy(yE), copy(yE)
@@ -262,9 +258,8 @@ end
 #####################################################################
 
 @testset "emRKC step matches a naive Algorithm 3 reference" begin
-    # The stage counts are forced through raw-number spectral radii (`rho_safety = 1`, so the
-    # numbers are used verbatim), which is the only way to reach the (s, m) corners on a problem
-    # small enough to reference-implement.
+    # Raw-number spectral radii with `rho_safety = 1` force the stage counts, which is the only way
+    # to reach the (s, m) corners on a problem small enough to reference-implement.
     fhn_cases = [
         # (ρ_S, ρ_F, expected s, expected m)
         (10.0, 10.0, 1, 1),
@@ -304,8 +299,7 @@ end
         end
     end
 
-    # A partial mask over a six-gate model: catches an index or mask wiring error that a
-    # single-gate model cannot see.
+    # A partial mask over a six-gate model catches index/mask wiring a single-gate model cannot.
     @testset "PCG2019 gates=$(gates)" for gates in (:all, (:h, :m), ())
         Δtp = 1.0e-3
         prob, odeform =
@@ -376,8 +370,8 @@ end
     prob, odeform = emrkc_problem()
     ion = odeform.functions[2].ode
 
-    # A raw-number override is a ρ like any other: `rho_safety` multiplies it too, so swapping an
-    # estimator for a measured number cannot silently drop the margin.
+    # `rho_safety` multiplies a raw-number override too, so swapping an estimator for a measured
+    # number cannot silently drop the margin.
     integ = DiffEqBase.init(
         prob,
         EMRKC(rho_S_estimate = 3.0, rho_F_estimate = 7.0, rho_safety = 1.1);
@@ -397,14 +391,14 @@ end
     ρF_exact = maximum(abs, eigvals(Diagonal(invM) * K))
     @test integ.cache.ρF ≈ ρF_exact rtol = 0.05
 
-    # ... and ρ_S that of the Jacobian of the *masked* slow force, which is what the Jacobian free
+    # ... and ρ_S that of the Jacobian of the *masked* slow force, which the Jacobian-free
     # directional finite difference front end has to reproduce.
     ctx = RefContext(integ, ion, :all)
     ρS_exact = maximum(abs, eigvals(ref_slow_jacobian(prob.u0, 0.0, ctx)))
     @test integ.cache.ρS ≈ ρS_exact rtol = 0.05
 
-    # Removing the gates from the slow force is what emRKC buys over mRKC: on a model with a fast
-    # gate the exponentially integrated partition is far less stiff than the full reaction.
+    # What emRKC buys over mRKC: on a model with a fast gate, the slow force with the gates removed
+    # is far less stiff than the full reaction.
     pprob, podeform = emrkc_problem(n = 3, ion = Thunderbolt.PCG2019())
     ρS_of(gates) = begin
         i = DiffEqBase.init(pprob, EMRKC(gates = gates, rho_safety = 1.0); dt = 1.0e-3, verbose = false)
@@ -430,9 +424,8 @@ end
 end
 
 @testset "ρ_S runaway context names the state norm and the escape-hatch knobs" begin
-    # `estimate_rho!`'s own guard (retry-then-error on a non-finite/absurd estimate; see
-    # test_spectral_estimation.jl) knows neither of these -- this is what `_emrkc_rho_S!` appends
-    # so the error a drifted-state blow-up raises is actionable rather than generic.
+    # `estimate_rho!`'s own guard knows neither the state nor EMRKC's knobs; this is what
+    # `_emrkc_rho_S!` appends to make a drifted-state blow-up actionable.
     alg = EMRKC(rho_recompute = 3)
     msg = _emrkc_rho_S_runaway_context([3.0, 4.0], alg)
     @test occursin("5.0", msg)                    # ‖u‖ = ‖[3, 4]‖
@@ -508,8 +501,7 @@ end
     @test integ.t ≈ 1.0
     @test integ.u ≉ u₀
     @test all(isfinite, integ.u)
-    # The passive children are the clock-keeping half of the monolithic step: their clocks must
-    # track the parent's and their state must be the parent's slice.
+    # The passive children keep the clocks: theirs must track the parent's, their state its slice.
     @test all(c -> c.t ≈ integ.t, integ.child_subintegrators)
     for (i, c) in enumerate(integ.child_subintegrators)
         @test c.u ≈ integ.u[integ.child_solution_indices[i]]
@@ -524,8 +516,7 @@ end
     @test integ.sol.retcode == SciMLBase.ReturnCode.Success
     @test integ.u ≈ uend
 
-    # `uprev` is the rollback anchor of the surrounding integrator and must survive a step
-    # untouched until that integrator advances it itself.
+    # `uprev` is the surrounding integrator's rollback anchor and must survive a step untouched.
     integ2 = DiffEqBase.init(prob, EMRKC(); dt = 0.1, verbose = false)
     before = copy(integ2.uprev)
     DiffEqBase.step!(integ2)
@@ -540,9 +531,8 @@ end
         dt = 0.1,
         verbose = false,
     )
-    # A state whose cubic reaction term overflows, so the sweep produces non-finite stage values.
-    # The step has to be reported as failed with the solution vector left as it was, which lets the
-    # surrounding integrator roll back to its anchor rather than carry a NaN forward.
+    # A state whose cubic reaction term overflows, so the sweep produces non-finite stage values. The
+    # step must be reported as failed with the solution vector left as it was.
     integ.u .= 1.0e120
     DiffEqBase.solve!(integ)
     @test integ.sol.retcode != SciMLBase.ReturnCode.Success
@@ -551,16 +541,14 @@ end
 end
 
 @testset "A divergence under a re-estimating policy fails the step, not an uncaught error" begin
-    # The scenario the outer-sweep NaN check above cannot reach: with `:once`, `_emrkc_refresh_rho!`
-    # never re-estimates past the first step, so a mid-run divergence only ever shows up as a NaN in
-    # the outer sweep. With a re-estimating `rho_recompute`, the SAME divergence is discovered
-    # earlier, inside `estimate_rho!`'s own runaway guard -- and before this fix that guard's
-    # `error` crashed out of `_perform_step!` uncaught, bypassing `force_stepfail` entirely.
+    # The scenario the outer-sweep NaN check above cannot reach: under `:once` a mid-run divergence
+    # only ever shows up as a NaN in the outer sweep, while a re-estimating `rho_recompute` finds the
+    # same divergence earlier, inside `estimate_rho!`'s runaway guard, whose `error` must reach
+    # `force_stepfail` rather than crash out of `_perform_step!`.
     prob, _ = emrkc_problem(n = 3, ion = Thunderbolt.PCG2019(), tspan = (0.0, 1.0))
     integ = DiffEqBase.init(prob, EMRKC(rho_recompute = 1); dt = 1.0e-3, verbose = false)
 
-    # A couple of ordinary steps first, so the run is mid-flight (`parent.iter > 1`, the case this
-    # fix actually changes) when the state is corrupted below.
+    # Ordinary steps first, so the run is mid-flight (`parent.iter > 1`) when the state is corrupted.
     DiffEqBase.step!(integ)
     DiffEqBase.step!(integ)
 

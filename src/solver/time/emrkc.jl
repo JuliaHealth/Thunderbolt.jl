@@ -8,11 +8,10 @@
 A leaf timestepper that advances its clock and leaves its state untouched.
 
 [`EMRKC`](@ref) integrates both operators of a reaction-diffusion split in one monolithic sweep on
-the parent solution vector, but still runs the Lie-Trotter-Godunov child loop afterwards, so that
-the operator splitting invariants keep holding: child clocks equal to the parent's (asserted by
+the parent solution vector, but still runs the Lie-Trotter-Godunov child loop afterwards so that the
+operator splitting invariants keep holding: child clocks equal to the parent's (asserted by
 `OrdinaryDiffEqOperatorSplitting`'s `validate_time_point` on every accepted step), child state
-synchronized from the parent, rollback anchors intact. Its children have nothing left to do, and
-this is the timestepper that does it.
+synchronized from the parent, rollback anchors intact.
 """
 struct PassiveChildSolver <: AbstractSolver end
 
@@ -20,12 +19,7 @@ SciMLBase.isadaptive(::PassiveChildSolver) = false
 OrdinaryDiffEqCore.default_controller(QT, ::PassiveChildSolver) =
     OrdinaryDiffEqCore.DummyController()
 
-"""
-    PassiveChildCache(uₙ, uₙ₋₁)
-
-Solver cache of a [`PassiveChildSolver`](@ref): the two buffers every `ThunderboltTimeIntegrator`
-reads off its cache, and nothing else.
-"""
+# The two buffers every `ThunderboltTimeIntegrator` reads off its cache, and nothing else.
 struct PassiveChildCache{SolutionType, PrevSolutionType} <: AbstractTimeSolverCache
     uₙ::SolutionType
     uₙ₋₁::PrevSolutionType
@@ -41,18 +35,10 @@ end
 
 perform_step!(f, cache::PassiveChildCache, t, Δt) = true
 
-"""
-    _OperatorSetupSpec(solution_vector_type, system_matrix_type)
-
-The two type knobs `setup_operator(strategy, integrator, solver, dh)` reads off a solver, for a
-scheme that assembles operators without being a leaf solver itself.
-
-That `setup_operator` family dispatches on `::AbstractSolver` and reads exactly these two fields
-(`src/solver/interface.jl`), so an operator splitting *algorithm* -- which is not an
-`AbstractSolver` and owns no solver cache -- reaches the same assembly path, including the
-device-assembly and host-assembly-into-a-mirror branches, by handing one of these over in a
-solver's place.
-"""
+# The `setup_operator(strategy, integrator, solver, dh)` family dispatches on `::AbstractSolver` and
+# reads exactly these two fields (`src/solver/interface.jl`). An operator splitting *algorithm* --
+# not an `AbstractSolver`, owning no solver cache -- reaches that assembly path, device and mirrored
+# branches included, by handing one of these over in a solver's place.
 struct _OperatorSetupSpec{SolutionVectorType, SystemMatrixType} <: AbstractSolver
     solution_vector_type::Type{SolutionVectorType}
     system_matrix_type::Type{SystemMatrixType}
@@ -66,27 +52,23 @@ Exponential multirate super-time-stepping for a reaction-diffusion split, follow
 
 One step evaluates an *averaged force* through a stabilized inner sweep and drives an outer
 [`AbstractSTSFamily`](@ref) sweep with it, so the stiff diffusion never dictates the outer step
-size. States declared by `gating_symbols` are integrated exponentially and removed from
-the slow force, which is what the `e` in emRKC buys: the outer stage count then follows the
-*remaining* reaction stiffness instead of the gates'.
+size. States declared by `gating_symbols` are integrated exponentially and removed from the slow
+force, so the outer stage count follows the *remaining* reaction stiffness instead of the gates'.
 
 Per step, with `Δt` the outer step, `ρ_S` the slow (reaction) and `ρ_F` the fast (diffusion)
-spectral radius:
-
-- `s` stages of `outer` resolve `Δt ρ_S`,
-- the averaging window is `η = 2Δt / ℓ_outer(s)` ([`sts_stability_boundary`](@ref)),
-- `m` stages of `inner` resolve `η ρ_F`.
+spectral radius: `s` stages of `outer` resolve `Δt ρ_S`, the averaging window is
+`η = 2Δt / ℓ_outer(s)` ([`sts_stability_boundary`](@ref)), and `m` stages of `inner` resolve `η ρ_F`.
 
 # Fields
 - `outer`, `inner`: the STS families of the two sweeps ([`RKC1`](@ref) by default).
 - `gates`: `:all`, or a `Tuple` of `gating_symbols` to integrate exponentially. `()` is the
-  degenerate mRKC-without-exponential mode, which runs *any* cell model, including one that
-  declares no gates at all.
+  degenerate mRKC-without-exponential mode, which runs *any* cell model, including one that declares
+  no gates at all.
 - `solution_vector_type`, `system_matrix_type`: what the mass, diffusion and source operators are
   assembled into, as for [`BackwardEulerSolver`](@ref).
-- `rho_recompute`: `:once` (this implementation's default -- see below), `n::Int` for every `n`
-  steps, or a callable -- see `_should_reestimate`. A step failure and the first step after an
-  `init`/`reinit!` always force a re-estimate.
+- `rho_recompute`: `:once` (the default -- see Limitations), `n::Int` for every `n` steps, or a
+  callable of the number of steps since the last estimate. A step failure and the first step after
+  an `init`/`reinit!` always force a re-estimate.
 - `rho_safety`: multiplies *every* `ρ` this algorithm uses, estimated or overridden. The default
   `1.1` is the hedge against the complex part of the spectrum, which the real-axis stability
   boundaries of the STS families do not cover.
@@ -96,8 +78,8 @@ spectral radius:
   upper bound, unavailable under device assembly), or a number to use verbatim.
 - `max_stages`: refuse rather than silently truncate a stage count this large.
 - `batch_size_hint`: `Polyester` batch size of the pointwise stages.
-- `inner_algs`: the splitting children. Both are [`PassiveChildSolver`](@ref)s; the step is
-  monolithic and the children exist for the splitting bookkeeping only.
+- `inner_algs`: the splitting children, both [`PassiveChildSolver`](@ref)s -- the step is monolithic
+  and the children exist for the splitting bookkeeping only.
 
 # Limitations
 - Single domain only: the split has to be exactly one `AffineODEFunction` over one
@@ -107,18 +89,14 @@ spectral radius:
   That is a different semidiscretization from the consistent-mass one [`BackwardEulerSolver`](@ref)
   steps, and on a propagating front the O(h²) between the two is what dominates the difference
   between the schemes -- at every step size, not only at coarse ones.
-- Fixed step size: the stage counts are stability control, not a local error estimate. Adaptivity
-  would come from an `OrdinaryDiffEqOperatorSplitting` controller over the parent integrator, which
-  is a follow-up rather than a knob here.
+- Fixed step size: the stage counts are stability control, not a local error estimate.
 - The stage counts resolve the STS families' real-axis stability boundaries. The complex part of the
   spectrum is a gap in the underlying theory, and `rho_safety` is the only knob against it.
-- `rho_recompute = :once` (the default) estimates ρ_S/ρ_F once, at `t = 0`, and trusts that
-  estimate for the whole run -- with deliberately tightened estimator tolerances
-  (`reltol = 1.0e-4`, `maxiters = 200`) to keep that one estimate honest. The reference
-  implementation this algorithm follows has no such mode: it re-estimates both radii every 5
-  steps by default. A frozen `t = 0` estimate under-stages a run whose true ρ_S grows: measured
-  on a PCG2019 propagating front, ρ_S moved up to ~4.4x over the run. `rho_recompute = n` or a
-  callable re-estimates periodically instead.
+- `rho_recompute = :once` estimates ρ_S/ρ_F once, at `t = 0`, and trusts that estimate for the whole
+  run, with tightened estimator tolerances (`reltol = 1.0e-4`, `maxiters = 200`) to keep it honest.
+  The reference implementation has no such mode: it re-estimates both radii every 5 steps by
+  default. A frozen `t = 0` estimate under-stages a run whose true ρ_S grows -- measured on a
+  PCG2019 propagating front, ρ_S moved up to ~4.4x over the run.
 """
 Base.@kwdef struct ExponentialMultirateSTSAlgorithm{
     OuterFamilyType <: AbstractSTSFamily,
@@ -149,7 +127,7 @@ end
 @doc (@doc ExponentialMultirateSTSAlgorithm)
 EMRKC(; kwargs...) = ExponentialMultirateSTSAlgorithm(; kwargs...)
 
-# No local error estimate: the stage counts are a *stability* device, not an accuracy one.
+# The stage counts are a stability device, not a local error estimate.
 @inline SciMLBase.isadaptive(::ExponentialMultirateSTSAlgorithm) = false
 
 function Base.show(io::IO, alg::ExponentialMultirateSTSAlgorithm)
@@ -165,21 +143,14 @@ end
 #  Pointwise stages                                                 #
 #####################################################################
 # Both stage caches name their destination `dumat`, because that is the field
-# `ext/CuThunderboltExt.jl`'s outer kernel wrapper sizes its launch from; with that name the
-# wrapper serves these two stages unchanged.
+# `ext/CuThunderboltExt.jl`'s outer kernel wrapper sizes its launch from.
 
-"""
-    EMRKCGateStageCache(dumat, gidx, mask, batch_size_hint, xs)
-
-The exponential gate half-step of one outer stage, in place.
-
-`dumat` is both source and destination: the caller fills it with the outer stage value `Y`, and
-every *selected* gate row is then overwritten by its exact solution over the averaging window `η`,
-which reaches the kernel through the `Δt` slot of `_pointwise_step_inner_kernel!`. `mask` selects
-which of `gidx = gating_indices(model)` the algorithm's `gates` option asked for; an empty
-selection is lowered to empty tuples, so a model that declares no gates -- or declares them and is
-run with `gates = ()` -- never reaches [`gate_coefficients`](@ref) at all.
-"""
+# The exponential gate half-step of one outer stage, in place: the caller fills `dumat` with the
+# outer stage value `Y`, and every *selected* gate row is overwritten by its exact solution over the
+# averaging window `η`, which reaches the kernel through the `Δt` slot of
+# `_pointwise_step_inner_kernel!`. `mask` selects which of `gidx = gating_indices(model)` the
+# algorithm's `gates` option asked for; an empty selection is lowered to empty tuples, so a model
+# that declares no gates -- or is run with `gates = ()` -- never reaches `gate_coefficients` at all.
 struct EMRKCGateStageCache{dumType, xType, NG} <: AbstractPointwiseSolverCache
     dumat::dumType
     gidx::NTuple{NG, Int}
@@ -219,8 +190,8 @@ end
     t,
     η,
 ) where {NG}
-    # Read before write: `gate_coefficients` sees the unmodified stage value, so the update may
-    # then run in place even where the transmembrane potential is itself a declared gate.
+    # Read before write, so `gate_coefficients` sees the unmodified stage value and the update may
+    # run in place even where the transmembrane potential is itself a declared gate.
     φ = y[transmembranepotential_index(cell_model)]
     λ, y∞ = gate_coefficients(cell_model, φ, y, t)
     @inbounds for k = 1:NG
@@ -232,17 +203,10 @@ end
     return nothing
 end
 
-"""
-    EMRKCReactionStageCache(uₙmat, dumat, gidx, mask, batch_size_hint, xs)
-
-The slow force `f_S` of one outer stage: [`cell_rhs!`](@ref) evaluated at the gate-advanced state
-`uₙmat`, written into `dumat`, with every row the exponential stage already integrated zeroed out
-so it is not integrated twice.
-
-The zeroing is what makes `f_S` non-stiff, and it is what the outer stage count is sized against.
-The sigmoids shared with the gate stage are evaluated twice per outer stage; a
-`cell_rhs_nongating!` fast path that skips them is a later extension, not a correctness matter.
-"""
+# The slow force `f_S` of one outer stage: `cell_rhs!` at the gate-advanced state `uₙmat`, written
+# into `dumat`, with every row the exponential stage already integrated zeroed out so it is not
+# integrated twice. That zeroing is what makes `f_S` non-stiff, and what the outer stage count is
+# sized against.
 struct EMRKCReactionStageCache{umType, dumType, xType, NG} <: AbstractPointwiseSolverCache
     uₙmat::umType
     dumat::dumType
@@ -275,15 +239,9 @@ end
 #  Cache                                                            #
 #####################################################################
 
-"""
-    EMRKCCache
-
-Everything one [`EMRKC`](@ref) step needs beyond the parent solution vector.
-
-`u`/`uprev` are the parent's own buffers, held to satisfy the splitting cache interface. The step
-reads `u` as the read-only anchor `Y₀` of the outer sweep and writes it exactly once, at the end;
-`uprev` is never touched, since it is the rollback anchor of the surrounding integrator.
-"""
+# `u`/`uprev` are the parent's own buffers, held to satisfy the splitting cache interface. The step
+# reads `u` as the read-only anchor `Y₀` of the outer sweep and writes it exactly once, at the end;
+# `uprev` is never touched, since it is the rollback anchor of the surrounding integrator.
 mutable struct EMRKCCache{
     uType,
     uprevType,
@@ -361,8 +319,8 @@ function OS.init_cache(
         "points. `EMRKC` expects one transmembrane dof per pointwise state point.",
     )
 
-    # Assembly, exactly as the affine backward Euler stage's setup does it -- the spec below is the
-    # stand-in for the solver whose two type knobs `setup_operator` reads.
+    # Assembly as the affine backward Euler stage's setup does it, with `spec` standing in for the
+    # solver whose two type knobs `setup_operator` reads.
     spec            = _OperatorSetupSpec(alg.solution_vector_type, alg.system_matrix_type)
     dh              = fheat.dh
     strategy        = get_strategy(fheat)
@@ -370,10 +328,10 @@ function OS.init_cache(
     K_operator      = setup_operator(strategy, fheat.bilinear_term, spec, dh)
     source_operator = setup_operator(strategy, fheat.source_term, spec, dh)
 
-    # There is no `t₀` at this point of the operator splitting init path, so the stationary parts
-    # are assembled at zero. Same class of limitation as the backward Euler stage's `Δt_last`: a
-    # time dependent conductivity would need a re-assembly hook the splitting cache has no place
-    # for yet. The *source* is refreshed at the real stage time on every outer stage below.
+    # There is no `t₀` at this point of the operator splitting init path, so the stationary parts are
+    # assembled at zero; a time dependent conductivity would need a re-assembly hook the splitting
+    # cache has no place for yet. The *source* is refreshed at the real stage time on every outer
+    # stage below.
     ctx₀ = TimeIntegrationContext(zero(T), zero(T), zero(T))
     @timeit_debug "initial assembly" begin
         update_operator!(mass_operator, nothing, ctx₀)
@@ -433,9 +391,8 @@ function OS.init_cache(
     )
 end
 
-# Which declared gates the `gates` option selects, lowered to the two isbits tuples the stage
-# caches carry. An empty selection collapses to empty tuples rather than an all-false mask, which
-# is what makes `gates = ()` run a model that implements no `gate_coefficients` at all.
+# An empty selection collapses to empty tuples rather than an all-false mask, which is what makes
+# `gates = ()` run a model that implements no `gate_coefficients` at all.
 function _emrkc_gate_selection(gates, ion)
     gsyms = gating_symbols(ion)
     mask  = _emrkc_gate_mask(gates, gsyms, ion)
@@ -501,17 +458,11 @@ struct _EMRKCRateApply{OperatorType}
 end
 (a::_EMRKCRateApply)(w, v) = mul_rate!(w, a.op, v)
 
-"""
-    _EMRKCSlowJacobianApply(cache, u, t, δ)
-
-`v ↦ J_S v`, evaluated as the directional finite difference
-`(f_S(u + (δ/‖v‖)v) - f_S(u)) / (δ/‖v‖)` with `f_S(u)` precomputed into `cache.fbar`.
-
-Homogeneous of degree one in `v` by construction -- the perturbation scales the direction to a
-fixed *length* `δ` and divides the difference by that same step -- which is what lets the linear
-power iteration of [`estimate_rho!`](@ref) drive it. Same structure as the `maxeig!` of
-`OrdinaryDiffEqStabilizedRK`, which is where the `‖u‖√eps` perturbation comes from.
-"""
+# `v ↦ J_S v` as the directional finite difference `(f_S(u + (δ/‖v‖)v) - f_S(u)) / (δ/‖v‖)`, with
+# `f_S(u)` precomputed into `cache.fbar`. Homogeneous of degree one in `v` by construction -- the
+# perturbation scales the direction to a fixed *length* `δ` and divides by that same step -- which is
+# what lets a linear power iteration drive it. Same structure as `OrdinaryDiffEqStabilizedRK`'s
+# `maxeig!`, which is where the `‖u‖√eps` perturbation comes from.
 struct _EMRKCSlowJacobianApply{CacheType, VecType, TimeType, T}
     cache::CacheType
     u::VecType
@@ -528,16 +479,16 @@ function (a::_EMRKCSlowJacobianApply)(w, v)
     return w
 end
 
-# f_S at whatever `cache.yE` currently holds, into `cache.fS`. The source is deliberately *not*
-# added here: it does not depend on the state, so it cancels out of the finite difference, and the
-# averaged force adds it separately on the transmembrane rows only.
+# f_S at whatever `cache.yE` currently holds, into `cache.fS`. The source is deliberately *not* added
+# here: it does not depend on the state, so it cancels out of the finite difference, and the averaged
+# force adds it separately on the transmembrane rows only.
 function _emrkc_slow_force!(cache::EMRKCCache, t)
     _pointwise_step_outer_kernel!(cache.odefun, t, zero(t), cache.reaction_stage, cache.fS)
     return cache.fS
 end
 
 # The perturbation *length* of the directional difference: `‖u‖√eps` balances truncation against
-# cancellation, and falls back to `√eps` alone at a zero state, where there is no scale to read.
+# cancellation, falling back to `√eps` at a zero state, where there is no scale to read.
 function _emrkc_fd_perturbation(u)
     T  = real(eltype(u))
     nu = norm(u)
@@ -558,11 +509,9 @@ function _emrkc_refresh_rho!(cache::EMRKCCache, alg, parent, t)
     return nothing
 end
 
-# `:once` pays for the estimate exactly once per run and then trusts it for every remaining step,
-# so it gets a tighter stopping rule than the repeated policies: the loose default reltol = 1e-2
-# can plateau well below the true radius on a near-degenerate spectrum, eating through
-# `rho_safety = 1.1` in the understating -- that is, destabilizing -- direction. A policy that
-# re-estimates can afford the loose rule because it gets more chances.
+# `:once` pays for the estimate once per run and then trusts it, so it gets a tighter stopping rule
+# than the repeated policies: the loose default reltol = 1e-2 can plateau well below the true radius
+# on a near-degenerate spectrum, eating through `rho_safety` in the destabilizing direction.
 _emrkc_estimator_options(policy) =
     policy === :once ? (maxiters = 200, reltol = 1.0e-4) : (maxiters = 50, reltol = 1.0e-2)
 
@@ -602,11 +551,8 @@ function _emrkc_rho_S!(mode::Symbol, cache::EMRKCCache, alg, u, t)
     )
 end
 
-# `estimate_rho!`'s generic runaway guard knows neither the state a Jacobian-free difference was
-# taken at nor `EMRKC`'s own knobs; this names both for its error message. The FD probe reads the
-# slow force near `u`, so a jump or non-finite result that survives a reseeded retry most likely
-# means `u` has drifted somewhere that force is not smooth (a gating discontinuity, say), not a
-# fluke of the power iteration itself.
+# What `estimate_rho!`'s generic runaway guard cannot name: the state a Jacobian-free difference was
+# taken at, and `EMRKC`'s own knobs.
 _emrkc_rho_S_runaway_context(u, alg) = " The state norm is ‖u‖ = $(norm(u)); the likely cause is " *
     "state drift or a non-smooth right-hand side at this evaluation point. Consider a different " *
     "`rho_recompute` policy (currently $(repr(alg.rho_recompute))) or bypassing the estimator " *
@@ -615,7 +561,7 @@ _emrkc_rho_S_runaway_context(u, alg) = " The state norm is ‖u‖ = $(norm(u));
 _emrkc_rho_type(cache::EMRKCCache) = typeof(cache.ρS)
 
 # The Gershgorin bound reads rows of the assembled diffusion matrix, which only a host operator
-# exposes; a matrix living on a device has no method here and says so through `_gershgorin_bound`.
+# exposes; a matrix on a device has no method here and says so through `_gershgorin_bound`.
 _emrkc_host_matrix(op) = FerriteOperators.get_matrix(op)
 _emrkc_host_matrix(op::MirroredBilinearOperator) = FerriteOperators.get_matrix(op.host_operator)
 
@@ -623,12 +569,8 @@ _emrkc_host_matrix(op::MirroredBilinearOperator) = FerriteOperators.get_matrix(o
 #  The step                                                         #
 #####################################################################
 
-"""
-    _EMRKCInnerRHS(op, frozen)
-
-The right hand side of the inner sweep on the transmembrane rows: `v ↦ Mₗ⁻¹Kv + f_S`, with the
-slow force `f_S` frozen at the value the enclosing outer stage computed.
-"""
+# The inner sweep's right hand side on the transmembrane rows: `v ↦ Mₗ⁻¹Kv + f_S`, with `f_S` frozen
+# at the value the enclosing outer stage computed.
 struct _EMRKCInnerRHS{OperatorType, VecType}
     op::OperatorType
     frozen::VecType
@@ -640,28 +582,21 @@ function (r::_EMRKCInnerRHS)(du, v, t)
     return nothing
 end
 
-"""
-    _EMRKCAveragedForce(cache, alg, η, m)
-
-The averaged force `f̄(t, Y) = (u_η - Y)/η` of Algorithm 3, as the right hand side the outer sweep
-calls once per stage. `u_η` is the state at `η` of
-
-    v' = f_F(v) + f_S(y_E),    v(0) = y_E,
-
-where `y_E` is `Y` with every selected gate advanced exactly over `η` and `f_S` is the slow force
-at `y_E`, both frozen for the whole inner sweep.
-
-Three placements decide whether this is emRKC or a scheme that merely resembles it, and none of
-them is visible in a convergence test:
-
-1. the exponential is sized by `η`, *not* by the outer step, and is taken once per outer stage;
-2. the inner sweep starts from `y_E`, not from `Y`;
-3. the difference quotient is taken against `Y`, not against `y_E`.
-
-Only the transmembrane rows are swept: `f_F` acts on those alone, so everywhere else the inner
-right hand side is the constant `f_S` and the sweep integrates it exactly, giving
-`u_η = y_E + η f_S` there.
-"""
+# The averaged force `f̄(t, Y) = (u_η - Y)/η` of Algorithm 3, as the right hand side the outer sweep
+# calls once per stage. `u_η` is the state at `η` of
+#
+#     v' = f_F(v) + f_S(y_E),    v(0) = y_E,
+#
+# where `y_E` is `Y` with every selected gate advanced exactly over `η` and `f_S` is the slow force
+# at `y_E`, both frozen for the whole inner sweep.
+#
+# Three placements decide whether this is emRKC or a scheme that merely resembles it, and none of
+# them is visible in a convergence test: the exponential is sized by `η` and taken once per outer
+# stage (not by the outer step), the inner sweep starts from `y_E` (not `Y`), and the difference
+# quotient is taken against `Y` (not `y_E`).
+#
+# Only the transmembrane rows are swept: `f_F` acts on those alone, so everywhere else the inner
+# right hand side is the constant `f_S`, integrated exactly as `u_η = y_E + η f_S`.
 struct _EMRKCAveragedForce{CacheType, AlgType, T}
     cache::CacheType
     alg::AlgType
@@ -671,10 +606,6 @@ end
 
 function (force::_EMRKCAveragedForce)(fbar, Y, t)
     (; cache, alg, η, m) = force
-    # `cache.fbarV` is a view into `cache.fbar` specifically (built once in `OS.init_cache`), not
-    # into whatever buffer `sts_sweep!` happens to pass as `fbar` here. The full-width write below
-    # and the `cache.fbarV` write on the transmembrane rows would then land in two different
-    # arrays, half-writing the one `sts_sweep!` actually reads back as `du`.
     fbar === cache.fbar || error(
         "_EMRKCAveragedForce must be called with `du === cache.fbar`: `cache.fbarV` only aliases " *
         "`cache.fbar`, and writing through it while `fbar` pointed elsewhere would silently drop " *
@@ -704,8 +635,8 @@ function (force::_EMRKCAveragedForce)(fbar, Y, t)
         alg.inner,
     )
 
-    # (4) the difference quotient, against Y. The first line is the analytic finish of the rows the
-    # sweep skipped; the second overwrites the rows it did not.
+    # (4) the difference quotient against Y: the analytic finish of the rows the sweep skipped, then
+    # an overwrite of the rows it did not.
     @.. fbar = (cache.yE - Y) / η + cache.fS
     YV = @view Y[V]
     cache.fbarV .= (U .- YV) ./ η
@@ -724,11 +655,10 @@ function OS._perform_step!(parent, children::Tuple, cache::EMRKCCache, dt)
     alg = parent.alg
     t   = parent.t
 
-    # A divergence caught here (the runaway guard inside `estimate_rho!`, or a stage count that
-    # overflows `max_stages` or `Int` itself) is a step failure like the NaN check below, not an
-    # uncaught crash -- but only once there is a step to fail: on the very first attempt of a run
-    # (`parent.iter ≤ 1`) nothing has been accepted yet, so the same errors stay loud instead of
-    # being swallowed into a silent, immediate `ReturnCode.Failure`.
+    # A divergence caught here (`estimate_rho!`'s runaway guard, or a stage count over `max_stages`
+    # or `Int` itself) is a step failure like the NaN check below -- but only once there is a step to
+    # fail: on the first attempt of a run nothing has been accepted yet, so the same errors stay loud
+    # instead of being swallowed into a silent, immediate `ReturnCode.Failure`.
     s, η, m = try
         @timeit_debug "spectral radii" _emrkc_refresh_rho!(cache, alg, parent, t)
         _emrkc_step_sizing(alg, dt, cache.ρS, cache.ρF)
@@ -752,10 +682,9 @@ function OS._perform_step!(parent, children::Tuple, cache::EMRKCCache, dt)
         alg.outer,
     )
 
-    # A NaN anywhere in the sweep reaches the final stage: every stage carries its predecessor
-    # forward with a nonzero coefficient, per row. Checking once here therefore catches a blow-up
-    # mid-sweep just as well as a check per stage would, and leaves `parent.u` -- and with it the
-    # rollback anchor `parent.uprev` -- untouched for the retry.
+    # Every stage carries its predecessor forward with a nonzero coefficient, per row, so a NaN
+    # anywhere in the sweep reaches the final stage: one check here catches a mid-sweep blow-up and
+    # leaves `parent.u` -- and with it the rollback anchor `parent.uprev` -- untouched for the retry.
     if !all(isfinite, Ys)
         parent.force_stepfail = true
         return
@@ -766,25 +695,16 @@ function OS._perform_step!(parent, children::Tuple, cache::EMRKCCache, dt)
     return
 end
 
-"""
-    _emrkc_step_sizing(alg, Δt, ρS, ρF) -> (s, η, m)
-
-The three numbers Algorithm 3 derives from a step size and the two spectral radii: the outer stage
-count `s` resolving `Δt ρ_S`, the averaging window `η = 2Δt / ℓ_outer(s)`, and the inner stage
-count `m` resolving `η ρ_F`.
-
-The window is what couples the two: an `s`-stage outer sweep is stable up to
-`ℓ_outer(s)` ([`sts_stability_boundary`](@ref)), the averaged force's own spectral radius is at
-most `2/η`, and equating the two gives the largest window -- hence the cheapest inner sweep -- the
-outer sweep can still carry.
-
-Both radii already carry `rho_safety`.
-
-`η` is converted to `typeof(Δt)`: [`sts_stability_boundary`](@ref) always computes in `Float64`
-(it is a scalar, evaluated once per step, not worth a `T` parameter of its own), but `η` itself
-feeds the per-point inner sweep once per outer stage, so it must not promote that sweep's
-broadcasts back up to `Float64` under a `Float32` run.
-"""
+# The three numbers Algorithm 3 derives from a step size and the two spectral radii (both of which
+# already carry `rho_safety`): the outer stage count `s` resolving `Δt ρ_S`, the averaging window
+# `η = 2Δt / ℓ_outer(s)`, and the inner stage count `m` resolving `η ρ_F`.
+#
+# The window is what couples the two: an `s`-stage outer sweep is stable up to `ℓ_outer(s)`, the
+# averaged force's own spectral radius is at most `2/η`, and equating the two gives the largest
+# window -- hence the cheapest inner sweep -- the outer sweep can still carry.
+#
+# `η` is converted to `typeof(Δt)`: `sts_stability_boundary` always computes in `Float64`, but `η`
+# feeds the per-point inner sweep once per outer stage and must not promote its broadcasts.
 function _emrkc_step_sizing(alg, Δt, ρS, ρF)
     T = typeof(Δt)
     s = _emrkc_stage_count(alg.outer, Δt * ρS, alg, :outer)
@@ -815,8 +735,8 @@ end
 
 # Verbatim the Lie-Trotter-Godunov child sequence (`OrdinaryDiffEqOperatorSplitting`'s
 # `_perform_step!` for `LieTrotterGodunovCache`), run *after* the monolithic step has written
-# `parent.u`. The children are passive, so the forward sync distributes the new state into them,
-# the advance moves only their clocks, and the backward sync writes back what it just read.
+# `parent.u`. The children are passive, so the forward sync distributes the new state into them, the
+# advance moves only their clocks, and the backward sync writes back what it just read.
 @unroll function _emrkc_advance_children!(parent, children::Tuple, dt)
     i = 0
     @unroll for child in children

@@ -3,9 +3,8 @@ using Test
 
 import Thunderbolt: sts_stage_count, sts_coefficient_state, sts_stage_coefficients, sts_sweep!
 
-# Independent (non-Thunderbolt) reference polynomials, built from the same three-term
-# recurrences the families themselves come from, to check the sweep against a closed form
-# rather than against its own recurrence.
+# Independent reference polynomials, so the sweep is checked against a closed form rather than
+# against its own recurrence.
 function chebyshev1_and_deriv(x, s)
     Tjm2, Tjm1 = 1.0, x
     Tjm2p, Tjm1p = 0.0, 1.0
@@ -38,9 +37,8 @@ function gegenbauer32(x, s)
     return Cjm1
 end
 
-# R_s(τλ), computed from the family's own closed-form stability polynomial rather than from
-# `sts_sweep!`. `s` here is the stage count the sweep is run with (it fixes ω0/w1), `τλ` is the
-# actual (signed) product used in the test's y' = λy problem.
+# R_s(τλ) from the family's closed-form stability polynomial. `s` is the stage count the sweep runs
+# with (it fixes ω0/w1), `τλ` the actual signed product used in the test's y' = λy problem.
 function closed_form_R(::RKC1, ε, s, τλ)
     ω0 = 1.0 + ε / s^2
     Ts, Tsp = s == 1 ? (ω0, 1.0) : chebyshev1_and_deriv(ω0, s)
@@ -54,11 +52,9 @@ function closed_form_R(::RKG1, s, τλ)
     return bs * gegenbauer32(1 + w1 * τλ, s)
 end
 
-# The true (verified) real stability boundary |τλ_max| for each family at stage count s -- used
-# to sample τλ safely inside the interval. RKL1/RKG1 are exact (§ sts.jl); RKC1's is the exact
-# root |T_s(ω0 + ω1 τλ)| = T_s(ω0), first crossed (coming down from argument ω0) at
-# argument = -ω0, i.e. τλ = -2ω0/ω1 with ω1 = T_s(ω0)/T_s′(ω0) -- not the asymptotic law used
-# by `sts_stage_count`.
+# The true real stability boundary |τλ_max| at stage count s, for sampling τλ safely inside the
+# interval. RKL1/RKG1 are exact (see sts.jl); RKC1's is the exact root τλ = -2ω0/ω1 with
+# ω1 = T_s(ω0)/T_s′(ω0), not the asymptotic law `sts_stage_count` uses.
 function boundary_magnitude(fam::RKC1, s)
     ω0 = 1.0 + fam.ε / s^2
     Ts, Tsp = s == 1 ? (ω0, 1.0) : chebyshev1_and_deriv(ω0, s)
@@ -67,8 +63,8 @@ end
 boundary_magnitude(::RKL1, s) = s^2 + s
 boundary_magnitude(::RKG1, s) = s * (s + 3) / 2
 
-# A minimal, non-allocating y' = λy right hand side (a callable struct rather than a closure,
-# so it is safe to use in the allocation test).
+# A non-allocating y' = λy right hand side; a callable struct rather than a closure, so it is safe
+# in the allocation test.
 struct LinearDecay{T}
     λ::T
 end
@@ -85,10 +81,9 @@ families() = (RKC1(0.05), RKL1(), RKG1())
             y0, Ya, Yb, du = [1.0], [0.0], [0.0], [0.0]
             Y = sts_sweep!(LinearDecay(λ), Ya, Yb, du, y0, 0.0, τ, s, fam)
             R = fam isa RKC1 ? closed_form_R(fam, fam.ε, s, τλ) : closed_form_R(fam, s, τλ)
-            # atol guards the (odd s, small |R|) combinations where R sits near a polynomial
-            # root: `sts_sweep!`'s stage recurrence and this file's direct polynomial
-            # evaluation are two independently rounded paths to the same value, and a
-            # sub-ULP absolute disagreement there is a large *relative* one against a tiny R.
+            # atol guards the (odd s, small |R|) combinations where R sits near a polynomial root:
+            # the two independently rounded paths differ sub-ULP in absolute terms, which is a large
+            # *relative* disagreement against a tiny R.
             @test Y[1] ≈ R rtol = 1.0e-13 atol = 1.0e-13
         end
     end
@@ -134,9 +129,8 @@ end
 end
 
 @testset "Extreme z raises a pointed error, not InexactError" begin
-    # z this large pushes the stage count past typemax(Int); `ceil(Int, ...)` on that would throw
-    # an opaque InexactError. Threshold is family-dependent (~3.4e37 for RKC1 at ε = 0.05); 1e40
-    # clears it for all three families.
+    # The threshold past typemax(Int) is family-dependent (~3.4e37 for RKC1 at ε = 0.05); 1e40 clears
+    # it for all three.
     for fam in (RKC1(0.05), RKL1(), RKG1())
         e = @test_throws ErrorException sts_stage_count(fam, 1.0e40)
         @test !(e.value isa InexactError)
@@ -172,13 +166,10 @@ end
         y0s, Yas, Ybs, dus = Float32[1.0], Float32[0.0], Float32[0.0], Float32[0.0]
         Yf32 = sts_sweep!(LinearDecay(Float32(τλ)), Yas, Ybs, dus, y0s, 0.0f0, 1.0f0, s, fam)
 
-        # rtol/atol: the coefficient recurrence itself now runs in Float32 (not just the final
-        # broadcast -- see the Float32 purity fix below), so up to `s = 10` stages of single
-        # precision genuinely accumulate more rounding error than the previous, impure Float32
-        # path (Float64 coefficients truncated only at the end) ever showed here. atol also
-        # covers frac = 0.5 landing exactly on the polynomials' midpoint argument, a root for
-        # every odd s here, where both sides are near their own rounding floor and the ratio of
-        # two near-zero numbers is meaningless.
+        # rtol: the coefficient recurrence itself runs in Float32, so up to s = 10 stages accumulate
+        # single-precision rounding. atol covers frac = 0.5 landing on the polynomials' midpoint
+        # argument, a root for every odd s here, where the ratio of two near-zero numbers is
+        # meaningless.
         @test Float64(Yf32[1]) ≈ Yf64[1] rtol = 1.0e-5 atol = 1.0e-5
         @test eltype(Yf32) == Float32
     end
@@ -186,8 +177,8 @@ end
 
 @testset "Float32 purity: coefficients and sweep stay Float32, not promoted to Float64" begin
     for fam in families(), s in (1, 2, 5, 10)
-        # `fam.ε` (RKC1) is a `Float64` field by default (`RKC1(0.05)`); the coefficient state
-        # must convert it to `T`, not let it promote every downstream scalar back to Float64.
+        # `RKC1(0.05)`'s ε is a Float64 field; the coefficient state must convert it to `T` rather
+        # than let it promote every downstream scalar back to Float64.
         st = sts_coefficient_state(fam, s, Float32)
         for j = 1:s
             (μ, ν, μ̃, c), st = sts_stage_coefficients(fam, st, j)
@@ -200,10 +191,8 @@ end
     end
 end
 
-# A function barrier: `for fam in families()` makes `fam` a `Union`-typed loop variable at
-# this top-level scope, and calling `sts_sweep!` directly at that call site would measure the
-# dynamic dispatch, not the sweep. Calling through a function specializes on each concrete
-# `fam` it is invoked with.
+# A function barrier: `for fam in families()` makes `fam` `Union`-typed at top-level scope, so a
+# direct call would measure the dynamic dispatch rather than the sweep.
 function warmup_then_allocated(rhs, Ya, Yb, du, y0, t0, τ, s, fam)
     sts_sweep!(rhs, Ya, Yb, du, y0, t0, τ, s, fam) # warmup: compile + fill buffers
     return @allocated sts_sweep!(rhs, Ya, Yb, du, y0, t0, τ, s, fam)

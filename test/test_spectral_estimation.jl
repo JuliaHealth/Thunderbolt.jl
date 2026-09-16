@@ -24,8 +24,7 @@ import Thunderbolt:
 import FerriteOperators
 
 # A callable struct rather than a closure over `A`, so the allocation tests below measure
-# `estimate_rho!`/`mul_rate!` themselves rather than a boxed capture (same reasoning as
-# `LinearDecay` in test_sts_families.jl).
+# `estimate_rho!`/`mul_rate!` rather than a boxed capture.
 struct DenseApply{MT}
     A::MT
 end
@@ -36,10 +35,9 @@ end
 random_negdef(rng, ::Type{T}, n) where {T} = (R = randn(rng, T, n, n); -(R' * R) - I)
 
 @testset "estimate_rho! vs eigen: dense negative-definite matrices" begin
-    # Tight settings, isolating whether the power iteration itself converges to the right
-    # dominant eigenvalue -- independent of any particular random draw's eigenvalue gap (the
-    # loose *default* reltol=1e-2 is deliberately gap-sensitive; that is covered separately
-    # below on a matrix with a known, healthy gap).
+    # Tight settings, so this measures whether the power iteration converges to the right dominant
+    # eigenvalue independently of a random draw's eigenvalue gap. The gap-sensitive *default*
+    # reltol = 1e-2 is covered separately below, on a matrix with a known healthy gap.
     rng = MersenneTwister(20260901)
     for n in (5, 20), trial in 1:3
         A = random_negdef(rng, Float64, n)
@@ -54,9 +52,8 @@ random_negdef(rng, ::Type{T}, n) where {T} = (R = randn(rng, T, n, n); -(R' * R)
 end
 
 @testset "estimate_rho! with default settings on a well-separated spectrum" begin
-    # A well-separated spectrum (ratio 1:10:100) so the *default* reltol=1e-2 stopping rule
-    # -- which reads only the last step size, not the true remaining error -- is not misled by
-    # a slow-converging near-degenerate pair the way an arbitrary random draw could.
+    # Ratio 1:10:100, so the default reltol = 1e-2 stopping rule -- which reads only the last step
+    # size, not the true remaining error -- is not misled by a near-degenerate pair.
     A = Diagonal([-1.0, -10.0, -100.0])
     λmax_abs = 100.0
 
@@ -78,9 +75,8 @@ end
 end
 
 @testset "estimate_rho!: runaway guard" begin
-    # `apply!` that ignores `v` entirely and always returns the same (bad) result -- a stand-in for
-    # an operator evaluated somewhere it should not have been trusted, where reseeding the iterate
-    # and retrying cannot possibly help either.
+    # An `apply!` that ignores `v` and always returns the same bad result: an operator evaluated
+    # where it should not be trusted, which reseeding and retrying cannot help either.
     struct ConstantApply{T}
         value::T
         calls::Ref{Int}
@@ -121,12 +117,9 @@ end
     end
 
     @testset "maxiters exhaustion is a silent, documented under-estimate" begin
-        # A well separated spectrum still cannot reach reltol = 1e-15 in 2 iterations -- power
-        # iteration's per-step error is bounded by the eigenvalue ratio (1/10 here), so 2 steps
-        # gets nowhere near 1e-15 relative, guaranteeing exhaustion without tripping the (separate)
-        # non-finite/jump guard above. A legitimate estimator hitting this on a real problem (an
-        # under-budgeted `maxiters`/`reltol` pair, not a bad operator) has to keep working, not
-        # error -- confirmed on a real EMRKC step, not just this synthetic case.
+        # Power iteration's per-step error is bounded by the eigenvalue ratio (1/10 here), so two
+        # steps cannot reach reltol = 1e-15: exhaustion without tripping the non-finite/jump guard.
+        # An under-budgeted `maxiters`/`reltol` pair is not a bad operator and must keep working.
         A = Diagonal([-1.0, -10.0, -100.0])
         ws = SpectralRadiusWorkspace(zeros(3))
         ρ = estimate_rho!(ws, DenseApply(A); maxiters = 2, reltol = 1.0e-15)
@@ -135,9 +128,8 @@ end
     end
 
     @testset "a benign estimator is unaffected" begin
-        # The guard sits on the same success path every other testset in this file already
-        # exercises (dense negative-definite matrices, the FE heat problem, warm start, Float32):
-        # those passing unchanged is the regression check that ordinary use never retries.
+        # The guard sits on the success path every other testset here exercises; ordinary use must
+        # never retry.
         A = Diagonal([-1.0, -10.0, -100.0])
         ws = SpectralRadiusWorkspace(zeros(3))
         ρ = estimate_rho!(ws, DenseApply(A))
@@ -145,9 +137,7 @@ end
     end
 end
 
-# A tiny FE heat problem, assembled exactly as `Thunderbolt._assemble_laplacian` does: a
-# bilinear integrator handed to `setup_operator`, assembled by `update_operator!`, read back
-# through FerriteOperators' documented `get_matrix` accessor.
+# A tiny FE heat problem, assembled as `Thunderbolt._assemble_laplacian` does it.
 function assemble_heat_operators(n = 4)
     grid = generate_grid(Quadrilateral, (n, n))
     dh   = DofHandler(grid)
@@ -184,9 +174,8 @@ end
     dense_rate = Diagonal(invM) * Matrix(K)
     λmax_abs   = maximum(abs, eigvals(dense_rate))
 
-    # (b) estimate_rho! over mul_rate! agrees with eigen of the dense rate matrix (safety = 1
-    # here isolates the power-iteration estimate itself from the safety margin, which the
-    # dense-matrix testset above already covers).
+    # (b) estimate_rho! over mul_rate! agrees with eigen of the dense rate matrix; safety = 1
+    # isolates the estimate from the safety margin, covered by the dense-matrix testset above.
     op = LumpedMassRateOperator(Kop, invM)
     ws = SpectralRadiusWorkspace(zeros(n))
     ρ = estimate_rho!(ws, (w, v) -> mul_rate!(w, op, v); maxiters = 300, safety = 1.0)
@@ -249,8 +238,7 @@ end
     end
 end
 
-# Function barriers so the allocation checks measure the callee, not boxed captures at this
-# scope (same reasoning as `warmup_then_allocated` in test_sts_families.jl).
+# Function barriers so the allocation checks measure the callee, not boxed captures at this scope.
 function warmup_then_allocated_mul_rate(op, y, x)
     mul_rate!(y, op, x)
     return @allocated mul_rate!(y, op, x)

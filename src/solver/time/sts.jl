@@ -4,21 +4,19 @@
 """
     AbstractSTSFamily
 
-A super-time-stepping (STS) stage family: a first-order explicit Runge-Kutta scheme whose
-stage count `s` trades accuracy order for an extended real stability interval, so that one
-outer step of length `τ` can integrate a stiff, real-negative-spectrum right hand side in `s`
-stages instead of `O(s²)` plain forward-Euler steps. See [`RKC1`](@ref), [`RKL1`](@ref),
-[`RKG1`](@ref) and [`sts_sweep!`](@ref).
+A first-order explicit Runge-Kutta family whose stage count `s` buys an extended real stability
+interval, so one step of length `τ` integrates a stiff, real-negative-spectrum right hand side in
+`s` stages instead of `O(s²)` forward-Euler steps.
+See [`RKC1`](@ref), [`RKL1`](@ref), [`RKG1`](@ref), [`sts_sweep!`](@ref).
 """
 abstract type AbstractSTSFamily end
 
 """
     RKC1(ε = 0.05) <: AbstractSTSFamily
 
-First-order Runge-Kutta-Chebyshev family. `ε` damps the stability boundary away from the
-imaginary axis (`ε = 0` is undamped and numerically fragile there).
-Reference: van der Houwen & Sommeijer (1980); Rosilho de Souza et al., arXiv:2401.01745,
-Algorithm 1.
+First-order Runge-Kutta-Chebyshev family. `ε` damps the stability boundary away from the imaginary
+axis (`ε = 0` is undamped and numerically fragile there).
+Reference: van der Houwen & Sommeijer (1980); Rosilho de Souza et al., arXiv:2401.01745, Algorithm 1.
 """
 struct RKC1{T <: Real} <: AbstractSTSFamily
     ε::T
@@ -43,26 +41,20 @@ Reference: Skaras, Saxton, Meyer & Aslam, J. Comput. Phys. 425 (2021) 109879.
 """
 struct RKG1 <: AbstractSTSFamily end
 
-# Coefficient naming used throughout this file: (μⱼ, νⱼ, μ̃ⱼ) with μⱼ the Yⱼ₋₁ coefficient, νⱼ
-# the Yⱼ₋₂ coefficient, μ̃ⱼ the step coefficient --
-#   Yⱼ = μⱼYⱼ₋₁ + νⱼYⱼ₋₂ + μ̃ⱼτf(Yⱼ₋₁),   μⱼ + νⱼ = 1.
-# This matches OrdinaryDiffEqStabilizedRK's RKL1/RKG1 naming directly. The reference RKC
-# implementation this RKC1 is transcribed from (Rosilho de Souza et al., arXiv:2401.01745,
-# Algorithm 1; mRKC's `ChebyshevMethods::CoefficientsRKC1`) names the SAME three quantities
-# the other way around: its `mu` is our μ̃ (step), its `nu` is our μ (Yⱼ₋₁), its `kappa` is
-# our ν (Yⱼ₋₂).
+# Coefficients throughout this file are (μⱼ, νⱼ, μ̃ⱼ) in
+#   Yⱼ = μⱼYⱼ₋₁ + νⱼYⱼ₋₂ + μ̃ⱼτf(Yⱼ₋₁),   μⱼ + νⱼ = 1,
+# matching OrdinaryDiffEqStabilizedRK's RKL1/RKG1 naming. The RKC reference this RKC1 is transcribed
+# from (Rosilho de Souza et al., arXiv:2401.01745, Algorithm 1) names the same three the other way
+# round: its `mu` is our μ̃, its `nu` our μ, its `kappa` our ν.
 
 """
     sts_stage_count(fam::AbstractSTSFamily, z) -> Int
 
-The smallest stage count `s` whose real stability interval admits `z = τ·ρ` (`τ` the outer
-step, `ρ` a spectral radius estimate; any safety margin is the caller's responsibility).
+The smallest stage count `s` whose real stability interval admits `z = τ·ρ` (`τ` the outer step,
+`ρ` a spectral radius estimate; any safety margin is the caller's responsibility).
 """
 function sts_stage_count end
 
-# `ceil(Int, x)` throws an opaque `InexactError` once `x` exceeds `typemax(Int)`; a `z` that
-# large only arises from a diverged state or an unusable `rho_*_estimate` override (or a NaN/Inf
-# `z`, which also fails `x < typemax(Int)`), so name that instead of the bare conversion crash.
 @inline function _sts_safe_ceil(z, x)
     x < typemax(Int) || error(
         "sts_stage_count: the stage count for z = $z does not fit in a machine `Int`. This " *
@@ -72,39 +64,28 @@ function sts_stage_count end
     return ceil(Int, x)
 end
 
-# s = ceil(√(z/β)), β = 2 - 4ε/3: the standard asymptotic RKC stage-count law (van der Houwen
-# & Sommeijer 1980; Verwer, Hundsdorfer & Sommeijer, Numer. Math. 57 (1990) 157-178).
+# van der Houwen & Sommeijer (1980); Verwer, Hundsdorfer & Sommeijer, Numer. Math. 57 (1990) 157-178.
 function sts_stage_count(fam::RKC1, z)
     β = 2 - 4fam.ε / 3
     return max(1, _sts_safe_ceil(z, sqrt(z / β)))
 end
 
-# Smallest odd s with z ≤ s² + s. This is the RKL1 stability boundary of Meyer, Balsara &
-# Aslam (JCP 257 (2014), §2-3): the stability polynomial is R_s(z) = P_s(1 + w₁z) with
-# w₁ = 2/(s²+s) for the shifted Legendre polynomial P_s, which is bounded by 1 in magnitude on
-# [-1,1] with equality only at the endpoints; z ≤ s²+s is exactly where 1+w₁z reaches -1.
-# Matches OrdinaryDiffEqStabilizedRK's RKL1 stage-count law verbatim.
+# Smallest odd s with z ≤ s² + s (Meyer, Balsara & Aslam, JCP 257 (2014), §2-3), matching
+# OrdinaryDiffEqStabilizedRK's RKL1 law.
 function sts_stage_count(::RKL1, z)
     s = max(1, _sts_safe_ceil(z, (sqrt(1 + 4z) - 1) / 2))
     return isodd(s) ? s : s + 1
 end
 
-# Smallest s with z ≤ s(s+3)/2.
+# Smallest s with z ≤ s(s+3)/2: R_s(z) = b_s C_s^(3/2)(1 + w₁z) with b_s = 2/((s+1)(s+2)) and
+# w₁ = 4/(s(s+3)) (Skaras, Saxton, Meyer & Aslam, JCP 425 (2021) 109879, eqs. 22-24), whose extremal
+# magnitude on [-1,1] is attained at the endpoints (checked here to s = 30 against the paper's
+# eq. 25 α-recurrence), normalized by b_s to 1 -- so |R_s| ≤ 1 exactly up to z = 2/w₁ = s(s+3)/2.
 #
-# Derivation (Skaras, Saxton, Meyer & Aslam, JCP 425 (2021) 109879, eqs. 22-24): the RKG1
-# stability polynomial is R_s(z) = b_s C_s^(3/2)(1 + w₁z) with b_s = 2/((s+1)(s+2)) and
-# w₁ = 4/(s(s+3)) for the shifted Gegenbauer polynomial C_s^(3/2) (α = 3/2). As for Legendre
-# above, C_s^(3/2) attains its extremal magnitude on [-1,1] at the endpoints (checked here up
-# to s = 30 against the α-recurrence of the paper's eq. 25, since the paper itself only states
-# the CMP result, not this classical stability fact); the b_s normalization makes that extremal
-# value 1, so |R_s(z)| ≤ 1 exactly up to z = 2/w₁ = s(s+3)/2.
-#
-# NOTE: the installed OrdinaryDiffEqStabilizedRK (`rkc_perform_step.jl`, RKG1) computes its
-# stage count from z ≤ s(s+3)/4 -- exactly half of the bound above. Evaluating R_s at both
-# candidates confirms s(s+3)/2 is the true root (|R_s| = 1 there to full precision, and > 1
-# just beyond it), while s(s+3)/4 leaves |R_s| well under 1: that implementation is not
-# unstable, just needlessly conservative by roughly a factor √2 in s. We use the
-# literature-derived s(s+3)/2 here.
+# NOTE: the installed OrdinaryDiffEqStabilizedRK (`rkc_perform_step.jl`, RKG1) uses z ≤ s(s+3)/4,
+# half of that. Evaluating R_s at both confirms s(s+3)/2 is the true root (|R_s| = 1 there to full
+# precision, > 1 just beyond) while s(s+3)/4 leaves |R_s| well under 1: that implementation is
+# conservative by roughly √2 in s, not unstable. We use the literature-derived s(s+3)/2.
 function sts_stage_count(::RKG1, z)
     return max(1, _sts_safe_ceil(z, (sqrt(9 + 8z) - 3) / 2))
 end
@@ -112,12 +93,9 @@ end
 """
     sts_stability_boundary(fam::AbstractSTSFamily, s::Integer) -> Float64
 
-The real stability boundary of an `s`-stage sweep: the largest `z` with `|R_s(-z)| ≤ 1`.
-
-Forward partner of [`sts_stage_count`](@ref), which inverts it, so
-`sts_stage_count(fam, sts_stability_boundary(fam, s)) == s` for every family and every `s` the
-family admits. A multirate scheme needs the forward direction: once `s` is fixed, the averaged
-force it integrates may be at most this stiff, which is what sizes the averaging window.
+The real stability boundary of an `s`-stage sweep: the largest `z` with `|R_s(-z)| ≤ 1`. Forward
+partner of [`sts_stage_count`](@ref), which inverts it, so
+`sts_stage_count(fam, sts_stability_boundary(fam, s)) == s` for every family and every `s` it admits.
 """
 function sts_stability_boundary end
 
@@ -125,30 +103,19 @@ sts_stability_boundary(fam::RKC1, s::Integer) = (2 - 4fam.ε / 3) * float(s)^2
 sts_stability_boundary(::RKL1, s::Integer) = float(s)^2 + float(s)
 sts_stability_boundary(::RKG1, s::Integer) = float(s) * (float(s) + 3) / 2
 
-"""
-    sts_coefficient_state(fam::AbstractSTSFamily, s::Integer, ::Type{T})
-    sts_stage_coefficients(fam::AbstractSTSFamily, state, j::Integer) -> ((μⱼ, νⱼ, μ̃ⱼ, cⱼ), state′)
-
-On-the-fly scalar recurrence for the order-1 stage coefficients of an `s`-stage sweep.
-`sts_coefficient_state` builds the initial state (before stage `j = 1`); `state` is then
-threaded sequentially through `sts_stage_coefficients` calls for `j = 1, …, s` -- calling out
-of order or skipping a stage is not supported. `cⱼ` is the stage time fraction
-(`t0 + cⱼτ`; `cₛ == 1`). `T` names the state-vector eltype the caller intends, and every
-scalar this recurrence produces is computed in `T` -- including a family struct's own fields
-(e.g. `RKC1.ε`), which are converted to `T` once here rather than left to promote broadcasts in
-[`sts_sweep!`](@ref) back up to their own (commonly `Float64`) type.
-"""
+# On-the-fly scalar recurrence for the order-1 stage coefficients of an `s`-stage sweep:
+# `sts_coefficient_state` builds the state before stage `j = 1`, which is then threaded sequentially
+# through `sts_stage_coefficients` for `j = 1, …, s` -- out of order or with a stage skipped is
+# unsupported. `cⱼ` is the stage time fraction (`t0 + cⱼτ`; `cₛ == 1`). Every scalar is computed in
+# `T`, a family struct's own fields (e.g. `RKC1.ε`) included, so a `T`-typed sweep's broadcasts are
+# not promoted back to the field's type.
 function sts_coefficient_state end
-
-"""
-See [`sts_coefficient_state`](@ref) -- this is the second half of that same contract.
-"""
 function sts_stage_coefficients end
 
 struct RKC1CoeffState{T}
     ω0::T
     ω1::T
-    Tjm2::T # Tⱼ₋₂(ω0), ready for the next sts_stage_coefficients call
+    Tjm2::T # Tⱼ₋₂(ω0)
     Tjm1::T # Tⱼ₋₁(ω0)
     cjm2::T
     cjm1::T
@@ -157,8 +124,6 @@ end
 function sts_coefficient_state(fam::RKC1, s::Integer, ::Type{T}) where {T}
     ε = T(fam.ε)
     ω0 = one(T) + ε / T(s)^2
-    # T_s(ω0) and T_s′(ω0) at the full degree s, via the Chebyshev recurrence and its
-    # derivative recurrence, to seed ω1 = T_s(ω0)/T_s′(ω0) once for the whole sweep.
     Ts, Tsp = s == 1 ? (ω0, one(T)) : _chebyshev1_at_degree(ω0, s)
     ω1 = Ts / Tsp
     return RKC1CoeffState{T}(ω0, ω1, one(T), ω0, zero(T), zero(T))
@@ -191,8 +156,7 @@ function sts_stage_coefficients(::RKC1, st::RKC1CoeffState{T}, j::Integer) where
     return (μ, ν, μ̃, c), RKC1CoeffState{T}(ω0, ω1, st.Tjm1, Tj, st.cjm1, c)
 end
 
-# RKL1 and RKG1 both have a closed form bⱼ(j) (no incremental polynomial recurrence needed),
-# so their coefficient state is just the family's w1 plus the running stage-time pair.
+# RKL1 and RKG1 have a closed form bⱼ(j), so their state is just w1 plus the running stage-time pair.
 struct RKLGCoeffState{T}
     w1::T
     cjm2::T
@@ -225,17 +189,14 @@ end
 """
     sts_sweep!(rhs!, Ya, Yb, du, y0, t0, τ, s, fam::AbstractSTSFamily) -> Y
 
-Advances `y0` by one outer step of length `τ` through `s` stages of `fam`, calling
-`rhs!(du, Y, t)` once per stage at the stage time `t0 + cⱼ₋₁·τ`. `Ya` and `Yb` are two
-work buffers that rotate as `Yⱼ₋₁`/`Yⱼ₋₂` (a completed stage overwrites the buffer holding
-the now-consumed `Yⱼ₋₂`); `y0` is read-only throughout and never one of the rotating buffers.
-Returns whichever of `Ya`/`Yb` holds `Yₛ` -- callers must not assume it is always `Ya`.
-`s == 1` degenerates to a single forward-Euler step of size `μ̃₁τ`. Allocation-free once
-warmed up, for an `rhs!` that itself does not allocate.
+Advances `y0` by one outer step of length `τ` through `s` stages of `fam`, calling `rhs!(du, Y, t)`
+once per stage at the stage time `t0 + cⱼ₋₁·τ`. `Ya` and `Yb` rotate as `Yⱼ₋₁`/`Yⱼ₋₂`; `y0` is
+read-only throughout and must not be one of them. Returns whichever of `Ya`/`Yb` holds `Yₛ` --
+callers must not assume it is `Ya`. `s == 1` degenerates to a forward-Euler step of size `μ̃₁τ`.
+Allocation-free once warmed up, for an `rhs!` that does not allocate.
 
-`Ya`, `Yb`, `du` and `y0` must all have equal `length` -- checked via `@boundscheck`, since the
-per-stage broadcast below is `@inbounds` and a short buffer would otherwise be a silent
-out-of-bounds write rather than a bounds error.
+`Ya`, `Yb`, `du` and `y0` must have equal `length`, checked via `@boundscheck`: the per-stage
+broadcast is `@inbounds`, so a short buffer would be a silent out-of-bounds write.
 """
 function sts_sweep!(rhs!, Ya, Yb, du, y0, t0, τ, s::Integer, fam::AbstractSTSFamily)
     @boundscheck (length(Ya) == length(Yb) == length(du) == length(y0)) ||
@@ -253,16 +214,9 @@ function sts_sweep!(rhs!, Ya, Yb, du, y0, t0, τ, s::Integer, fam::AbstractSTSFa
     return isodd(s) ? Ya : Yb
 end
 
-"""
-    exponential_gate_step(x, λ, y∞, η)
-
-Exact value at `η` of `dx/dt = λ(x - y∞)` (the gate normal form of [`gating_symbols`](@ref)):
-`x(η) = y∞ + (x - y∞)e^{ηλ} = x + (e^{ηλ} - 1)(x - y∞)`, written with `expm1` because `e^{ηλ} - 1`
-cancels catastrophically for the small `ηλ` an inner STS sub-step produces.
-
-Intended for decay gates, `λ ≤ 0`. At `λ > 0`, or at `λ = 0` with an infinite `y∞`, the result can
-be non-finite (`expm1` growing without bound, or `Inf * 0`); nothing here guards against that --
-the caller's `isfinite` check on the swept state (e.g. `EMRKC`'s step, which fails the step rather
-than write a non-finite solution) is where it is caught.
-"""
+# Exact value at `η` of dx/dt = λ(x - y∞), the gate normal form of `gating_symbols`, written with
+# `expm1` because `e^{ηλ} - 1` cancels catastrophically for the small ηλ an inner STS sub-step
+# produces. Intended for decay gates, λ ≤ 0: at λ > 0, or λ = 0 with an infinite `y∞`, the result can
+# be non-finite and nothing here guards against that -- the caller's `isfinite` check on the swept
+# state (e.g. `EMRKC`'s step) is where it is caught.
 @inline exponential_gate_step(x, λ, y∞, η) = x + expm1(η * λ) * (x - y∞)

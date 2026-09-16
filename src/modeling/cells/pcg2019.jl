@@ -50,13 +50,10 @@ end
 const PCG2019 = ParametrizedPCG2019Model{Float64};
 
 # Shared between `cell_rhs_fast!`/`cell_rhs_slow!` and `gate_coefficients`: each `_pcg2019_*_gate`
-# returns the (x∞, τ) pair of one state's gate normal form dx/dt = (x∞(φ) - x)/τ(φ). Factored out
-# of the two `cell_rhs_*!` bodies verbatim -- same expressions, same evaluation order.
-#
-# Every literal is tied to the type of the value it meets (`one(e)`, and an `Int` sign that promotes
-# rather than widens), so a `ParametrizedPCG2019Model{Float32}` evaluates its gates entirely in
-# `Float32`. Bare `Float64` literals here would widen the whole expression for any `T` -- invisible
-# on the host, but on a GPU it puts the hottest loop of a "Float32" run into double precision.
+# returns the (x∞, τ) pair of one state's gate normal form dx/dt = (x∞(φ) - x)/τ(φ). Every literal is
+# tied to the type of the value it meets (`one(e)`, an `Int` sign that promotes rather than widens),
+# so a `ParametrizedPCG2019Model{Float32}` evaluates its gates entirely in `Float32`; a bare
+# `Float64` literal would put the hottest loop of a GPU "Float32" run into double precision.
 @inline function _pcg2019_sigmoid(φ, E_Y, k_Y, sign)
     e = exp(sign * (φ - E_Y) / k_Y)
     return one(e) / (one(e) + e)

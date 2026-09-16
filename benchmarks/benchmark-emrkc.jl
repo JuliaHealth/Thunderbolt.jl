@@ -1,137 +1,62 @@
-# emRKC against the production reaction-diffusion split, host and device: on an ep01-shaped monodomain
-# sheet for two cell models, and on an ideal left ventricle of ~1e6 hexahedra carrying a full
-# orthotropic fiber architecture. What it costs to buy a simulated millisecond with an explicit
-# stabilized scheme, next to `LieTrotterGodunov(BackwardEulerSolver + Jacobi-preconditioned
-# KrylovJL_CG, ForwardEulerCellSolver)`.
+# emRKC against the production reaction-diffusion split, host and device: an ep01-shaped monodomain
+# sheet for two cell models, and an ideal left ventricle of ~1e6 hexahedra carrying an orthotropic
+# fiber architecture. The baseline is `LieTrotterGodunov(BackwardEulerSolver + Jacobi-preconditioned
+# KrylovJL_CG, AdaptiveForwardEulerSubstepper)`.
 #
-# MATCHED ACCURACY, NOT MATCHED STEP SIZE. Comparing the two at one step size would measure nothing:
-# the step size each method can afford is a property of the method, and that is the whole claim under
-# test. So each picks its own, and they are compared where they deliver the same error.
+# MATCHED ACCURACY, NOT MATCHED STEP SIZE: the step size a method can afford is a property of the
+# method and is the claim under test, so each arm picks its own and they are compared where they
+# deliver the same error. Each method is referenced against ITSELF at `DTREF` in Float64 on the host
+# -- not a shared reference, since emRKC lumps the mass matrix and the backward Euler stage does not,
+# and a shared one would lay that O(h²) gap under both error curves as an unreachable floor. A
+# reference's own error is its distance to the same method at `2 DTREF`, and the reference tightens
+# its conjugate gradient past the tutorial's setting so that it does not measure the linear solve's
+# own accumulated error; the timed arms keep the tutorial's tolerances. The selected step size is the
+# largest in `SWEEP` staying inside `BAND`, and every timed arm is validated against its reference at
+# its own step size before it is timed. Timing is the minimum over `NPASS` passes of `NSTEPS` steps,
+# after `WARMUP_SECONDS` of uninterrupted stepping -- this card idles at 300 MHz, so the clocks are
+# read back mid-flight per arm and printed. For splitting arms the step is decomposed over the two
+# children through the same calls `OrdinaryDiffEqOperatorSplitting`'s `_perform_step!` makes; emRKC
+# has no linear solve to separate out and reports its stage structure `(s, m)` in that column.
 #
-#  * Reference: each method against ITSELF at `DTREF`, in Float64 on the host. Deliberately not a
-#    shared reference -- emRKC lumps the mass matrix and the backward Euler stage does not, so the two
-#    integrate different semidiscretizations of the same monodomain problem. That gap is printed
-#    below; it is of the order of the accuracy band itself, and a shared reference would lay it under
-#    both error curves as a floor that no step size could get beneath. Each reference's own error is
-#    estimated by its distance to the same method at `2 DTREF`, printed beside it. The backward Euler
-#    reference tightens its conjugate gradient well past the tutorial's setting, because otherwise the
-#    linear solve's own error -- which accumulates with the step count -- is what the reference
-#    measures. The timed arms keep the tutorial's tolerances, so that floor shows up where it belongs:
-#    in the error curve of the configuration a user would actually run.
-#  * Step size: for each method, the largest in `SWEEP` whose final-time φₘ relative error stays
-#    inside `BAND`. The sweep runs in the precision and on the hardware the host arm is timed in, so
-#    the calibration *is* the host arm's validation.
-#  * Validation: every timed arm is checked against the reference at its own step size before it is
-#    timed -- the device arms repeat the check in their own precision (Float32, or Float64 where noted
-#    below) on the device. A silently wrong kernel must not produce a headline number.
-#  * Timing: minimum over `NPASS` passes of `NSTEPS` steps. Device arms first step for
-#    `WARMUP_SECONDS` without interruption, because this card idles at 300 MHz and a cold arm measures
-#    the clock ramp instead of the kernel; the clocks are read back per arm and printed, so the reader
-#    can see the card was hot. Timing starts from the initial condition having had `WARMUP_SECONDS`
-#    worth of real steps to develop -- for FHN that is a spiral wave, for PCG2019 see below.
-#  * Composition: for the splitting arms the per step time is split over the two children through the
-#    same calls `OrdinaryDiffEqOperatorSplitting`'s own `_perform_step!` makes, which separates the
-#    linear solve from the pointwise reaction. emRKC has no linear solve to separate out; what is
-#    reported in its place is the stage structure `(s, m)` that stands in for one.
-#  * Knife edge -- and on FHN it has now flipped, which is the single most important thing to read off
-#    the tables below. Roughly half of the reported speedup is the step size each method lands on, and
-#    that half sits at the accuracy band's edge rather than in its middle. FHN's splitting arm used to
-#    miss the band at Δt = 0.40 and fall back to 0.20; that is where the 3.38x host / 3.04x device
-#    ratios this file reported before came from. The Jacobi preconditioner lowers the linear solve's
-#    own error floor at the same tolerances, Δt = 0.40 now lands *inside* the band (0.00983 against
-#    0.01, a 1.7% margin), both methods take the same step, and FHN's ratio falls to 1.47x / 1.86x --
-#    per-step cost with no step-size component left in it. A 2% shift in that one error puts it back.
-#    So: FHN's ratio is a knife edge and should be quoted as one. PCG2019's is not -- its splitting arm
-#    NaNs outright at Δt >= 0.20, so 0.10 against emRKC's 0.20 is a hard factor of two. The other half
-#    is per step and is not a knife edge either: emRKC takes no linear solve, which is 79-93% of a
-#    splitting step below.
+# MODELS: `ENV["EMRKC_MODELS"]`, comma-separated, default `"FHN,PCG2019,LV"`; they run back to back
+# in one invocation and a model whose arms error out is reported without stopping the others. `BAND`,
+# `NSTEPS`, `NPASS`, `WARMUP_SECONDS` are shared; `N`, `TEND`, `DTREF`, `SWEEP` apply to the two sheet
+# `ModelConfig`s, which select their own step size, and the LV `LVConfig` overrides them.
+#  * FHN: 2.5mm x 2.5mm, the ep01 tutorial's dimensionless diffusion tensor, an excite/refractory box
+#    initial condition developing into a sustained spiral.
+#  * PCG2019: 10mm x 10mm, κ/(Cₘχ) = 0.4 mm²/ms and the planar S1 front of
+#    `test/integration/test_emrkc_electrophysiology.jl`, which take ~15-20ms to cross the domain. At
+#    TEND=25ms the tissue is mixed -- upstroke, plateau and resting side by side -- which is what both
+#    the accuracy check and the per-step cost need to see. `gates = :all` is spelled out because
+#    PCG2019's six gates are exactly what the exponential treatment is for.
+#  * LV: PCG2019 on an ideal left ventricle with a Streeter helix (+60° endo to -60° epi); geometry,
+#    conductivities, protocol and step sizes below.
 #
-# MODELS: `ENV["EMRKC_MODELS"]`, comma-separated, defaults to `"FHN,PCG2019,LV"` -- they run in one
-# invocation (one Julia startup, one CUDA warmup) back to back, and a model whose arms error out is
-# caught and reported without stopping the others. `BAND`, `NSTEPS`, `NPASS`, `WARMUP_SECONDS` are
-# shared, unchanged discipline across all three; `N`, `TEND`, `DTREF`, `SWEEP` apply to the two sheet
-# configs, which select their own step size, and the LV overrides them (see the LV-PCG2019 block).
-# The sheet configs are `ModelConfig`s in `MODEL_CONFIGS` below; the LV is an `LVConfig` with its own
-# `run_model` method, because its geometry, its coefficients and above all its validation discipline
-# are different enough that sharing one struct would mean a field that means nothing to the other two.
-#  * FHN: 2.5mm x 2.5mm, the ep01 tutorial's own dimensionless diffusion tensor, an excite/refractory
-#    box initial condition that develops into a sustained spiral.
-#  * PCG2019: 10mm x 10mm, κ/(Cₘχ) = 0.4 mm²/ms -- the physiological value already validated for this
-#    model in `test/integration/test_emrkc_electrophysiology.jl` -- and that same test's planar S1
-#    front (left 12% of the domain excited to 20mV, the rest at the model's own resting default). That
-#    test reports the front taking ~15-20ms to cross this 10mm domain (mesh-resolution independent, so
-#    unchanged at this benchmark's N=512), so at TEND=25ms, and through most of the timed passes'
-#    warmup, the tissue is genuinely mixed -- upstroke, plateau and still-resting side by side -- which
-#    is what both the accuracy check and the per-step cost need to see; once it has crossed the domain
-#    settles into a shared plateau (a real AP's plateau lasts ~200-300ms, past this benchmark's own
-#    horizon either way). `EMRKC(gates = :all)` is spelled out explicitly: PCG2019's six gates
-#    (`h,m,f,s,xs,xr`) are exactly what the exponential treatment is for, and `gates = ()` would
-#    silently run past them.
-#  * LV: an ideal left ventricle, 1026600 hexahedra / 1081605 nodes / 7571235 states, PCG2019 again,
-#    with a genuinely orthotropic conductivity built from a Streeter helix (+60 endo to -60 epi) over
-#    the LV coordinate system. Its geometry, conductivities, protocol and -- the part that did not go
-#    to plan -- its step sizes are all set out in the LV-PCG2019 block below.
+# PRECISION AND THREADS: host arms run 2 threads -- `ThreadedSparseMatrixCSR`'s SpMV is threaded
+# across them, the pointwise reaction/gate sweeps are not (one CUDA thread per dof on device).
+# Uncapped/-t8 arms are not measured. Every device arm is Float32 throughout, `cell_rhs!` and
+# `gate_coefficients` included. Float32 on the HOST is PARTIAL: element/quadrature evaluation follows
+# `T` because `ep01_form`/`lv_form` pass `qrcs` explicitly, but the global M/K `SparseMatrixCSC`
+# storage takes its value type from the assembly strategy and stays Float64 regardless of `T`.
+# Making M/K storage follow `T` is a FerriteOperators.jl-side seam, not reachable from this file.
+# The LV's microstructure is also Float64 and shared across arms, so its `SpectralTensorCoefficient`
+# promotes the diffusion tensor's own assembly back to Float64 even at `T = Float32`.
 #
-# THREADING: host arms run 2 threads -- the capped profile this file is meant to be run under is
-# `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p CPUWeight=25 env
-# JULIA_NUM_THREADS=2 julia -t2 --heap-size-hint=3G --project=test/gpu benchmarks/benchmark-emrkc.jl`.
-# `ThreadedSparseMatrixCSR`'s SpMV is threaded across those 2 host threads; the pointwise reaction/gate
-# sweeps are not threaded (single-threaded on host, one CUDA thread per dof on device). Uncapped/-t8
-# arms are not measured here. This applies to both models.
+# PRECONDITIONING: the splitting arms' conjugate gradient carries a Jacobi (diagonal) preconditioner
+# on host and device through `KrylovJL_CG`'s `precs` seam (see `JacobiPrecon`). The unpreconditioned
+# iteration count is measured once per configuration and printed beside the preconditioned one,
+# because the linear solve is 64-93% of a splitting step. emRKC has no linear solve.
 #
-# DEVICE PRECISION: every device arm here is `Float32`, and genuinely so. That was not true of
-# PCG2019 until `src/modeling/cells/pcg2019.jl` stopped hardcoding bare `1.0`/`2.0`/`-1.0` literals in
-# `_pcg2019_sigmoid` and the `h`-gate's `τ_h`: those widened every sigmoid and every
-# `gate_coefficients` call to `Float64` regardless of the struct's `T`, so a "Float32" device arm ran
-# its hottest loop in double precision on a card built for single -- `@code_typed` on the `Float32`
-# instantiation showed 77 `Float64`-mentioning statements across `cell_rhs_fast!`, `cell_rhs_slow!`
-# and `gate_coefficients`, and now shows none. The `Float64` path is bit-identical across that change
-# (`T(literal)` at `T = Float64` is exact, and `test/test_gating_protocol.jl` pins it against a
-# verbatim pre-factoring reference), so the PCG2019 *host* numbers below are comparable to the ones
-# this file reported before it; the device numbers are not, and are remeasured.
-#
-# PRECONDITIONING: the splitting arms' conjugate gradient carries a Jacobi (diagonal) preconditioner,
-# host and device, through `KrylovJL_CG`'s own `precs` seam -- see `JacobiPrecon` below for why it has
-# to fill itself lazily rather than at `init`. The unpreconditioned iteration count is measured once
-# per configuration and printed beside the preconditioned one, because the linear solve is 76-95% of a
-# splitting step and what the preconditioner removes from that is the single largest lever on the
-# emRKC-vs-splitting ratio. emRKC has no linear solve and is untouched by it.
-#
-# EXPECTATION (PCG2019, stated before measuring): its reaction is expensive relative to FHN's -- 6
-# exponential gates and stiff kinetics (`τ_m = 0.12ms`, λ ≈ -8.3/ms) against FHN's one linear gate --
-# which dilutes the relative weight of "no linear solve", emRKC's whole advantage over the split. Both
-# arms' step sizes are expected reaction-accuracy-limited to ~0.2-0.4ms per prior 0D single-cell
-# probes, similar in scale to each other, which further narrows what the step size itself buys (the
-# "knife edge" bullet above). FHN's measured 2.38x host / 2.68x device ratios are a ceiling here, not
-# an expectation -- PCG2019 is measured below, not assumed.
-#
-# MEASURED OUTCOME vs. that expectation: the step sizes landed where expected (0.2ms/0.1ms, inside the
-# 0.2-0.4ms band), and PCG2019's ratio is now the larger of the two -- 2.93x host and 5.49x device
-# against FHN's 1.47x/1.86x. Most of that gap is FHN's knife edge flipping rather than PCG2019 gaining;
-# PCG2019's own ratio came *down*, from 3.46x/8.45x, when the preconditioner went in. The reaction
-# dilution is real but small (the reaction is 19% of a PCG2019 host splitting step against FHN's 21%).
-# What actually separates the two models is conditioning: PCG2019's physiological κ = 0.4mm²/ms makes
-# the backward Euler system far worse conditioned than FHN's dimensionless one -- 114.8 unpreconditioned
-# CG iterations per step against FHN's 8.0 -- which is why the linear solve is 81-93% of a PCG2019
-# splitting step, why splitting's host step is 10x FHN's, and why Jacobi is worth 1.93x of iteration
-# count here and only 1.6x there. The device ratio still exceeds the host one (5.49x > 2.93x), the
-# opposite of FHN's pattern, but no longer because of a hidden Float64: both arms are genuinely Float32
-# now, and what remains is that a 45-iteration CG chain of dependent SpMVs and reductions maps onto this
-# card worse than emRKC's 23 independent stabilized stages do.
-#
-# This is a benchmark, not a CI gate: the numbers are reported as measured, whichever way they fall.
-#
-# CUDA is a weak dependency, so this runs in the GPU test environment rather than the package one:
-# `julia --project=test/gpu benchmarks/benchmark-emrkc.jl`.
-#
-# Requires a memory-capped cgroup (enforced by `_assert_memory_capped()` below; `BENCHMARK_UNCAPPED=1`
-# overrides it) -- an uncapped run's GC sizes itself against the whole machine, not the 8G it is meant
-# to run in. Canonical invocation:
+# RUN: CUDA is a weak dependency, so this runs in the GPU test environment. A memory-capped cgroup is
+# required (`_assert_memory_capped()`; `BENCHMARK_UNCAPPED=1` overrides) -- an uncapped run's GC sizes
+# itself against the whole machine rather than the 8G this is meant to run in. Canonical invocation:
 # `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 env JULIA_NUM_THREADS=2 julia -t2
 # --heap-size-hint=3G --project=test/gpu benchmarks/benchmark-emrkc.jl`.
 #
-# RESULTS (most recent run, capped 2-thread host profile, RTX 2080; N=512, 512x512 mesh for the two
-# sheet models; every device arm Float32; every splitting arm Jacobi-preconditioned):
+# This is a benchmark, not a CI gate: the numbers are reported as measured, whichever way they fall.
+#
+# RESULTS (capped 2-thread host profile, RTX 2080; N=512 sheet meshes; device arms Float32; splitting
+# arms Jacobi-preconditioned):
 #
 # == FHN (526338 states) ==
 # arm                    Δt/ms      s/step   steps/s  s / sim ms  lin solve   cg its    stages    clocks
@@ -143,6 +68,10 @@
 # CG iterations/step at Δt=0.40, host: 8.0 unpreconditioned, 5.0 with Jacobi
 # validation (rel err, band=0.01): host emRKC 0.00968, host splitting 0.00983,
 #   device emRKC 0.00968, device splitting 0.00983 -- all in band
+# KNIFE EDGE: both arms land on Δt=0.40 and splitting sits 1.7% inside the band (0.00983 against
+#   0.01). A 2% shift in that one error drops splitting back to 0.20 and roughly doubles the ratio,
+#   so FHN's 1.47x/1.86x has to be quoted as a knife edge. PCG2019's does not: its splitting arm NaNs
+#   at Δt ≥ 0.20, so 0.10 against emRKC's 0.20 is a hard factor of two.
 #
 # == PCG2019 (1842183 states) ==
 # arm                    Δt/ms      s/step   steps/s  s / sim ms  lin solve   cg its    stages    clocks
@@ -154,10 +83,9 @@
 # CG iterations/step at Δt=0.10, host: 114.8 unpreconditioned, 59.4 with Jacobi
 # validation (rel err, band=0.01): host emRKC 0.00157, host splitting 0.00342,
 #   device emRKC 0.00158, device splitting 0.00337 -- all in band
-# splitting sweep: Δt=0.05 err=0.00108, Δt=0.10 err=0.00342 (selected), Δt≥0.20 NaN (blew up --
-#   the stiff gate's FE substep limit, as expected; the selected Δt is safely below it)
-# emRKC sweep: Δt=0.05/0.10/0.20 in band (err 0.00099/0.00139/0.00157), Δt=0.40 err=0.020 (out);
-#   0.20ms selected, inside the 0.2-0.4ms window the 0D probes anticipated
+# splitting sweep: Δt=0.05 err=0.00108, Δt=0.10 err=0.00342 (selected), Δt≥0.20 NaN (the stiff gate's
+#   FE substep limit; the selected Δt is safely below it)
+# emRKC sweep: Δt=0.05/0.10/0.20 in band (err 0.00099/0.00139/0.00157), Δt=0.40 err=0.020 (out)
 #
 # == LV-PCG2019 (1031400 hexahedra, 1065057 nodes, 7455399 states) ==
 # arm                    Δt/ms      s/step   steps/s  s / sim ms  lin solve   cg its    stages    clocks
@@ -166,195 +94,49 @@
 # device emRKC           0.0500    0.03048      32.8     0.60956       none        -  s=1 m=28 1905/6800
 # device splitting       0.0068    0.05269      19.0     7.74867        88%     46.6         - 1890/6800
 # host->device: emRKC 87.04x, splitting 32.19x  |  emRKC vs splitting: 4.70x host, 12.71x device
-# CG iterations/step at Δt=0.0068, host: 83.5 unpreconditioned, 47.0 with Jacobi (1.78x, unchanged --
-#   conditioning comes from the diffusion operator, not the reaction solver)
+# CG iterations/step at Δt=0.0068, host: 83.5 unpreconditioned, 47.0 with Jacobi -- the conditioning
+#   comes from the diffusion operator, not the reaction solver
 # host-vs-device agreement over 5 steps, both Float32: emRKC 3.30e-6, splitting 1.08e-6
 # memory: host peak 3.80 GiB of the 8 GiB cgroup (52% headroom), device 0.94 GiB of 7.60 (88%)
-# splitting's reaction solver is now `AdaptiveForwardEulerSubstepper` (production-shaped) and host
-# assembly's element/quadrature evaluation now genuinely follows Float32 -- see RE-CERTIFICATION,
-# ROUND 2 below for what changed, what that cost, and what it did not fix.
+# emRKC's Δt=0.05 is CERTIFIED directly on the coarse mesh: the sweep 0.20/0.10/0.05/0.025 gives rel
+#   err 0.1294/0.03402/0.003255/0.0005165, so 0.05 is the largest in-band value.
+# splitting's Δt=0.0068 is UNCERTIFIED. Its reference does not converge within the budget spent on it
+#   (own error 0.0348 at the finest level tried, ~3.5x above BAND), and none of 0.05/0.025/0.0125
+#   lands in BAND against it (0.197/0.099/0.037). The Richardson fallback off the finest pair
+#   (apparent order 0.91) gives Δt ≲ 0.0016 -- an extrapolation off an unconverged reference, not a
+#   certification. The carried 0.0068 is what is timed, pending a deeper ladder.
 #
-# ITEM 1 -- APEX MESH QUALITY, measured rather than assumed. At matched ~1.03M-element resolution,
-# `generate_ideal_lv_mesh` (the fan+`hexahedralize` this file uses) gives true 12-edge-per-hexahedron
-# min/median/max 3.18/134.8/188.7 µm (median/min = 42). `generate_ideal_lv_mesh_hex`'s all-hex O-grid
-# cap, at the SAME target dimensions and a matched total element count (nc=348, nr=20, nl=125; nc has
-# to be divisible by 4; `septum_flatness`/`axis_ratio`/`eccentricity` zeroed to match the fan's forced
-# rotational symmetry, isolating the apex-meshing comparison from an unrelated shape change), gives
-# 1.41/132.3/221.7 µm (median/min = 94): its minimum edge is SMALLER, not larger, and its median/min
-# spread is more than double the fan's. A second probe at the fan's own pre-`hexahedralize` resolution
-# (176, 10, 73) locates the defect inside the O-grid CORE specifically: core-only edges run
-# 4.75/7.63/197.7 µm, a 26x spread WITHIN the core alone, so this is not one unlucky corner cell but a
-# structural property of the core's transfinite-interpolation mapping at this resolution. Per the
-# decision rule (switch only if the O-grid's minimum edge is materially better), the answer is: stay
-# on `generate_ideal_lv_mesh`. The alternative does not fix the apex, it relocates a same-order sliver
-# into the core and gives it a worse median/min spread. Mesh quality goes back to Dennis as a
-# `generate_ideal_lv_mesh_hex` core-mapping improvement task, not a config change here. (Note: earlier
-# runs of this file quoted a 160 µm median from an all-pairwise-node-distance proxy that folds in face
-# and body diagonals; the true-edge figures above are a methodology correction, not a mesh change --
-# both are measured on the OLD geometry for this comparison.)
+# LV GEOMETRY: `inner_radius`/`outer_radius` fix the wall at exactly 6 mm (40 transmural elements at
+# h = 150 µm) and `apex_inner`/`apex_outer` set the long axis independently, breaking the generator's
+# default proportions on purpose: keeping both h and the transmural count at ~1e6 elements is only
+# reachable by shrinking the other dimensions. Endocardial equatorial radius 3.112 mm, epicardial
+# 9.112 mm, apex-base length 8.73 mm, median true edge 126.0 µm, wall volume 1.501 mL. The chamber is
+# a thick-walled, small, non-physiological ventricle by design -- the accepted trade.
 #
-# ITEM 2 -- CHAMBER RE-PROPORTIONING (Dennis's ruling, binding): keep h ≈ 150 µm AND full transmural
-# resolution (wall 6 mm ≈ 40 elements) and reach ~1e6 elements by shrinking the OTHER dimensions
-# instead. `generate_ideal_lv_mesh`'s four radii are no longer tied to one scale: `inner_radius`/
-# `outer_radius` fix the wall at exactly `outer_radius = inner_radius + 6` mm; `apex_inner`/
-# `apex_outer` set the long axis independently -- breaking the generator's default 0.7:1.0:1.3:1.5
-# proportions on purpose. Final dimensions: endocardial equatorial radius 3.112 mm (cavity, shrunk
-# from 6.916 mm), epicardial equatorial radius 9.112 mm (wall 6.000 mm exactly), apex_inner/apex_outer
-# 5.780/6.669 mm, apex-base length (outer surface) 8.73 mm (shrunk from 19.39 mm). base = (191, 20, 33)
-# before `hexahedralize`, coarse_base = (96, 10, 17). Result: 1,031,400 hexahedra, 1,065,057 nodes,
-# 7,455,399 states (7 states/node, PCG2019), 40 transmural elements at h = 150 µm exactly; median edge
-# (true-edge measure) 126.0 µm, wall volume 1.501 mL, mean cell volume 1.455e-3 mm³ (h_eff 113.3 µm --
-# the same "polar topology packs elements toward the apex" shortfall as before). The chamber is a
-# thick-walled, small, non-physiological ventricle by design -- the accepted trade for keeping h and
-# the transmural count. Memory never became the binding constraint here either (52% / 90% headroom on
-# the timed mesh, see MEMORY below): the arithmetic (this time shrinking the OTHER dimensions) is what
-# got it to ~1e6.
+# DIFFUSION is genuinely orthotropic: `SpectralTensorCoefficient` over an
+# `OrthotropicMicrostructureModel` from `create_simple_microstructure_model` on the
+# `compute_lv_coordinate_system` frame. σ = (0.13342, 0.02674, 0.00859) mS/mm in the (fiber,
+# sheetlet, normal) frame with Cₘ = 0.01 µF/mm² and χ = 140 /mm, so D = (0.0953, 0.0191, 0.0061)
+# mm²/ms. The fiber value is the harmonic mean of Clerc's measured intra- and extracellular
+# longitudinal conductivities -- the monodomain reduction the Niederer et al. N-version benchmark
+# uses, and the number `ep04_geselowitz-ecg.jl` already carries; the cross-fiber pair splits that
+# benchmark's single transverse value (0.0176) by the squared ratios of the orthotropic conduction
+# velocities Caldwell et al. (2009) measured in ventricular tissue (0.67 : 0.30 : 0.17 m/s), and
+# brackets it. Measured tissue data throughout, not a fit. That the microstructure reaches the
+# assembly is checked on the coarse mesh against a trace-matched isotropic tensor: the two disagree
+# by 0.169 after 20 steps, where one that never arrived would agree to round-off.
 #
-# DIFFUSION is genuinely orthotropic, not transversely isotropic: `SpectralTensorCoefficient` over an
-# `OrthotropicMicrostructureModel` built by `create_simple_microstructure_model` on the
-# `compute_lv_coordinate_system` frame, with a Streeter helix running +60° at the endocardium to -60°
-# at the epicardium. σ = (0.13342, 0.02674, 0.00859) mS/mm in the (fiber, sheetlet, normal) frame,
-# with Cₘ = 0.01 µF/mm² and χ = 140 /mm giving D = (0.0953, 0.0191, 0.0061) mm²/ms. Sources, and their
-# class: the fiber value is the harmonic mean of Clerc's measured intra- and extracellular
-# longitudinal conductivities, which is the monodomain reduction the Niederer et al. N-version
-# benchmark uses and the same number `ep04_geselowitz-ecg.jl` already carries; the cross-fiber pair
-# splits that benchmark's single transverse value (0.0176) by the squared ratios of the orthotropic
-# conduction velocities Caldwell et al. (2009) measured in ventricular tissue (0.67 : 0.30 : 0.17
-# m/s), and brackets it. Measured tissue data throughout, not a fit to this benchmark.
-# That the microstructure actually reaches the assembly is checked rather than assumed, on the coarse
-# mesh, by running the identical problem with a trace-matched isotropic tensor: the two disagree by
-# 0.169 after 20 steps (0.214 on the previous mesh -- different geometry integrates differently; both
-# are comfortably above the round-off floor). A microstructure that never arrived would agree to
-# round-off.
-#
-# DEVICE PATH for the LV is host-assembled and mirrored, not device-assembled. The field-backed
+# DEVICE PATH for the LV is host-assembled and mirrored, not device-assembled: the field-backed
 # `OrthotropicMicrostructureModel` stores its f/s/n vectors in host `ElementwiseData` with no adapt
-# rule, so it cannot cross the `KernelAbstractionsDevice` assembly seam; the host strategy assembles
-# and `MirroredBilinearOperator` uploads the nonzeros, which is a supported configuration and is what
-# the sheet device arms use too. Assembly is setup-only at fixed Δt, so this costs the timed arms
-# nothing. What it means for the numbers: the device arms solve with exactly the host's orthotropic
-# matrix, and the host-vs-device agreement above (3.4e-6 / 1.1e-6) is what says the upload is intact.
+# rule, so it cannot cross the `KernelAbstractionsDevice` assembly seam. The host strategy assembles
+# and `MirroredBilinearOperator` uploads the nonzeros -- what the sheet device arms use too. Assembly
+# is setup-only at fixed Δt, so this costs the timed arms nothing, and the device arms solve with
+# exactly the host's orthotropic matrix; the host-vs-device agreement above is what says so.
 #
 # PROTOCOL: an apex S1 written as an initial condition -- the apical 12% of the long axis raised to
 # 20 mV, the rest at PCG2019's resting default -- over a 15 ms window, no full beat. At 15 ms the
-# tissue is genuinely mixed, which is what the per-step cost needs to see: 57.1% of it above -40 mV
-# with φₘ ∈ [-85, 21] mV under emRKC, 77.1% and [-88, 23] mV under splitting.
-#
-# WHAT THE LV ADDS to the sheet picture (ratios below are this section's own, superseded by
-# RE-CERTIFICATION, ROUND 2's 4.70x host / 12.71x device -- the structural reason stands, the numbers
-# moved when the reaction solver did): emRKC's advantage is larger here than anywhere else in this
-# file -- 3.41x host and 12.79x device -- for the same structural reason as before: both methods pay
-# for the apical slivers, but they pay differently. emRKC absorbs them into its stage count (m=28 at
-# the certified Δt=0.05, one extra SpMV per stage), while the splitting arm pays through BOTH a step
-# size about 7x smaller than emRKC's AND a linear solve that is 84-94% of its step. The device column
-# compounds it further: a 47-iteration CG chain of dependent SpMVs and reductions maps onto this card
-# far worse than emRKC's 28 independent stabilized stages, hence 12.79x against 3.41x on the host.
-#
-# WHAT MOVED SINCE THE PREVIOUS MESH (item 2's re-proportioning) -- every LV number above is fresh,
-# not comparable step-for-step to the old (174,10,73)-based mesh, but the DIRECTION of each change is
-# informative:
-#  * emRKC got CHEAPER: m dropped from 32 to 28 stages at the same Δt=0.05 (still certified directly,
-#    rel err 0.00326 vs 0.00176 before -- both comfortably in band), and s/step fell 12% (2.65 vs
-#    3.01) even though the new mesh has slightly MORE cells (1,031,400 vs 1,026,600) -- the smaller,
-#    thicker-walled proportions apparently lower the diffusive spectral radius ρS overall, not only at
-#    the apex.
-#  * splitting's step got SMALLER and stayed uncertified: Δt=0.0068 (Richardson-estimated) against the
-#    old mesh's Δt=0.01 -- see RE-CERTIFICATION below. Fewer, cheaper CG solves (47.0 vs 63.4
-#    preconditioned iterations) were not enough to offset the smaller step: splitting got 10% MORE
-#    expensive per simulated ms (180.7 vs 164.3 s/sim-ms, host), not less.
-#  * Net effect: emRKC's advantage over splitting GREW -- 3.41x host (was 2.73x), 12.79x device (was
-#    10.37x) -- driven entirely by splitting's smaller, less certain step size, not by any change to
-#    either method's per-step machinery.
-#  * host-vs-device agreement improved incidentally (3.4e-6/1.1e-6 vs 1.2e-5/4.4e-6); both are already
-#    far below anything that would matter, so this is noise, not a result.
-#
-# RE-CERTIFICATION (mandated by item 2's mesh change): emRKC's carried Δt=0.05 is CERTIFIED DIRECTLY
-# on the new mesh -- the full sweep was repeated: 0.20/0.10/0.05/0.025 give rel err
-# 0.1294/0.03402/0.003255/0.0005165, so 0.05 is again the largest in-band value. splitting remains
-# UNCERTIFIED: its DTREF=0.025 reference has NOT converged (own error 0.0369, worse than the old
-# mesh's 0.0241), and the code's own linear Richardson estimate (E(Δt) ≈ 1.48·Δt) gives Δt ≲ 0.0068,
-# which is what is timed. One level deeper was tried, per this slice's instruction: DTREF=0.0125 gives
-# own error 0.0262, STILL unconverged -- only a 29% improvement for a 2x refinement (ratio 0.71,
-# apparent local convergence order ≈ 0.49), well short of the ~50% a first-order method should shed.
-# That sub-linear behavior is itself informative: it suggests the COARSE MESH's own spatial error may
-# be becoming a Δt-independent floor at this refinement, not purely a time-stepping issue, so a still
-# finer DTREF may not converge either without also refining the coarse mesh -- the previous run's
-# "~3 hours, was not spent" estimate for DTREF ≲ 0.003 may now be optimistic. Worth flagging rather
-# than hiding: at the carried Δt=0.0068 the arm's error against the (unconverged) DTREF=0.025
-# reference is 0.0528, LARGER than the old Δt=0.01's 0.0342 -- non-monotonic in Δt, which is a symptom
-# of an unconverged/biased reference (moving the arm closer to the truth moves it further from a
-# reference that is not at the truth), not a contradiction. splitting's step size and its "uncertified"
-# label both stand.
-#
-# RE-CERTIFICATION, ROUND 2 (this slice) -- the RE-CERTIFICATION block above timed splitting with
-# `ForwardEulerCellSolver`: one Euler update at the OUTER Δt, no internal error control at all. TB's own
-# production config (`docs/src/literate-tutorials/ep01_spiral-wave.jl`, `benchmarks/benchmark-gpu-split.jl`)
-# uses `AdaptiveForwardEulerSubstepper(reaction_threshold = 0.1)` instead (`substeps = 10`, both structs'
-# own default), which decouples reaction accuracy from the outer step -- comparing the OTHER shape against
-# emRKC was not a fair baseline. `splitting()`'s default is now the substepper, config exactly as above.
-#  * Order-anomaly verdict: the file's own `AdaptiveForwardEulerSubstepper` is a real, separate type from
-#    the `ForwardEulerCellSolver` the RE-CERTIFICATION block above actually timed -- it was never in that
-#    arm's code path, so it could not be the RE-CERTIFICATION block's apparent-order-0.49 floor. Mechanism
-#    check instead: on the same Δt-halving ladder (0.05/0.025/0.0125) with the substepper now in, the L2
-#    relative-error apparent order is 0.786 and the arrival-time (50% tissue active) apparent order is
-#    0.874 -- NOT the clean L2≈0.5/arrival≈1 split a pure front-phase-error metric artifact would give
-#    (that was a candidate hypothesis for the old 0.49, tested here, not confirmed). Both metrics moved
-#    together and both improved sharply over the old ForwardEulerCellSolver's 0.49: most of the earlier
-#    sub-linear order came from timing the non-production reaction shape, not from the L2 metric's own
-#    sensitivity. Reported as measured; no further mechanism claimed.
-#  * Certification: the ladder was extended one more level under budget (Δt = 0.00625, capped), reference
-#    own error 0.0348 -- still ~3.5x above BAND, NOT converged within the budget spent on it. None of
-#    0.05/0.025/0.0125 (Float32, production config) land in BAND against that reference (0.197/0.099/0.037).
-#    Richardson fallback off the finest pair (apparent order 0.91): Δt ≲ 0.0016 -- SMALLER, not larger,
-#    than the carried 0.0068, and explicitly an extrapolation off an unconverged reference, not a
-#    certification. Splitting's Δt stays UNCERTIFIED; the file continues to time the carried Δt = 0.0068
-#    pending a real certification (deeper ladder, out of this slice's budget).
-#  * What this means for the RESULTS block above: the substepper's extra reaction sub-evaluations are
-#    priced in (host splitting: 1.696 vs 1.229 s/step, +38%; lin-solve share fell from 84% to 64% of the
-#    step because the OTHER side got more expensive, not because the solve did) WITHOUT its benefit -- a
-#    possibly larger certified Δt -- because certification did not converge. So host emRKC-vs-splitting
-#    grew again, 4.70x (was 3.41x with the old reaction shape); device is ~flat, 12.71x (was 12.79x). If a
-#    real certification eventually lands on a larger Δt than 0.0068, this ratio should fall; the Richardson
-#    fallback above points the other way (smaller), but is too uncertain to act on. Reported as measured.
-#
-# FLOAT32 HOST ASSEMBLY (this slice, scope addition): `ep01_form`/`lv_form` now pass an explicit
-# `qrcs = Dict(:φₘ => QuadratureRuleCollection(T, 2))` to `FiniteElementDiscretization` -- left at its
-# default, that quadrature collection is `Float64` regardless of `T` (FerriteOperators.jl's own contract:
-# `QuadratureRuleCollection`'s `T` is the precision ELEMENT evaluation runs in, independent of the
-# `value_type` the device accumulates the global system in), so shape-function and coefficient sampling
-# during assembly was silently running in double precision for every "Float32" arm -- host AND device,
-# since the sheet/LV `form`/`cform32` object is SHARED between them (`form_dev = form32`, `lv_time_arms`'s
-# single `form`). Both now genuinely evaluate in `T`. This does NOT change the global M/K `SparseMatrixCSC`
-# storage dtype: `allocate_matrix` takes its value type from the assembly strategy
-# (`FerriteOperators.jl`'s `default_strategy()`), a separate mechanism this slice did not touch -- so M/K
-# are still allocated Float64 regardless of `T`, confirmed by memory: host peak moved 3.85 -> 3.80 GiB, not
-# the ~875 MiB/arm (ITEM 3 below) that halving M/K storage would give. Making M/K's own storage follow `T`
-# is a `FerriteOperators.jl`-side follow-up, out of this slice's scope. Device memory rose slightly
-# (0.72 -> 0.94-0.93 GiB); not investigated further within budget.
-#
-# ITEM 3 -- MEMORY ATTRIBUTION (host, measured after setup of all four arms on this mesh, before
-# timing; `Base.summarysize` per retained object class; full per-arm table kept outside this file).
-# The mesh+DofHandler (257.6 MiB) and the three-field orthotropic microstructure (582.3 MiB,
-# `ElementwiseData` stored per-cell-LOCAL-node -- duplicated at cell boundaries, neither a shared
-# nodal array nor per-quadrature-point) are SHARED once across all four arms, not duplicated per arm
-# (852.1 MiB total shared graph). Per arm beyond that: host splitting alone retains THREE full-size
-# sparse matrices at once -- mass M and diffusion K, each a 437.7 MiB Float64 `SparseMatrixCSC`
-# (FerriteOperators' own assembly dtype, independent of the Float32 arms), PLUS the actual Float32
-# `ThreadedSparseMatrixCSR` combination M-ΔtK (218.8 MiB) the CG solve uses -- M and K are never freed
-# once that combination is built. Each device arm additionally carries a HOST-resident staging copy of
-# its own K (and, for splitting, M too) for `MirroredBilinearOperator`'s upload -- 437.7 MiB plus a
-# 107.4 MiB Float32 staging buffer per matrix -- while the device-native combined system matrix, CG
-# workspace and Jacobi preconditioner are genuinely GPU-resident and cost the host under 4 KiB each.
-# Holding all four arms' setup simultaneously (a deliberate stress test for this attribution, NOT what
-# the timed run does) peaks at host RSS 7.29 GiB / VmHWM 7.48 GiB / cgroup memory.peak 6.89 GiB of the
-# 8 GiB cap -- 6-9% headroom, uncomfortably close. The REAL timed run releases each arm via `GC.gc()`
-# before building the next (see `run_arm`), and its own measured peak is the 3.85 GiB / 52% headroom
-# quoted above -- comfortably inside the 25% floor. Memory levers, not applied here (Dennis's call):
-# Float32 host-arm M/K instead of Float64 would roughly halve their combined ~875 MiB per arm;
-# dropping M/K once the combined system matrix is assembled would save that same ~875 MiB per
-# host-splitting-shaped arm; releasing the device arms' host-side mirror staging copies (437.7-1090.2
-# MiB per arm) after the one-time upload would recover up to ~1.6 GiB across both device arms; a
-# Float32 microstructure would roughly halve its 582.3 MiB (shared, so a one-time saving).
+# tissue is mixed: 57.1% above -40 mV with φₘ ∈ [-85, 21] mV under emRKC, 77.1% and [-88, 23] mV
+# under splitting.
 
 using Thunderbolt
 using CUDA
@@ -371,8 +153,7 @@ import Thunderbolt: SciMLBase, ThreadedSparseMatrixCSR, create_simple_microstruc
 import OrdinaryDiffEqOperatorSplitting:
     advance_solution_by!, forward_sync_subintegrator!, backward_sync_subintegrator!
 
-const N              = 512          # dofs/node-count shared across models, the size at which the
-                                     # solve dominates -- independent of the physical domain size L
+const N              = 512          # elements per side; the size at which the solve dominates
 const TEND           = 25.0         # ms, the first EP tutorial's own visualization window
 const DTREF          = 0.025        # ms, reference step size
 const BAND           = 1.0e-2       # final-time φₘ relative error a step size has to stay inside
@@ -390,16 +171,14 @@ const CuCSR          = CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32}
 The reciprocal main diagonal of the backward Euler operator `M - Δt K`, as a left preconditioner for
 the conjugate gradient.
 
-Filled on first use rather than at `init`, because `LinearSolve.init` calls the `precs` callback while
-the system matrix is still the freshly allocated all-zero sparsity pattern -- and the affine backward
-Euler path then fills that same matrix object in place through `nonzeros(A)` and never reassigns
-`cache.A`, which is what would otherwise mark the preconditioner stale. A preconditioner built at
-`init` would therefore be the preconditioner of the zero matrix, forever. Holding on to `A` and
-reading its diagonal on the first `ldiv!` sidesteps both halves of that: by the time the conjugate
-gradient asks for a preconditioner application, the matrix it is preconditioning is assembled.
+Filled on first `ldiv!` rather than at `init`: `LinearSolve.init` calls the `precs` callback while
+the system matrix is still the freshly allocated all-zero sparsity pattern, and the affine backward
+Euler path then fills that same object in place through `nonzeros(A)` without ever reassigning
+`cache.A`, which is what would otherwise mark the preconditioner stale. Holding on to `A` and reading
+its diagonal on first use means the matrix is assembled by the time it is read.
 
-Every arm in this file runs at a fixed `Δt`, so `A` is assembled once and never changes again; the
-one-shot fill is valid for the life of the arm. A varying `Δt` would have to invalidate `ready`.
+Every arm runs at a fixed `Δt`, so `A` is assembled once and the one-shot fill is valid for the life
+of the arm. A varying `Δt` would have to invalidate `ready`.
 """
 mutable struct JacobiPrecon{MatType, VecType}
     A::MatType
@@ -414,9 +193,8 @@ function JacobiPrecon(A)
 end
 
 # Neither `ThreadedSparseMatrixCSR` nor `CuSparseMatrixCSR` has a `diag` method or a scalar
-# `getindex`, so each row is walked for its own column index -- on the host directly, on the device
-# one thread per row. Anything else (the dense/CSC matrices the coordinate system solves hand over)
-# takes the generic `diag` path.
+# `getindex`, so each row is walked for its own column index. Everything else takes the generic
+# `diag` path.
 function _fill_inv_diag!(d, A::ThreadedSparseMatrixCSR)
     rowptr, colval, nzval = getrowptr(A), getcolval(A), getnzval(A)
     @inbounds for i in eachindex(d)
@@ -469,10 +247,8 @@ LinearAlgebra.ldiv!(P::JacobiPrecon, x::AbstractVector) = ldiv!(x, P, x)
 # right slot stays the identity.
 jacobi_precs(A, p = nothing) = (JacobiPrecon(A), LinearAlgebra.I)
 
-"""
-Krylov iterations taken by the most recent backward Euler solve. `stats` is the workspace's own
-object, reset per solve, so the count is read out per step rather than kept.
-"""
+"Krylov iterations of the most recent backward Euler solve; `stats` is reset per solve, so this has
+to be read out per step."
 cg_iters(child) = child.cache.stage.linear_solver.cacheval.stats.niter
 
 "Mean conjugate gradient iterations per step over `n` real steps. The integrator is advanced."
@@ -513,15 +289,11 @@ end
 const PCG2019_L = 10.0
 
 """
-A planar S1 activation front: the left 12% of the domain driven to a real excited potential, the rest
-at the model's own resting default (`create_initial_condition` already wrote it) -- the same protocol
-`test/integration/test_emrkc_electrophysiology.jl` validates for this model, scaled to this
-benchmark's domain. A first attempt used a cross-field excite/refractory-block IC (bottom-left
-quadrant excited, top half's `h` gate forced to 0) to chase a sustained spiral the way FHN's own IC
-does; that discontinuous `h` jump kept emRKC's self-referenced reference error (`DTREF` vs `2DTREF`)
-above `BAND` regardless of step size -- not a step-size-selection failure but an unconverged
-reference, an artifact of the synthetic discontinuity rather than a property of emRKC or PCG2019
-worth reporting. The planar front has no such discontinuity and converges cleanly.
+A planar S1 activation front: the left 12% of the domain driven to an excited potential, the rest at
+the model's resting default -- the protocol `test/integration/test_emrkc_electrophysiology.jl`
+validates for this model, scaled to this benchmark's domain. It must stay continuous: a spiral-chasing
+IC with a discontinuous `h` jump keeps the self-referenced reference error above `BAND` at every step
+size, which is an unconverged reference rather than a step-size failure.
 """
 function pcg2019_u0!(u₀, form, ::Type{T}) where {T}
     setvariable!(u₀, form, :φₘ) do x
@@ -556,10 +328,8 @@ function ep01_form(::Type{T}, cfg::ModelConfig) where {T}
         CartesianCoordinateSystem(mesh),
         :φₘ, :s,
     )
-    # `qrcs`: the quadrature (hence element-evaluation) precision follows `T` explicitly -- left at the
-    # `FiniteElementDiscretization` default it is always `Float64` regardless of `T`, which is what kept
-    # the "Float32" host/device arms assembling in double precision (see the DEVICE PRECISION /
-    # Float32-host-assembly header notes).
+    # `qrcs` makes the quadrature (hence element-evaluation) precision follow `T`; left at the
+    # `FiniteElementDiscretization` default it is `Float64` regardless of `T`.
     return semidiscretize(
         ReactionDiffusionSplit(model),
         FiniteElementDiscretization(
@@ -576,20 +346,17 @@ function ep01_u0(form, ::Type{T}, cfg::ModelConfig) where {T}
     return u₀
 end
 
-# The two algorithms under test, as a downstream user would spell them. The linear solver tolerances
-# are the first EP tutorial's. `gates = :all` is EMRKC's own default; spelled out here so the choice is
-# visible in the file rather than implicit (see the PCG2019 header note).
+# The two algorithms under test, as a downstream user would spell them; linear solver tolerances are
+# the first EP tutorial's. `gates = :all` is EMRKC's own default, spelled out so the choice is visible.
 emrkc(::Type{VT}, ::Type{MT}) where {VT, MT} =
     EMRKC(solution_vector_type = VT, system_matrix_type = MT, gates = :all)
 
 """
-`reaction = :substepper` (the default) is the production shape: `AdaptiveForwardEulerSubstepper`
-with `reaction_threshold = 0.1` and the struct's own default `substeps = 10`, exactly what the ep01
-tutorial (`docs/src/literate-tutorials/ep01_spiral-wave.jl`) and `benchmarks/benchmark-gpu-split.jl`
-carry. Comparing splitting's plain-`ForwardEulerCellSolver` reaction (one Euler update at the *outer*
-Δt, no internal error control) against emRKC was not the production config -- the substepper decouples
-reaction stability/accuracy from the outer step the way a user's config actually would.
-`reaction = :plain` keeps the old single-step Euler reaction, for a labeled secondary comparison only.
+`reaction = :substepper` (the default) is the production shape: `AdaptiveForwardEulerSubstepper` with
+`reaction_threshold = 0.1` and `substeps = 10`, as the ep01 tutorial and `benchmark-gpu-split.jl`
+carry it, which decouples reaction stability and accuracy from the outer step.
+`reaction = :plain` is a plain `ForwardEulerCellSolver` -- one Euler update at the *outer* Δt, no
+internal error control -- for a labeled secondary comparison only.
 """
 function splitting(
     ::Type{VT}, ::Type{MT}; atol = 1.0e-6, rtol = 1.0e-5, jacobi = true,
@@ -615,9 +382,8 @@ function splitting(
     ))
 end
 
-# `init` takes the initial condition as the integrator's own state, so every arm gets a copy: the
-# host and device initial conditions are shared across arms and would otherwise be consumed by the
-# first one to run.
+# `init` takes the initial condition as the integrator's own state, so every arm gets a copy -- the
+# shared host and device initial conditions would otherwise be consumed by the first arm to run.
 build(form, u0, alg, Δt, tend) =
     init(OperatorSplittingProblem(form, copy(u0), (zero(Δt), tend)), alg; dt = Δt, verbose = false)
 
@@ -627,9 +393,9 @@ function solve_to_end(form, u0, alg, Δt, tend = TEND)
     return integrator
 end
 
-"`n` real steps from the initial condition. The LV arms validate this way instead of over the whole
+"`n` real steps from the initial condition. The LV arms validate this way rather than over the whole
 window: at a million dofs a full-window host solve per arm costs more than the timing it guards, and
-what the check is for -- that the device reproduces the host -- is already visible after a few steps."
+that the device reproduces the host is visible after a few steps."
 function solve_n_steps(form, u0, alg, Δt, n)
     integrator = build(form, u0, alg, Δt, oftype(Δt, 1.0e5))
     for _ = 1:n
@@ -648,9 +414,8 @@ relerr(a, b) = norm(Vector(a) .- Vector(b)) / norm(Vector(b))
 ####################################
 
 """
-The Float64 host reference of one method, and the estimate of its own error: the distance to the same
-method at twice the step size, which for a first order scheme bounds the reference's error up to the
-factor two between them.
+The Float64 host reference of one method and the estimate of its own error: the distance to the same
+method at twice the step size, which for a first order scheme bounds that error up to a factor two.
 """
 function reference(form, u0, alg, φₘ, tend = TEND)
     coarse = getvariable(solve_to_end(form, u0, alg, 2DTREF, tend).u, φₘ)
@@ -659,15 +424,15 @@ function reference(form, u0, alg, φₘ, tend = TEND)
 end
 
 """
-The largest step size in `SWEEP` whose final state stays inside `BAND` of `φ_ref`, together with the
-error it lands at. Errors are printed for the whole sweep: where the band is crossed is as much of
-the result as which step size wins.
+The largest step size in `SWEEP` whose final state stays inside `BAND` of `φ_ref`, and the error it
+lands at. Errors are printed for the whole sweep: where the band is crossed is as much of the result
+as which step size wins.
 """
 function select_dt(form, u0, alg, φₘ, φ_ref, label)
     best = nothing
     for Δt in SWEEP
-        # In the solution vector's precision: `(t, Δt)` reach the reaction kernel, and a Float64 step
-        # size against Float32 storage runs the hot loop in double precision.
+        # In the solution vector's precision: `(t, Δt)` reach the reaction kernel, so a Float64 step
+        # size against Float32 storage would run the hot loop in double precision.
         integrator = solve_to_end(form, u0, alg, eltype(u0)(Δt))
         φ = getvariable(integrator.u, φₘ)
         ok = integrator.sol.retcode == SciMLBase.ReturnCode.Success && all(isfinite, φ)
@@ -693,11 +458,10 @@ function gpu_clocks()
 end
 
 """
-Step without interruption for `WARMUP_SECONDS` and read the clocks back *while still stepping*. On a
-card that idles at 300 MHz a short warmup measures the ramp rather than the kernel; the returned
-clocks are what says this one did not. They are sampled mid-flight and not after the loop, because
-the card starts dropping back within tens of milliseconds of going idle -- which is less than one
-`nvidia-smi` query takes.
+Step without interruption for `WARMUP_SECONDS`, reading the clocks back *while still stepping*. On a
+card that idles at 300 MHz a short warmup measures the ramp rather than the kernel, and the returned
+clocks are what says this one did not. They must be sampled mid-flight: the card drops back within
+tens of milliseconds of going idle, less than one `nvidia-smi` query takes.
 """
 function prewarm!(integrator, on_device)
     t0 = time_ns()
@@ -730,13 +494,12 @@ end
 
 """
 Seconds per step spent in each child of a splitting step, through the same three calls
-`OrdinaryDiffEqOperatorSplitting`'s `_perform_step!` makes for it. Replicating the loop rather than
-instrumenting it keeps this honest about what the parent step actually does; the integrator is
-advanced by real steps and is left usable.
+`OrdinaryDiffEqOperatorSplitting`'s `_perform_step!` makes. The integrator is advanced by real steps
+and left usable.
 
-Also returns the mean conjugate gradient iterations of the first child, read out of the same steps
-rather than from a second pass: every extra step advances the Float32 clock these arms run on, and
-the splitting integrator's parent/child time synchronization is what pays for that drift.
+Also returns the first child's mean conjugate gradient iterations, read out of the same steps rather
+than a second pass: every extra step advances the Float32 clock these arms run on, and the splitting
+integrator's parent/child time synchronization is what pays for that drift.
 """
 function child_composition!(integrator, Δt)
     times = zeros(length(integrator.child_subintegrators))
@@ -774,8 +537,8 @@ struct Arm
 end
 
 """
-Validate the arm, then time it. Returns the arm and the validated final `φₘ` on the host, so that a
-host arm can serve as the reference its own device counterpart is checked against.
+Validate the arm, then time it. Returns the arm and the validated final `φₘ` on the host, so a host
+arm can serve as the reference its device counterpart is checked against.
 
 `steps` validates over that many steps from the initial condition instead of over the whole window;
 `φ_ref === nothing` validates finiteness only, for an arm whose step size is certified elsewhere.
@@ -784,7 +547,6 @@ function run_arm(
     label, method, form, u0, alg, Δt, φₘ, φ_ref, on_device, has_solve;
     tend = TEND, steps = nothing,
 )
-    # Validate before timing: the trajectory this arm produces, at the step size it was given.
     checked = steps === nothing ? solve_to_end(form, u0, alg, Δt, tend) :
               solve_n_steps(form, u0, alg, Δt, steps)
     φ = getvariable(Vector(checked.u), φₘ)
@@ -797,8 +559,8 @@ function run_arm(
         "s=$s m=$m"
     end
 
-    # Time from `WARMUP_SECONDS` of real steps past the initial condition, not from the initial
-    # condition itself: `tend` here only has to outlast the warmup and the passes.
+    # Timed from `WARMUP_SECONDS` of real steps past the initial condition, so `tend` here only has
+    # to outlast the warmup and the passes.
     timed = build(form, copy(u0), alg, Δt, oftype(Δt, 1.0e5))
     clocks = prewarm!(timed, on_device)
     seconds = measure!(timed)
@@ -863,7 +625,7 @@ end
 
 """
 The LV arm's geometry and step sizes. Unlike the sheet configs this one does not select its own step
-size: it carries the sheet's, and certifies them on `coarse_base` (see `run_model(::LVConfig)`).
+size: it carries fixed ones and certifies them on `coarse_base` (see `run_model(::LVConfig)`).
 """
 struct LVConfig
     name::String
@@ -874,15 +636,11 @@ struct LVConfig
 end
 
 # `generate_ideal_lv_mesh` emits a wedge fan over the apex, so the mesh is built at 2h and
-# `hexahedralize`d: that both halves h and makes every cell a hexahedron, while keeping the fan
-# variant's apex. `generate_ideal_lv_mesh_hex`'s O-grid cap was measured as an alternative (see the
-# ITEM 1 block below) and rejected: its apex is not merely coarser, it is a worse sliver than the
-# fan's, so the fan stays and the mesh-quality item is a generator-improvement task, not a config change.
-#
-# The chamber does NOT carry the generator's default proportions (wall/inner radius 0.3/0.7, long
-# axis 1.3/1.5) at one uniform scale -- see the ITEM 2 block for why that combination cannot hit
-# both h ≈ 150 µm and a 6 mm wall at ~1e6 elements. `inner_radius`/`outer_radius` fix the wall at
-# exactly 6 mm; `apex_inner`/`apex_outer` set the long axis independently.
+# `hexahedralize`d: that halves h and makes every cell a hexahedron while keeping the fan's apex.
+# `generate_ideal_lv_mesh_hex`'s all-hex O-grid cap was measured as an alternative at matched
+# resolution and rejected -- its minimum edge is smaller than the fan's (1.41 vs 3.18 µm) and its
+# median/min spread more than double, the defect sitting inside the O-grid core's mapping, so the
+# alternative relocates a same-order sliver rather than fixing the apex.
 const LV_INNER_RADIUS = 3.1122   # mm, endocardial equatorial radius -- shrunk, non-physiological
 const LV_OUTER_RADIUS = LV_INNER_RADIUS + 6.0   # mm, wall fixed at 6 mm (40 elements transmural)
 const LV_APEX_INNER   = 5.7798   # mm
@@ -893,14 +651,7 @@ const LV_STIM_Z  = LV_Z_APEX - 0.12(LV_Z_APEX - LV_Z_BASE)
 const LV_TEND    = 15.0          # ms; the front transits the apical wall and starts apicobasal
 const LV_STEPS   = 5             # host-vs-device agreement steps on the timed mesh
 
-# Monodomain conductivities, mS/mm, in the (fiber, sheetlet, normal) frame. The fiber value is the
-# harmonic mean of Clerc's intra- and extracellular longitudinal conductivities, 0.17·0.62/(0.17+0.62)
-# -- the monodomain reduction used by the Niederer et al. N-version benchmark, and the same number
-# `ep04_geselowitz-ecg.jl` already carries. That benchmark is transversely isotropic (σ_s = σ_n =
-# 0.0176); this one needs three distinct eigenvalues, so the cross-fiber pair is split by the squared
-# ratios of the orthotropic conduction velocities Caldwell et al. (2009) measured in ventricular
-# tissue, 0.67 : 0.30 : 0.17 m/s, which bracket that transverse value from either side. Source class:
-# measured tissue conductivities and measured orthotropic conduction velocities, not a fit.
+# Monodomain conductivities, mS/mm, in the (fiber, sheetlet, normal) frame; sources in the header.
 const LV_σ  = SVector(0.13342, 0.02674, 0.00859)
 const LV_Cₘ = 0.01               # µF/mm²
 const LV_χ  = 140.0              # 1/mm ; D = σ/(Cₘχ) = (0.0953, 0.0191, 0.0061) mm²/ms
@@ -924,19 +675,14 @@ end
 
 """
 `MonodomainModel`'s first two positional arguments are `χ, Cₘ` by its own field order, which every
-call site in the repository spells the other way round; the two only ever enter as the product `Cₘχ`
-in `κ/(Cₘχ)`, so the disagreement is invisible until someone gives them different values -- as this
-does. Struct order it is.
+other call site in the repository spells the other way round. They only ever enter as the product
+`Cₘχ`, so the disagreement is invisible until they differ -- as they do here. Struct order it is.
 """
 function lv_form(::Type{T}, mesh, microstructure; κ = nothing) where {T}
-    # σ follows `T` (genuine Float32 assembly, see `ep01_form`'s qrcs note); the microstructure's own
-    # f/s/n fields do not -- it is built once in Float64 and SHARED across every arm regardless of its
-    # precision (ITEM 3's memory attribution), so `SpectralTensorCoefficient(microstructure, ...)`
-    # still combines a Float64 field sample with a `T`-typed σ. That one Float64 factor per quadrature
-    # point promotes the diffusion tensor's own assembly back to Float64 even under `T = Float32`; the
-    # rest of the assembly (mass, reaction, σ's own scalars) is not affected. Making the microstructure
-    # itself precision-parametric would mean building and holding it twice (once per precision) instead
-    # of once shared -- a bigger, separately-scoped change, not made here.
+    # σ follows `T`; the microstructure's f/s/n fields do not -- it is built once in Float64 and
+    # SHARED across every arm, so one Float64 factor per quadrature point promotes the diffusion
+    # tensor's own assembly back to Float64 even at `T = Float32`. Mass, reaction and σ's own scalars
+    # are unaffected. Making the microstructure precision-parametric would mean holding it twice.
     model = MonodomainModel(
         ConstantCoefficient(T(LV_χ)),
         ConstantCoefficient(T(LV_Cₘ)),
@@ -957,8 +703,8 @@ function lv_form(::Type{T}, mesh, microstructure; κ = nothing) where {T}
 end
 
 "An apex S1 stimulus written as an initial condition -- the apical 12% of the long axis raised above
-threshold, the rest at the cell model's resting default. The same protocol shape the sheet PCG2019
-config uses, and for the same reason: no applied-current amplitude to tune against excitability."
+threshold, the rest at the cell model's resting default. Same shape as the sheet PCG2019 config, and
+for the same reason: no applied-current amplitude to tune against excitability."
 function lv_u0(form, ::Type{T}) where {T}
     u₀ = create_initial_condition(form, T)
     setvariable!(u₀, form, :φₘ) do x
@@ -981,14 +727,12 @@ function run_model(cfg::LVConfig)
     println("#"^128)
 
     ############ the coarse mesh: what certifies the step sizes ############
-    # The certification is a property of the physics and the step size, not of the timed mesh, so
-    # `EMRKC_LV_COARSE=0` skips it when re-timing at step sizes a previous run already certified.
-    # The default runs it.
+    # Certification is a property of the physics and the step size, not of the timed mesh, so
+    # `EMRKC_LV_COARSE=0` skips it when re-timing already-certified step sizes.
     get(ENV, "EMRKC_LV_COARSE", "1") == "1" && lv_certify_step_sizes(cfg)
 
     ############ the timed mesh ############
-    # `EMRKC_LV_TIMED=0` skips the ~1e6-element setup+timing entirely, for certification-only
-    # iteration where the expensive mesh is not needed yet. The default runs it.
+    # `EMRKC_LV_TIMED=0` skips the ~1e6-element setup and timing, for certification-only iteration.
     get(ENV, "EMRKC_LV_TIMED", "1") == "1" || return nothing
     return lv_time_arms(cfg)
 end
@@ -1006,9 +750,8 @@ function lv_certify_step_sizes(cfg::LVConfig)
     cu32    = lv_u0(cform32, Float32)
     φc64, φc32 = solution_variable(cform64, :φₘ), solution_variable(cform32, :φₘ)
 
-    # Orthotropy is live, not merely configured: the same problem with a trace-matched isotropic
-    # tensor has to produce a different solution. If the microstructure never reached the assembly
-    # these two agree to round-off.
+    # Orthotropy is live, not merely configured: a trace-matched isotropic tensor has to produce a
+    # different solution, where a microstructure that never reached the assembly agrees to round-off.
     σ_iso = sum(LV_σ) / 3
     ciso = lv_form(Float32, cmesh, cms; κ = ConstantCoefficient(
         SymmetricTensor{2, 3, Float64}((σ_iso, 0.0, 0.0, σ_iso, 0.0, σ_iso))))
@@ -1060,10 +803,9 @@ end
 active_fraction(φ) = count(>(-40.0), Vector(φ)) / length(φ)
 
 """
-Solve to `tend`, tracking the active-tissue fraction every real step. Returns the linearly-interpolated
-time it first reaches `target` (`nothing` if it never does over `[0, tend]`) and the final φₘ -- one
-pass gives both the arrival time and the state the existing L2 metric uses, so the mechanism check and
-the certification reference share the same runs rather than doubling them.
+Solve to `tend`, tracking the active-tissue fraction every real step. Returns the linearly
+interpolated time it first reaches `target` (`nothing` if it never does) and the final φₘ, so the
+mechanism check and the certification reference share one pass rather than doubling the runs.
 """
 function solve_with_arrival(form, u0, alg, Δt, φₘ, tend; target = 0.5)
     integrator = build(form, copy(u0), alg, Δt, oftype(Δt, tend))
@@ -1085,18 +827,15 @@ end
 apparent_order(e1, e2) = (e1 === nothing || e2 === nothing || e1 ≤ 0 || e2 ≤ 0) ? NaN : log2(e1 / e2)
 
 """
-Mechanism check for the LV splitting arm's previously-measured sub-linear apparent convergence order
-(~0.49): runs a Δt-halving ladder and measures the apparent order of two different error metrics on the
-SAME sequence of solves -- the existing final-time L2 relative error, and the shift in arrival time (the
-first crossing of 50% active tissue). For a traveling front, final-time L2 error is dominated by the
-front's phase (timing) offset once that offset exceeds the front width; a first-order-accurate phase
-error then shows as an L2 order of ~0.5 (space-time relL2 between phase-shifted profiles scales like
-sqrt(shift)), even though the underlying time integration is first order. So: arrival order ≈ 1 with L2
-order ≈ 0.5 means the metric sits in that regime, not that the integrator is sub-linear; anything else
-is reported as measured, not reinterpreted into that story.
+Whether a sub-linear apparent convergence order is the integrator's or the metric's: runs a Δt-halving
+ladder and measures the apparent order of two error metrics on the SAME solves -- the final-time L2
+relative error, and the shift in arrival time (first crossing of 50% active tissue). For a traveling
+front, final-time L2 error is dominated by the front's phase offset once that exceeds the front width,
+and a first-order phase error then shows as an L2 order of ~0.5 while arrival order stays ~1. That
+combination means the metric sits in that regime; anything else is reported as measured.
 
-Runs the production-shaped splitting arm (`reaction = :substepper`, the `splitting()` default) in
-Float64 with tight CG tolerance -- the same runs the certification reference is built from.
+Runs the production-shaped splitting arm (`reaction = :substepper`) in Float64 with tight CG
+tolerance -- the same runs the certification reference is built from.
 """
 function lv_mechanism_check(cform64, cu64, φc64, alg, Δts, tend)
     println("\n  mechanism check for splitting's apparent order (Float64, reaction = :substepper):")
@@ -1124,11 +863,11 @@ end
 
 """
 Certifies the production-shaped (`reaction = :substepper`) splitting arm's Δt on the coarse mesh: runs
-the mechanism-check ladder to build a Float64 reference, extends it (up to `max_extra` further
-halvings, budget-capped) using the fitted L2 order to predict how deep convergence needs, then tests
-`candidates` in the actual Float32/production configuration against the best available reference and
-reports the largest one whose error stays inside `BAND`. Always also reports the plain Richardson bound
-off the ladder's own data, as a stated fallback if the reference never converges within budget.
+the mechanism-check ladder to build a Float64 reference, extends it by up to `max_extra` further
+halvings while the fitted L2 order says that is worth it, then tests `candidates` in the Float32
+production configuration against the best available reference and reports the largest one inside
+`BAND`. The Richardson bound off the ladder's own data is always also reported, as a stated fallback
+for a reference that does not converge within budget.
 """
 function lv_certify_splitting(
     cform64, cu64, cform32, cu32, φc64, φc32, Δt_carried;
@@ -1140,9 +879,8 @@ function lv_certify_splitting(
     mech = lv_mechanism_check(cform64, cu64, φc64, alg64, ladder, LV_TEND)
     Δts, φs, l2_errs = collect(mech.Δts), mech.φs, mech.l2_errs
 
-    # Extend the ladder while the fitted order predicts it is worth it and the budget (`max_extra`
-    # further halvings) allows -- a non-positive/non-finite order means the ladder is not visibly
-    # converging, so extending it blindly is not justified; stop and fall back to Richardson instead.
+    # A non-positive or non-finite order means the ladder is not visibly converging, so extending it
+    # is not justified; stop and fall back to Richardson instead.
     extra = 0
     while extra < max_extra && isfinite(mech.l2_order) && mech.l2_order > 0.05 &&
         l2_errs[end] > BAND / target_margin
@@ -1184,10 +922,9 @@ function lv_certify_splitting(
                 " not a certification.")
     end
 
-    # Fallback stated unconditionally, per the triage note: a Richardson bound off the arm's own ladder,
-    # labeled as such, usable if the reference above never converges. Refit the order from the finest
-    # available pair (more local than `mech.l2_order`, which is fixed to the first two ladder levels);
-    # `l2_errs[end] ≈ E(Δts[end])` under E(Δt) ≈ C·Δt^p, so E(Δt) = BAND at Δt = Δts[end]·(BAND/E)^(1/p).
+    # The order is refit from the finest available pair, more local than `mech.l2_order`, which is
+    # fixed to the first two ladder levels. Under E(Δt) ≈ C·Δt^p with `l2_errs[end] ≈ E(Δts[end])`,
+    # E(Δt) = BAND at Δt = Δts[end]·(BAND/E)^(1/p).
     p = length(l2_errs) >= 2 ? apparent_order(l2_errs[end - 1], l2_errs[end]) : NaN
     if isfinite(p) && p > 0
         richardson_dt = Δts[end] * (BAND / l2_errs[end])^(1 / p)
@@ -1222,9 +959,8 @@ function lv_time_arms(cfg::LVConfig)
     plain = build(form, u32,
                   splitting(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32}; jacobi = false),
                   Float32(cfg.Δt_split), 1.0f5)
-    # A handful of real steps to get past the assembly and the zero initial guess -- not `prewarm!`:
-    # this probe counts iterations rather than timing them, so there is no clock to warm, and the
-    # thousands of steps a wall-clock warmup would take on a small mesh drift the Float32 time far
+    # Past the assembly and the zero initial guess, but not `prewarm!`: this probe counts iterations
+    # rather than timing them, and a wall-clock warmup's thousands of steps drift the Float32 time far
     # enough apart that the splitting integrator's parent/child synchronization gives up.
     for _ = 1:5
         step!(plain)
@@ -1234,8 +970,8 @@ function lv_time_arms(cfg::LVConfig)
     GC.gc()
 
     arms = Arm[]
-    # The host arms certify themselves (finite here, in band on the coarse mesh); each device arm is
-    # then checked against its own host counterpart's validated state at the same step size.
+    # The host arms are only checked for finiteness here -- their step sizes are certified on the
+    # coarse mesh -- and each device arm against its own host counterpart at the same step size.
     ahe, φ_host_emrkc = run_arm("host emRKC", "emRKC", form, u32, cpu_emrkc, Float32(cfg.Δt_emrkc),
                                 φₘ32, nothing, false, false; steps = LV_STEPS)
     push!(arms, ahe)
@@ -1268,9 +1004,9 @@ end
 ####################################
 
 """
-The effective `memory.max` (bytes) of this process's own cgroup v2 leaf, read by walking
-`/proc/self/cgroup`'s `0::<path>` up through `/sys/fs/cgroup<path>` until a `memory.max` file is
-found. `nothing` for "max" (unset) or if no such file is found at all.
+The effective `memory.max` (bytes) of this process's cgroup v2 leaf, found by walking
+`/proc/self/cgroup`'s `0::<path>` up through `/sys/fs/cgroup<path>`. `nothing` for "max" (unset) or
+when no such file is found.
 """
 function _cgroup_memory_limit()
     lines = try
@@ -1295,8 +1031,7 @@ end
 
 """
 Refuses to run outside a memory-capped cgroup: an uncapped run's GC sizes its heap against the whole
-machine rather than the 8G this benchmark is meant to run in, which has frozen this box before.
-`BENCHMARK_UNCAPPED=1` overrides for a deliberate uncapped run.
+machine rather than the 8G this benchmark is meant to run in. `BENCHMARK_UNCAPPED=1` overrides.
 """
 function _assert_memory_capped()
     get(ENV, "BENCHMARK_UNCAPPED", "0") == "1" && return nothing
@@ -1329,11 +1064,10 @@ function run_model(cfg::ModelConfig)
     @printf("reference Δt = %.4g ms, accuracy band = %.3g\n", DTREF, BAND)
 
     cpu64_emrkc = emrkc(Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64})
-    # The reference's conjugate gradient runs far tighter than the tutorial's. At the tutorial's
+    # The reference's conjugate gradient runs far tighter than the tutorial's: at the tutorial's
     # tolerances the solve's own error accumulates with the step count, so the backward Euler error
-    # curve turns around below Δt ≈ 0.2 ms and a reference stepped there is *less* accurate than the
-    # step sizes it is meant to certify. That floor belongs in the arms, which are configured the way
-    # a user would configure them; it does not belong in the reference.
+    # curve turns around below Δt ≈ 0.2 ms and a reference stepped there would be *less* accurate than
+    # the step sizes it certifies. That floor belongs in the arms, not in the reference.
     cpu64_split = splitting(
         Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64}; atol = 1.0e-12, rtol = 1.0e-10,
     )
@@ -1352,22 +1086,19 @@ function run_model(cfg::ModelConfig)
     Δt_emrkc, _ = select_dt(form32, u32, cpu32_emrkc, φₘ32, φ_ref_emrkc, "emRKC")
     Δt_split, _ = select_dt(form32, u32, cpu32_split, φₘ32, φ_ref_split, "splitting")
 
-    # Both models' device arms are Float32 and genuinely so: `ParametrizedFHNModel` already wrapped its
-    # literals in `T`, and `src/modeling/cells/pcg2019.jl` now does too.
     DT = Float32
     form_dev, u_dev, φₘ_dev = form32, u32, φₘ32
     gpu_emrkc = emrkc(CuVector{DT}, CuCSR)
     gpu_split = splitting(CuVector{DT}, CuCSR)
     ugpu = CuVector(u_dev)
 
-    # What the preconditioner is worth, measured once rather than asserted: the same splitting arm at
-    # the same step size with `precs` left at its default identity.
+    # What the preconditioner is worth: the same splitting arm at the same step size with `precs` left
+    # at its default identity.
     println("\nCG iterations per step, host, Δt = ", Δt_split, " ms:")
     plain = build(form32, u32, splitting(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32}; jacobi = false),
                   Float32(Δt_split), 1.0f5)
-    # A handful of real steps to get past the assembly and the zero initial guess -- not `prewarm!`:
-    # this probe counts iterations rather than timing them, so there is no clock to warm, and the
-    # thousands of steps a wall-clock warmup would take on a small mesh drift the Float32 time far
+    # Past the assembly and the zero initial guess, but not `prewarm!`: this probe counts iterations
+    # rather than timing them, and a wall-clock warmup's thousands of steps drift the Float32 time far
     # enough apart that the splitting integrator's parent/child synchronization gives up.
     for _ = 1:5
         step!(plain)
@@ -1391,12 +1122,10 @@ function run_model(cfg::ModelConfig)
     return arms
 end
 
-# The element counts are fitted to the 8 GiB host cgroup and the 8 GiB card, not chosen for roundness
-# (see the LV-PCG2019 header block); `EMRKC_LV_BASE`/`EMRKC_LV_COARSE_BASE` are what that fitting was
-# done with, and what a smaller card would have to turn down.
+# The element counts are fitted to the 8 GiB host cgroup and the 8 GiB card, and are what a smaller
+# card would have to turn down.
 _lv_base(key, default) = Tuple(parse.(Int, split(get(ENV, key, default), ",")))
-# The step sizes are the LV's own, measured on the coarse mesh -- NOT the sheet's, which do not
-# transfer (see the LV-PCG2019 block).
+# The LV's own step sizes, measured on the coarse mesh; the sheet's do not transfer.
 AVAILABLE_MODELS["LV"] = LVConfig(
     "LV-PCG2019",
     _lv_base("EMRKC_LV_BASE", "191,20,33"),

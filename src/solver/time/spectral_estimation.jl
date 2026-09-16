@@ -1,27 +1,16 @@
 #####################################################################
 #  Spectral radius estimation: power iteration + host-only bounds   #
 #####################################################################
-"""
-    SpectralRadiusWorkspace{VT, T}
-
-Warm-startable state for [`estimate_rho!`](@ref): the current unit-norm iterate `v`, a
-matching scratch buffer `w`, the last estimated spectral radius `ρ` (safety-multiplied),
-and the iteration count `iters_done` the last call needed.
-"""
+# Warm-startable state for `estimate_rho!`.
 mutable struct SpectralRadiusWorkspace{VT <: AbstractVector, T <: Real}
     v::VT
     w::VT
-    ρ::T
+    ρ::T # the last estimate, already safety-multiplied
     iters_done::Int
 end
 
-"""
-    SpectralRadiusWorkspace(template::AbstractVector)
-
-Allocate a workspace shaped like `template`, seeded (via [`_reseed!`](@ref)) with a fixed
-non-uniform unit vector rather than `template` itself, whose caller-supplied content may be zero
-or (unluckily) an eigenvector the iteration cannot then escape.
-"""
+# Seeded with a fixed non-uniform unit vector rather than `template`, whose caller-supplied content
+# may be zero or an eigenvector the iteration cannot then escape.
 function SpectralRadiusWorkspace(template::AbstractVector)
     T = real(eltype(template))
     ws = SpectralRadiusWorkspace(similar(template), similar(template), zero(T), 0)
@@ -29,51 +18,30 @@ function SpectralRadiusWorkspace(template::AbstractVector)
     return ws
 end
 
-"""
-    _reseed!(ws::SpectralRadiusWorkspace)
-
-Reset `ws.v` to the same fixed non-uniform unit vector the constructor seeds from, discarding
-whatever the iterate currently holds. [`estimate_rho!`](@ref) calls this to retry from a clean
-start after a poisoned iterate -- e.g. an `apply!` that returned Inf/NaN, which
-`v .= w ./ nw` then spreads into every entry -- rather than warm-starting from it again.
-"""
+# Back to that same fixed seed, discarding a poisoned iterate -- e.g. an Inf/NaN from `apply!` that
+# `v .= w ./ nw` has already spread into every entry.
 function _reseed!(ws::SpectralRadiusWorkspace)
     v = ws.v
-    # One broadcast, not a scalar write into `v[end]`: a device vector forbids scalar indexing, and
-    # the seed values are the same ones either way.
+    # One broadcast, not a scalar write into `v[end]`: a device vector forbids scalar indexing.
     v .= one(eltype(v)) .+ (eachindex(v) .== lastindex(v))
     v ./= norm(v)
     return ws
 end
 
-"""
-    estimate_rho!(ws::SpectralRadiusWorkspace, apply!; maxiters = 50, reltol = 1.0e-2, safety = 1.1,
-                  jump_factor = 1.0e6, describe = () -> "")
-
-Normalized power iteration for the spectral radius of the (implicit) linear operator
-`apply!(w, v) -> w`, warm-started from `ws.v` and converging once `ρ = ‖apply!(w, v)‖ / ‖v‖`
-changes by less than `reltol` relative between iterations. Returns `safety * ρ` and stores
-that same safety-multiplied value into `ws.ρ` (`ws.v`/`ws.w`/`ws.iters_done` are updated too).
-Reads its vectors through `norm`/broadcast only, so it runs unchanged on a device vector as
-long as `apply!` does.
-
-A non-finite result, or one more than `jump_factor` times the previous `ws.ρ` (skipped on the
-first call for a workspace, where `ws.ρ == 0` and there is nothing to compare against), is
-treated as `apply!` having been evaluated somewhere it should not have been trusted rather than a
-genuine spectral radius: it retries exactly once from a freshly [`_reseed!`](@ref)ed iterate (the
-current `ws.v` may itself be poisoned by the bad result), and raises an error -- never a silently
-clamped value -- if the retry is no better. `describe` is appended verbatim to that error; a
-caller with more context than this generic operator (the state a Jacobian-free difference was
-evaluated at, its own knobs) can use it to name that in the message.
-
-Exhausting `maxiters` without meeting `reltol` returns silently rather than erroring -- a caller
-that wants to know can compare `ws.iters_done` against the `maxiters` it passed. The direction is
-never a surprise: power iteration converges monotonically to the dominant eigenvalue from below,
-so a value that never settled under-estimates the true radius, which `safety` was not sized to
-cover (unlike the sanity guard above, this is not a sign of a bad `apply!`, just an under-budgeted
-one -- a legitimate, if noisy, operator can need more than the default `maxiters` at a tight
-`reltol`, which is a normal, non-exceptional outcome this function does not get to judge).
-"""
+# Normalized power iteration for the spectral radius of the (implicit) linear operator
+# `apply!(w, v) -> w`, warm-started from `ws.v` and converged once ρ = ‖apply!(w, v)‖/‖v‖ changes by
+# less than `reltol` relative between iterations. Returns `safety * ρ` and stores that same value in
+# `ws.ρ`. Reads its vectors through `norm`/broadcast only, so it runs on a device vector as long as
+# `apply!` does.
+#
+# A non-finite result, or one more than `jump_factor` times the previous `ws.ρ` (skipped on a
+# workspace's first call, where `ws.ρ == 0`), is treated as `apply!` having been evaluated somewhere
+# it should not be trusted: retried exactly once from a freshly reseeded iterate, then raised as an
+# error -- never a silently clamped value. `describe` is appended verbatim to that error.
+#
+# Exhausting `maxiters` without meeting `reltol` returns silently; power iteration converges to the
+# dominant eigenvalue from below, so such a value under-estimates the true radius, which `safety` was
+# not sized to cover. A caller that needs to know compares `ws.iters_done` against its `maxiters`.
 function estimate_rho!(
     ws::SpectralRadiusWorkspace{VT, T},
     apply!;
@@ -96,11 +64,9 @@ function estimate_rho!(
     return ws.ρ
 end
 
-# The iteration proper, factored out of `estimate_rho!` so the runaway guard can rerun it against
-# a reseeded `ws.v` without duplicating the loop. Pre-safety: `estimate_rho!` applies `safety`.
-# `ws.iters_done == maxiters` after the call is the (silent) under-estimation signal documented
-# on `estimate_rho!` -- the non-finite/null-space exit below is a definitive stop, not iteration
-# starvation, so it can still report fewer than `maxiters` even when nothing further would help.
+# Pre-safety; factored out so the runaway guard can rerun it against a reseeded `ws.v`.
+# `ws.iters_done == maxiters` is the under-estimation signal; the non-finite/null-space exit below is
+# a definitive stop, not starvation, so it can report fewer even when nothing further would help.
 function _power_iterate!(ws::SpectralRadiusWorkspace{VT, T}, apply!, maxiters, tol) where {VT, T}
     v, w = ws.v, ws.w
     ρ = zero(T)
@@ -114,10 +80,8 @@ function _power_iterate!(ws::SpectralRadiusWorkspace{VT, T}, apply!, maxiters, t
         nw = norm(w)
         ρ = nw / nv
         if !isfinite(ρ) || nw == 0
-            # A non-finite `ρ` (bad `apply!`) or nw == 0 (v lies in the operator's null space) both
-            # leave no direction left to refine -- and breaking here, before `v .= w ./ nw`, keeps a
-            # non-finite `nw` from spreading `NaN` into `v` and tripping the zero-collapse check above
-            # on the loop's next iteration.
+            # Bad `apply!`, or `v` in the operator's null space: no direction left to refine. Breaking
+            # before `v .= w ./ nw` also keeps a non-finite `nw` from spreading NaN into `v`.
             break
         end
         v .= w ./ nw
@@ -140,14 +104,8 @@ _rho_is_sane(ρ, ρ_prev, jump_factor) = isfinite(ρ) && (ρ_prev == 0 || ρ ≤
     )
 end
 
-"""
-    _gershgorin_bound(K, invM::AbstractVector)
-
-Host-only upper bound on the spectral radius of `Diagonal(invM) * K`:
-`maxᵢ invM[i] * Σⱼ|K[i,j]|`. One method per sparse storage `K` may take -- row access
-differs between column-major (`SparseMatrixCSC`) and row-major (`ThreadedSparseMatrixCSR`)
-layouts.
-"""
+# Host-only upper bound on the spectral radius of `Diagonal(invM) * K`: `maxᵢ invM[i] * Σⱼ|K[i,j]|`.
+# One method per sparse storage -- row access differs between column-major and row-major layouts.
 function _gershgorin_bound(K::SparseMatrixCSC, invM::AbstractVector)
     T = promote_type(eltype(K), eltype(invM))
     rowsums = zeros(T, size(K, 1))
@@ -172,18 +130,8 @@ function _gershgorin_bound(K::ThreadedSparseMatrixCSR, invM::AbstractVector)
     return bound
 end
 
-"""
-    _should_reestimate(policy, steps_since, stepfail::Bool) -> Bool
-
-Whether ρ needs re-estimating this step. `steps_since` counts steps since the last
-estimate; a NEGATIVE value means none has run yet and, like a step failure (`stepfail`),
-always forces one regardless of `policy`. Otherwise:
-
-- `:once` -- never again (this implementation's default: estimate once, trust it for the whole
-  run; the reference implementation re-estimates every 5 steps and has no estimate-once mode).
-- `n::Int` -- every `n` steps (`steps_since ≥ n - 1`).
-- a callable -- `policy(steps_since)`.
-"""
+# Whether ρ needs re-estimating this step, for the `rho_recompute` policies `EMRKC` documents. A
+# NEGATIVE `steps_since` means none has run yet and, like a step failure, always forces one.
 function _should_reestimate(policy, steps_since, stepfail::Bool)
     (stepfail || steps_since < 0) && return true
     return _reestimate_due(policy, steps_since)
