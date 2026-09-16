@@ -2,9 +2,15 @@
     BilinearMassIntegrator{MT, CV}
 
 Represents the integrand of the bilinearform ``a(u,v) = \int \rho(x) v(x) u(x) dx`` for ``u,v`` from the same function space with some given density field $\rho(x)$.
+
+`qrc` is any collection answering [`getquadraturerule`](@ref), not only a
+[`QuadratureRuleCollection`](@ref): a mass is the one term whose *rule* is a modelling choice rather
+than an accuracy knob, which is why `FiniteElementDiscretization` lets a `:mass` entry override the
+field's rule. A [`NodalQuadratureRuleCollection`](@ref) over a tensor-product Lagrange space is what
+makes the assembled mass diagonal -- the spectral-element mass an explicit integrator can lump for
+free.
 """
-struct BilinearMassIntegrator{CoefficientType, QRC <: QuadratureRuleCollection} <:
-       AbstractBilinearIntegrator
+struct BilinearMassIntegrator{CoefficientType, QRC} <: AbstractBilinearIntegrator
     ρ::CoefficientType
     qrc::QRC
     sym::Symbol

@@ -94,6 +94,38 @@ function setup_operator(
 end
 
 """
+A matrix-free operator holds no system matrix, so `solver.system_matrix_type` has nothing to name and
+is not read: where the assembled forms above pick a storage format, here the strategy's own
+`MatrixFreeAction` storage election already fixes what is kept and what is recomputed per action, and
+the device the strategy names is the device the action runs on. There is consequently no
+`setup_assembled_operator` step and no mirror -- the operator is whatever `FerriteOperators` builds
+for this strategy, on both host and device.
+
+The solver still has to want one: an operator of this kind serves `mul!`, not a linear solve, so it
+reaches only the solvers that step through the operator's action -- [`EMRKC`](@ref) today.
+"""
+function setup_operator(
+    strategy::AssemblyStrategy{<:MatrixFreeAction},
+    integrator::AbstractBilinearIntegrator,
+    solver::AbstractSolver,
+    dh::AbstractDofHandler,
+)
+    return setup_operator(strategy, integrator, dh)
+end
+
+# Same short circuit as the four assembled ones above: an absent stimulus assembles nothing at all.
+# Spelled separately rather than folded into them because those are unrolled over `FullAssembly`
+# strategies only.
+function setup_operator(
+    strategy::AssemblyStrategy{<:MatrixFreeAction},
+    ::LinearIntegrator{<:NoStimulationProtocol},
+    solver::AbstractSolver,
+    dh::AbstractDofHandler,
+)
+    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
+end
+
+"""
     setup_assembled_operator(strategy, integrator, system_matrix_type, dh)
 
 Materialize `integrator` against `dh` into the operator a solver requesting `system_matrix_type` can

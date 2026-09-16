@@ -164,10 +164,19 @@ getinterpolation(
 """
     NodalQuadratureRuleCollection(::InterpolationCollection)
 
-A collection of nodal quadrature rules across different cell types.
+A collection of nodal (collocated) quadrature rules across different cell types: the rule whose
+points are the interpolation's own dof locations.
+
+On a **hypercube** carrying a `Lagrange` or `DiscontinuousLagrange` interpolation of order `p` the
+nodes are the tensor product of the `p+1` Gauss-Lobatto points, so this rule is Ferrite's own
+`:lobatto` rule reordered into the interpolation's node order, and its weights are exact. That is
+what makes the mass matrix assembled through it *diagonal* — the spectral-element mass — while the
+same space under a Gauss rule is not.
 
 !!! warning
-    The computation for the weights is not implemented yet and hence they default to NaN.
+    On any other reference shape the collocated weights are not implemented and default to `NaN`.
+    Such a rule still positions correctly, which is all the field-evaluation callers need, but it
+    cannot integrate.
 """
 struct NodalQuadratureRuleCollection{IPC <: InterpolationCollection}
     ipc::IPC
@@ -179,10 +188,45 @@ function getquadraturerule(
 ) where {ref_shape}
     ip = getinterpolation(nqr.ipc, cell)
     positions = Ferrite.reference_coordinates(ip)
-    return QuadratureRule{ref_shape}([NaN for _ = 1:length(positions)], positions)
+    return QuadratureRule{ref_shape}(_nodal_quadrature_weights(ip, positions), positions)
 end
 getquadraturerule(qrc::NodalQuadratureRuleCollection, sdh::SubDofHandler) =
     getquadraturerule(qrc, get_first_cell(sdh))
+
+_nodal_quadrature_weights(ip, positions) = [NaN for _ = 1:length(positions)]
+
+const _TensorProductLagrange{dim, order} = Union{
+    Lagrange{Ferrite.RefHypercube{dim}, order},
+    DiscontinuousLagrange{Ferrite.RefHypercube{dim}, order},
+}
+
+# Ferrite orders hypercube Lagrange nodes by entity (vertices, then edges, ...) and its `:lobatto`
+# rule lexicographically, so the weights are matched by POSITION rather than by index. The matching
+# is asserted to be a bijection: a node the rule does not carry would otherwise silently take a
+# neighbour's weight, and the mass matrix would come out diagonal and wrong.
+function _nodal_quadrature_weights(
+    ::_TensorProductLagrange{dim, order},
+    positions,
+) where {dim, order}
+    qr = QuadratureRule{Ferrite.RefHypercube{dim}}(Float64, :lobatto, order + 1)
+    points, weights = Ferrite.getpoints(qr), Ferrite.getweights(qr)
+    length(points) == length(positions) || error(
+        "The collocated Gauss-Lobatto rule of order $order on RefHypercube{$dim} has " *
+        "$(length(points)) points but the interpolation has $(length(positions)) nodes.",
+    )
+    taken = falses(length(points))
+    out = Vector{Float64}(undef, length(positions))
+    for (i, x) in pairs(positions)
+        j = argmin(k -> maximum(abs, points[k] - x), eachindex(points))
+        (maximum(abs, points[j] - x) < 1.0e-10 && !taken[j]) || error(
+            "Node $i of the interpolation sits at $x, which is not an unmatched point of the " *
+            "collocated Gauss-Lobatto rule. The two are meant to be the same point set.",
+        )
+        taken[j] = true
+        out[i] = weights[j]
+    end
+    return out
+end
 
 
 """

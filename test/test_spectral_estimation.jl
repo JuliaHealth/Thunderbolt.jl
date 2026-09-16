@@ -210,6 +210,46 @@ end
     @test y ≈ [2.0 + 1.0, -2.0 + 1.0, 2.0 + 1.0]
 end
 
+@testset "FusedInverseMassRateOperator negates, where the lumped one does not" begin
+    # `A` stands in for a fused `M⁻¹K` store: the POSITIVE stiffness convention, which is what the
+    # minus in the rate is for. The same matrix through both operators must come out opposite.
+    A = sparse(Diagonal([2.0, 4.0, 6.0]))
+    fused = Thunderbolt.FusedInverseMassRateOperator(A)
+    lumped = LumpedMassRateOperator(A, ones(3))
+
+    x = [1.0, -1.0, 0.5]
+    yf, yl = zeros(3), zeros(3)
+    mul_rate!(yf, fused, x)
+    mul_rate!(yl, lumped, x)
+    @test yf ≈ -yl
+    @test yf ≈ -(A * x)
+
+    # `y` is assigned, not accumulated into: a stale buffer must not leak through the 5-arg `mul!`.
+    fill!(yf, 17.0)
+    mul_rate!(yf, fused, x)
+    @test yf ≈ -(A * x)
+
+    # A source has no route through a fused store, and says so rather than dropping the inverse mass.
+    @test_throws ErrorException add_source_rate!(zeros(3), fused, ones(3))
+end
+
+@testset "_fuses_inverse_mass reads the storage election" begin
+    mass = Thunderbolt.BilinearMassIntegrator(
+        Thunderbolt.ConstantCoefficient(1.0), FerriteOperators.QuadratureRuleCollection(2), :u,
+    )
+    fuses(form) = Thunderbolt._fuses_inverse_mass(
+        AssemblyStrategy(form, FerriteOperators.SequentialScheduling(), SequentialCPUDevice()),
+    )
+    @test !fuses(FerriteOperators.FullAssembly())
+    @test !fuses(FerriteOperators.MatrixFreeAction())
+    @test !fuses(FerriteOperators.MatrixFreeAction(; storage = FerriteOperators.BlockRowAssembly()))
+    @test fuses(
+        FerriteOperators.MatrixFreeAction(;
+            storage = FerriteOperators.BlockRowAssembly(; premultiply_inverse_mass = mass),
+        ),
+    )
+end
+
 @testset "_should_reestimate policy shapes" begin
     @testset ":once" begin
         @test _should_reestimate(:once, -1, false) == true    # never yet

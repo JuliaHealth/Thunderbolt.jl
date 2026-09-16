@@ -391,3 +391,63 @@ using JET: @test_opt
         @test Kc ≈ Ks .+ Kd
     end
 end
+
+@testset "Collocated nodal quadrature (spectral-element mass)" begin
+    import Thunderbolt: NodalQuadratureRuleCollection, LagrangeCollection,
+                        DiscontinuousLagrangeCollection, getquadraturerule
+    import Ferrite
+    using LinearAlgebra: Diagonal, diag
+
+    # The mass a collocated rule assembles over a tensor-product Lagrange space is diagonal, and its
+    # diagonal sums to the domain measure -- the property the whole spectral-element arm rests on.
+    function nodal_mass(celltype, refshape, order, dims, extent)
+        grid = Ferrite.generate_grid(celltype, dims, zero(extent), extent)
+        dh = Ferrite.DofHandler(grid)
+        Ferrite.add!(dh, :u, Ferrite.Lagrange{refshape, order}())
+        Ferrite.close!(dh)
+        sdh = dh.subdofhandlers[1]
+        qr = getquadraturerule(NodalQuadratureRuleCollection(LagrangeCollection{order}()), sdh)
+        cv = Ferrite.CellValues(qr, Ferrite.Lagrange{refshape, order}(),
+                                Ferrite.geometric_interpolation(celltype))
+        M = Ferrite.allocate_matrix(dh)
+        asm = Ferrite.start_assemble(M)
+        n = Ferrite.getnbasefunctions(cv)
+        Me = zeros(n, n)
+        for cell in Ferrite.CellIterator(dh)
+            Ferrite.reinit!(cv, cell)
+            fill!(Me, 0)
+            for qp in 1:Ferrite.getnquadpoints(cv), i in 1:n, j in 1:n
+                Me[i, j] += Ferrite.shape_value(cv, qp, i) * Ferrite.shape_value(cv, qp, j) *
+                            Ferrite.getdetJdV(cv, qp)
+            end
+            Ferrite.assemble!(asm, Ferrite.celldofs(cell), Me)
+        end
+        return M
+    end
+
+    @testset "$name" for (name, celltype, refshape, dims, extent, measure) in (
+        ("quad", Quadrilateral, Ferrite.RefQuadrilateral, (2, 3), Vec{2}((1.5, 0.5)), 0.75),
+        ("hex", Hexahedron, Ferrite.RefHexahedron, (2, 2, 2), Vec{3}((1.3, 1.3, 1.3)), 1.3^3),
+    ), order in (1, 2)
+
+        M = nodal_mass(celltype, refshape, order, dims, extent)
+        d = diag(M)
+        @test minimum(d) > 0
+        @test maximum(abs, M - Diagonal(d)) < 1.0e-12 * minimum(d)
+        @test sum(d) ≈ measure rtol = 1.0e-12
+    end
+
+    # Both Lagrange families share the node set, so both get real weights; a simplex has no such
+    # collocated rule and keeps the documented NaN.
+    let cellhex = Ferrite.getcells(Ferrite.generate_grid(Hexahedron, (1, 1, 1)), 1),
+        celltet = Ferrite.getcells(Ferrite.generate_grid(Tetrahedron, (1, 1, 1)), 1)
+
+        for ipc in (LagrangeCollection{2}(), DiscontinuousLagrangeCollection{2}())
+            qr = getquadraturerule(NodalQuadratureRuleCollection(ipc), cellhex)
+            @test all(isfinite, Ferrite.getweights(qr))
+            @test sum(Ferrite.getweights(qr)) ≈ 8.0   # the reference hexahedron's measure
+        end
+        qr = getquadraturerule(NodalQuadratureRuleCollection(LagrangeCollection{1}()), celltet)
+        @test all(isnan, Ferrite.getweights(qr))
+    end
+end

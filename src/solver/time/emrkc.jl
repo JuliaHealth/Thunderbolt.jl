@@ -324,7 +324,6 @@ function OS.init_cache(
     spec            = _OperatorSetupSpec(alg.solution_vector_type, alg.system_matrix_type)
     dh              = fheat.dh
     strategy        = get_strategy(fheat)
-    mass_operator   = setup_operator(strategy, fheat.mass_term, spec, dh)
     K_operator      = setup_operator(strategy, fheat.bilinear_term, spec, dh)
     source_operator = setup_operator(strategy, fheat.source_term, spec, dh)
 
@@ -334,14 +333,11 @@ function OS.init_cache(
     # stage below.
     ctx₀ = TimeIntegrationContext(zero(T), zero(T), zero(T))
     @timeit_debug "initial assembly" begin
-        update_operator!(mass_operator, nothing, ctx₀)
         update_operator!(K_operator, nothing, ctx₀)
         update_operator!(source_operator, nothing, ctx₀)
     end
 
-    invM = similar(u, nV)
-    compute_lumped_inverse_mass!(invM, mass_operator, similar(u, nV))
-    rate_operator = LumpedMassRateOperator(K_operator, invM)
+    rate_operator = _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, u, nV, ctx₀)
 
 
     # Zeroed, not merely allocated: a cell model whose `cell_rhs!` leaves a state untouched would
@@ -390,6 +386,43 @@ function OS.init_cache(
         Vrange,
     )
 end
+
+"""
+    _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, u, nV, ctx₀)
+
+The fast force `f_F` of the semidiscretization, elected by how the assembly strategy carries the
+inverse mass.
+
+The default is [`LumpedMassRateOperator`](@ref): the mass term is assembled and row-sum lumped, and
+`K` keeps Thunderbolt's negated diffusion convention. Where the strategy instead elects
+`BlockRowAssembly(; premultiply_inverse_mass = ...)`, `M⁻¹` is already folded into the diffusion
+store, exactly and per cell, so no mass is assembled here at all and the rate is
+[`FusedInverseMassRateOperator`](@ref)'s negated product.
+
+In that second case `fheat.mass_term` is NOT read: the mass the fusion uses is the integrator handed
+to the storage election, and it is the caller's to keep consistent with the model's. The two spell
+the same mass for the same reason a `FiniteElementDiscretization` may carry a `:mass` quadrature rule
+of its own -- the mass an explicit integrator wants is a discretization choice -- but nothing here
+checks that they agree.
+"""
+function _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, u, nV, ctx₀)
+    if _fuses_inverse_mass(strategy)
+        return FusedInverseMassRateOperator(K_operator)
+    end
+    mass_operator = setup_operator(strategy, fheat.mass_term, spec, dh)
+    @timeit_debug "initial assembly" update_operator!(mass_operator, nothing, ctx₀)
+    invM = similar(u, nV)
+    compute_lumped_inverse_mass!(invM, mass_operator, similar(u, nV))
+    return LumpedMassRateOperator(K_operator, invM)
+end
+
+# Read off the strategy rather than made a solver option: a caller who asked the assembly for a fused
+# `M⁻¹K` store has already said which rate operator they mean, and a second knob could disagree with
+# it silently.
+_fuses_inverse_mass(strategy::AbstractAssemblyStrategy) = _fuses_inverse_mass(strategy.form)
+_fuses_inverse_mass(::Any) = false
+_fuses_inverse_mass(form::MatrixFreeAction) = _fuses_inverse_mass(form.storage)
+_fuses_inverse_mass(storage::BlockRowAssembly) = storage.premultiply_inverse_mass !== nothing
 
 # An empty selection collapses to empty tuples rather than an all-false mask, which is what makes
 # `gates = ()` run a model that implements no `gate_coefficients` at all.
@@ -526,6 +559,11 @@ function _emrkc_rho_F!(mode::Symbol, cache::EMRKCCache, alg)
             _emrkc_estimator_options(alg.rho_recompute)...,
         )
     elseif mode === :gershgorin
+        cache.op isa LumpedMassRateOperator || error(
+            "`rho_F_estimate = :gershgorin` reads the rows of an assembled diffusion matrix, and a " *
+            "$(nameof(typeof(cache.op))) has none -- its action is matrix free. Use `:power`, or a " *
+            "number.",
+        )
         bound = _gershgorin_bound(_emrkc_host_matrix(cache.op.K), cache.op.invM)
         return _emrkc_rho_type(cache)(alg.rho_safety * bound)
     end
