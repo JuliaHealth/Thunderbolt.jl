@@ -58,6 +58,10 @@
 # `DV_STAGES` selects the stages, comma separated, default `"validate,ladder,penalty,cost"`, and
 # `DV_REF_CACHE` names a directory the reference solve is cached in, keyed by the constants it
 # depends on -- a re-run that only varies the arms then costs nothing for it.
+# `DV_COST_ONLY=1` skips validate/ladder/penalty/certify_dt entirely and times the cost table alone,
+# against `h*`/`Δt` reused from a prior full run (see `_reused_certification()`) rather than
+# re-derived; it overrides `DV_STAGES`. Use it to re-time the arms after a change to `cost_arm` or
+# the environment -- never after a change to the ladder, the reference, or `VARIANTS`.
 #
 # THREADS: the host arms run on the threads the invocation asks for, and BLAS is pinned to the same
 # count -- left alone, OpenBLAS sizes itself against the whole machine and a `-t2` run was measured
@@ -123,13 +127,26 @@
 # same dof spacing, so most of the gap is NOT the penalty -- it is the exact block-diagonal inverse
 # mass, whose Q1 hex element spectrum spans a factor 27 that lumping removes.
 #
-# THE COST TABLE IS NOT YET FILLED IN. The four accuracy ladders, the four certified step sizes and
-# the penalty sweep above are measured; the timed arms on the 2 mm cube at each variant's h* were
-# still running when this was written. What the numbers above already fix is the shape of that table:
-# a common Δt, a common dof SPACING, and therefore a per-simulated-ms cost that is the dof
-# multiplicity (1 / 1 / 3.4 / 8) times the inner stage count (which grows as the square root of a ρ_F
-# spanning 7.0 to 5458 at equal cell size). Fill the table in from a completed run rather than from
-# that arithmetic.
+# COST AT MATCHED ACCURACY (2 mm cube at each variant's h*, certified Δt = 0.0078125 ms reused from
+# the ladders via DV_COST_ONLY=1; device Float32; DG-P1 marked (>=): it never crossed the band, its
+# row is a lower bound on its cost):
+#
+#   arm                    h*/mm   ndofs     states    stages     s/step     s/sim-ms  slab band
+#   host CG-P1 lumped     0.0312   274625   1922375   s=1 m=3    0.13376     17.121    0.00825
+#   host DG-P1 SIPG (>=)  0.0312  2097152  14680064   s=1 m=42  70.57121   9033.115    0.01123
+#   host DG-P2 SIPG       0.0625   884736   6193152   s=1 m=40 325.68650  41687.871    0.006693
+#   host CG-Q2 GLL-SEM    0.0625   274625   1922375   s=1 m=5    0.31826     40.738    0.006683
+#   device CG-P1 lumped   0.0312   274625   1922375   s=1 m=3    0.00275      0.35138  0.00825
+#   device DG-P1 SIPG (>=)0.0312  2097152  14680064   s=1 m=42   0.08704     11.14055  0.01123
+#   device DG-P2 SIPG     0.0625   884736   6193152   s=1 m=40   0.54708     70.02649  0.006693
+#   device CG-Q2 GLL-SEM  0.0625   274625   1922375   s=1 m=5    0.00397      0.50798  0.006683
+#
+# Relative cost per simulated ms: device CG-P1 1.00x / DG-P1 (>=) 31.71x / DG-P2 199.29x /
+# CG-Q2 GLL-SEM 1.45x (host: 1.00x / 527.6x / 2434.9x / 2.38x). CV bias at h* (arrival shift vs the
+# independent consistent-mass reference, identical host and device): CG-P1 -0.01264 ms, DG-P1 (>=)
+# -0.01817, DG-P2 -0.01108, CG-Q2 GLL-SEM -0.01106 at x = 8 mm. Device memory 0.94 of 7.60 GiB after
+# the arms; host peak RSS 4.64 GiB. Clocks: CG-P1 read at idle 315/405 MHz (its arms are too short to
+# ramp; its s/step is therefore conservative), DG/Q2 arms hot (1860-1905/6800).
 
 using Thunderbolt
 using FerriteOperators
@@ -1078,12 +1095,104 @@ end
 _bound_mark(certified, dt_ok, name) =
     (get(certified, name, true) && get(dt_ok, name, true)) ? "" : " (>=)"
 
+"""
+The `h*`, certified `Δt` and reference arrival from the last completed `validate,ladder,penalty,cost`
+run against this file's current constants (`LX`, `NTRANS`, `D_ISO`, `BAND`, `DT_LADDER`, `DT_SWEEP`,
+`VARIANTS`, ...), so `DV_COST_ONLY=1` can re-time the cost table without re-running them. This is a
+snapshot of ONE run, not a model of the ladders: re-derive (unset `DV_COST_ONLY`) whenever any
+constant the ladder, the reference or `certify_dt` depends on changes.
+"""
+function _reused_certification()
+    ref_arrival = 5.95683   # ms; CG-Q2 consistent-mass reference at (H_REF, DT_REF)
+    stars = Dict{String, Any}(
+        "CG-P1 lumped"  => LadderPoint(0.03125, 5136,  0.00825,  5.94419, Vector{Float64}[]),
+        "DG-P1 SIPG"    => LadderPoint(0.03125, 23040, 0.01123,  5.93866, Vector{Float64}[]),
+        "DG-P2 SIPG"    => LadderPoint(0.0625,  38880, 0.006693, 5.94575, Vector{Float64}[]),
+        "CG-Q2 GLL-SEM" => LadderPoint(0.0625,  15729, 0.006683, 5.94577, Vector{Float64}[]),
+    )
+    # DG-P1 never crossed BAND at the finest h tried (0.03125 mm): its row is a LOWER bound, same as
+    # the certification run that produced these numbers found.
+    certified = Dict("CG-P1 lumped" => true, "DG-P1 SIPG" => false,
+                      "DG-P2 SIPG" => true, "CG-Q2 GLL-SEM" => true)
+    dts   = Dict(name => 0.0078125 for (name, _, _, _) in VARIANTS)
+    dt_ok = Dict(name => true      for (name, _, _, _) in VARIANTS)
+    return stars, certified, dts, dt_ok, ref_arrival
+end
+
+"""
+The cost table alone: the cube side, the per-variant cell counts and footprints, the host and device
+`cost_arm` timings, and the printed table. Shared by the full run and by `DV_COST_ONLY=1`, which
+supplies `stars`/`certified`/`dts`/`dt_ok`/`ref_arrival` from `_reused_certification()` instead of
+from `ladder()`/`certify_dt()`.
+"""
+function cost_stage(stars, certified, dts, dt_ok, ref_arrival)
+    side = something(tryparse(Float64, get(ENV, "DV_COST_SIDE", "")), choose_cost_side(stars))
+    println("\n", "="^118)
+    println("COST AT MATCHED ACCURACY  (", side, " mm cube, device arms Float32)")
+    println("="^118)
+    for (name, _, _, _) in VARIANTS
+        p = stars[name]
+        p === nothing && continue
+        n = round(Int, side / p.h)
+        @printf("  %-15s %4d cells per side (%d cells), estimated host footprint %.2f GiB%s\n",
+                name, n, n^3, footprint(name, p.h, side) / 1024^3,
+                n < MIN_CELLS_PER_SIDE ? "   <-- LATENCY BOUND, an upper bound on its true cost" : "")
+    end
+    rows = CostRow[]
+    for (name, mk, _, _) in VARIANTS
+        p = stars[name]
+        (p === nothing || !haskey(dts, name)) && continue
+        shift = p.arrival - ref_arrival
+        try
+            push!(rows, cost_arm("host $name$(_bound_mark(certified, dt_ok, name))",
+                                 mk, p.h, dts[name], side,
+                                 Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64},
+                                 false, p.band, shift))
+        catch err
+            println("  host ", name, " FAILED: ", first(split(sprint(showerror, err), '\n')))
+        end
+    end
+    if CUDA.functional()
+        for (name, mk, _, _) in VARIANTS
+            p = stars[name]
+            (p === nothing || !haskey(dts, name)) && continue
+            shift = p.arrival - ref_arrival
+            try
+                push!(rows, cost_arm("device $name$(_bound_mark(certified, dt_ok, name))",
+                                     mk, p.h, dts[name], side,
+                                     CuVector{Float32}, CuCSR, true, p.band, shift))
+            catch err
+                println("  device ", name, " FAILED: ",
+                        first(split(sprint(showerror, err), '\n')))
+            end
+        end
+        @printf("\ndevice memory: %.2f GiB of %.2f GiB in use after the arms\n",
+                (CUDA.total_memory() - CUDA.free_memory()) / 1024^3,
+                CUDA.total_memory() / 1024^3)
+    end
+    @printf("host peak RSS: %.2f GiB\n", Sys.maxrss() / 1024^3)
+    cost_table(rows)
+    return nothing
+end
+
 function main()
     _assert_memory_capped()
     # The host profile is the threads the invocation asks for. OpenBLAS otherwise sizes itself
     # against the whole machine -- measured at 1657% CPU under `-t2` before this line existed -- and a
     # level-1 kernel spread over sixteen cores is not the profile this table claims to measure.
     LinearAlgebra.BLAS.set_num_threads(Threads.nthreads())
+
+    if get(ENV, "DV_COST_ONLY", "0") == "1"
+        println("DV_COST_ONLY=1: reusing h*/Δt from a prior certification run, skipping ",
+                "validate/ladder/penalty/certify_dt  (", Threads.nthreads(),
+                " Julia threads, BLAS pinned to the same)")
+        println("slab: ", LX, " mm x ", NTRANS, " cells square, D = ", D_ISO,
+                " mm²/ms isotropic, PCG2019, t ∈ [0, ", TEND, "] ms")
+        stars, certified, dts, dt_ok, ref_arrival = _reused_certification()
+        cost_stage(stars, certified, dts, dt_ok, ref_arrival)
+        return nothing
+    end
+
     println("stages: ", join(sort(collect(STAGES)), ", "),
             "  (", Threads.nthreads(), " Julia threads, BLAS pinned to the same)")
     println("slab: ", LX, " mm x ", NTRANS, " cells square, D = ", D_ISO,
@@ -1136,52 +1245,7 @@ function main()
         GC.gc()
     end
 
-    side = something(tryparse(Float64, get(ENV, "DV_COST_SIDE", "")), choose_cost_side(stars))
-    println("\n", "="^118)
-    println("COST AT MATCHED ACCURACY  (", side, " mm cube, device arms Float32)")
-    println("="^118)
-    for (name, _, _, _) in VARIANTS
-        p = stars[name]
-        p === nothing && continue
-        n = round(Int, side / p.h)
-        @printf("  %-15s %4d cells per side (%d cells), estimated host footprint %.2f GiB%s\n",
-                name, n, n^3, footprint(name, p.h, side) / 1024^3,
-                n < MIN_CELLS_PER_SIDE ? "   <-- LATENCY BOUND, an upper bound on its true cost" : "")
-    end
-    rows = CostRow[]
-    for (name, mk, _, _) in VARIANTS
-        p = stars[name]
-        (p === nothing || !haskey(dts, name)) && continue
-        shift = p.arrival - ref_arrival
-        try
-            push!(rows, cost_arm("host $name$(_bound_mark(certified, dt_ok, name))",
-                                 mk, p.h, dts[name], side,
-                                 Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64},
-                                 false, p.band, shift))
-        catch err
-            println("  host ", name, " FAILED: ", first(split(sprint(showerror, err), '\n')))
-        end
-    end
-    if CUDA.functional()
-        for (name, mk, _, _) in VARIANTS
-            p = stars[name]
-            (p === nothing || !haskey(dts, name)) && continue
-            shift = p.arrival - ref_arrival
-            try
-                push!(rows, cost_arm("device $name$(_bound_mark(certified, dt_ok, name))",
-                                     mk, p.h, dts[name], side,
-                                     CuVector{Float32}, CuCSR, true, p.band, shift))
-            catch err
-                println("  device ", name, " FAILED: ",
-                        first(split(sprint(showerror, err), '\n')))
-            end
-        end
-        @printf("\ndevice memory: %.2f GiB of %.2f GiB in use after the arms\n",
-                (CUDA.total_memory() - CUDA.available_memory()) / 1024^3,
-                CUDA.total_memory() / 1024^3)
-    end
-    @printf("host peak RSS: %.2f GiB\n", Sys.maxrss() / 1024^3)
-    cost_table(rows)
+    cost_stage(stars, certified, dts, dt_ok, ref_arrival)
     return nothing
 end
 
