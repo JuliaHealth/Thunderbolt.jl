@@ -122,10 +122,14 @@
 #   m     2        3         4         6
 #   band  0.05992  0.05991   0.05991   0.05990      arrival 5.86023 / 5.86038 / 5.86045 / 5.86048
 # Eight-fold in η moves ρ_F nine-fold and `m` three-fold and the error NOT AT ALL, to four figures.
-# `SIPG_ETA = 4` is FerriteOperators' test value, not a tuned one: dropping it to the coercivity
-# boundary halves the inner sweep for nothing. But even at η = 1, DG-P1's ρ_F is 47x CG-P1's at the
-# same dof spacing, so most of the gap is NOT the penalty -- it is the exact block-diagonal inverse
-# mass, whose Q1 hex element spectrum spans a factor 27 that lumping removes.
+# `SIPG_ETA = 4` is FerriteOperators' test value, not a tuned one. Exact spectrum of the (A, M) pencil
+# (6³ cube, C = ρh²/D): DG-P1 η=4 consistent-mass is 221x CG-P1 lumped, decomposing as discontinuous
+# space 1.00x (volume-only with a diagonal mass has C = 4 = CG-P1 exactly), SIPG consistency terms
+# 1.11x, interior penalty η 0→4 69x, consistent-vs-diagonal mass 2.88x. The coercivity floor on
+# uniform hexes is η* ≈ 0.128 (p=1) / 0.217 (p=2), so η = 4 sits 31x / 18x above it; σ_F tracks cell
+# size, not aspect ratio, so distorted cells need more margin. A GLL-collocated (= row-sum on affine
+# hexes) mass keeps order p+1 (measured) but buys only the 2.88x; with η = 0.5 as well, DG-P1 drops to
+# m = 9 and stays 9.7x CG-P1 in ρ_F (~6.8x in cost). Scripts: ~/tmp/fo-gpu-round/dg-mass-chase/.
 #
 # COST AT MATCHED ACCURACY (2 mm cube at each variant's h*, certified Δt = 0.0078125 ms reused from
 # the ladders via DV_COST_ONLY=1; device Float32; DG-P1 marked (>=): it never crossed the band, its
