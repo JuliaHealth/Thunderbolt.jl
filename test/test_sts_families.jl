@@ -132,7 +132,7 @@ end
     # The threshold past typemax(Int) is family-dependent (~3.4e37 for RKC1 at ε = 0.05); 1e40 clears
     # it for all three.
     for fam in (RKC1(0.05), RKL1(), RKG1())
-        e = @test_throws ErrorException sts_stage_count(fam, 1.0e40)
+        e = @test_throws Thunderbolt.EMRKCDivergence sts_stage_count(fam, 1.0e40)
         @test !(e.value isa InexactError)
         @test occursin("does not fit", e.value.msg)
     end

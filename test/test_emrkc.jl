@@ -10,6 +10,7 @@ import FerriteOperators
 
 import Thunderbolt:
     ExponentialMultirateSTSAlgorithm,
+    EMRKCDivergence,
     PassiveChildSolver,
     PassiveChildCache,
     _emrkc_step_sizing,
@@ -353,9 +354,10 @@ end
         @test m == sts_stage_count(fam_i, η * 5000.0)
     end
 
-    # `max_stages` refuses rather than silently truncating the stability it buys.
-    @test_throws ErrorException _emrkc_step_sizing(EMRKC(max_stages = 3), 1.0, 1.0e4, 1.0)
-    @test_throws ErrorException _emrkc_step_sizing(alg, 1.0, NaN, 1.0)
+    # `max_stages` refuses rather than silently truncating the stability it buys. Both refusals are
+    # divergences, so a mid-run step can fail on them instead of crashing out.
+    @test_throws EMRKCDivergence _emrkc_step_sizing(EMRKC(max_stages = 3), 1.0, 1.0e4, 1.0)
+    @test_throws EMRKCDivergence _emrkc_step_sizing(alg, 1.0, NaN, 1.0)
 end
 
 @testset "sts_stage_count inverts sts_stability_boundary" begin
@@ -543,8 +545,8 @@ end
 @testset "A divergence under a re-estimating policy fails the step, not an uncaught error" begin
     # The scenario the outer-sweep NaN check above cannot reach: under `:once` a mid-run divergence
     # only ever shows up as a NaN in the outer sweep, while a re-estimating `rho_recompute` finds the
-    # same divergence earlier, inside `estimate_rho!`'s runaway guard, whose `error` must reach
-    # `force_stepfail` rather than crash out of `_perform_step!`.
+    # same divergence earlier, inside `estimate_rho!`'s runaway guard, whose `EMRKCDivergence` must
+    # reach `force_stepfail` rather than crash out of `_perform_step!`.
     prob, _ = emrkc_problem(n = 3, ion = Thunderbolt.PCG2019(), tspan = (0.0, 1.0))
     integ = DiffEqBase.init(prob, EMRKC(rho_recompute = 1); dt = 1.0e-3, verbose = false)
 
@@ -557,4 +559,19 @@ end
 
     @test integ.sol.retcode == SciMLBase.ReturnCode.Failure
     @test integ.u == fill(1.0e120, length(integ.u)) # untouched by the failed step attempt
+end
+
+@testset "An error that is not a divergence is rethrown mid-run, not made a step failure" begin
+    # Why the catch names one exception type: everything else reachable from the estimator and the
+    # sizing law -- an unusable option, a bug in a user-supplied policy -- has to stay loud at every
+    # step count, rather than becoming a silent `ReturnCode.Failure` with its message dropped.
+    bug(steps_since) = steps_since ≥ 1 ? error("a bug inside the rho_recompute policy") : false
+    prob, _ = emrkc_problem(tspan = (0.0, 1.0))
+    integ = DiffEqBase.init(prob, EMRKC(rho_recompute = bug); dt = 0.1, verbose = false)
+
+    DiffEqBase.step!(integ) # the first step of a run re-estimates; the policy is not consulted
+    DiffEqBase.step!(integ) # consulted with `steps_since = 0`, and declines
+
+    e = @test_throws ErrorException DiffEqBase.step!(integ) # `steps_since = 1`: the policy throws
+    @test occursin("a bug inside the rho_recompute policy", e.value.msg)
 end

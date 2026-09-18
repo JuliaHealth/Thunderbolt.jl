@@ -8,6 +8,7 @@ using Tensors
 import Thunderbolt:
     SpectralRadiusWorkspace,
     estimate_rho!,
+    EMRKCDivergence,
     _gershgorin_bound,
     _should_reestimate,
     LumpedMassRateOperator,
@@ -91,7 +92,7 @@ end
     @testset "non-finite result retries once, then errors" for badvalue in (Inf, NaN)
         ws = SpectralRadiusWorkspace(zeros(5))
         bad_apply! = ConstantApply(badvalue)
-        e = @test_throws ErrorException estimate_rho!(ws, bad_apply!)
+        e = @test_throws EMRKCDivergence estimate_rho!(ws, bad_apply!)
         @test occursin("non-finite", e.value.msg)
         @test occursin("retrying once", e.value.msg)
         @test bad_apply!.calls[] == 2 # the attempt, then the retry -- both fail on their first iterate
@@ -101,14 +102,14 @@ end
         ws = SpectralRadiusWorkspace(zeros(3))
         ws.ρ = 1.0 # a modest "previous" estimate to jump away from
         huge_apply! = ConstantApply(1.0e30)
-        e = @test_throws ErrorException estimate_rho!(ws, huge_apply!)
+        e = @test_throws EMRKCDivergence estimate_rho!(ws, huge_apply!)
         @test occursin("jump", e.value.msg)
         @test occursin("retrying once", e.value.msg)
     end
 
     @testset "describe context reaches the error" begin
         ws = SpectralRadiusWorkspace(zeros(4))
-        e = @test_throws ErrorException estimate_rho!(
+        e = @test_throws EMRKCDivergence estimate_rho!(
             ws,
             ConstantApply(Inf);
             describe = () -> " EMRKC-specific context.",

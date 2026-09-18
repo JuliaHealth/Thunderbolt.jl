@@ -98,10 +98,10 @@ _rho_is_sane(ρ, ρ_prev, jump_factor) = isfinite(ρ) && (ρ_prev == 0 || ρ ≤
     cause = isfinite(ρ) ?
         "a $(round(ρ / ρ_prev, sigdigits = 3))x jump over the previous estimate $(ρ_prev) " *
         "(threshold $(jump_factor)x)" : "a non-finite value"
-    error(
+    throw(EMRKCDivergence(
         "estimate_rho!: the power iteration produced $ρ -- $cause -- even after retrying once " *
         "from a freshly reseeded iterate.$(describe())",
-    )
+    ))
 end
 
 # Host-only upper bound on the spectral radius of `Diagonal(invM) * K`: `maxᵢ invM[i] * Σⱼ|K[i,j]|`.
@@ -129,16 +129,3 @@ function _gershgorin_bound(K::ThreadedSparseMatrixCSR, invM::AbstractVector)
     end
     return bound
 end
-
-# Whether ρ needs re-estimating this step, for the `rho_recompute` policies `EMRKC` documents. A
-# NEGATIVE `steps_since` means none has run yet and, like a step failure, always forces one.
-function _should_reestimate(policy, steps_since, stepfail::Bool)
-    (stepfail || steps_since < 0) && return true
-    return _reestimate_due(policy, steps_since)
-end
-
-_reestimate_due(policy::Symbol, steps_since) =
-    policy === :once ? false :
-    error("Unknown rho_recompute policy :$policy -- expected :once, an Int, or a callable.")
-_reestimate_due(n::Integer, steps_since) = steps_since ≥ n - 1
-_reestimate_due(f, steps_since) = f(steps_since)

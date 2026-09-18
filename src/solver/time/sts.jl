@@ -56,11 +56,11 @@ The smallest stage count `s` whose real stability interval admits `z = τ·ρ` (
 function sts_stage_count end
 
 @inline function _sts_safe_ceil(z, x)
-    x < typemax(Int) || error(
+    x < typemax(Int) || throw(EMRKCDivergence(
         "sts_stage_count: the stage count for z = $z does not fit in a machine `Int`. This " *
         "almost always means a diverged state or an unusable `rho_*_estimate` override, not a " *
         "genuine stiffness measure.",
-    )
+    ))
     return ceil(Int, x)
 end
 

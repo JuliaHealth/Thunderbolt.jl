@@ -1,9 +1,14 @@
 using Test
 using CUDA
 
-# This suite's device surface (KernelAbstractionsDevice) needs the registered FerriteOperators 0.4.1;
-# this environment's Project.toml nevertheless points `[sources]` at a local checkout. Run with
-# `julia --project=test/gpu test/gpu/runtests.jl`.
+# This suite's device surface (KernelAbstractionsDevice) needs the FerriteOperators the package
+# compat names (0.4.2); this environment's Project.toml nevertheless points `[sources]` at a local
+# checkout. Run with `julia --project=test/gpu test/gpu/runtests.jl`.
+#
+# This environment doubles as the environment of `benchmarks/`: the benchmarks are CUDA-dependent
+# for the same reason this suite is, and they run as `julia --project=test/gpu benchmarks/<f>.jl`.
+# `FerriteOperatorsExampleElements` and `Serialization` are here for them -- nothing under `test/`
+# consumes either.
 #
 # Everything below needs a device. Without one the suite reports that it did nothing rather than
 # failing, so it can be included unconditionally by a runner that does not know the machine.

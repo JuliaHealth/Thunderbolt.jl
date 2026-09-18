@@ -3,6 +3,23 @@
 #####################################################################
 
 """
+    EMRKCDivergence(msg)
+
+A stiffness measure [`EMRKC`](@ref) cannot size a sweep against: a runaway spectral radius estimate,
+or a stage count past `max_stages` or past `Int` itself.
+
+Its own exception type rather than a plain `error`, because the step has to tell the two apart: a
+state that diverged mid-run is a step failure the integrator may retry from, while every other error
+raised on the same path -- an unusable option, a bug in an estimate -- must stay loud. The three
+sites that raise it are `_rho_runaway_error`, `_sts_safe_ceil` and `_emrkc_stage_count_error`.
+"""
+struct EMRKCDivergence <: Exception
+    msg::String
+end
+
+Base.showerror(io::IO, e::EMRKCDivergence) = print(io, e.msg)
+
+"""
     PassiveChildSolver()
 
 A leaf timestepper that advances its clock and leaves its state untouched.
@@ -39,6 +56,8 @@ perform_step!(f, cache::PassiveChildCache, t, Δt) = true
 # reads exactly these two fields (`src/solver/interface.jl`). An operator splitting *algorithm* --
 # not an `AbstractSolver`, owning no solver cache -- reaches that assembly path, device and mirrored
 # branches included, by handing one of these over in a solver's place.
+# TODO(OperatorStorageRequest): what the family should dispatch on is a storage request naming the
+# two types, not a solver; that refactor deletes this type. Internal to this file until then.
 struct _OperatorSetupSpec{SolutionVectorType, SystemMatrixType} <: AbstractSolver
     solution_vector_type::Type{SolutionVectorType}
     system_matrix_type::Type{SystemMatrixType}
@@ -125,7 +144,7 @@ Base.@kwdef struct ExponentialMultirateSTSAlgorithm{
 end
 
 @doc (@doc ExponentialMultirateSTSAlgorithm)
-EMRKC(; kwargs...) = ExponentialMultirateSTSAlgorithm(; kwargs...)
+const EMRKC = ExponentialMultirateSTSAlgorithm
 
 # The stage counts are a stability device, not a local error estimate.
 @inline SciMLBase.isadaptive(::ExponentialMultirateSTSAlgorithm) = false
@@ -142,17 +161,17 @@ end
 #####################################################################
 #  Pointwise stages                                                 #
 #####################################################################
-# Both stage caches name their destination `dumat`, because that is the field
-# `ext/CuThunderboltExt.jl`'s outer kernel wrapper sizes its launch from.
 
-# The exponential gate half-step of one outer stage, in place: the caller fills `dumat` with the
+# The exponential gate half-step of one outer stage, in place: the caller fills `ymat` with the
 # outer stage value `Y`, and every *selected* gate row is overwritten by its exact solution over the
 # averaging window `η`, which reaches the kernel through the `Δt` slot of
-# `_pointwise_step_inner_kernel!`. `mask` selects which of `gidx = gating_indices(model)` the
-# algorithm's `gates` option asked for; an empty selection is lowered to empty tuples, so a model
-# that declares no gates -- or is run with `gates = ()` -- never reaches `gate_coefficients` at all.
-struct EMRKCGateStageCache{dumType, xType, NG} <: AbstractPointwiseSolverCache
-    dumat::dumType
+# `_pointwise_step_inner_kernel!`. This stage transforms STATE rather than producing a rate, which
+# is why its buffer is not named after a derivative. `mask` selects which of
+# `gidx = gating_indices(model)` the algorithm's `gates` option asked for; an empty selection is
+# lowered to empty tuples, so a model that declares no gates -- or is run with `gates = ()` -- never
+# reaches `gate_coefficients` at all.
+struct EMRKCGateStageCache{ymType, xType, NG} <: AbstractPointwiseSolverCache
+    ymat::ymType
     gidx::NTuple{NG, Int}
     mask::NTuple{NG, Bool}
     batch_size_hint::Int
@@ -168,7 +187,7 @@ Adapt.@adapt_structure EMRKCGateStageCache
     cache::C,
 ) where {F, C <: EMRKCGateStageCache, T <: Real, I <: Integer}
     _emrkc_gate_step!(
-        (@view cache.dumat[i, :]),
+        (@view cache.ymat[i, :]),
         cell_model,
         cache.gidx,
         cache.mask,
@@ -277,7 +296,6 @@ mutable struct EMRKCCache{
     Ub::SubVecType
     du_inner::SubVecType
     # The transmembrane rows of the full width buffers, as views taken once.
-    fbarV::ViewType
     yEV::ViewType
     fSV::ViewType
     gate_stage::GateStageType
@@ -337,7 +355,8 @@ function OS.init_cache(
         update_operator!(source_operator, nothing, ctx₀)
     end
 
-    rate_operator = _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, u, nV, ctx₀)
+    rate_operator =
+        _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, source_operator, u, nV, ctx₀)
 
 
     # Zeroed, not merely allocated: a cell model whose `cell_rhs!` leaves a state untouched would
@@ -373,7 +392,6 @@ function OS.init_cache(
         Ua,
         Ub,
         du_inner,
-        view(fbar, Vrange),
         view(yE, Vrange),
         view(fS, Vrange),
         gate_stage,
@@ -388,7 +406,7 @@ function OS.init_cache(
 end
 
 """
-    _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, u, nV, ctx₀)
+    _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, source_operator, u, nV, ctx₀)
 
 The fast force `f_F` of the semidiscretization, elected by how the assembly strategy carries the
 inverse mass.
@@ -405,8 +423,19 @@ the same mass for the same reason a `FiniteElementDiscretization` may carry a `:
 of its own -- the mass an explicit integrator wants is a discretization choice -- but nothing here
 checks that they agree.
 """
-function _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, u, nV, ctx₀)
+function _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, source_operator, u, nV, ctx₀)
+    # TODO(mass-at-setup): elect off inverse_mass_premultiplied(op) once FO supplies the mass at
+    # setup_operator
     if _fuses_inverse_mass(strategy)
+        # `add_source_rate!` on the fused store has no `M⁻¹` to scale a load vector by and errors by
+        # name. Refuse the pairing here, where the model is still in front of the caller, rather
+        # than at the first outer stage of the first step.
+        source_operator isa LinearNullOperator || error(
+            "`EMRKC` cannot step a stimulated model under an assembly strategy that fuses the " *
+            "inverse mass into the diffusion store: the source enters the rate as `M⁻¹b`, whose " *
+            "per-cell blocks are formed and dropped at fill time. Write the stimulus as " *
+            "an initial condition, or drop `premultiply_inverse_mass` from the strategy.",
+        )
         return FusedInverseMassRateOperator(K_operator)
     end
     mass_operator = setup_operator(strategy, fheat.mass_term, spec, dh)
@@ -528,6 +557,19 @@ function _emrkc_fd_perturbation(u)
     return nu > 0 ? T(nu * sqrt(eps(T))) : sqrt(eps(T))
 end
 
+# Whether ρ needs re-estimating this step, for the `rho_recompute` policies `EMRKC` documents. A
+# NEGATIVE `steps_since` means none has run yet and, like a step failure, always forces one.
+function _should_reestimate(policy, steps_since, stepfail::Bool)
+    (stepfail || steps_since < 0) && return true
+    return _reestimate_due(policy, steps_since)
+end
+
+_reestimate_due(policy::Symbol, steps_since) =
+    policy === :once ? false :
+    error("Unknown rho_recompute policy :$policy -- expected :once, an Int, or a callable.")
+_reestimate_due(n::Integer, steps_since) = steps_since ≥ n - 1
+_reestimate_due(f, steps_since) = f(steps_since)
+
 function _emrkc_refresh_rho!(cache::EMRKCCache, alg, parent, t)
     # A reinit! resets `iter`, so the first attempted step of every run re-estimates regardless of
     # the policy -- `:once` means once per run, and ρ_S depends on the state the run starts from.
@@ -559,13 +601,7 @@ function _emrkc_rho_F!(mode::Symbol, cache::EMRKCCache, alg)
             _emrkc_estimator_options(alg.rho_recompute)...,
         )
     elseif mode === :gershgorin
-        cache.op isa LumpedMassRateOperator || error(
-            "`rho_F_estimate = :gershgorin` reads the rows of an assembled diffusion matrix, and a " *
-            "$(nameof(typeof(cache.op))) has none -- its action is matrix free. Use `:power`, or a " *
-            "number.",
-        )
-        bound = _gershgorin_bound(_emrkc_host_matrix(cache.op.K), cache.op.invM)
-        return _emrkc_rho_type(cache)(alg.rho_safety * bound)
+        return _emrkc_rho_type(cache)(alg.rho_safety * _gershgorin_bound(cache.op))
     end
     return error(
         "Unknown `rho_F_estimate` $(repr(mode)) -- expected `:power`, `:gershgorin`, or a number.",
@@ -602,6 +638,16 @@ _emrkc_rho_type(cache::EMRKCCache) = typeof(cache.ρS)
 # exposes; a matrix on a device has no method here and says so through `_gershgorin_bound`.
 _emrkc_host_matrix(op) = FerriteOperators.get_matrix(op)
 _emrkc_host_matrix(op::MirroredBilinearOperator) = FerriteOperators.get_matrix(op.host_operator)
+
+# Which rate operators the bound is available for, by dispatch rather than by an `isa` test: a rate
+# whose action is matrix free has no rows to sum.
+_gershgorin_bound(op::LumpedMassRateOperator) =
+    _gershgorin_bound(_emrkc_host_matrix(op.K), op.invM)
+
+@noinline _gershgorin_bound(op::FusedInverseMassRateOperator) = error(
+    "`rho_F_estimate = :gershgorin` reads the rows of an assembled diffusion matrix, and a " *
+    "$(nameof(typeof(op))) has none -- its action is matrix free. Use `:power`, or a number.",
+)
 
 #####################################################################
 #  The step                                                         #
@@ -644,11 +690,6 @@ end
 
 function (force::_EMRKCAveragedForce)(fbar, Y, t)
     (; cache, alg, η, m) = force
-    fbar === cache.fbar || error(
-        "_EMRKCAveragedForce must be called with `du === cache.fbar`: `cache.fbarV` only aliases " *
-        "`cache.fbar`, and writing through it while `fbar` pointed elsewhere would silently drop " *
-        "the transmembrane rows of the averaged force.",
-    )
     V = cache.Vrange
 
     # (1) y_E: the outer stage value with the selected gates integrated exactly over η.
@@ -657,7 +698,7 @@ function (force::_EMRKCAveragedForce)(fbar, Y, t)
 
     # (2) the slow force there, with the exponentially integrated rows removed, plus the source.
     _emrkc_slow_force!(cache, t)
-    _emrkc_refresh_source!(cache.source_op, t)
+    refresh_source_operator!(cache.source_op, t)
     _emrkc_add_source_rate!(cache.fSV, cache.op, cache.source_op)
 
     # (3) the inner sweep over the transmembrane rows.
@@ -674,16 +715,13 @@ function (force::_EMRKCAveragedForce)(fbar, Y, t)
     )
 
     # (4) the difference quotient against Y: the analytic finish of the rows the sweep skipped, then
-    # an overwrite of the rows it did not.
+    # an overwrite of the rows it did not. The transmembrane view is taken from the `fbar` the sweep
+    # handed in, so nothing here depends on which buffer that is.
     @.. fbar = (cache.yE - Y) / η + cache.fS
     YV = @view Y[V]
-    cache.fbarV .= (U .- YV) ./ η
+    (@view fbar[V]) .= (U .- YV) ./ η
     return nothing
 end
-
-_emrkc_refresh_source!(op, t) =
-    needs_update(op, t) &&
-    update_operator!(op, nothing, TimeIntegrationContext(t, zero(t), zero(t)))
 
 _emrkc_add_source_rate!(y, rate_op, ::LinearNullOperator) = y
 _emrkc_add_source_rate!(y, rate_op, source_op) =
@@ -693,18 +731,19 @@ function OS._perform_step!(parent, children::Tuple, cache::EMRKCCache, dt)
     alg = parent.alg
     t   = parent.t
 
-    # A divergence caught here (`estimate_rho!`'s runaway guard, or a stage count over `max_stages`
-    # or `Int` itself) is a step failure like the NaN check below -- but only once there is a step to
-    # fail: on the first attempt of a run nothing has been accepted yet, so the same errors stay loud
-    # instead of being swallowed into a silent, immediate `ReturnCode.Failure`.
+    # An `EMRKCDivergence` caught here (`estimate_rho!`'s runaway guard, or a stage count over
+    # `max_stages` or `Int` itself) is a step failure like the NaN check below -- but only once
+    # there is a step to fail: on the first attempt of a run nothing has been accepted yet, so it
+    # stays loud instead of being swallowed into a silent, immediate `ReturnCode.Failure`. Every
+    # other error on this path is a bug or an unusable option, and is rethrown whatever the step
+    # count.
     s, η, m = try
         @timeit_debug "spectral radii" _emrkc_refresh_rho!(cache, alg, parent, t)
         _emrkc_step_sizing(alg, dt, cache.ρS, cache.ρF)
     catch e
-        if !(e isa ErrorException) || parent.iter ≤ 1
-            rethrow()
-        end
+        (e isa EMRKCDivergence && parent.iter > 1) || rethrow()
         parent.force_stepfail = true
+        @warn "EMRKC failed the step at t = $t: $(e.msg)" _group = :timeintegration
         return
     end
 
@@ -760,36 +799,23 @@ end
 
 @noinline function _emrkc_stage_count_error(which, z, alg, s = nothing)
     what = which === :outer ? "outer (Δt·ρ_S)" : "inner (η·ρ_F)"
-    s === nothing && return error(
+    s === nothing && throw(EMRKCDivergence(
         "`EMRKC` cannot size its $(what) sweep: the stiffness measure came out as $z. The state " *
         "has most likely diverged, or a `rho_*_estimate` override is not a usable spectral radius.",
-    )
-    return error(
+    ))
+    throw(EMRKCDivergence(
         "`EMRKC` needs $(s) $(which) stages for a stiffness measure of $(what) = $z, above " *
         "`max_stages = $(alg.max_stages)`. Truncating the count would silently drop the " *
         "stability this stage count buys, so reduce `dt` or raise `max_stages`.",
-    )
+    ))
 end
 
-# Verbatim the Lie-Trotter-Godunov child sequence (`OrdinaryDiffEqOperatorSplitting`'s
-# `_perform_step!` for `LieTrotterGodunovCache`), run *after* the monolithic step has written
-# `parent.u`. The children are passive, so the forward sync distributes the new state into them, the
-# advance moves only their clocks, and the backward sync writes back what it just read.
-@unroll function _emrkc_advance_children!(parent, children::Tuple, dt)
-    i = 0
-    @unroll for child in children
-        i += 1
-
-        idxs = parent.child_solution_indices[i]
-        sync = parent.child_synchronizers[i]
-
-        @timeit_debug "sync ->" OS.forward_sync_subintegrator!(parent, child, idxs, sync)
-        @timeit_debug "time solve" OS.advance_solution_by!(parent, child, dt)
-        if OS.child_failed(child)
-            parent.force_stepfail = true
-            return
-        end
-
-        @timeit_debug "sync <-" OS.backward_sync_subintegrator!(parent, child, idxs, sync)
-    end
-end
+# The Lie-Trotter-Godunov child sequence, run *after* the monolithic step has written `parent.u`.
+# The children are passive, so the forward sync distributes the new state into them, the advance
+# moves only their clocks, and the backward sync writes back what it just read.
+#
+# `OrdinaryDiffEqOperatorSplitting` owns that sequence -- and with it the sync protocol -- so this
+# calls into it rather than repeating it. `LieTrotterGodunovCache` is an immutable pair of the two
+# buffers the sequence needs, so building one per step costs nothing.
+_emrkc_advance_children!(parent, children::Tuple, dt) =
+    OS._perform_step!(parent, children, OS.LieTrotterGodunovCache(parent.u, parent.uprev), dt)

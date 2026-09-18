@@ -13,33 +13,13 @@ setup_stage_operator(f::NullFunction, solver::AbstractSolver, local_solver_cache
     NullOperator{Float64, solution_size(f), solution_size(f)}()
 
 # Linear
-# Unrolled to disambiguate
+# An absent stimulus assembles nothing at all, under every strategy: no element loop, no storage,
+# and no dependence on what the strategy would have assembled into. One method rather than one per
+# strategy shape -- it is strictly more specific than the generic linear method below in both the
+# strategy and the integrator, and disjoint from every bilinear method in the integrator, so no
+# ambiguity is introduced (`test/test_aqua.jl` checks that).
 function setup_operator(
-    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractCPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractGPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractGPUDevice},
+    strategy::AbstractAssemblyStrategy,
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -111,18 +91,6 @@ function setup_operator(
     dh::AbstractDofHandler,
 )
     return setup_operator(strategy, integrator, dh)
-end
-
-# Same short circuit as the four assembled ones above: an absent stimulus assembles nothing at all.
-# Spelled separately rather than folded into them because those are unrolled over `FullAssembly`
-# strategies only.
-function setup_operator(
-    strategy::AssemblyStrategy{<:MatrixFreeAction},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 
 """
@@ -298,6 +266,19 @@ function update_operator!(op::MirroredLinearOperator, p, ctx = nothing)
 end
 
 needs_update(op::MirroredLinearOperator, t) = needs_update(op.host_operator, t)
+
+"""
+    refresh_source_operator!(op, t)
+
+Re-assemble a source operator for the time `t`, where it says it depends on one.
+
+The single owner of that step: every solver carrying a source term does it once per step -- the
+affine backward Euler stage before it builds its right hand side, [`EMRKC`](@ref) once per outer
+stage -- and a protocol that is stationary in time is skipped rather than reassembled.
+"""
+refresh_source_operator!(op, t) =
+    needs_update(op, t) &&
+    update_operator!(op, nothing, TimeIntegrationContext(t, zero(t), zero(t)))
 
 # Nonlinear
 """

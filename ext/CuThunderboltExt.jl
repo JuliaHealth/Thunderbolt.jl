@@ -37,9 +37,14 @@ import SparseArrays: SparseMatrixCSC
 ## Pointwise solvers
 ##########################
 
-function _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache::AbstractPointwiseSolverCache)
+# `npoints` is passed in rather than read off a cache field: the outer kernel below already knows it
+# from the pointwise function, and a launch sized from the cache would tie every pointwise cache in
+# Thunderbolt to one field name.
+function _gpu_pointwise_step_inner_kernel_wrapper!(
+    f, t, Δt, cache::AbstractPointwiseSolverCache, npoints,
+)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
-    i > size(cache.dumat, 1) && return nothing
+    i > npoints && return nothing
     Thunderbolt._pointwise_step_inner_kernel!(f, i, t, Δt, cache)
     return nothing
 end
@@ -53,11 +58,13 @@ function Thunderbolt._pointwise_step_outer_kernel!(
     ::Union{<:CuVector, SubArray{<:Any, 1, <:CuVector}},
 )
     npoints = length(f.associated_states) ÷ num_states(f.ode)
-    kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f.ode, t, Δt, cache)
+    kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(
+        f.ode, t, Δt, cache, npoints,
+    )
     config = launch_configuration(kernel.fun)
     threads = min(npoints, config.threads)
     blocks = cld(npoints, threads)
-    kernel(f.ode, t, Δt, cache; threads, blocks)
+    kernel(f.ode, t, Δt, cache, npoints; threads, blocks)
     return true
 end
 
