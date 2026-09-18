@@ -22,6 +22,12 @@
 # in one invocation and a model whose arms error out is reported without stopping the others. `BAND`,
 # `NSTEPS`, `NPASS`, `WARMUP_SECONDS` are shared; `N`, `TEND`, `DTREF`, `SWEEP` apply to the two sheet
 # `ModelConfig`s, which select their own step size, and the LV `LVConfig` overrides them.
+#  * `ENV["EMRKC_LV_STAGES"]`, comma-separated, default `"certify,time"`: which parts of the LV run
+#    to do -- `certify` (coarse-mesh step sizes), `families` (the RKC1/RKL1/RKG1 comparison, which
+#    certifies on the coarse mesh itself), `time` (the ~1e6-element timed arms).
+#  * `ENV["EMRKC_LV_BASE"]` / `ENV["EMRKC_LV_COARSE_BASE"]`, `"circumferential,transmural,longitudinal"`
+#    before hexahedralization, default `"191,20,33"` / `"96,10,17"`: the timed and the coarse LV mesh
+#    resolutions, fitted to the 8 GiB host cgroup and the 8 GiB card.
 #  * FHN: 2.5mm x 2.5mm, the ep01 tutorial's dimensionless diffusion tensor, an excite/refractory box
 #    initial condition developing into a sustained spiral.
 #  * PCG2019: 10mm x 10mm, κ/(Cₘχ) = 0.4 mm²/ms and the planar S1 front of
@@ -48,8 +54,9 @@
 # because the linear solve is 64-93% of a splitting step. emRKC has no linear solve.
 #
 # RUN: CUDA is a weak dependency, so this runs in the GPU test environment. A memory-capped cgroup is
-# required (`_assert_memory_capped()`; `BENCHMARK_UNCAPPED=1` overrides) -- an uncapped run's GC sizes
-# itself against the whole machine rather than the 8G this is meant to run in. Canonical invocation:
+# required (`_assert_memory_capped`, in `benchmarks/common.jl`; `BENCHMARK_UNCAPPED=1` overrides) --
+# an uncapped run's GC sizes itself against the whole machine rather than the 8G this is meant to run
+# in. Canonical invocation:
 # `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 env JULIA_NUM_THREADS=2 julia -t2
 # --heap-size-hint=3G --project=test/gpu benchmarks/benchmark-emrkc.jl`.
 #
@@ -107,7 +114,7 @@
 #   certification. The carried 0.0068 is what is timed, pending a deeper ladder.
 #
 # STS FAMILY COMPARISON (RKC1 vs RKL1 vs RKG1, outer=inner=family, Δt=0.05, measured via
-# `EMRKC_LV_FAMILIES=1`; `lv_family_comparison`): all three in band at Δt=0.05, no ladder fallback.
+# `EMRKC_LV_STAGES=families`; `lv_family_comparison`): all three in band at Δt=0.05, no ladder fallback.
 #   family   s   m   host s/sim-ms   device s/sim-ms   rel err (own Float64 ref, coarse mesh)
 #   RKC1     1  28        53.11232           0.57388                             0.003255
 #   RKL1     1  39        72.32883           0.75003                             0.002809
@@ -156,11 +163,13 @@ using StaticArrays
 using Printf
 
 import Ferrite
-import SparseArrays: nonzeros
-import SparseMatricesCSR: getrowptr, getcolval, getnzval
 import Thunderbolt: SciMLBase, ThreadedSparseMatrixCSR, create_simple_microstructure_model
 import OrdinaryDiffEqOperatorSplitting:
     advance_solution_by!, forward_sync_subintegrator!, backward_sync_subintegrator!
+
+# The Jacobi preconditioner, the cgroup guard and the timing harness, shared with the other
+# benchmarks in this directory.
+include(joinpath(@__DIR__, "common.jl"))
 
 const N              = 512          # elements per side; the size at which the solve dominates
 const TEND           = 25.0         # ms, the first EP tutorial's own visualization window
@@ -173,88 +182,8 @@ const WARMUP_SECONDS = 1.5
 const CuCSR          = CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32}
 
 ####################################
-## Jacobi preconditioning
+## Conjugate gradient bookkeeping
 ####################################
-
-"""
-The reciprocal main diagonal of the backward Euler operator `M - Δt K`, as a left preconditioner for
-the conjugate gradient.
-
-Filled on first `ldiv!` rather than at `init`: `LinearSolve.init` calls the `precs` callback while
-the system matrix is still the freshly allocated all-zero sparsity pattern, and the affine backward
-Euler path then fills that same object in place through `nonzeros(A)` without ever reassigning
-`cache.A`, which is what would otherwise mark the preconditioner stale. Holding on to `A` and reading
-its diagonal on first use means the matrix is assembled by the time it is read.
-
-Every arm runs at a fixed `Δt`, so `A` is assembled once and the one-shot fill is valid for the life
-of the arm. A varying `Δt` would have to invalidate `ready`.
-"""
-mutable struct JacobiPrecon{MatType, VecType}
-    A::MatType
-    inv_diag::VecType
-    ready::Bool
-end
-
-function JacobiPrecon(A)
-    d = similar(nonzeros(A), size(A, 1))
-    fill!(d, one(eltype(d)))
-    return JacobiPrecon(A, d, false)
-end
-
-# Neither `ThreadedSparseMatrixCSR` nor `CuSparseMatrixCSR` has a `diag` method or a scalar
-# `getindex`, so each row is walked for its own column index. Everything else takes the generic
-# `diag` path.
-function _fill_inv_diag!(d, A::ThreadedSparseMatrixCSR)
-    rowptr, colval, nzval = getrowptr(A), getcolval(A), getnzval(A)
-    @inbounds for i in eachindex(d)
-        v = zero(eltype(d))
-        for k in rowptr[i]:(rowptr[i + 1] - 1)
-            colval[k] == i && (v = nzval[k])
-        end
-        d[i] = iszero(v) ? one(v) : inv(v)
-    end
-    return d
-end
-
-function _inv_diag_kernel!(d, rowPtr, colVal, nzVal)
-    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    @inbounds if i ≤ length(d)
-        v = zero(eltype(d))
-        for k in rowPtr[i]:(rowPtr[i + 1] - 1)
-            colVal[k] == i && (v = nzVal[k])
-        end
-        d[i] = iszero(v) ? one(v) : inv(v)
-    end
-    return nothing
-end
-
-function _fill_inv_diag!(d::CuVector, A::CUDA.CUSPARSE.CuSparseMatrixCSR)
-    threads = 256
-    CUDA.@cuda threads = threads blocks = cld(length(d), threads) _inv_diag_kernel!(
-        d, A.rowPtr, A.colVal, A.nzVal,
-    )
-    return d
-end
-
-function _fill_inv_diag!(d, A)
-    v = diag(A)
-    d .= ifelse.(iszero.(v), one(eltype(d)), inv.(v))
-    return d
-end
-
-function LinearAlgebra.ldiv!(y::AbstractVector, P::JacobiPrecon, x::AbstractVector)
-    if !P.ready
-        _fill_inv_diag!(P.inv_diag, P.A)
-        P.ready = true
-    end
-    y .= P.inv_diag .* x
-    return y
-end
-LinearAlgebra.ldiv!(P::JacobiPrecon, x::AbstractVector) = ldiv!(x, P, x)
-
-# `KrylovJL`'s own contract: `(A, p) -> (Pl, Pr)`. CG takes left/centered preconditioning only, so the
-# right slot stays the identity.
-jacobi_precs(A, p = nothing) = (JacobiPrecon(A), LinearAlgebra.I)
 
 "Krylov iterations of the most recent backward Euler solve; `stats` is reset per solve, so this has
 to be read out per step."
@@ -318,11 +247,6 @@ const FHN_CONFIG = ModelConfig(
 const PCG2019_CONFIG = ModelConfig(
     "PCG2019", T -> Thunderbolt.ParametrizedPCG2019Model{T}(), 1.0, 1.0,
     SymmetricTensor{2, 2, Float64}((0.4, 0.0, 0.4)), PCG2019_L, pcg2019_u0!,
-)
-const AVAILABLE_MODELS = Dict{String, Any}(
-    "FHN" => FHN_CONFIG,
-    "PCG2019" => PCG2019_CONFIG,
-    # Defined further down, once the LV section has introduced `LVConfig`.
 )
 const MODEL_CONFIGS = String[strip(m) for m in split(get(ENV, "EMRKC_MODELS", "FHN,PCG2019,LV"), ",")]
 
@@ -395,11 +319,6 @@ function splitting(
     ))
 end
 
-# `init` takes the initial condition as the integrator's own state, so every arm gets a copy -- the
-# shared host and device initial conditions would otherwise be consumed by the first arm to run.
-build(form, u0, alg, Δt, tend) =
-    init(OperatorSplittingProblem(form, copy(u0), (zero(Δt), tend)), alg; dt = Δt, verbose = false)
-
 function solve_to_end(form, u0, alg, Δt, tend = TEND)
     integrator = build(form, u0, alg, Δt, oftype(Δt, tend))
     solve!(integrator)
@@ -416,9 +335,6 @@ function solve_n_steps(form, u0, alg, Δt, n)
     end
     return integrator
 end
-
-sync(::Vector) = nothing
-sync(::CuVector) = CUDA.synchronize()
 
 relerr(a, b) = norm(Vector(a) .- Vector(b)) / norm(Vector(b))
 
@@ -461,49 +377,6 @@ end
 ####################################
 ## Timing
 ####################################
-
-function gpu_clocks()
-    out = read(
-        `nvidia-smi --query-gpu=clocks.sm,clocks.mem --format=csv,noheader,nounits`, String,
-    )
-    sm, mem = parse.(Int, strip.(split(first(split(strip(out), '\n')), ',')))
-    return sm, mem
-end
-
-"""
-Step without interruption for `WARMUP_SECONDS`, reading the clocks back *while still stepping*. On a
-card that idles at 300 MHz a short warmup measures the ramp rather than the kernel, and the returned
-clocks are what says this one did not. They must be sampled mid-flight: the card drops back within
-tens of milliseconds of going idle, less than one `nvidia-smi` query takes.
-"""
-function prewarm!(integrator, on_device)
-    t0 = time_ns()
-    clocks = (0, 0)
-    sampled = false
-    while (time_ns() - t0) / 1.0e9 < WARMUP_SECONDS
-        step!(integrator)
-        if on_device && !sampled && (time_ns() - t0) / 1.0e9 > WARMUP_SECONDS / 2
-            clocks = gpu_clocks()
-            sampled = true
-        end
-    end
-    sync(integrator.u)
-    return clocks
-end
-
-"Minimum seconds per step over `NPASS` passes of `NSTEPS` steps."
-function measure!(integrator)
-    best = Inf
-    for _ = 1:NPASS
-        t0 = time_ns()
-        for _ = 1:NSTEPS
-            step!(integrator)
-        end
-        sync(integrator.u)
-        best = min(best, (time_ns() - t0) / 1.0e9 / NSTEPS)
-    end
-    return best
-end
 
 """
 Seconds per step spent in each child of a splitting step, through the same three calls
@@ -575,8 +448,8 @@ function run_arm(
     # Timed from `WARMUP_SECONDS` of real steps past the initial condition, so `tend` here only has
     # to outlast the warmup and the passes.
     timed = build(form, copy(u0), alg, Δt, oftype(Δt, 1.0e5))
-    clocks = prewarm!(timed, on_device)
-    seconds = measure!(timed)
+    clocks = prewarm!(timed, on_device, WARMUP_SECONDS)
+    seconds = measure!(timed, NSTEPS, NPASS)
 
     fraction, iters = NaN, NaN
     if has_solve
@@ -733,26 +606,26 @@ function activation_state(φ)
     return count(>(-40.0f0), v) / length(v), minimum(v), maximum(v)
 end
 
+# Which parts of the LV run to do, as one comma-separated set (mirroring `DV_STAGES` in
+# `benchmark-discretization-variants.jl`):
+#   certify  -- the coarse-mesh step size certification, a property of the physics and not of the
+#               timed mesh, so it can be dropped when re-timing already-certified step sizes
+#   families -- the RKC1/RKL1/RKG1 comparison (`lv_family_comparison`), which certifies each family
+#               on the coarse mesh itself and then times it
+#   time     -- the ~1e6-element setup and the timed arms
+const LV_STAGES = Set(strip(s) for s in split(get(ENV, "EMRKC_LV_STAGES", "certify,time"), ","))
+
 function run_model(cfg::LVConfig)
     println("\n", "#"^128)
     println("# ", cfg.name, "  (ideal LV, wall ", LV_OUTER_RADIUS - LV_INNER_RADIUS,
-            " mm, PCG2019, gates = :all, device Float32)")
+            " mm, PCG2019, gates = :all, device Float32; stages ",
+            join(sort(collect(LV_STAGES)), ","), ")")
     println("#"^128)
 
-    ############ the coarse mesh: what certifies the step sizes ############
-    # Certification is a property of the physics and the step size, not of the timed mesh, so
-    # `EMRKC_LV_COARSE=0` skips it when re-timing already-certified step sizes.
-    get(ENV, "EMRKC_LV_COARSE", "1") == "1" && lv_certify_step_sizes(cfg)
-
-    # `EMRKC_LV_FAMILIES=1` runs the RKC1/RKL1/RKG1 comparison (see `lv_family_comparison`) instead of
-    # the normal single-family (RKC1) certify+time path below. Off by default: the standard LV run is
-    # unchanged.
-    get(ENV, "EMRKC_LV_FAMILIES", "0") == "1" && return lv_family_comparison(cfg)
-
-    ############ the timed mesh ############
-    # `EMRKC_LV_TIMED=0` skips the ~1e6-element setup and timing, for certification-only iteration.
-    get(ENV, "EMRKC_LV_TIMED", "1") == "1" || return nothing
-    return lv_time_arms(cfg)
+    "certify" in LV_STAGES && lv_certify_step_sizes(cfg)
+    "families" in LV_STAGES && lv_family_comparison(cfg)
+    "time" in LV_STAGES && lv_time_arms(cfg)
+    return nothing
 end
 
 function lv_certify_step_sizes(cfg::LVConfig)
@@ -1009,7 +882,7 @@ end
 """
 RKC1 (the shipped default) vs RKL1 vs RKG1 on the LV emRKC arm, both outer and inner set to the same
 family. Certifies each family's Δt on the coarse mesh (`lv_family_band_check`), then times host and
-device arms at that Δt on the timed mesh. Opt-in via `EMRKC_LV_FAMILIES=1`.
+device arms at that Δt on the timed mesh. Opt-in via `EMRKC_LV_STAGES=families`.
 """
 function lv_family_comparison(cfg::LVConfig)
     println("\n-- STS family comparison: coarse-mesh band check --")
@@ -1127,56 +1000,6 @@ function lv_time_arms(cfg::LVConfig)
 end
 
 ####################################
-## Machine discipline
-####################################
-
-"""
-The effective `memory.max` (bytes) of this process's cgroup v2 leaf, found by walking
-`/proc/self/cgroup`'s `0::<path>` up through `/sys/fs/cgroup<path>`. `nothing` for "max" (unset) or
-when no such file is found.
-"""
-function _cgroup_memory_limit()
-    lines = try
-        readlines("/proc/self/cgroup")
-    catch
-        return nothing
-    end
-    idx = findfirst(l -> startswith(l, "0::"), lines)
-    idx === nothing && return nothing
-    dir = "/sys/fs/cgroup" * split(lines[idx], "0::")[2]
-    while true
-        f = joinpath(dir, "memory.max")
-        if isfile(f)
-            v = strip(read(f, String))
-            return v == "max" ? nothing : parse(Int, v)
-        end
-        parent = dirname(dir)
-        parent == dir && return nothing
-        dir = parent
-    end
-end
-
-"""
-Refuses to run outside a memory-capped cgroup: an uncapped run's GC sizes its heap against the whole
-machine rather than the 8G this benchmark is meant to run in. `BENCHMARK_UNCAPPED=1` overrides.
-"""
-function _assert_memory_capped()
-    get(ENV, "BENCHMARK_UNCAPPED", "0") == "1" && return nothing
-    limit = _cgroup_memory_limit()
-    capped = limit !== nothing && limit ≤ 12 * 1024^3
-    capped || error(
-        "No memory-capped cgroup detected (effective memory.max = $(limit === nothing ? "unset" : limit) " *
-        "bytes). An uncapped run's GC sizes itself against the whole machine. Run:\n" *
-        "  systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 env JULIA_NUM_THREADS=2 " *
-        "julia -t2 --heap-size-hint=3G --project=test/gpu benchmarks/benchmark-emrkc.jl\n" *
-        "or set BENCHMARK_UNCAPPED=1 to run uncapped deliberately.",
-    )
-    Base.JLOptions().heap_size_hint == 0 &&
-        println("WARNING: no --heap-size-hint given -- GC growth is unbounded even inside the cgroup.")
-    return nothing
-end
-
-####################################
 
 function run_model(cfg::ModelConfig)
     println("\n", "#"^118)
@@ -1252,16 +1075,23 @@ end
 # The element counts are fitted to the 8 GiB host cgroup and the 8 GiB card, and are what a smaller
 # card would have to turn down.
 _lv_base(key, default) = Tuple(parse.(Int, split(get(ENV, key, default), ",")))
-# The LV's own step sizes, measured on the coarse mesh; the sheet's do not transfer.
-AVAILABLE_MODELS["LV"] = LVConfig(
-    "LV-PCG2019",
-    _lv_base("EMRKC_LV_BASE", "191,20,33"),
-    _lv_base("EMRKC_LV_COARSE_BASE", "96,10,17"),
-    0.05, 0.0068,
+
+# Every model this file can run, by the name `EMRKC_MODELS` selects them with. Defined here rather
+# than beside the two sheet configs because the LV entry needs the whole LV section above it, down to
+# its own step sizes -- measured on the coarse mesh, and the sheet's do not transfer.
+const AVAILABLE_MODELS = Dict{String, Any}(
+    "FHN" => FHN_CONFIG,
+    "PCG2019" => PCG2019_CONFIG,
+    "LV" => LVConfig(
+        "LV-PCG2019",
+        _lv_base("EMRKC_LV_BASE", "191,20,33"),
+        _lv_base("EMRKC_LV_COARSE_BASE", "96,10,17"),
+        0.05, 0.0068,
+    ),
 )
 
 function main()
-    _assert_memory_capped()
+    _assert_memory_capped("benchmarks/benchmark-emrkc.jl")
     CUDA.functional() || error("This benchmark needs a functional CUDA device.")
     println("models: ", join(MODEL_CONFIGS, ", "),
             "  (host: 2 threads capped, ThreadedSparseMatrixCSR SpMV threaded, pointwise sweeps single-threaded)")
@@ -1277,4 +1107,8 @@ function main()
     return nothing
 end
 
-main()
+# Only when this file is what was run: `include`ing it from a REPL session loads the definitions
+# without starting an hour of measurement.
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

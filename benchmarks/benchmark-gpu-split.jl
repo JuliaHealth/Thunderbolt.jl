@@ -40,6 +40,11 @@ import Thunderbolt:
     StandardOperatorSpecification, TimeIntegrationContext
 import OrdinaryDiffEqOperatorSplitting: GenericSplitFunction, need_sync
 
+# `sync` and the Jacobi preconditioner, shared with the other benchmarks in this directory. Nothing
+# here uses `build`/`prewarm!`/`measure!` from it: this file times differently (see
+# `measure_with_allocations!`) and builds its own splitting integrator below.
+include(joinpath(@__DIR__, "common.jl"))
+
 const N       = 256
 const NASM    = 512   # assembly throughput mesh: 262144 cells, enough to amortize the launch
 const NSTEPS  = 20
@@ -108,7 +113,7 @@ function initial_condition(form)
     return u₀
 end
 
-function build(form, u0, VT, SpMatType)
+function build_split_integrator(form, u0, VT, SpMatType)
     timestepper = LieTrotterGodunov((
         BackwardEulerSolver(
             solution_vector_type = VT,
@@ -127,14 +132,12 @@ function build(form, u0, VT, SpMatType)
     )
 end
 
-sync(::Vector) = nothing
-sync(::CuVector) = CUDA.synchronize()
-
 """
 Minimum per step wall time over `NBLOCKS` blocks of `NSTEPS` steps, and the host allocations one
-block of steps costs, divided by the step count.
+block of steps costs, divided by the step count. Named apart from `benchmarks/common.jl`'s
+`measure!`, which reports the time alone: the host allocations are half of what this file is for.
 """
-function measure!(integrator)
+function measure_with_allocations!(integrator)
     for _ = 1:NSTEPS # warmup
         step!(integrator)
     end
@@ -282,10 +285,10 @@ function split_benchmark()
     # device assembler for that format only, while the mirrored arms above hand the CSR type the
     # solve prefers a copy of a host matrix.
     specs = (
-        ("CPU Float32 CSR",  () -> build(form,     copy(u₀),     Vector{Float32},   ThreadedSparseMatrixCSR{Float32, Int32})),
-        ("GPU host asm CSR", () -> build(form,     CuVector(u₀), CuVector{Float32}, CuCSR)),
-        ("GPU gathered idx", () -> build(gathered, CuVector(u₀), CuVector{Float32}, CuCSR)),
-        ("GPU device asm",   () -> build(devform,  CuVector(u₀), CuVector{Float32}, CuCSC)),
+        ("CPU Float32 CSR",  () -> build_split_integrator(form,     copy(u₀),     Vector{Float32},   ThreadedSparseMatrixCSR{Float32, Int32})),
+        ("GPU host asm CSR", () -> build_split_integrator(form,     CuVector(u₀), CuVector{Float32}, CuCSR)),
+        ("GPU gathered idx", () -> build_split_integrator(gathered, CuVector(u₀), CuVector{Float32}, CuCSR)),
+        ("GPU device asm",   () -> build_split_integrator(devform,  CuVector(u₀), CuVector{Float32}, CuCSC)),
     )
     arms = map(spec -> (spec[1], setup_time(spec[2])...), specs)
 
@@ -309,7 +312,7 @@ function split_benchmark()
     )
     baseline = nothing
     for (label, integrator, setup) in arms
-        t, allocs = measure!(integrator)
+        t, allocs = measure_with_allocations!(integrator)
         baseline === nothing && (baseline = t)
         println(
             "  ", pad(label, 18),
@@ -331,4 +334,8 @@ function main()
     return nothing
 end
 
-main()
+# Only when this file is what was run: `include`ing it from a REPL session loads the definitions
+# without starting the measurement.
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

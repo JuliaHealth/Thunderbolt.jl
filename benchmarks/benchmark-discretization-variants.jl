@@ -52,7 +52,8 @@
 #
 # RUN: CUDA is a weak dependency, so this runs in the GPU test environment, which also carries
 # `FerriteOperatorsExampleElements` (the home of `SIPGDiffusionIntegrator`). A memory-capped cgroup is
-# required (`_assert_memory_capped()`; `BENCHMARK_UNCAPPED=1` overrides). Canonical invocation:
+# required (`_assert_memory_capped`, in `benchmarks/common.jl`; `BENCHMARK_UNCAPPED=1` overrides).
+# Canonical invocation:
 # `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 env JULIA_NUM_THREADS=2 julia -t2
 # --heap-size-hint=3G --project=test/gpu benchmarks/benchmark-discretization-variants.jl`
 # `DV_STAGES` selects the stages, comma separated, default `"validate,ladder,penalty,cost"`, and
@@ -61,7 +62,11 @@
 # `DV_COST_ONLY=1` skips validate/ladder/penalty/certify_dt entirely and times the cost table alone,
 # against `h*`/`Δt` reused from a prior full run (see `_reused_certification()`) rather than
 # re-derived; it overrides `DV_STAGES`. Use it to re-time the arms after a change to `cost_arm` or
-# the environment -- never after a change to the ladder, the reference, or `VARIANTS`.
+# the environment -- never after a change to the ladder, the reference, or `VARIANTS`, which is what
+# the constants hash in `_reused_certification()` refuses.
+# `DV_COST_SIDE` overrides the timed cube's edge in mm (default: the largest of `SIDE_CANDIDATES`
+# whose worst arm fits `FOOTPRINT_BUDGET`, see `choose_cost_side`) -- for a machine with more or less
+# memory than this one.
 #
 # THREADS: the host arms run on the threads the invocation asks for, and BLAS is pinned to the same
 # count -- left alone, OpenBLAS sizes itself against the whole machine and a `-t2` run was measured
@@ -164,10 +169,12 @@ using StaticArrays
 
 import Ferrite
 import Serialization
-import SparseArrays: nonzeros
-import SparseMatricesCSR: getrowptr, getcolval, getnzval
 import Thunderbolt: SciMLBase, ThreadedSparseMatrixCSR
 import OrdinaryDiffEqOperatorSplitting as OS
+
+# The Jacobi preconditioner, the cgroup guard and the timing harness, shared with the other
+# benchmarks in this directory.
+include(joinpath(@__DIR__, "common.jl"))
 
 const FOE = FerriteOperatorsExampleElements
 
@@ -321,17 +328,23 @@ function _swap_in_sipg(f, ::Type{T}, order, strategy, η) where {T}
     return OS.GenericSplitFunction((heat_dg, ode), f.solution_indices)
 end
 
-"`(label, builder, cells-per-dof-spacing, h ladder)`. `h` is the CELL size; the dof spacing is
-`h / order`, which is why the two order-2 arms start their ladder a step coarser."
+"""
+`(label, builder, cells-per-dof-spacing, h ladder, storage)`. `h` is the CELL size; the dof spacing
+is `h / order`, which is why the two order-2 arms start their ladder a step coarser.
+
+`storage` is what `footprint` needs to size an arm: `:dg` arms keep a block-row store and carry the
+dofs per cell `nb`, continuous arms keep two assembled sparse matrices and carry the nonzeros per row
+(their dof count follows the third field). It rides here rather than being recovered from the label.
+"""
 const VARIANTS = (
     ("CG-P1 lumped",  (T, m, d) -> cg_form(T, m, 1),             1,
-     (0.5, 0.25, 0.125, 0.0625, 0.03125)),
+     (0.5, 0.25, 0.125, 0.0625, 0.03125), (kind = :cg, nnz = 27)),
     ("DG-P1 SIPG",    (T, m, d) -> dg_form(T, m, 1, d),          1,
-     (0.5, 0.25, 0.125, 0.0625, 0.03125)),
+     (0.5, 0.25, 0.125, 0.0625, 0.03125), (kind = :dg, nb = 8)),
     ("DG-P2 SIPG",    (T, m, d) -> dg_form(T, m, 2, d),          2,
-     (1.0, 0.5, 0.25, 0.125, 0.0625)),
+     (1.0, 0.5, 0.25, 0.125, 0.0625), (kind = :dg, nb = 27)),
     ("CG-Q2 GLL-SEM", (T, m, d) -> cg_form(T, m, 2; gll = true), 2,
-     (1.0, 0.5, 0.25, 0.125, 0.0625)),
+     (1.0, 0.5, 0.25, 0.125, 0.0625), (kind = :cg, nnz = 125)),
 )
 
 """
@@ -352,58 +365,6 @@ emrkc(::Type{VT}, ::Type{MT}) where {VT, MT} =
     EMRKC(solution_vector_type = VT, system_matrix_type = MT, gates = :all)
 
 """
-The reciprocal main diagonal of the backward Euler operator `M - Δt K`, as a left preconditioner for
-the reference's conjugate gradient. Filled on first `ldiv!` rather than at `init`: `LinearSolve.init`
-calls the `precs` callback while the system matrix is still the freshly allocated all-zero sparsity
-pattern, and the affine backward Euler path then fills that same object in place without ever
-reassigning `cache.A`. The reference runs at a fixed `Δt`, so the one-shot fill stays valid.
-"""
-mutable struct JacobiPrecon{MatType, VecType}
-    A::MatType
-    inv_diag::VecType
-    ready::Bool
-end
-
-function JacobiPrecon(A)
-    d = similar(nonzeros(A), size(A, 1))
-    fill!(d, one(eltype(d)))
-    return JacobiPrecon(A, d, false)
-end
-
-# `ThreadedSparseMatrixCSR` has neither a `diag` method nor a scalar `getindex`, so each row is walked
-# for its own column index.
-function _fill_inv_diag!(d, A::ThreadedSparseMatrixCSR)
-    rowptr, colval, nzval = getrowptr(A), getcolval(A), getnzval(A)
-    @inbounds for i in eachindex(d)
-        v = zero(eltype(d))
-        for k in rowptr[i]:(rowptr[i + 1] - 1)
-            colval[k] == i && (v = nzval[k])
-        end
-        d[i] = iszero(v) ? one(v) : inv(v)
-    end
-    return d
-end
-
-function _fill_inv_diag!(d, A)
-    v = diag(A)
-    d .= ifelse.(iszero.(v), one(eltype(d)), inv.(v))
-    return d
-end
-
-function LinearAlgebra.ldiv!(y::AbstractVector, P::JacobiPrecon, x::AbstractVector)
-    if !P.ready
-        _fill_inv_diag!(P.inv_diag, P.A)
-        P.ready = true
-    end
-    y .= P.inv_diag .* x
-    return y
-end
-LinearAlgebra.ldiv!(P::JacobiPrecon, x::AbstractVector) = ldiv!(x, P, x)
-
-# `KrylovJL`'s own contract: `(A, p) -> (Pl, Pr)`. CG takes left/centered preconditioning only.
-jacobi_precs(A, p = nothing) = (JacobiPrecon(A), LinearAlgebra.I)
-
-"""
 The reference's own integrator: consistent mass throughout, and neither the space, the mass treatment
 nor the time integrator of any measured arm. Its conjugate gradient runs far tighter than a
 production setting so that the reference does not measure the linear solve's own accumulated error,
@@ -419,12 +380,6 @@ reference_alg(::Type{VT}, ::Type{MT}) where {VT, MT} = LieTrotterGodunov((
         solution_vector_type = VT, reaction_threshold = 0.1, substeps = 10,
     ),
 ))
-
-build(form, u0, alg, Δt, tend) =
-    init(OperatorSplittingProblem(form, copy(u0), (zero(Δt), tend)), alg; dt = Δt, verbose = false)
-
-sync(::Vector) = nothing
-sync(::CuVector) = CUDA.synchronize()
 
 ####################################
 ## Sampling: comparing spaces as functions, not as coefficient vectors
@@ -526,56 +481,6 @@ function band_error(snaps, ref)
     return sqrt(num / den)
 end
 
-####################################
-## Machine discipline
-####################################
-
-"""
-The effective `memory.max` (bytes) of this process's cgroup v2 leaf, found by walking
-`/proc/self/cgroup`'s `0::<path>` up through `/sys/fs/cgroup<path>`. `nothing` for "max" (unset) or
-when no such file is found.
-"""
-function _cgroup_memory_limit()
-    lines = try
-        readlines("/proc/self/cgroup")
-    catch
-        return nothing
-    end
-    idx = findfirst(l -> startswith(l, "0::"), lines)
-    idx === nothing && return nothing
-    dir = "/sys/fs/cgroup" * split(lines[idx], "0::")[2]
-    while true
-        f = joinpath(dir, "memory.max")
-        if isfile(f)
-            v = strip(read(f, String))
-            return v == "max" ? nothing : parse(Int, v)
-        end
-        parent = dirname(dir)
-        parent == dir && return nothing
-        dir = parent
-    end
-end
-
-"""
-Refuses to run outside a memory-capped cgroup: an uncapped run's GC sizes its heap against the whole
-machine rather than the 8G this benchmark is meant to run in. `BENCHMARK_UNCAPPED=1` overrides.
-"""
-function _assert_memory_capped()
-    get(ENV, "BENCHMARK_UNCAPPED", "0") == "1" && return nothing
-    limit = _cgroup_memory_limit()
-    capped = limit !== nothing && limit ≤ 12 * 1024^3
-    capped || error(
-        "No memory-capped cgroup detected (effective memory.max = $(limit === nothing ? "unset" : limit) " *
-        "bytes). An uncapped run's GC sizes itself against the whole machine. Run:\n" *
-        "  systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 env JULIA_NUM_THREADS=2 " *
-        "julia -t2 --heap-size-hint=3G --project=test/gpu benchmarks/benchmark-discretization-variants.jl\n" *
-        "or set BENCHMARK_UNCAPPED=1 to run uncapped deliberately.",
-    )
-    Base.JLOptions().heap_size_hint == 0 &&
-        println("WARNING: no --heap-size-hint given -- GC growth is unbounded even inside the cgroup.")
-    return nothing
-end
-
 const STAGES = Set(strip(s) for s in split(
     get(ENV, "DV_STAGES", "validate,ladder,penalty,cost"), ","))
 
@@ -634,9 +539,11 @@ function validate()
 
     println("\nthe GLL mass, assembled through the model's own path:")
     let f = cg_form(Float64, mesh, 2; gll = true), heat = f.functions[1]
-        spec = Thunderbolt._OperatorSetupSpec(
-            Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64})
-        M = let op = setup_operator(get_strategy(heat), heat.mass_term, spec, heat.dh)
+        # The model's own strategy against the model's own mass term, through the same three-argument
+        # `setup_operator` the SIPG and DG-mass checks above use. What a solver would ask for on top
+        # of that -- a system matrix type to mirror into -- has nothing to do with whether this mass
+        # is diagonal.
+        M = let op = setup_operator(get_strategy(heat), heat.mass_term, heat.dh)
             update_operator!(op, nothing, Thunderbolt.TimeIntegrationContext(0.0, 0.0, 0.0))
             Matrix(FerriteOperators.get_matrix(op))
         end
@@ -649,7 +556,7 @@ function validate()
         isapprox(sum(d), vol; rtol = 1.0e-12) || error("the GLL mass does not integrate the volume")
 
         Mg = let g = cg_form(Float64, mesh, 2), hg = g.functions[1]
-            op = setup_operator(get_strategy(hg), hg.mass_term, spec, hg.dh)
+            op = setup_operator(get_strategy(hg), hg.mass_term, hg.dh)
             update_operator!(op, nothing, Thunderbolt.TimeIntegrationContext(0.0, 0.0, 0.0))
             Matrix(FerriteOperators.get_matrix(op))
         end
@@ -898,21 +805,20 @@ A coarse host-footprint model of one arm on a cube of edge `side` at cell size `
 emRKC keeps at full width, plus either the two assembled sparse matrices (continuous arms) or the
 block-row store (DG arms, `(1+Nf)·Nb²` scalars per cell). Good to a factor of two, which is all the
 cube sizing below needs it to be.
+
+`per` and `storage` are the variant's own third and fifth `VARIANTS` fields.
 """
-function footprint(name, h, side)
+function footprint(per, storage, h, side)
     ncells = (side / h)^3
     nper   = 8                              # bytes; the ladders and the host cost arms are Float64
     nstate = 10                             # PCG2019
     buffers = 6                             # emRKC's full-width buffers, generously counted
-    if startswith(name, "DG")
-        nb    = name == "DG-P1 SIPG" ? 8 : 27
-        ndofs = nb * ncells
-        return ncells * 7 * nb^2 * nper + ndofs * nstate * buffers * nper
+    if storage.kind === :dg
+        ndofs = storage.nb * ncells
+        return ncells * 7 * storage.nb^2 * nper + ndofs * nstate * buffers * nper
     end
-    per   = name == "CG-P1 lumped" ? 1 : 2
     ndofs = (per * side / h + 1)^3
-    nnz   = per == 1 ? 27 : 125
-    return 2 * ndofs * nnz * (nper + 8) + ndofs * nstate * buffers * nper
+    return 2 * ndofs * storage.nnz * (nper + 8) + ndofs * nstate * buffers * nper
 end
 
 """
@@ -924,10 +830,11 @@ latency bound rather than throughput bound, and its `s / sim ms` is an upper bou
 discretization would cost on a mesh that saturates the machine.
 """
 function choose_cost_side(stars)
-    hs = [(name, p.h) for (name, _, _, _) in VARIANTS for p in (stars[name],) if p !== nothing]
+    hs = [(per, storage, p.h) for (name, _, per, _, storage) in VARIANTS
+          for p in (stars[name],) if p !== nothing]
     isempty(hs) && return nothing
     for side in SIDE_CANDIDATES
-        maximum(footprint(n, h, side) for (n, h) in hs) ≤ FOOTPRINT_BUDGET && return side
+        maximum(footprint(per, st, h, side) for (per, st, h) in hs) ≤ FOOTPRINT_BUDGET && return side
     end
     return last(SIDE_CANDIDATES)
 end
@@ -961,7 +868,7 @@ function certify_dt(name, mk, point)
         snaps, arrival = try
             transit(f, u0, alg, Δt, sampler)
         catch err
-            err isa ErrorException && occursin("inner stages", err.msg) || rethrow()
+            err isa Thunderbolt.EMRKCDivergence && occursin("inner stages", err.msg) || rethrow()
             @printf("    Δt = %8.6f   UNSTAGEABLE: %s\n", Δt,
                     first(split(err.msg, ". ")))
             flush(stdout)
@@ -980,44 +887,6 @@ function certify_dt(name, mk, point)
     end
     best === nothing && return (last(DT_SWEEP), false)
     return (best, true)
-end
-
-function gpu_clocks()
-    out = read(`nvidia-smi --query-gpu=clocks.sm,clocks.mem --format=csv,noheader,nounits`, String)
-    sm, mem = parse.(Int, strip.(split(first(split(strip(out), '\n')), ',')))
-    return sm, mem
-end
-
-"""
-Step without interruption for `WARMUP_SECONDS`, reading the clocks back *while still stepping*. On a
-card that idles at 300 MHz a short warmup measures the ramp rather than the kernel, and the returned
-clocks are what says this one did not.
-"""
-function prewarm!(integrator, on_device)
-    t0 = time_ns()
-    clocks, sampled = (0, 0), false
-    while (time_ns() - t0) / 1.0e9 < WARMUP_SECONDS
-        step!(integrator)
-        if on_device && !sampled && (time_ns() - t0) / 1.0e9 > WARMUP_SECONDS / 2
-            clocks, sampled = gpu_clocks(), true
-        end
-    end
-    sync(integrator.u)
-    return clocks
-end
-
-"Minimum seconds per step over `NPASS` passes of `NSTEPS` steps."
-function measure!(integrator)
-    best = Inf
-    for _ = 1:NPASS
-        t0 = time_ns()
-        for _ = 1:NSTEPS
-            step!(integrator)
-        end
-        sync(integrator.u)
-        best = min(best, (time_ns() - t0) / 1.0e9 / NSTEPS)
-    end
-    return best
 end
 
 struct CostRow
@@ -1045,11 +914,11 @@ function cost_arm(label, mk, h, Δt, side, ::Type{VT}, ::Type{MT}, on_device, ba
     u0 = s1_initial_condition(f, T)
     u0 = VT <: CuVector ? CuVector(u0) : u0
     itg = build(f, u0, emrkc(VT, MT), T(Δt), T(1.0e5))
-    clocks = prewarm!(itg, on_device)  # also where an unstageable Δt surfaces, loudly
+    clocks = prewarm!(itg, on_device, WARMUP_SECONDS)  # also where an unstageable Δt surfaces, loudly
     # After the first accepted step, not before it: the two spectral radii the stage counts are sized
     # against are estimated inside the step, and are still zero at `init`.
     s, _, m = Thunderbolt._emrkc_step_sizing(itg.alg, T(Δt), itg.cache.ρS, itg.cache.ρF)
-    seconds = measure!(itg)
+    seconds = measure!(itg, NSTEPS, NPASS)
     φ = getvariable(Vector(itg.u), solution_variable(f, :φₘ))
     all(isfinite, φ) || error("$label: the timed arm went non-finite")
     row = CostRow(label, h, Δt, ndofs(f.functions[1].dh), length(u0), "s=$s m=$m",
@@ -1099,14 +968,33 @@ end
 _bound_mark(certified, dt_ok, name) =
     (get(certified, name, true) && get(dt_ok, name, true)) ? "" : " (>=)"
 
+# Every constant the snapshot below depends on: the reference's, the ladder's and `certify_dt`'s.
+# Same shape as `_cache_path`'s key and for the same reason -- the builders in `VARIANTS` are
+# closures with no stable hash, so only each variant's label and h ladder go in.
+const _CERTIFICATION_KEY = (
+    LX, NTRANS, D_ISO, TEND, XPROBE, XTHRESH, SNAPSHOTS, NSAMPLE, H_REF, DT_REF,
+    BAND, DT_LADDER, SIPG_ETA, DT_SWEEP, map(v -> (v[1], v[4]), VARIANTS),
+)
+# `hash(_CERTIFICATION_KEY)` at the time the snapshot below was measured.
+const _CERTIFICATION_HASH = 0x74ec251d2b5f46dc
+
 """
 The `h*`, certified `Δt` and reference arrival from the last completed `validate,ladder,penalty,cost`
 run against this file's current constants (`LX`, `NTRANS`, `D_ISO`, `BAND`, `DT_LADDER`, `DT_SWEEP`,
 `VARIANTS`, ...), so `DV_COST_ONLY=1` can re-time the cost table without re-running them. This is a
-snapshot of ONE run, not a model of the ladders: re-derive (unset `DV_COST_ONLY`) whenever any
-constant the ladder, the reference or `certify_dt` depends on changes.
+snapshot of ONE run, not a model of the ladders, so it is only handed out while those constants still
+hash to what it was measured against; otherwise it refuses and says so.
 """
 function _reused_certification()
+    hash(_CERTIFICATION_KEY) == _CERTIFICATION_HASH || error(
+        "`DV_COST_ONLY=1` reuses `h*`/`Δt` measured against different constants: the current " *
+        "(LX, NTRANS, D_ISO, TEND, XPROBE, XTHRESH, SNAPSHOTS, NSAMPLE, H_REF, DT_REF, BAND, " *
+        "DT_LADDER, SIPG_ETA, DT_SWEEP, VARIANTS) hash to " *
+        "$(string(hash(_CERTIFICATION_KEY), base = 16)) where the snapshot was taken at " *
+        "$(string(_CERTIFICATION_HASH, base = 16)). Re-derive it with a full run (unset " *
+        "DV_COST_ONLY) and update `_reused_certification` -- or, if only the Julia version moved, " *
+        "update `_CERTIFICATION_HASH` alone.",
+    )
     ref_arrival = 5.95683   # ms; CG-Q2 consistent-mass reference at (H_REF, DT_REF)
     stars = Dict{String, Any}(
         "CG-P1 lumped"  => LadderPoint(0.03125, 5136,  0.00825,  5.94419, Vector{Float64}[]),
@@ -1134,12 +1022,12 @@ function cost_stage(stars, certified, dts, dt_ok, ref_arrival)
     println("\n", "="^118)
     println("COST AT MATCHED ACCURACY  (", side, " mm cube, device arms Float32)")
     println("="^118)
-    for (name, _, _, _) in VARIANTS
+    for (name, _, per, _, storage) in VARIANTS
         p = stars[name]
         p === nothing && continue
         n = round(Int, side / p.h)
         @printf("  %-15s %4d cells per side (%d cells), estimated host footprint %.2f GiB%s\n",
-                name, n, n^3, footprint(name, p.h, side) / 1024^3,
+                name, n, n^3, footprint(per, storage, p.h, side) / 1024^3,
                 n < MIN_CELLS_PER_SIDE ? "   <-- LATENCY BOUND, an upper bound on its true cost" : "")
     end
     rows = CostRow[]
@@ -1180,7 +1068,7 @@ function cost_stage(stars, certified, dts, dt_ok, ref_arrival)
 end
 
 function main()
-    _assert_memory_capped()
+    _assert_memory_capped("benchmarks/benchmark-discretization-variants.jl")
     # The host profile is the threads the invocation asks for. OpenBLAS otherwise sizes itself
     # against the whole machine -- measured at 1657% CPU under `-t2` before this line existed -- and a
     # level-1 kernel spread over sixteen cores is not the profile this table claims to measure.
@@ -1253,4 +1141,8 @@ function main()
     return nothing
 end
 
-main()
+# Only when this file is what was run: `include`ing it from a REPL session loads the definitions
+# without starting an hour of measurement.
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
