@@ -9,4 +9,8 @@ DocTestSetup = :(using Thunderbolt)
 ```@docs
 FiniteElementDiscretization
 Thunderbolt.semidiscretize
+ConsistentMass
+LumpedMass
+CollocatedMass
+CollocatedMassIntegrator
 ```

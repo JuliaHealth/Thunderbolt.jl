@@ -10,6 +10,34 @@
 #         register integrator
 # return function type matching the integrator list
 
+# How a `FiniteElementDiscretization` builds every mass term it hands to a semidiscretization.
+abstract type AbstractMassTreatment end
+
+"""
+    ConsistentMass()
+
+Assemble `∫ρ u v` through the field's quadrature rule, or through `qrcs[:mass]` where given. The
+implicit solvers combine the mass with the stiffness on one sparsity pattern and take this only.
+"""
+struct ConsistentMass <: AbstractMassTreatment end
+
+"""
+    LumpedMass()
+
+Row-sum lump the consistent element mass (`FerriteOperators.RowSumLumped`), so the assembled mass
+is a `Diagonal`: what an explicit integrator ([`EMRKC`](@ref)) needs on a continuous space.
+"""
+struct LumpedMass <: AbstractMassTreatment end
+
+"""
+    CollocatedMass()
+
+The spectral-element mass ([`CollocatedMassIntegrator`](@ref)): diagonal by construction over the
+interpolation's own nodes, so it fixes the rule itself and refuses a `qrcs[:mass]` entry. Serves
+an explicit integrator like [`LumpedMass`](@ref).
+"""
+struct CollocatedMass <: AbstractMassTreatment end
+
 """
 Descriptor for a finite element discretization of a part of a PDE over some subdomain.
 
@@ -34,16 +62,38 @@ struct FiniteElementDiscretization
     """
     assembly_strategy::AbstractAssemblyStrategy
     """
+    How every mass term is built: [`ConsistentMass`](@ref) (the default), [`LumpedMass`](@ref) or
+    [`CollocatedMass`](@ref).
     """
+    mass_treatment::AbstractMassTreatment
     function FiniteElementDiscretization(
         ips::Dict{Symbol};
         dbcs::Vector{Dirichlet} = Dirichlet[],
         qrcs::Dict{Symbol} = Dict{Symbol, Any}(),
         fqrcs::Dict{Symbol} = Dict{Symbol, Any}(),
         assembly_strategy = default_strategy(),
+        mass::AbstractMassTreatment = ConsistentMass(),
     )
-        new(ips, dbcs, qrcs, fqrcs, assembly_strategy)
+        new(ips, dbcs, qrcs, fqrcs, assembly_strategy, mass)
     end
+end
+
+_mass_quadrature(disc::FiniteElementDiscretization, sym::Symbol) =
+    haskey(disc.qrcs, :mass) ? disc.qrcs[:mass] : _get_quadrature_from_discretization(disc, sym)
+
+# The mass term of the field `sym` with density `ρ`, in the treatment the discretization elects.
+_mass_integrator(disc::FiniteElementDiscretization, ρ, sym::Symbol) =
+    _mass_integrator(disc.mass_treatment, disc, ρ, sym)
+_mass_integrator(::ConsistentMass, disc, ρ, sym) =
+    BilinearMassIntegrator(ρ, _mass_quadrature(disc, sym), sym)
+_mass_integrator(::LumpedMass, disc, ρ, sym) =
+    FerriteOperators.RowSumLumped(BilinearMassIntegrator(ρ, _mass_quadrature(disc, sym), sym))
+function _mass_integrator(::CollocatedMass, disc, ρ, sym)
+    haskey(disc.qrcs, :mass) && error(
+        "`CollocatedMass()` integrates the mass over the interpolation's own nodes and admits no " *
+        "`:mass` quadrature rule. Remove `qrcs[:mass]`, or elect `ConsistentMass()`/`LumpedMass()`.",
+    )
+    return CollocatedMassIntegrator(ρ, _get_interpolation_from_discretization(disc, sym), sym)
 end
 
 _extract_ipc(ipc::InterpolationCollection) = ipc
@@ -185,11 +235,7 @@ function semidiscretize(
 
     T = get_coordinate_eltype(get_grid(dh))
     return AffineODEFunction(
-        BilinearMassIntegrator(
-            ConstantCoefficient(T(1.0)),
-            haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass] : qrc, # Allow e.g. mass lumping for explicit integrators.
-            sym,
-        ),
+        _mass_integrator(discretization, ConstantCoefficient(T(1.0)), sym),
         BilinearDiffusionIntegrator(model.κ, qrc, sym),
         LinearIntegrator(model.source, qrc),
         dh,
@@ -213,12 +259,7 @@ function register_affine_ode_integrators!(
     T = get_coordinate_eltype(get_grid(dh))
 
     qrc = _get_quadrature_from_discretization(discretization, sym)
-    # TODO allow e.g. mass lumping for explicit integrators.
-    mass_integrators[name] = BilinearMassIntegrator(
-        ConstantCoefficient(T(1.0)),
-        haskey(discretization.qrcs, :mass) ? discretization.qrcs[:mass] : qrc,
-        sym,
-    )
+    mass_integrators[name] = _mass_integrator(discretization, ConstantCoefficient(T(1.0)), sym)
     rhs_integrators[name] = BilinearDiffusionIntegrator(model.κ, qrc, sym)
     linear_integrators[name] = LinearIntegrator(model.source, qrc)
 end
@@ -667,11 +708,7 @@ function semidiscretize(
     # enough. Sharing the displacement rule is safe rather than merely convenient: `_extract_qrc`
     # gives `max(2p-1, 2)` points, exact through degree `3` for `p = 1` and `4p-3` for `p ≥ 2`, both
     # of which cover `2p`. A rule passed explicitly via `qrcs` is the user's to get right.
-    mass_term = BilinearMassIntegrator(
-        model.ρ,
-        _get_quadrature_from_discretization(discretization, sym),
-        sym,
-    )
+    mass_term = _mass_integrator(discretization, model.ρ, sym)
 
     return _elastodynamics_function(
         quasistaticform,
@@ -853,11 +890,7 @@ function semidiscretize(
 
     mass_term = BilinearMultiIntegrator(
         Dict{String, AbstractBilinearIntegrator}(
-            name => BilinearMassIntegrator(
-                model.ρ,
-                _get_quadrature_from_discretization(discretization, sym),
-                sym,
-            ) for (name, model) in models
+            name => _mass_integrator(discretization, model.ρ, sym) for (name, model) in models
         ),
     )
 

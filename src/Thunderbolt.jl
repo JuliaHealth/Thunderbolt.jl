@@ -26,6 +26,8 @@ import FerriteOperators:
     AssemblyStrategy,
     default_strategy,
     FullAssembly,
+    MatrixFreeAction,
+    BlockRowAssembly,
     StandardOperatorSpecification,
     SequentialScheduling,
     ColoredScheduling,
@@ -101,7 +103,7 @@ import FastBroadcast: @..
 
 using UnPack: @unpack # TODO remove this package
 using Reexport: @reexport
-import LinearAlgebra: mul!
+import LinearAlgebra: mul!, Diagonal
 import Polyester: @batch
 using SparseMatricesCSR, LinearAlgebra
 using OrderedCollections: OrderedDict, OrderedSet
@@ -257,6 +259,7 @@ export
     DiscontinuousLagrangeCollection,
     getinterpolation,
     QuadratureRuleCollection,
+    NodalQuadratureRuleCollection,
     getquadraturerule,
     CellValueCollection,
     getcellvalues,
@@ -341,6 +344,9 @@ export
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
     ReactionDiffusionSplit,
+    gating_symbols,
+    gate_coefficients,
+    gating_indices,
     # Circuit
     RSAFDQ2022LumpedCicuitModel,
     MTKLumpedCicuitModel,
@@ -382,6 +388,10 @@ export
     # Discretization
     semidiscretize,
     FiniteElementDiscretization,
+    ConsistentMass,
+    LumpedMass,
+    CollocatedMass,
+    CollocatedMassIntegrator,
     # Solver
     SchurComplementLinearSolver,
     KrylovMGSolver,
@@ -396,6 +406,13 @@ export
     BackwardEulerSolver,
     NewmarkSolver,
     PIDController,
+    # Super-time-stepping families
+    RKC1,
+    RKL1,
+    RKG1,
+    # Exponential multirate super-time-stepping for a reaction-diffusion split
+    EMRKC,
+    rate_sign,
     # Convergence driven step size control, usable with any solver answering `contraction_rate_cache`
     Deuflhard2004DiscreteContinuationController,
     Deuflhard2004_B_DiscreteContinuationControllerVariant,

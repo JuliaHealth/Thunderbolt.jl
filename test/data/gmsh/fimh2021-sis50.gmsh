@@ -1,0 +1,9 @@
+// Gmsh project created on Sat Jan  9 00:03:38 2021
+SetFactory("OpenCASCADE");
+//+
+Disk(1) = {0, 0, 0.0, 2, 2};
+Physical Volume("Heart", 1) = {1};
+Disk(3) = {0, 0, 0.0, 50, 50};
+BooleanDifference(4) = {Volume{2}; Delete;} {Volume{1};};
+Physical Volume("Thorax", 2) = {4};
+gmsh.model.mesh.generate(2)

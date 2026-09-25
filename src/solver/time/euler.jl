@@ -123,7 +123,7 @@ function perform_backward_euler_step!(
 
     # Update source term
     @timeit_debug "update source term" begin
-        implicit_euler_heat_update_source_term!(stage, t + Δt)
+        refresh_source_operator!(stage.source_term, t + Δt)
         _add_source_term!(linear_solver.b, stage.source_term)
     end
 
@@ -157,11 +157,6 @@ end
 # persistent mirrored buffer for a host-assembled one.
 _add_source_term!(b::AbstractVector, source) = add!(b, source)
 
-function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODEStage, t)
-    needs_update(cache.source_term, t) &&
-        update_operator!(cache.source_term, nothing, TimeIntegrationContext(t, zero(t), zero(t)))
-end
-
 function setup_solver_cache(
     f::AffineODEFunction,
     solver::BackwardEulerSolver,
@@ -184,6 +179,7 @@ function setup_solver_cache(
 
     # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(get_strategy(f), f.mass_term, solver, dh)
+    _assert_combinable_mass(mass_operator)
 
     # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
     bilinear_operator = setup_operator(get_strategy(f), f.bilinear_term, solver, dh)

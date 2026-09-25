@@ -13,33 +13,13 @@ setup_stage_operator(f::NullFunction, solver::AbstractSolver, local_solver_cache
     NullOperator{Float64, solution_size(f), solution_size(f)}()
 
 # Linear
-# Unrolled to disambiguate
+# An absent stimulus assembles nothing at all, under every strategy: no element loop, no storage,
+# and no dependence on what the strategy would have assembled into. One method rather than one per
+# strategy shape -- it is strictly more specific than the generic linear method below in both the
+# strategy and the integrator, and disjoint from every bilinear method in the integrator, so no
+# ambiguity is introduced (`test/test_aqua.jl` checks that).
 function setup_operator(
-    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractCPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractGPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractGPUDevice},
+    strategy::AbstractAssemblyStrategy,
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -79,18 +59,41 @@ function setup_operator(
     },
     integrator::AbstractBilinearIntegrator,
     solver::AbstractSolver,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
+    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh; kwargs...)
 end
 
 function setup_operator(
     strategy::AssemblyStrategy{<:FullAssembly, <:Any, <:AbstractGPUDevice},
     integrator::AbstractBilinearIntegrator,
     solver::AbstractSolver,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
+    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh; kwargs...)
+end
+
+"""
+A matrix-free operator holds no system matrix, so `solver.system_matrix_type` has nothing to name and
+is not read: where the assembled forms above pick a storage format, here the strategy's own
+`MatrixFreeAction` storage election already fixes what is kept and what is recomputed per action, and
+the device the strategy names is the device the action runs on. There is consequently no
+`setup_assembled_operator` step and no mirror -- the operator is whatever `FerriteOperators` builds
+for this strategy, on both host and device.
+
+The solver still has to want one: an operator of this kind serves `mul!`, not a linear solve, so it
+reaches only the solvers that step through the operator's action -- [`EMRKC`](@ref) today.
+"""
+function setup_operator(
+    strategy::AssemblyStrategy{<:MatrixFreeAction},
+    integrator::AbstractBilinearIntegrator,
+    solver::AbstractSolver,
+    dh::AbstractDofHandler;
+    kwargs...,
+)
+    return setup_operator(strategy, integrator, dh; kwargs...)
 end
 
 """
@@ -118,9 +121,10 @@ function setup_assembled_operator(
     strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
     integrator::AbstractBilinearIntegrator,
     system_matrix_type::Type,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    setup_operator(strategy, integrator, dh)
+    setup_operator(strategy, integrator, dh; kwargs...)
 end
 
 @doc (@doc setup_assembled_operator)
@@ -128,9 +132,15 @@ function setup_assembled_operator(
     strategy::AssemblyStrategy{<:FullAssembly, <:Any, <:AbstractGPUDevice},
     integrator::AbstractBilinearIntegrator,
     system_matrix_type::Type,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    return setup_operator(_device_assembly_strategy(strategy, system_matrix_type), integrator, dh)
+    return setup_operator(
+        _device_assembly_strategy(strategy, system_matrix_type),
+        integrator,
+        dh;
+        kwargs...,
+    )
 end
 
 # The two knobs meet here. A device assembly writes the entries of `system_matrix_type` itself, so it
@@ -200,6 +210,7 @@ struct MirroredBilinearOperator{OperatorType, MatrixType, BufferType} <: Abstrac
 end
 
 function MirroredBilinearOperator(host_operator, A)
+    _assert_combinable_mass(host_operator)
     nnz_host   = length(nonzeros(host_operator.A))
     nnz_mirror = length(nonzeros(A))
     nnz_host == nnz_mirror || error(
@@ -216,8 +227,24 @@ end
 
 function update_operator!(op::MirroredBilinearOperator, p, ctx = nothing)
     update_operator!(op.host_operator, p, ctx)
+    _mirror_nonzeros!(op)
+    return nothing
+end
+
+function _mirror_nonzeros!(op::MirroredBilinearOperator)
     op.nzbuffer .= nonzeros(op.host_operator.A)
     copyto!(nonzeros(op.A), op.nzbuffer)
+    return nothing
+end
+
+# The affine stages combine `M` and `K` entry by entry on one sparsity pattern, and the mirror copies
+# one; a lumped or collocated mass assembles to a `Diagonal`, which has neither.
+function _assert_combinable_mass(op)
+    FerriteOperators.operator_payload(op) isa Diagonal && error(
+        "This solver combines the mass and stiffness matrices on one sparsity pattern, which a " *
+        "`Diagonal` mass (`LumpedMass()`/`CollocatedMass()`) does not have. Elect " *
+        "`mass = ConsistentMass()` on the discretization, or step with an explicit integrator (`EMRKC`).",
+    )
     return nothing
 end
 
@@ -230,6 +257,44 @@ mul!(out::AbstractVector, op::MirroredBilinearOperator, in::AbstractVector, α, 
 # `MethodError` instead of answering for the mirrored matrix `A`, which is what everything
 # downstream (`mul!`, the stage assembly) actually reads.
 FerriteOperators.operator_payload(op::MirroredBilinearOperator) = op.A
+
+"""
+    MirroredRateFormOperator(host, rhs, minv, scratch)
+
+The rate form `M⁻¹K` assembled on the host and mirrored onto a device: `rhs` is the
+[`MirroredBilinearOperator`](@ref) of the rhs, `minv` the device copy of the diagonal inverse mass.
+Only a diagonal mass (`LumpedMass`, `CollocatedMass`) mirrors; a dense per-cell mass has no mirror
+and such a model assembles on the device instead.
+"""
+struct MirroredRateFormOperator{HostType, RhsType, VecType} <: AbstractBilinearOperator
+    host::HostType
+    rhs::RhsType
+    minv::VecType
+    scratch::VecType
+end
+
+function update_operator!(op::MirroredRateFormOperator, p, ctx = nothing)
+    update_operator!(op.host, p, ctx)
+    _mirror_nonzeros!(op.rhs)
+    copyto!(op.minv, FerriteOperators.rate_form_inverse_mass(op.host).diag)
+    return nothing
+end
+
+mul!(y::AbstractVector, op::MirroredRateFormOperator, x::AbstractVector) =
+    (mul!(y, op.rhs, x); y .*= op.minv; y)
+function mul!(y::AbstractVector, op::MirroredRateFormOperator, x::AbstractVector, α, β)
+    mul!(op.scratch, op.rhs, x)
+    if iszero(β)
+        y .= α .* op.minv .* op.scratch
+    else
+        y .= α .* op.minv .* op.scratch .+ β .* y
+    end
+    return y
+end
+
+FerriteOperators.operator_payload(op::MirroredRateFormOperator) = op.rhs.A
+FerriteOperators.rate_form_rhs(op::MirroredRateFormOperator) = op.rhs
+FerriteOperators.rate_form_inverse_mass(op::MirroredRateFormOperator) = Diagonal(op.minv)
 
 """
     MirroredLinearOperator(host_operator, b)
@@ -266,6 +331,19 @@ function update_operator!(op::MirroredLinearOperator, p, ctx = nothing)
 end
 
 needs_update(op::MirroredLinearOperator, t) = needs_update(op.host_operator, t)
+
+"""
+    refresh_source_operator!(op, t)
+
+Re-assemble a source operator for the time `t`, where it says it depends on one.
+
+The single owner of that step: every solver carrying a source term does it once per step -- the
+affine backward Euler stage before it builds its right hand side, [`EMRKC`](@ref) once per outer
+stage -- and a protocol that is stationary in time is skipped rather than reassembled.
+"""
+refresh_source_operator!(op, t) =
+    needs_update(op, t) &&
+    update_operator!(op, nothing, TimeIntegrationContext(t, zero(t), zero(t)))
 
 # Nonlinear
 """

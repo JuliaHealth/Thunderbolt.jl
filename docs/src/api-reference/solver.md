@@ -32,6 +32,25 @@ HomotopyPathSolver
 NewmarkSolver
 ```
 
+## Super-time-stepping
+
+```@docs
+Thunderbolt.AbstractSTSFamily
+RKC1
+RKL1
+RKG1
+Thunderbolt.sts_sweep!
+Thunderbolt.sts_stage_count
+Thunderbolt.sts_stability_boundary
+Thunderbolt.ExponentialMultirateSTSAlgorithm
+EMRKC
+rate_sign
+Thunderbolt.PassiveChildSolver
+gating_symbols
+gate_coefficients
+gating_indices
+```
+
 ## Operator Splitting Adaptivity
 
 ```@docs
