@@ -56,11 +56,13 @@ The smallest stage count `s` whose real stability interval admits `z = τ·ρ` (
 function sts_stage_count end
 
 @inline function _sts_safe_ceil(z, x)
-    x < typemax(Int) || throw(EMRKCDivergence(
-        "sts_stage_count: the stage count for z = $z does not fit in a machine `Int`. This " *
-        "almost always means a diverged state or an unusable `rho_*_estimate` override, not a " *
-        "genuine stiffness measure.",
-    ))
+    x < typemax(Int) || throw(
+        EMRKCDivergence(
+            "sts_stage_count: the stage count for z = $z does not fit in a machine `Int`. This " *
+            "almost always means a diverged state or an unusable `rho_*_estimate` override, not a " *
+            "genuine stiffness measure.",
+        ),
+    )
     return ceil(Int, x)
 end
 
@@ -179,7 +181,8 @@ sts_coefficient_state(::RKG1, s::Integer, ::Type{T}) where {T} =
 function sts_stage_coefficients(::RKG1, st::RKLGCoeffState{T}, j::Integer) where {T}
     # bⱼ(j) = 2/((j+1)(j+2)); νⱼ needs bⱼ₋₂, which is singular at j = 1 (no Yⱼ₋₂ there anyway).
     bj(k) = T(2) / (T(k + 1) * T(k + 2))
-    μ, ν = j == 1 ? (one(T), zero(T)) :
+    μ, ν =
+        j == 1 ? (one(T), zero(T)) :
         (T(2j + 1) / T(j) * bj(j) / bj(j - 1), -T(j + 1) / T(j) * bj(j) / bj(j - 2))
     μ̃ = μ * st.w1
     c = μ * st.cjm1 + ν * st.cjm2 + μ̃
@@ -199,9 +202,12 @@ Allocation-free once warmed up, for an `rhs!` that does not allocate.
 broadcast is `@inbounds`, so a short buffer would be a silent out-of-bounds write.
 """
 function sts_sweep!(rhs!, Ya, Yb, du, y0, t0, τ, s::Integer, fam::AbstractSTSFamily)
-    @boundscheck (length(Ya) == length(Yb) == length(du) == length(y0)) ||
-        throw(DimensionMismatch("sts_sweep!: Ya, Yb, du and y0 must have equal length; got " *
-            "$(length(Ya)), $(length(Yb)), $(length(du)), $(length(y0))."))
+    @boundscheck (length(Ya) == length(Yb) == length(du) == length(y0)) || throw(
+        DimensionMismatch(
+            "sts_sweep!: Ya, Yb, du and y0 must have equal length; got " *
+            "$(length(Ya)), $(length(Yb)), $(length(du)), $(length(y0)).",
+        ),
+    )
     st = sts_coefficient_state(fam, s, eltype(y0))
     for j = 1:s
         Yjm1 = j == 1 ? y0 : (isodd(j - 1) ? Ya : Yb)

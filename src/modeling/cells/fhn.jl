@@ -38,8 +38,8 @@ end
 # ds/dt = e(bφ - cs - d) = -ce(s - (bφ-d)/c), so λ = -ce and y∞ = (bφ-d)/c.
 function gate_coefficients(p::ParametrizedFHNModel{T}, φ, x, t) where {T}
     @unpack b, c, d, e = p
-    λ  = SVector{1,T}(-c*e)
-    y∞ = SVector{1,T}((b*φ - d)/c)
+    λ = SVector{1, T}(-c*e)
+    y∞ = SVector{1, T}((b*φ - d)/c)
     return λ, y∞
 end
 

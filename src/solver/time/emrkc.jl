@@ -361,7 +361,14 @@ function OS.init_cache(
     end
     op = RateOperator(
         rate_operator,
-        _rate_source_inverse_mass(rate_operator, source_operator, strategy, fheat.mass_term, dh, ctx₀),
+        _rate_source_inverse_mass(
+            rate_operator,
+            source_operator,
+            strategy,
+            fheat.mass_term,
+            dh,
+            ctx₀,
+        ),
         rate_sign(fheat.bilinear_term),
     )
 
@@ -607,7 +614,8 @@ end
 
 # What `estimate_rho!`'s generic runaway guard cannot name: the state a Jacobian-free difference was
 # taken at, and `EMRKC`'s own knobs.
-_emrkc_rho_S_runaway_context(u, alg) = " The state norm is ‖u‖ = $(norm(u)); the likely cause is " *
+_emrkc_rho_S_runaway_context(u, alg) =
+    " The state norm is ‖u‖ = $(norm(u)); the likely cause is " *
     "state drift or a non-smooth right-hand side at this evaluation point. Consider a different " *
     "`rho_recompute` policy (currently $(repr(alg.rho_recompute))) or bypassing the estimator " *
     "with a raw-number `rho_S_estimate` override."
@@ -781,15 +789,19 @@ end
 
 @noinline function _emrkc_stage_count_error(which, z, alg, s = nothing)
     what = which === :outer ? "outer (Δt·ρ_S)" : "inner (η·ρ_F)"
-    s === nothing && throw(EMRKCDivergence(
-        "`EMRKC` cannot size its $(what) sweep: the stiffness measure came out as $z. The state " *
-        "has most likely diverged, or a `rho_*_estimate` override is not a usable spectral radius.",
-    ))
-    throw(EMRKCDivergence(
-        "`EMRKC` needs $(s) $(which) stages for a stiffness measure of $(what) = $z, above " *
-        "`max_stages = $(alg.max_stages)`. Truncating the count would silently drop the " *
-        "stability this stage count buys, so reduce `dt` or raise `max_stages`.",
-    ))
+    s === nothing && throw(
+        EMRKCDivergence(
+            "`EMRKC` cannot size its $(what) sweep: the stiffness measure came out as $z. The state " *
+            "has most likely diverged, or a `rho_*_estimate` override is not a usable spectral radius.",
+        ),
+    )
+    throw(
+        EMRKCDivergence(
+            "`EMRKC` needs $(s) $(which) stages for a stiffness measure of $(what) = $z, above " *
+            "`max_stages = $(alg.max_stages)`. Truncating the count would silently drop the " *
+            "stability this stage count buys, so reduce `dt` or raise `max_stages`.",
+        ),
+    )
 end
 
 # The Lie-Trotter-Godunov child sequence, run *after* the monolithic step has written `parent.u`.

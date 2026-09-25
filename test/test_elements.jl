@@ -393,8 +393,11 @@ using JET: @test_opt
 end
 
 @testset "Collocated nodal quadrature (spectral-element mass)" begin
-    import Thunderbolt: NodalQuadratureRuleCollection, LagrangeCollection,
-                        DiscontinuousLagrangeCollection, getquadraturerule
+    import Thunderbolt:
+        NodalQuadratureRuleCollection,
+        LagrangeCollection,
+        DiscontinuousLagrangeCollection,
+        getquadraturerule
     import Ferrite
     using LinearAlgebra: Diagonal, diag
 
@@ -407,8 +410,11 @@ end
         Ferrite.close!(dh)
         sdh = dh.subdofhandlers[1]
         qr = getquadraturerule(NodalQuadratureRuleCollection(LagrangeCollection{order}()), sdh)
-        cv = Ferrite.CellValues(qr, Ferrite.Lagrange{refshape, order}(),
-                                Ferrite.geometric_interpolation(celltype))
+        cv = Ferrite.CellValues(
+            qr,
+            Ferrite.Lagrange{refshape, order}(),
+            Ferrite.geometric_interpolation(celltype),
+        )
         M = Ferrite.allocate_matrix(dh)
         asm = Ferrite.start_assemble(M)
         n = Ferrite.getnbasefunctions(cv)
@@ -416,9 +422,11 @@ end
         for cell in Ferrite.CellIterator(dh)
             Ferrite.reinit!(cv, cell)
             fill!(Me, 0)
-            for qp in 1:Ferrite.getnquadpoints(cv), i in 1:n, j in 1:n
-                Me[i, j] += Ferrite.shape_value(cv, qp, i) * Ferrite.shape_value(cv, qp, j) *
-                            Ferrite.getdetJdV(cv, qp)
+            for qp = 1:Ferrite.getnquadpoints(cv), i = 1:n, j = 1:n
+                Me[i, j] +=
+                    Ferrite.shape_value(cv, qp, i) *
+                    Ferrite.shape_value(cv, qp, j) *
+                    Ferrite.getdetJdV(cv, qp)
             end
             Ferrite.assemble!(asm, Ferrite.celldofs(cell), Me)
         end
@@ -426,9 +434,10 @@ end
     end
 
     @testset "$name" for (name, celltype, refshape, dims, extent, measure) in (
-        ("quad", Quadrilateral, Ferrite.RefQuadrilateral, (2, 3), Vec{2}((1.5, 0.5)), 0.75),
-        ("hex", Hexahedron, Ferrite.RefHexahedron, (2, 2, 2), Vec{3}((1.3, 1.3, 1.3)), 1.3^3),
-    ), order in (1, 2)
+            ("quad", Quadrilateral, Ferrite.RefQuadrilateral, (2, 3), Vec{2}((1.5, 0.5)), 0.75),
+            ("hex", Hexahedron, Ferrite.RefHexahedron, (2, 2, 2), Vec{3}((1.3, 1.3, 1.3)), 1.3^3),
+        ),
+        order in (1, 2)
 
         M = nodal_mass(celltype, refshape, order, dims, extent)
         d = diag(M)
@@ -459,27 +468,32 @@ end
     ctx   = TimeIntegrationContext(0.0, 0.0, 0.0)
     function mass_matrix(order; kwargs...)
         f  = semidiscretize(model, FiniteElementDiscretization(Dict(:u => LagrangeCollection{order}()); kwargs...), mesh)
-        op = FerriteOperators.setup_operator(
-            FerriteOperators.AssemblyStrategy(FerriteOperators.SequentialCPUDevice()), f.mass_term, f.dh)
+        op = FerriteOperators.setup_operator(FerriteOperators.AssemblyStrategy(FerriteOperators.SequentialCPUDevice()), f.mass_term, f.dh)
         FerriteOperators.update_operator!(op, nothing, ctx)
         return op, FerriteOperators.get_matrix(op)
     end
 
-    _, M  = mass_matrix(2)
+    _, M = mass_matrix(2)
     lop, D = mass_matrix(2; mass = LumpedMass())
     @test D isa Diagonal
     @test diag(D) ≈ vec(sum(M, dims = 2))
 
     # The collocated element writes the diagonal the nodal rule's consistent assembly would produce.
-    _, Mnodal = mass_matrix(2; qrcs = Dict{Symbol, Any}(:mass => NodalQuadratureRuleCollection(LagrangeCollection{2}())))
+    _, Mnodal = mass_matrix(
+        2;
+        qrcs = Dict{Symbol, Any}(:mass => NodalQuadratureRuleCollection(LagrangeCollection{2}())),
+    )
     _, C = mass_matrix(2; mass = CollocatedMass())
     @test C isa Diagonal
     @test diag(C) ≈ diag(Mnodal)
     @test maximum(abs, Mnodal - C) < 1.0e-12 * minimum(diag(C))
     @test sum(diag(C)) ≈ 0.75 rtol = 1.0e-12
 
-    @test_throws ErrorException mass_matrix(2; mass = CollocatedMass(),
-        qrcs = Dict{Symbol, Any}(:mass => NodalQuadratureRuleCollection(LagrangeCollection{2}())))
+    @test_throws ErrorException mass_matrix(
+        2;
+        mass = CollocatedMass(),
+        qrcs = Dict{Symbol, Any}(:mass => NodalQuadratureRuleCollection(LagrangeCollection{2}())),
+    )
     # The implicit solvers combine M and K on one pattern, which a `Diagonal` has not.
     @test_throws ErrorException Thunderbolt._assert_combinable_mass(lop)
 end

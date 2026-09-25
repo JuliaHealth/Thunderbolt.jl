@@ -35,7 +35,12 @@ function _emrkc_monodomain_form(;
     )
     return semidiscretize(
         ReactionDiffusionSplit(ep_model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); qrcs, assembly_strategy, mass = LumpedMass()),
+        FiniteElementDiscretization(
+            Dict(:φₘ => LagrangeCollection{1}());
+            qrcs,
+            assembly_strategy,
+            mass = LumpedMass(),
+        ),
         mesh,
     )
 end

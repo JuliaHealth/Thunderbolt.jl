@@ -135,7 +135,12 @@ function setup_assembled_operator(
     dh::AbstractDofHandler;
     kwargs...,
 )
-    return setup_operator(_device_assembly_strategy(strategy, system_matrix_type), integrator, dh; kwargs...)
+    return setup_operator(
+        _device_assembly_strategy(strategy, system_matrix_type),
+        integrator,
+        dh;
+        kwargs...,
+    )
 end
 
 # The two knobs meet here. A device assembly writes the entries of `system_matrix_type` itself, so it

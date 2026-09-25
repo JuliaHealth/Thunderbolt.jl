@@ -61,7 +61,7 @@ end
 
 @inline function _pcg2019_h_gate(φ, p::ParametrizedPCG2019Model)
     @unpack E_h, k_h, τ_h0, δ_h = p
-    e   = exp((φ - E_h) / k_h)
+    e = exp((φ - E_h) / k_h)
     τ_h = (2 * τ_h0 * exp(δ_h * (φ - E_h) / k_h)) / (one(e) + e)
     h∞ = _pcg2019_sigmoid(φ, E_h, k_h, 1)
     return h∞, τ_h
@@ -181,8 +181,8 @@ function gate_coefficients(p::ParametrizedPCG2019Model{T}, φ, x, t) where {T}
     s∞, τ_s   = _pcg2019_s_gate(φ, p)
     xs∞, τ_xs = _pcg2019_xs_gate(φ, p)
     xr∞, τ_xr = _pcg2019_xr_gate(φ, p)
-    λ  = SVector{6,T}(-1/τ_h, -1/τ_m, -1/τ_f, -1/τ_s, -1/τ_xs, -1/τ_xr)
-    y∞ = SVector{6,T}(h∞, m∞, f∞, s∞, xs∞, xr∞)
+    λ         = SVector{6, T}(-1/τ_h, -1/τ_m, -1/τ_f, -1/τ_s, -1/τ_xs, -1/τ_xr)
+    y∞        = SVector{6, T}(h∞, m∞, f∞, s∞, xs∞, xr∞)
     return λ, y∞
 end
 

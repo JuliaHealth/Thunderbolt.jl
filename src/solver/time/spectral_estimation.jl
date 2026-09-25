@@ -95,13 +95,16 @@ end
 _rho_is_sane(ρ, ρ_prev, jump_factor) = isfinite(ρ) && (ρ_prev == 0 || ρ ≤ jump_factor * ρ_prev)
 
 @noinline function _rho_runaway_error(ρ, ρ_prev, jump_factor, describe)
-    cause = isfinite(ρ) ?
+    cause =
+        isfinite(ρ) ?
         "a $(round(ρ / ρ_prev, sigdigits = 3))x jump over the previous estimate $(ρ_prev) " *
         "(threshold $(jump_factor)x)" : "a non-finite value"
-    throw(EMRKCDivergence(
-        "estimate_rho!: the power iteration produced $ρ -- $cause -- even after retrying once " *
-        "from a freshly reseeded iterate.$(describe())",
-    ))
+    throw(
+        EMRKCDivergence(
+            "estimate_rho!: the power iteration produced $ρ -- $cause -- even after retrying once " *
+            "from a freshly reseeded iterate.$(describe())",
+        ),
+    )
 end
 
 # Host-only upper bound on the spectral radius of `Diagonal(invM) * K`: `maxᵢ invM[i] * Σⱼ|K[i,j]|`.

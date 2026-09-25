@@ -8,7 +8,7 @@ import Thunderbolt: sts_stage_count, sts_coefficient_state, sts_stage_coefficien
 function chebyshev1_and_deriv(x, s)
     Tjm2, Tjm1 = 1.0, x
     Tjm2p, Tjm1p = 0.0, 1.0
-    for _ in 2:s
+    for _ = 2:s
         Tj = 2x * Tjm1 - Tjm2
         Tjp = 2Tjm1 + 2x * Tjm1p - Tjm2p
         Tjm2, Tjm1 = Tjm1, Tj
@@ -21,7 +21,7 @@ chebyshev1(x, s) = s == 0 ? 1.0 : s == 1 ? x : chebyshev1_and_deriv(x, s)[1]
 function legendre(x, s)
     s == 0 && return 1.0
     Pjm2, Pjm1 = 1.0, x
-    for n in 2:s
+    for n = 2:s
         Pjm2, Pjm1 = Pjm1, ((2n - 1) * x * Pjm1 - (n - 1) * Pjm2) / n
     end
     return Pjm1
@@ -31,7 +31,7 @@ function gegenbauer32(x, s)
     s == 0 && return 1.0
     α = 1.5
     Cjm2, Cjm1 = 1.0, 2α * x
-    for n in 2:s
+    for n = 2:s
         Cjm2, Cjm1 = Cjm1, (2x * (n + α - 1) * Cjm1 - (n + 2α - 2) * Cjm2) / n
     end
     return Cjm1
@@ -141,14 +141,22 @@ end
 @testset "sts_sweep!: mismatched buffer lengths raise DimensionMismatch" begin
     y0, Ya, Yb, du = [1.0, 2.0], [0.0, 0.0], [0.0, 0.0], [0.0] # du too short
     @test_throws DimensionMismatch sts_sweep!(
-        LinearDecay(-1.0), Ya, Yb, du, y0, 0.0, 0.1, 2, RKC1(0.05),
+        LinearDecay(-1.0),
+        Ya,
+        Yb,
+        du,
+        y0,
+        0.0,
+        0.1,
+        2,
+        RKC1(0.05),
     )
 end
 
 @testset "Internal consistency: c_s == 1" begin
     for fam in families(), s in (1, 2, 3, 5, 10, 20)
         st = sts_coefficient_state(fam, s, Float64)
-        for j in 1:s
+        for j = 1:s
             (_, _, _, c), st = sts_stage_coefficients(fam, st, j)
             j == s && @test c ≈ 1.0 atol = 1.0e-12
         end

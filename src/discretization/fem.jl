@@ -84,7 +84,8 @@ _mass_quadrature(disc::FiniteElementDiscretization, sym::Symbol) =
 # The mass term of the field `sym` with density `ρ`, in the treatment the discretization elects.
 _mass_integrator(disc::FiniteElementDiscretization, ρ, sym::Symbol) =
     _mass_integrator(disc.mass_treatment, disc, ρ, sym)
-_mass_integrator(::ConsistentMass, disc, ρ, sym) = BilinearMassIntegrator(ρ, _mass_quadrature(disc, sym), sym)
+_mass_integrator(::ConsistentMass, disc, ρ, sym) =
+    BilinearMassIntegrator(ρ, _mass_quadrature(disc, sym), sym)
 _mass_integrator(::LumpedMass, disc, ρ, sym) =
     FerriteOperators.RowSumLumped(BilinearMassIntegrator(ρ, _mass_quadrature(disc, sym), sym))
 function _mass_integrator(::CollocatedMass, disc, ρ, sym)

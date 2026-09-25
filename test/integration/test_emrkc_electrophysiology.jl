@@ -24,8 +24,10 @@ const EMRKC_WAVE_TEND = 20.0  # ms, long enough for the front to cross the domai
 
 function emrkc_wave_form(; mass = LumpedMass())
     mesh = generate_mesh(
-        Quadrilateral, (EMRKC_WAVE_N, EMRKC_WAVE_N),
-        Vec{2}((0.0, 0.0)), Vec{2}((EMRKC_WAVE_L, EMRKC_WAVE_L)),
+        Quadrilateral,
+        (EMRKC_WAVE_N, EMRKC_WAVE_N),
+        Vec{2}((0.0, 0.0)),
+        Vec{2}((EMRKC_WAVE_L, EMRKC_WAVE_L)),
     )
     cs = CartesianCoordinateSystem(mesh)
     model = MonodomainModel(
@@ -35,7 +37,8 @@ function emrkc_wave_form(; mass = LumpedMass())
         NoStimulationProtocol(),
         Thunderbolt.PCG2019(),
         cs,
-        :φₘ, :s,
+        :φₘ,
+        :s,
     )
     return semidiscretize(
         ReactionDiffusionSplit(model),
@@ -61,11 +64,13 @@ end
 function emrkc_wave_solve(form, u₀, alg, Δt)
     φₘ = solution_variable(form, :φₘ)
     integ = DiffEqBase.init(
-        OperatorSplittingProblem(form, copy(u₀), (0.0, EMRKC_WAVE_TEND)), alg;
-        dt = Δt, verbose = false,
+        OperatorSplittingProblem(form, copy(u₀), (0.0, EMRKC_WAVE_TEND)),
+        alg;
+        dt = Δt,
+        verbose = false,
     )
     prev = copy(getvariable(integ.u, φₘ))
-    act  = fill(NaN, length(prev))
+    act = fill(NaN, length(prev))
     while integ.t < EMRKC_WAVE_TEND - 1.0e-9
         DiffEqBase.step!(integ)
         cur = getvariable(integ.u, φₘ)
@@ -89,7 +94,7 @@ relgap(a, b) = norm(a .- b) / norm(b)
     # emRKC the lumped one. Same mesh and interpolation, so the dof layout and `u₀` are shared.
     formL = emrkc_wave_form(; mass = ConsistentMass())
     formE = emrkc_wave_form()
-    u₀   = emrkc_wave_u0(formE)
+    u₀ = emrkc_wave_u0(formE)
     baseline = LieTrotterGodunov((BackwardEulerSolver(), ForwardEulerCellSolver()))
     Δt = 0.01
 
@@ -132,8 +137,10 @@ end
     # The forward Euler limit of the lumped diffusion operator, off the algorithm's own estimate with
     # the safety factor removed.
     probe = DiffEqBase.init(
-        OperatorSplittingProblem(form, copy(u₀), (0.0, EMRKC_WAVE_TEND)), EMRKC(rho_safety = 1.0);
-        dt = 1.0e-3, verbose = false,
+        OperatorSplittingProblem(form, copy(u₀), (0.0, EMRKC_WAVE_TEND)),
+        EMRKC(rho_safety = 1.0);
+        dt = 1.0e-3,
+        verbose = false,
     )
     DiffEqBase.step!(probe)
     Δt_explicit = 2 / probe.cache.ρF
@@ -161,10 +168,11 @@ end
     # sweep is what buys the step, not a mild problem.
     control = DiffEqBase.init(
         OperatorSplittingProblem(form, copy(u₀), (0.0, EMRKC_WAVE_TEND)),
-        EMRKC(rho_F_estimate = 1.0e-12); dt = Δt, verbose = false,
+        EMRKC(rho_F_estimate = 1.0e-12);
+        dt = Δt,
+        verbose = false,
     )
     DiffEqBase.solve!(control)
     φ_control = getvariable(control.u, solution_variable(form, :φₘ))
-    @test control.sol.retcode != SciMLBase.ReturnCode.Success ||
-        norm(φ_control) > 10norm(φ_fine)
+    @test control.sol.retcode != SciMLBase.ReturnCode.Success || norm(φ_control) > 10norm(φ_fine)
 end

@@ -122,7 +122,14 @@ end
 # A verbatim copy of `cell_rhs_fast!`/`cell_rhs_slow!` as they read before the shared
 # `_pcg2019_*_gate` helpers were factored out, so the factoring is checked against the original
 # expressions rather than against itself.
-function _reference_cell_rhs_fast!(du, φ, state, x, t, p::Thunderbolt.ParametrizedPCG2019Model{T}) where {T}
+function _reference_cell_rhs_fast!(
+    du,
+    φ,
+    state,
+    x,
+    t,
+    p::Thunderbolt.ParametrizedPCG2019Model{T},
+) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 
     C_m = T(1.0)
@@ -200,9 +207,9 @@ end
 @testset "PCG2019 factoring: bit-identical to the pre-factoring reference" begin
     p = Thunderbolt.PCG2019()
     g = _LCG(0x2545F4914F6CDD1D)
-    for _ in 1:20
+    for _ = 1:20
         φ = 160.0 * _lcg_value!(g) - 100.0
-        state = [_lcg_value!(g) for _ in 1:6]
+        state = [_lcg_value!(g) for _ = 1:6]
         u = vcat(φ, state)
 
         du = zeros(7)
@@ -218,12 +225,12 @@ end
 @testset "Float32 eltype" begin
     p32 = Thunderbolt.ParametrizedPCG2019Model{Float32}()
     φ = 0.0f0
-    x = SVector{7,Float32}(φ, 0.1f0, 0.2f0, 0.3f0, 0.4f0, 0.5f0, 0.6f0) # full row: (φ, gates...)
+    x = SVector{7, Float32}(φ, 0.1f0, 0.2f0, 0.3f0, 0.4f0, 0.5f0, 0.6f0) # full row: (φ, gates...)
     λ, y∞ = gate_coefficients(p32, φ, x, 0.0f0)
-    @test λ isa SVector{6,Float32}
-    @test y∞ isa SVector{6,Float32}
+    @test λ isa SVector{6, Float32}
+    @test y∞ isa SVector{6, Float32}
 
-    gates = SVector{6,Float32}(x[2], x[3], x[4], x[5], x[6], x[7]) # the gate rows of the full row
+    gates = SVector{6, Float32}(x[2], x[3], x[4], x[5], x[6], x[7]) # the gate rows of the full row
     got = exponential_gate_step.(gates, λ, y∞, 0.01f0)
     @test eltype(got) == Float32
 end

@@ -114,7 +114,8 @@ function but one vanishes. The element matrix is diagonal by construction,
 weights exist on hypercubes carrying a tensor-product Lagrange space; any other shape is refused at
 setup. Built by [`FiniteElementDiscretization`](@ref) under [`CollocatedMass`](@ref).
 """
-struct CollocatedMassIntegrator{CoefficientType, IPC <: InterpolationCollection} <: AbstractBilinearIntegrator
+struct CollocatedMassIntegrator{CoefficientType, IPC <: InterpolationCollection} <:
+       AbstractBilinearIntegrator
     ρ::CoefficientType
     ipc::IPC
     sym::Symbol

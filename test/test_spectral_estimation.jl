@@ -39,7 +39,7 @@ random_negdef(rng, ::Type{T}, n) where {T} = (R = randn(rng, T, n, n); -(R' * R)
     # eigenvalue independently of a random draw's eigenvalue gap. The gap-sensitive *default*
     # reltol = 1e-2 is covered separately below, on a matrix with a known healthy gap.
     rng = MersenneTwister(20260901)
-    for n in (5, 20), trial in 1:3
+    for n in (5, 20), trial = 1:3
         A = random_negdef(rng, Float64, n)
         λmax_abs = maximum(abs, eigvals(A))
 
@@ -150,8 +150,8 @@ function assemble_heat_operators(n = 4)
 
     mass      = BilinearMassIntegrator(ConstantCoefficient(1.0), qrc, :u)
     diffusion = BilinearDiffusionIntegrator(ConstantCoefficient(one(Tensor{2, 2})), qrc, :u)
-    Mop = setup_operator(strategy, mass, dh)
-    Kop = setup_operator(strategy, diffusion, dh)
+    Mop       = setup_operator(strategy, mass, dh)
+    Kop       = setup_operator(strategy, diffusion, dh)
     update_operator!(Mop, nothing, ctx)
     update_operator!(Kop, nothing, ctx)
     # The rate form the discretization's lumped mass gives `EMRKC`.
@@ -212,8 +212,13 @@ end
     # No inverse mass beside a fused store: a source has no route and says so.
     @test_throws ErrorException add_source_rate!(zeros(3), RateOperator(A, nothing, 1), ones(3))
 
-    @test rate_sign(BilinearDiffusionIntegrator(
-        ConstantCoefficient(one(Tensor{2, 2})), QuadratureRuleCollection(2), :u)) == 1
+    @test rate_sign(
+        BilinearDiffusionIntegrator(
+            ConstantCoefficient(one(Tensor{2, 2})),
+            QuadratureRuleCollection(2),
+            :u,
+        ),
+    ) == 1
 end
 
 @testset "_should_reestimate policy shapes" begin
