@@ -59,18 +59,20 @@ function setup_operator(
     },
     integrator::AbstractBilinearIntegrator,
     solver::AbstractSolver,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
+    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh; kwargs...)
 end
 
 function setup_operator(
     strategy::AssemblyStrategy{<:FullAssembly, <:Any, <:AbstractGPUDevice},
     integrator::AbstractBilinearIntegrator,
     solver::AbstractSolver,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
+    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh; kwargs...)
 end
 
 """
@@ -88,9 +90,10 @@ function setup_operator(
     strategy::AssemblyStrategy{<:MatrixFreeAction},
     integrator::AbstractBilinearIntegrator,
     solver::AbstractSolver,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    return setup_operator(strategy, integrator, dh)
+    return setup_operator(strategy, integrator, dh; kwargs...)
 end
 
 """
@@ -118,9 +121,10 @@ function setup_assembled_operator(
     strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
     integrator::AbstractBilinearIntegrator,
     system_matrix_type::Type,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    setup_operator(strategy, integrator, dh)
+    setup_operator(strategy, integrator, dh; kwargs...)
 end
 
 @doc (@doc setup_assembled_operator)
@@ -128,9 +132,10 @@ function setup_assembled_operator(
     strategy::AssemblyStrategy{<:FullAssembly, <:Any, <:AbstractGPUDevice},
     integrator::AbstractBilinearIntegrator,
     system_matrix_type::Type,
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
-    return setup_operator(_device_assembly_strategy(strategy, system_matrix_type), integrator, dh)
+    return setup_operator(_device_assembly_strategy(strategy, system_matrix_type), integrator, dh; kwargs...)
 end
 
 # The two knobs meet here. A device assembly writes the entries of `system_matrix_type` itself, so it
@@ -200,6 +205,7 @@ struct MirroredBilinearOperator{OperatorType, MatrixType, BufferType} <: Abstrac
 end
 
 function MirroredBilinearOperator(host_operator, A)
+    _assert_combinable_mass(host_operator)
     nnz_host   = length(nonzeros(host_operator.A))
     nnz_mirror = length(nonzeros(A))
     nnz_host == nnz_mirror || error(
@@ -216,8 +222,24 @@ end
 
 function update_operator!(op::MirroredBilinearOperator, p, ctx = nothing)
     update_operator!(op.host_operator, p, ctx)
+    _mirror_nonzeros!(op)
+    return nothing
+end
+
+function _mirror_nonzeros!(op::MirroredBilinearOperator)
     op.nzbuffer .= nonzeros(op.host_operator.A)
     copyto!(nonzeros(op.A), op.nzbuffer)
+    return nothing
+end
+
+# The affine stages combine `M` and `K` entry by entry on one sparsity pattern, and the mirror copies
+# one; a lumped or collocated mass assembles to a `Diagonal`, which has neither.
+function _assert_combinable_mass(op)
+    FerriteOperators.operator_payload(op) isa Diagonal && error(
+        "This solver combines the mass and stiffness matrices on one sparsity pattern, which a " *
+        "`Diagonal` mass (`LumpedMass()`/`CollocatedMass()`) does not have. Elect " *
+        "`mass = ConsistentMass()` on the discretization, or step with an explicit integrator (`EMRKC`).",
+    )
     return nothing
 end
 
@@ -230,6 +252,44 @@ mul!(out::AbstractVector, op::MirroredBilinearOperator, in::AbstractVector, α, 
 # `MethodError` instead of answering for the mirrored matrix `A`, which is what everything
 # downstream (`mul!`, the stage assembly) actually reads.
 FerriteOperators.operator_payload(op::MirroredBilinearOperator) = op.A
+
+"""
+    MirroredRateFormOperator(host, rhs, minv, scratch)
+
+The rate form `M⁻¹K` assembled on the host and mirrored onto a device: `rhs` is the
+[`MirroredBilinearOperator`](@ref) of the rhs, `minv` the device copy of the diagonal inverse mass.
+Only a diagonal mass (`LumpedMass`, `CollocatedMass`) mirrors; a dense per-cell mass has no mirror
+and such a model assembles on the device instead.
+"""
+struct MirroredRateFormOperator{HostType, RhsType, VecType} <: AbstractBilinearOperator
+    host::HostType
+    rhs::RhsType
+    minv::VecType
+    scratch::VecType
+end
+
+function update_operator!(op::MirroredRateFormOperator, p, ctx = nothing)
+    update_operator!(op.host, p, ctx)
+    _mirror_nonzeros!(op.rhs)
+    copyto!(op.minv, FerriteOperators.rate_form_inverse_mass(op.host).diag)
+    return nothing
+end
+
+mul!(y::AbstractVector, op::MirroredRateFormOperator, x::AbstractVector) =
+    (mul!(y, op.rhs, x); y .*= op.minv; y)
+function mul!(y::AbstractVector, op::MirroredRateFormOperator, x::AbstractVector, α, β)
+    mul!(op.scratch, op.rhs, x)
+    if iszero(β)
+        y .= α .* op.minv .* op.scratch
+    else
+        y .= α .* op.minv .* op.scratch .+ β .* y
+    end
+    return y
+end
+
+FerriteOperators.operator_payload(op::MirroredRateFormOperator) = op.rhs.A
+FerriteOperators.rate_form_rhs(op::MirroredRateFormOperator) = op.rhs
+FerriteOperators.rate_form_inverse_mass(op::MirroredRateFormOperator) = Diagonal(op.minv)
 
 """
     MirroredLinearOperator(host_operator, b)

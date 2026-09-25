@@ -78,6 +78,12 @@ Per step, with `Δt` the outer step, `ρ_S` the slow (reaction) and `ρ_F` the f
 spectral radius: `s` stages of `outer` resolve `Δt ρ_S`, the averaging window is
 `η = 2Δt / ℓ_outer(s)` ([`sts_stability_boundary`](@ref)), and `m` stages of `inner` resolve `η ρ_F`.
 
+The fast force is the rate form `M⁻¹K` of the split's mass and diffusion terms
+(`FerriteOperators.RateFormIntegrator`), so the mass must be invertible cell by cell: on a
+continuous space that is a [`LumpedMass`](@ref) or [`CollocatedMass`](@ref) discretization, on a
+discontinuous space the consistent mass serves. The sign of `K` is the diffusion term's
+[`rate_sign`](@ref).
+
 # Fields
 - `outer`, `inner`: the STS families of the two sweeps ([`RKC1`](@ref) by default).
 - `gates`: `:all`, or a `Tuple` of `gating_symbols` to integrate exponentially. `()` is the
@@ -338,25 +344,26 @@ function OS.init_cache(
     )
 
     # Assembly as the affine backward Euler stage's setup does it, with `spec` standing in for the
-    # solver whose two type knobs `setup_operator` reads.
+    # solver whose two type knobs `setup_operator` reads. There is no `t₀` at this point of the
+    # operator splitting init path, so the stationary parts are assembled at zero; a time dependent
+    # conductivity would need a re-assembly hook the splitting cache has no place for yet. The
+    # *source* is refreshed at the real stage time on every outer stage below.
     spec            = _OperatorSetupSpec(alg.solution_vector_type, alg.system_matrix_type)
     dh              = fheat.dh
     strategy        = get_strategy(fheat)
-    K_operator      = setup_operator(strategy, fheat.bilinear_term, spec, dh)
+    ctx₀            = TimeIntegrationContext(zero(T), zero(T), zero(T))
+    rate_form       = FerriteOperators.RateFormIntegrator(fheat.bilinear_term, fheat.mass_term)
+    rate_operator   = setup_operator(strategy, rate_form, spec, dh; initial_context = ctx₀)
     source_operator = setup_operator(strategy, fheat.source_term, spec, dh)
-
-    # There is no `t₀` at this point of the operator splitting init path, so the stationary parts are
-    # assembled at zero; a time dependent conductivity would need a re-assembly hook the splitting
-    # cache has no place for yet. The *source* is refreshed at the real stage time on every outer
-    # stage below.
-    ctx₀ = TimeIntegrationContext(zero(T), zero(T), zero(T))
     @timeit_debug "initial assembly" begin
-        update_operator!(K_operator, nothing, ctx₀)
+        update_operator!(rate_operator, nothing, ctx₀)
         update_operator!(source_operator, nothing, ctx₀)
     end
-
-    rate_operator =
-        _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, source_operator, u, nV, ctx₀)
+    op = RateOperator(
+        rate_operator,
+        _rate_source_inverse_mass(rate_operator, source_operator, strategy, fheat.mass_term, dh, ctx₀),
+        rate_sign(fheat.bilinear_term),
+    )
 
 
     # Zeroed, not merely allocated: a cell model whose `cell_rhs!` leaves a state untouched would
@@ -382,7 +389,7 @@ function OS.init_cache(
         u,
         uprev,
         fode,
-        rate_operator,
+        op,
         source_operator,
         Ya,
         Yb,
@@ -405,53 +412,26 @@ function OS.init_cache(
     )
 end
 
-"""
-    _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, source_operator, u, nV, ctx₀)
-
-The fast force `f_F` of the semidiscretization, elected by how the assembly strategy carries the
-inverse mass.
-
-The default is [`LumpedMassRateOperator`](@ref): the mass term is assembled and row-sum lumped, and
-`K` keeps Thunderbolt's negated diffusion convention. Where the strategy instead elects
-`BlockRowAssembly(; premultiply_inverse_mass = ...)`, `M⁻¹` is already folded into the diffusion
-store, exactly and per cell, so no mass is assembled here at all and the rate is
-[`FusedInverseMassRateOperator`](@ref)'s negated product.
-
-In that second case `fheat.mass_term` is NOT read: the mass the fusion uses is the integrator handed
-to the storage election, and it is the caller's to keep consistent with the model's. The two spell
-the same mass for the same reason a `FiniteElementDiscretization` may carry a `:mass` quadrature rule
-of its own -- the mass an explicit integrator wants is a discretization choice -- but nothing here
-checks that they agree.
-"""
-function _emrkc_rate_operator(strategy, fheat, spec, dh, K_operator, source_operator, u, nV, ctx₀)
-    # TODO(mass-at-setup): elect off inverse_mass_premultiplied(op) once FO supplies the mass at
-    # setup_operator
-    if _fuses_inverse_mass(strategy)
-        # `add_source_rate!` on the fused store has no `M⁻¹` to scale a load vector by and errors by
-        # name. Refuse the pairing here, where the model is still in front of the caller, rather
-        # than at the first outer stage of the first step.
-        source_operator isa LinearNullOperator || error(
-            "`EMRKC` cannot step a stimulated model under an assembly strategy that fuses the " *
-            "inverse mass into the diffusion store: the source enters the rate as `M⁻¹b`, whose " *
-            "per-cell blocks are formed and dropped at fill time. Write the stimulus as " *
-            "an initial condition, or drop `premultiply_inverse_mass` from the strategy.",
-        )
-        return FusedInverseMassRateOperator(K_operator)
-    end
-    mass_operator = setup_operator(strategy, fheat.mass_term, spec, dh)
-    @timeit_debug "initial assembly" update_operator!(mass_operator, nothing, ctx₀)
-    invM = similar(u, nV)
-    compute_lumped_inverse_mass!(invM, mass_operator, similar(u, nV))
-    return LumpedMassRateOperator(K_operator, invM)
+# What a source is scaled by. Nothing where there is none; the rate form's own `M⁻¹` where it keeps
+# one (the diagonal's reciprocal, or the per-cell inverse operator); and where the block-row store
+# fused `M⁻¹` away, a per-cell inverse operator of its own on the same device.
+_rate_source_inverse_mass(rate_operator, ::LinearNullOperator, strategy, mass, dh, ctx₀) = nothing
+function _rate_source_inverse_mass(rate_operator, source_operator, strategy, mass, dh, ctx₀)
+    minv = FerriteOperators.rate_form_inverse_mass(rate_operator)
+    minv === nothing || return _inverse_mass_apply(minv)
+    return setup_operator(
+        AssemblyStrategy(
+            MatrixFreeAction(; storage = FerriteOperators.ElementAssembly()),
+            strategy.scheduling,
+            strategy.device,
+        ),
+        FerriteOperators.ElementInverse(mass),
+        dh;
+        initial_context = ctx₀,
+    )
 end
-
-# Read off the strategy rather than made a solver option: a caller who asked the assembly for a fused
-# `M⁻¹K` store has already said which rate operator they mean, and a second knob could disagree with
-# it silently.
-_fuses_inverse_mass(strategy::AbstractAssemblyStrategy) = _fuses_inverse_mass(strategy.form)
-_fuses_inverse_mass(::Any) = false
-_fuses_inverse_mass(form::MatrixFreeAction) = _fuses_inverse_mass(form.storage)
-_fuses_inverse_mass(storage::BlockRowAssembly) = storage.premultiply_inverse_mass !== nothing
+_inverse_mass_apply(minv::Diagonal) = minv.diag
+_inverse_mass_apply(minv) = minv
 
 # An empty selection collapses to empty tuples rather than an all-false mask, which is what makes
 # `gates = ()` run a model that implements no `gate_coefficients` at all.
@@ -639,14 +619,16 @@ _emrkc_rho_type(cache::EMRKCCache) = typeof(cache.ρS)
 _emrkc_host_matrix(op) = FerriteOperators.get_matrix(op)
 _emrkc_host_matrix(op::MirroredBilinearOperator) = FerriteOperators.get_matrix(op.host_operator)
 
-# Which rate operators the bound is available for, by dispatch rather than by an `isa` test: a rate
-# whose action is matrix free has no rows to sum.
-_gershgorin_bound(op::LumpedMassRateOperator) =
-    _gershgorin_bound(_emrkc_host_matrix(op.K), op.invM)
-
-@noinline _gershgorin_bound(op::FusedInverseMassRateOperator) = error(
-    "`rho_F_estimate = :gershgorin` reads the rows of an assembled diffusion matrix, and a " *
-    "$(nameof(typeof(op))) has none -- its action is matrix free. Use `:power`, or a number.",
+# The bound needs the assembled diffusion matrix and a diagonal inverse mass, both on the host.
+_gershgorin_bound(r::RateOperator) = _gershgorin_bound(
+    _emrkc_host_matrix(FerriteOperators.rate_form_rhs(r.op)),
+    _host_inverse_mass_diagonal(FerriteOperators.rate_form_inverse_mass(r.op)),
+)
+_host_inverse_mass_diagonal(d::Diagonal) = collect(d.diag)
+@noinline _host_inverse_mass_diagonal(::Any) = error(
+    "`rho_F_estimate = :gershgorin` reads the rows of the assembled rate matrix, which needs a " *
+    "diagonal mass; this rate operator applies its inverse mass per cell or matrix free. Use " *
+    "`:power`, or a number.",
 )
 
 #####################################################################

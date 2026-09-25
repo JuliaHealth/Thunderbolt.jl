@@ -1,5 +1,7 @@
 module CuThunderboltExt
 
+import LinearAlgebra
+
 # CUDA support is limited to what this extension declares:
 #   * the pointwise cell-model solve, whose outer loop becomes a CUDA kernel launch;
 #   * `CuVector`/`CuSparseMatrix` system allocation for the solver interface;
@@ -116,11 +118,38 @@ function Thunderbolt.setup_assembled_operator(
     strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
     integrator::AbstractBilinearIntegrator,
     system_matrix_type::Type{<:Union{CUSPARSE.CuSparseMatrixCSC, CUSPARSE.CuSparseMatrixCSR}},
-    dh::AbstractDofHandler,
+    dh::AbstractDofHandler;
+    kwargs...,
 )
     return MirroredBilinearOperator(
-        Thunderbolt.setup_operator(strategy, integrator, dh),
+        Thunderbolt.setup_operator(strategy, integrator, dh; kwargs...),
         Thunderbolt.create_system_matrix(system_matrix_type, dh),
+    )
+end
+
+# A host-assembled rate form: the rhs mirrors as any bilinear operator, the diagonal inverse mass
+# rides a device vector. A dense per-cell mass has no mirror.
+function Thunderbolt.setup_assembled_operator(
+    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
+    integrator::FerriteOperators.BilinearRateFormIntegrator,
+    system_matrix_type::Type{<:Union{CUSPARSE.CuSparseMatrixCSC, CUSPARSE.CuSparseMatrixCSR}},
+    dh::AbstractDofHandler;
+    kwargs...,
+)
+    host = Thunderbolt.setup_operator(strategy, integrator, dh; kwargs...)
+    minv = FerriteOperators.rate_form_inverse_mass(host)
+    minv isa LinearAlgebra.Diagonal || error(
+        "A host-assembled rate form mirrors onto a device only with a diagonal mass " *
+        "(`LumpedMass()`/`CollocatedMass()`); a dense per-cell mass has no mirror. Assemble on the " *
+        "device instead.",
+    )
+    rhs = MirroredBilinearOperator(
+        FerriteOperators.rate_form_rhs(host),
+        Thunderbolt.create_system_matrix(system_matrix_type, dh),
+    )
+    T = eltype(rhs.A)
+    return Thunderbolt.MirroredRateFormOperator(
+        host, rhs, CuVector{T}(minv.diag), CuVector{T}(undef, length(minv.diag)),
     )
 end
 

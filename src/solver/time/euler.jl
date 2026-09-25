@@ -179,6 +179,7 @@ function setup_solver_cache(
 
     # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(get_strategy(f), f.mass_term, solver, dh)
+    _assert_combinable_mass(mass_operator)
 
     # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
     bilinear_operator = setup_operator(get_strategy(f), f.bilinear_term, solver, dh)

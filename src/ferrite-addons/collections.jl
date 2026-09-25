@@ -6,55 +6,6 @@ function FerriteOperators.getquadraturerule(
 end
 
 """
-    element_precision(qr) -> Type
-
-The scalar type an element built on `qr` evaluates in — the precision the
-integrator elected through its quadrature collection, read off the rule that
-collection produced. `CellValues(qr, ip, ip_geo)` is `Float64` whatever the rule
-carries, so every cache built here spells `CellValues(element_precision(qr), qr,
-ip, ip_geo)`.
-
-Read off the RULE rather than the collection so `src/` keeps loading against
-FerriteOperators versions whose collections are `Float64` only.
-"""
-# TODO(FO floor >= 0.5): once the FerriteOperators floor carries `element_value_type`
-# unconditionally, collapse this whole precision-plumbing seam:
-#   (1) delete `element_precision`/`element_matrix_buffer`/`element_vector_buffer` (collections.jl:8-39);
-#   (2) delete the nine `allocate_element_matrix`/`allocate_element_unknown_vector`/
-#       `allocate_element_residual_vector` overrides (mass.jl:85-90, diffusion.jl:87-92,
-#       analytical_coefficient.jl:67-72) — FO's own defaults already read `element_value_type`;
-#   (3) add three `FerriteOperators.element_value_type` methods instead (`BilinearMassElementCache`
-#       and `BilinearDiffusionElementCache` via `.cellvalues`, `AnalyticalCoefficientElementCache`
-#       via `.cv`);
-#   (4) `element_precision` → `element_value_type` at mass.jl:100, diffusion.jl:100,
-#       electrophysiology.jl:281;
-#   (5) bump the FerriteOperators compat bound in Project.toml.
-# Padding is NOT part of that collapse. FO's `allocate_element_*` contract (element_interface.jl:56-57)
-# is that a declaration states the FIELD-space size and the ENGINE pads it at the call sites where a
-# `global_dofs` declaration asks for the augmented system -- so the overrides above are already
-# correct as written, and an override that padded itself would be padded twice.
-element_precision(qr::QuadratureRule) = eltype(Ferrite.getweights(qr))
-element_precision(cv::Ferrite.AbstractValues) = eltype(Ferrite.shape_value_type(cv))
-
-"""
-    element_matrix_buffer(cv, sdh)
-    element_vector_buffer(cv, sdh)
-
-The element-local buffers of a cache evaluating through `cv`, in that values
-object's own precision — `Float32` values must not accumulate into `Float64`
-buffers.
-
-Spelled on FerriteOperators' `allocate_element_*` hooks rather than on its
-element precision trait, which `src/` cannot name while it also loads against
-FerriteOperators 0.4; against that version these return exactly the default they
-replace.
-"""
-element_matrix_buffer(cv, sdh) =
-    zeros(element_precision(cv), ndofs_per_cell(sdh), ndofs_per_cell(sdh))
-@doc (@doc element_matrix_buffer) element_vector_buffer(cv, sdh) =
-    zeros(element_precision(cv), ndofs_per_cell(sdh))
-
-"""
     InterpolationCollection
 
 A collection of compatible interpolations over some (possilby different) cells.

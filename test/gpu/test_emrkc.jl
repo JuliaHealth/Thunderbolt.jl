@@ -35,7 +35,7 @@ function _emrkc_monodomain_form(;
     )
     return semidiscretize(
         ReactionDiffusionSplit(ep_model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); qrcs, assembly_strategy),
+        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); qrcs, assembly_strategy, mass = LumpedMass()),
         mesh,
     )
 end
@@ -84,14 +84,15 @@ end
     # source. The payload checks are what say the source really lives on the device.
     @test cpu.cache isa Thunderbolt.EMRKCCache
     @test cpu.cache.source_op isa Thunderbolt.LinearFerriteOperator
-    @test gpu.cache.op.K isa Thunderbolt.MirroredBilinearOperator
-    @test gpu.cache.op.invM isa CuVector{Float32}
+    @test gpu.cache.op isa Thunderbolt.RateOperator
+    @test gpu.cache.op.op isa Thunderbolt.MirroredRateFormOperator
+    @test gpu.cache.op.minv isa CuVector{Float32}
     @test gpu.cache.source_op isa Thunderbolt.MirroredLinearOperator
     @test FerriteOperators.operator_payload(gpu.cache.source_op) isa CuVector{Float32}
     let c = gpu_assembled.cache
-        @test c.op.K isa Thunderbolt.BilinearFerriteOperator
-        @test c.op.K.A isa CuCSC
-        @test c.op.invM isa CuVector{Float32}
+        @test c.op.op isa FerriteOperators.RateFormFerriteOperator
+        @test FerriteOperators.get_matrix(FerriteOperators.rate_form_rhs(c.op.op)) isa CuCSC
+        @test c.op.minv isa CuVector{Float32}
         @test FerriteOperators.operator_payload(c.source_op) isa CuVector{Float32}
     end
 

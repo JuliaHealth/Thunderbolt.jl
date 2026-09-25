@@ -236,8 +236,7 @@ end
 An S1 front written as an initial condition: the proximal `0.1 LX` raised above threshold, the rest at
 PCG2019's resting default. Same shape, and for the same reason, as the sheet and LV protocols of
 `benchmark-emrkc.jl` — there is no applied-current amplitude to tune against excitability, and no
-source operator is needed, which matters here because the fused DG rate operator has no route for
-one (see `FusedInverseMassRateOperator`).
+source operator is needed.
 """
 function s1_initial_condition(form, ::Type{T}) where {T}
     u₀ = create_initial_condition(form, T)
@@ -252,24 +251,20 @@ end
 ####################################
 
 """
-A continuous-Lagrange arm. `gll = true` swaps the MASS quadrature for the collocated nodal rule —
-the Gauss-Lobatto points a tensor-product Lagrange space already has its dofs on — which makes the
-assembled mass diagonal, so emRKC's row-sum lumping reproduces it exactly and the arm is a spectral
-element method rather than a lumped one. The STIFFNESS keeps the standard Gauss rule either way.
+A continuous-Lagrange arm: a row-sum lumped mass, or with `gll = true` the collocated
+(spectral-element) mass over the Gauss-Lobatto nodes a tensor-product Lagrange space already has its
+dofs on. The STIFFNESS keeps the standard Gauss rule either way.
 """
-cg_form(::Type{T}, mesh, order; gll = false) where {T} = semidiscretize(
-    ReactionDiffusionSplit(monodomain(T, mesh)),
-    FiniteElementDiscretization(
-        Dict(:φₘ => LagrangeCollection{order}());
-        qrcs = gll ?
-            Dict{Symbol, Any}(
-                :φₘ   => QuadratureRuleCollection(T, order + 1),
-                :mass => NodalQuadratureRuleCollection(LagrangeCollection{order}()),
-            ) :
-            Dict{Symbol, Any}(:φₘ => QuadratureRuleCollection(T, order + 1)),
-    ),
-    mesh,
-)
+cg_form(::Type{T}, mesh, order; gll = false, mass = gll ? CollocatedMass() : LumpedMass()) where {T} =
+    semidiscretize(
+        ReactionDiffusionSplit(monodomain(T, mesh)),
+        FiniteElementDiscretization(
+            Dict(:φₘ => LagrangeCollection{order}());
+            qrcs = Dict{Symbol, Any}(:φₘ => QuadratureRuleCollection(T, order + 1)),
+            mass,
+        ),
+        mesh,
+    )
 
 """
 A discontinuous-Lagrange arm: Thunderbolt's own monodomain semidiscretization over a
@@ -277,12 +272,11 @@ A discontinuous-Lagrange arm: Thunderbolt's own monodomain semidiscretization ov
 coordinate evaluation being dof-count driven rather than node driven — with the diffusion term
 replaced by SIPG and the assembly strategy electing the fused `M⁻¹K` block-row store.
 
-Two spellings here are not free choices. The FACET quadrature rule stays `Float64` whatever `T` is:
-Ferrite 1.7 defines the here→there reference point mapping every `InterfaceValues` reinit performs
-for `Vec{dim, Float64}` only, so a `Float32` facet rule has no method at all; the element's value
-type and the whole action still follow `T`. And the mass the fusion inverts is
-`SimpleBilinearMassIntegrator`, not Thunderbolt's own: the fill queries it with no time context, and
-`BilinearMassIntegrator` reads one.
+The FACET quadrature rule stays `Float64` whatever `T` is: Ferrite 1.7 defines the here→there
+reference point mapping every `InterfaceValues` reinit performs for `Vec{dim, Float64}` only, so a
+`Float32` facet rule has no method at all; the element's value type and the whole action still
+follow `T`. The mass `EMRKC` fuses into the store is the model's own consistent one, block diagonal
+by cell over the discontinuous space.
 """
 function dg_form(::Type{T}, mesh, order, device; η = SIPG_ETA) where {T}
     strategy = dg_strategy(T, order, device)
@@ -298,16 +292,13 @@ function dg_form(::Type{T}, mesh, order, device; η = SIPG_ETA) where {T}
     return _swap_in_sipg(f, T, order, strategy, η)
 end
 
-dg_mass(::Type{T}, order) where {T} =
-    FOE.SimpleBilinearMassIntegrator(1.0, QuadratureRuleCollection(T, order + 1), :φₘ)
-
 dg_strategy(::Type{T}, order, device) where {T} = AssemblyStrategy(
-    MatrixFreeAction(;
-        element_mapping = dg_element_mapping(device),
-        storage = BlockRowAssembly(; premultiply_inverse_mass = dg_mass(T, order)),
-    ),
+    MatrixFreeAction(; element_mapping = dg_element_mapping(device), storage = BlockRowAssembly()),
     ColoredScheduling(), device,
 )
+
+# SIPG assembles the POSITIVE stiffness convention, the opposite of Thunderbolt's diffusion term.
+Thunderbolt.rate_sign(::FOE.SIPGDiffusionIntegrator) = -1
 
 # `LanesPerElement` on a device, `WorkerPerElement` on the host: FerriteOperators' own
 # `benchmarks/dg_action.jl` measures the lane mapping as the faster of the two on CUDA (1.26x
@@ -555,7 +546,7 @@ function validate()
         minimum(d) > 0 || error("the GLL mass has a non-positive diagonal entry")
         isapprox(sum(d), vol; rtol = 1.0e-12) || error("the GLL mass does not integrate the volume")
 
-        Mg = let g = cg_form(Float64, mesh, 2), hg = g.functions[1]
+        Mg = let g = cg_form(Float64, mesh, 2; mass = ConsistentMass()), hg = g.functions[1]
             op = setup_operator(get_strategy(hg), hg.mass_term, hg.dh)
             update_operator!(op, nothing, Thunderbolt.TimeIntegrationContext(0.0, 0.0, 0.0))
             Matrix(FerriteOperators.get_matrix(op))
@@ -618,7 +609,7 @@ function reference_solution()
     end
     alg = reference_alg(Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64})
     solve_ref(h, Δt) = begin
-        f = cg_form(Float64, slab(h), 2)
+        f = cg_form(Float64, slab(h), 2; mass = ConsistentMass())
         t0 = time_ns()
         snaps, arrival = transit(f, s1_initial_condition(f, Float64), alg, Δt,
                                  CenterlineSampler(f, h))

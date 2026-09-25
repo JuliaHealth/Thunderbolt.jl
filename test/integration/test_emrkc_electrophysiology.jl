@@ -22,7 +22,7 @@ const EMRKC_WAVE_L    = 10.0
 const EMRKC_WAVE_N    = 48
 const EMRKC_WAVE_TEND = 20.0  # ms, long enough for the front to cross the domain
 
-function emrkc_wave_form()
+function emrkc_wave_form(; mass = LumpedMass())
     mesh = generate_mesh(
         Quadrilateral, (EMRKC_WAVE_N, EMRKC_WAVE_N),
         Vec{2}((0.0, 0.0)), Vec{2}((EMRKC_WAVE_L, EMRKC_WAVE_L)),
@@ -39,7 +39,7 @@ function emrkc_wave_form()
     )
     return semidiscretize(
         ReactionDiffusionSplit(model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); mass),
         mesh,
     )
 end
@@ -85,15 +85,18 @@ end
 relgap(a, b) = norm(a .- b) / norm(b)
 
 @testset "emRKC wave propagation against the operator splitting baseline" begin
-    form = emrkc_wave_form()
-    u₀   = emrkc_wave_u0(form)
+    # The mass treatment is the discretization's: the implicit baseline takes the consistent mass,
+    # emRKC the lumped one. Same mesh and interpolation, so the dof layout and `u₀` are shared.
+    formL = emrkc_wave_form(; mass = ConsistentMass())
+    formE = emrkc_wave_form()
+    u₀   = emrkc_wave_u0(formE)
     baseline = LieTrotterGodunov((BackwardEulerSolver(), ForwardEulerCellSolver()))
     Δt = 0.01
 
-    actL, φL, integL = emrkc_wave_solve(form, u₀, baseline, Δt)
-    actE, φE, integE = emrkc_wave_solve(form, u₀, EMRKC(), Δt)
-    _, φL2, _ = emrkc_wave_solve(form, u₀, baseline, Δt / 2)
-    _, φE2, _ = emrkc_wave_solve(form, u₀, EMRKC(), Δt / 2)
+    actL, φL, integL = emrkc_wave_solve(formL, u₀, baseline, Δt)
+    actE, φE, integE = emrkc_wave_solve(formE, u₀, EMRKC(), Δt)
+    _, φL2, _ = emrkc_wave_solve(formL, u₀, baseline, Δt / 2)
+    _, φE2, _ = emrkc_wave_solve(formE, u₀, EMRKC(), Δt / 2)
 
     @test integL.sol.retcode == SciMLBase.ReturnCode.Success
     @test integE.sol.retcode == SciMLBase.ReturnCode.Success

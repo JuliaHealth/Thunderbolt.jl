@@ -47,7 +47,7 @@ function emrkc_monodomain(ion; n, κ, stimulate = true)
     )
     return semidiscretize(
         ReactionDiffusionSplit(model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); mass = LumpedMass()),
         mesh,
     )
 end

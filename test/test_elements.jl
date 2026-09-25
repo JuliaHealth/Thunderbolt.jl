@@ -451,3 +451,35 @@ end
         @test all(isnan, Ferrite.getweights(qr))
     end
 end
+
+@testset "Mass treatments of the discretization" begin
+    using LinearAlgebra: Diagonal, diag
+    mesh  = generate_mesh(Quadrilateral, (3, 2), Vec{2}((0.0, 0.0)), Vec{2}((1.5, 0.5)))
+    model = TransientDiffusionModel(ConstantCoefficient(one(Tensor{2, 2})), NoStimulationProtocol(), :u)
+    ctx   = TimeIntegrationContext(0.0, 0.0, 0.0)
+    function mass_matrix(order; kwargs...)
+        f  = semidiscretize(model, FiniteElementDiscretization(Dict(:u => LagrangeCollection{order}()); kwargs...), mesh)
+        op = FerriteOperators.setup_operator(
+            FerriteOperators.AssemblyStrategy(FerriteOperators.SequentialCPUDevice()), f.mass_term, f.dh)
+        FerriteOperators.update_operator!(op, nothing, ctx)
+        return op, FerriteOperators.get_matrix(op)
+    end
+
+    _, M  = mass_matrix(2)
+    lop, D = mass_matrix(2; mass = LumpedMass())
+    @test D isa Diagonal
+    @test diag(D) ≈ vec(sum(M, dims = 2))
+
+    # The collocated element writes the diagonal the nodal rule's consistent assembly would produce.
+    _, Mnodal = mass_matrix(2; qrcs = Dict{Symbol, Any}(:mass => NodalQuadratureRuleCollection(LagrangeCollection{2}())))
+    _, C = mass_matrix(2; mass = CollocatedMass())
+    @test C isa Diagonal
+    @test diag(C) ≈ diag(Mnodal)
+    @test maximum(abs, Mnodal - C) < 1.0e-12 * minimum(diag(C))
+    @test sum(diag(C)) ≈ 0.75 rtol = 1.0e-12
+
+    @test_throws ErrorException mass_matrix(2; mass = CollocatedMass(),
+        qrcs = Dict{Symbol, Any}(:mass => NodalQuadratureRuleCollection(LagrangeCollection{2}())))
+    # The implicit solvers combine M and K on one pattern, which a `Diagonal` has not.
+    @test_throws ErrorException Thunderbolt._assert_combinable_mass(lop)
+end

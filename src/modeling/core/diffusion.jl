@@ -84,12 +84,8 @@ function FerriteOperators.assemble_cell!(
     end
 end
 
-FerriteOperators.allocate_element_matrix(c::BilinearDiffusionElementCache, sdh) =
-    element_matrix_buffer(c.cellvalues, sdh)
-FerriteOperators.allocate_element_unknown_vector(c::BilinearDiffusionElementCache, sdh) =
-    element_vector_buffer(c.cellvalues, sdh)
-FerriteOperators.allocate_element_residual_vector(c::BilinearDiffusionElementCache, sdh) =
-    element_vector_buffer(c.cellvalues, sdh)
+FerriteOperators.element_value_type(c::BilinearDiffusionElementCache) =
+    FerriteOperators.element_value_type(c.cellvalues)
 
 function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::SubDofHandler)
     qr     = getquadraturerule(element_model.qrc, sdh)
@@ -97,7 +93,7 @@ function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::Su
     ip_geo = geometric_subdomain_interpolation(sdh)
     return BilinearDiffusionElementCache(
         setup_coefficient_cache(element_model.D, qr, sdh),
-        CellValues(element_precision(qr), qr, ip, ip_geo),
+        CellValues(FerriteOperators.element_value_type(qr), qr, ip, ip_geo),
     )
 end
 

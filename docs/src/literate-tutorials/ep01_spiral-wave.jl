@@ -142,8 +142,9 @@ timestepper = LieTrotterGodunov((heat_timestepper, cell_timestepper));
 # !!! tip "An explicit stabilized alternative"
 #     `timestepper = EMRKC()` replaces this whole block -- both sub-timesteppers included -- with a
 #     single explicit, stabilized sweep over the same split. It takes no linear solve and hence no
-#     preconditioner, which is also what makes it cheap on a GPU. It costs a row-sum lumped mass
-#     matrix, so it does not solve quite the same semidiscretization as the consistent-mass solver
+#     preconditioner, which is also what makes it cheap on a GPU. It needs a mass that is invertible
+#     cell by cell, `FiniteElementDiscretization(...; mass = LumpedMass())` on this continuous
+#     space, so it does not solve quite the same semidiscretization as the consistent-mass solver
 #     above, and a fixed step size. See its docstring for the full list of limitations.
 
 # The remaining code is very similar to how we use SciML solvers.

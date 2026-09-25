@@ -250,7 +250,9 @@ const PCG2019_CONFIG = ModelConfig(
 )
 const MODEL_CONFIGS = String[strip(m) for m in split(get(ENV, "EMRKC_MODELS", "FHN,PCG2019,LV"), ",")]
 
-function ep01_form(::Type{T}, cfg::ModelConfig) where {T}
+# `mass` is the discretization's treatment: the emRKC arms take the lumped form, the implicit
+# splitting arms the consistent one, on the same mesh and interpolation (shared dof layout and u₀).
+function ep01_form(::Type{T}, cfg::ModelConfig; mass = LumpedMass()) where {T}
     mesh = generate_mesh(Quadrilateral, (N, N), Vec{2}((0.0, 0.0)), Vec{2}((cfg.L, cfg.L)))
     model = MonodomainModel(
         ConstantCoefficient(T(cfg.Cₘ)),
@@ -268,6 +270,7 @@ function ep01_form(::Type{T}, cfg::ModelConfig) where {T}
         FiniteElementDiscretization(
             Dict(:φₘ => LagrangeCollection{1}());
             qrcs = Dict(:φₘ => QuadratureRuleCollection(T, 2)),
+            mass,
         ),
         mesh,
     )
@@ -564,7 +567,7 @@ end
 other call site in the repository spells the other way round. They only ever enter as the product
 `Cₘχ`, so the disagreement is invisible until they differ -- as they do here. Struct order it is.
 """
-function lv_form(::Type{T}, mesh, microstructure; κ = nothing) where {T}
+function lv_form(::Type{T}, mesh, microstructure; κ = nothing, mass = LumpedMass()) where {T}
     # σ follows `T`; the microstructure's f/s/n fields do not -- it is built once in Float64 and
     # SHARED across every arm, so one Float64 factor per quadrature point promotes the diffusion
     # tensor's own assembly back to Float64 even at `T = Float32`. Mass, reaction and σ's own scalars
@@ -583,6 +586,7 @@ function lv_form(::Type{T}, mesh, microstructure; κ = nothing) where {T}
         FiniteElementDiscretization(
             Dict(:φₘ => LagrangeCollection{1}());
             qrcs = Dict(:φₘ => QuadratureRuleCollection(T, 2)),
+            mass,
         ),
         mesh,
     )
@@ -640,6 +644,8 @@ function lv_certify_step_sizes(cfg::LVConfig)
     cform32 = lv_form(Float32, cmesh, cms)
     cu32    = lv_u0(cform32, Float32)
     φc64, φc32 = solution_variable(cform64, :φₘ), solution_variable(cform32, :φₘ)
+    cform64c = lv_form(Float64, cmesh, cms; mass = ConsistentMass())
+    cform32c = lv_form(Float32, cmesh, cms; mass = ConsistentMass())
 
     # Orthotropy is live, not merely configured: a trace-matched isotropic tensor has to produce a
     # different solution, where a microstructure that never reached the assembly agrees to round-off.
@@ -678,9 +684,9 @@ function lv_certify_step_sizes(cfg::LVConfig)
             LV_TEND, 100frac, lo, hi)
     φ_ref = φ = nothing
 
-    lv_certify_splitting(cform64, cu64, cform32, cu32, φc64, φc32, cfg.Δt_split)
+    lv_certify_splitting(cform64c, cu64, cform32c, cu32, φc64, φc32, cfg.Δt_split)
 
-    cmesh = cms = cform64 = cform32 = cu64 = cu32 = nothing
+    cmesh = cms = cform64 = cform32 = cform64c = cform32c = cu64 = cu32 = nothing
     GC.gc()
     @printf("  host RSS after releasing the coarse mesh: %.2f GiB\n", host_rss_gib())
     return nothing
@@ -943,7 +949,8 @@ function lv_time_arms(cfg::LVConfig)
     t0 = time()
     mesh, ms = lv_geometry(cfg.base)
     ncells, nnodes = Ferrite.getncells(mesh.grid), Ferrite.getnnodes(mesh.grid)
-    form = lv_form(Float32, mesh, ms)
+    form  = lv_form(Float32, mesh, ms)
+    formc = lv_form(Float32, mesh, ms; mass = ConsistentMass())
     u32  = lv_u0(form, Float32)
     φₘ32 = solution_variable(form, :φₘ)
     @printf("  %d hexahedra, %d nodes, %d states, setup %.0f s\n",
@@ -956,7 +963,7 @@ function lv_time_arms(cfg::LVConfig)
     ugpu = CuVector(u32)
 
     println("\nCG iterations per step, host, Δt = ", cfg.Δt_split, " ms:")
-    plain = build(form, u32,
+    plain = build(formc, u32,
                   splitting(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32}; jacobi = false),
                   Float32(cfg.Δt_split), 1.0f5)
     # Past the assembly and the zero initial guess, but not `prewarm!`: this probe counts iterations
@@ -975,16 +982,16 @@ function lv_time_arms(cfg::LVConfig)
     ahe, φ_host_emrkc = run_arm("host emRKC", "emRKC", form, u32, cpu_emrkc, Float32(cfg.Δt_emrkc),
                                 φₘ32, nothing, false, false; steps = LV_STEPS)
     push!(arms, ahe)
-    ahs, φ_host_split = run_arm("host splitting", "splitting", form, u32, cpu_split, Float32(cfg.Δt_split),
+    ahs, φ_host_split = run_arm("host splitting", "splitting", formc, u32, cpu_split, Float32(cfg.Δt_split),
                                 φₘ32, nothing, false, true; steps = LV_STEPS)
     push!(arms, ahs)
     @printf("\nhost peak RSS %.2f GiB of the 8 GiB cap (%.0f%% headroom)\n",
             host_rss_gib(), 100(1 - host_rss_gib() / 8))
-    for (label, method, alg, Δt, φ_ref, has_solve) in (
-        ("device emRKC", "emRKC", gpu_emrkc, Float32(cfg.Δt_emrkc), φ_host_emrkc, false),
-        ("device splitting", "splitting", gpu_split, Float32(cfg.Δt_split), φ_host_split, true),
+    for (label, method, f, alg, Δt, φ_ref, has_solve) in (
+        ("device emRKC", "emRKC", form, gpu_emrkc, Float32(cfg.Δt_emrkc), φ_host_emrkc, false),
+        ("device splitting", "splitting", formc, gpu_split, Float32(cfg.Δt_split), φ_host_split, true),
     )
-        arm, _ = run_arm(label, method, form, ugpu, alg, Δt, φₘ32, φ_ref, true, has_solve; steps = LV_STEPS)
+        arm, _ = run_arm(label, method, f, ugpu, alg, Δt, φₘ32, φ_ref, true, has_solve; steps = LV_STEPS)
         push!(arms, arm)
         @printf("%-18s device memory in use %.2f GiB of %.2f GiB (%.0f%% headroom)\n",
                 label, gpu_used_gib(), CUDA.total_memory() / 1024^3,
@@ -1006,9 +1013,10 @@ function run_model(cfg::ModelConfig)
     println("# ", cfg.name, "  (", N, " x ", N, ", L = ", cfg.L, " mm, device Float32)")
     println("#"^118)
 
-    form64 = ep01_form(Float64, cfg)
-    u64    = ep01_u0(form64, Float64, cfg)
-    φₘ64   = solution_variable(form64, :φₘ)
+    form64  = ep01_form(Float64, cfg)
+    form64c = ep01_form(Float64, cfg; mass = ConsistentMass())
+    u64     = ep01_u0(form64, Float64, cfg)
+    φₘ64    = solution_variable(form64, :φₘ)
 
     println(cfg.name, ": ", Thunderbolt.solution_size(form64), " states, t ∈ [0, ", TEND, "] ms")
     @printf("reference Δt = %.4g ms, accuracy band = %.3g\n", DTREF, BAND)
@@ -1022,19 +1030,20 @@ function run_model(cfg::ModelConfig)
         Vector{Float64}, ThreadedSparseMatrixCSR{Float64, Int64}; atol = 1.0e-12, rtol = 1.0e-10,
     )
     φ_ref_emrkc, err_emrkc = reference(form64, u64, cpu64_emrkc, φₘ64)
-    φ_ref_split, err_split = reference(form64, u64, cpu64_split, φₘ64)
+    φ_ref_split, err_split = reference(form64c, u64, cpu64_split, φₘ64)
     @printf("  emRKC reference error ≈ %.3g ; splitting reference error ≈ %.3g\n", err_emrkc, err_split)
     @printf("  the two references differ by %.4g -- the mass lumping, not a step size\n",
             relerr(φ_ref_emrkc, φ_ref_split))
 
     println("\nstep size selection (Float32, host):")
-    form32 = ep01_form(Float32, cfg)
-    u32    = ep01_u0(form32, Float32, cfg)
-    φₘ32   = solution_variable(form32, :φₘ)
+    form32  = ep01_form(Float32, cfg)
+    form32c = ep01_form(Float32, cfg; mass = ConsistentMass())
+    u32     = ep01_u0(form32, Float32, cfg)
+    φₘ32    = solution_variable(form32, :φₘ)
     cpu32_emrkc = emrkc(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
     cpu32_split = splitting(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
     Δt_emrkc, _ = select_dt(form32, u32, cpu32_emrkc, φₘ32, φ_ref_emrkc, "emRKC")
-    Δt_split, _ = select_dt(form32, u32, cpu32_split, φₘ32, φ_ref_split, "splitting")
+    Δt_split, _ = select_dt(form32c, u32, cpu32_split, φₘ32, φ_ref_split, "splitting")
 
     DT = Float32
     form_dev, u_dev, φₘ_dev = form32, u32, φₘ32
@@ -1045,7 +1054,7 @@ function run_model(cfg::ModelConfig)
     # What the preconditioner is worth: the same splitting arm at the same step size with `precs` left
     # at its default identity.
     println("\nCG iterations per step, host, Δt = ", Δt_split, " ms:")
-    plain = build(form32, u32, splitting(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32}; jacobi = false),
+    plain = build(form32c, u32, splitting(Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32}; jacobi = false),
                   Float32(Δt_split), 1.0f5)
     # Past the assembly and the zero initial guess, but not `prewarm!`: this probe counts iterations
     # rather than timing them, and a wall-clock warmup's thousands of steps drift the Float32 time far
@@ -1060,9 +1069,9 @@ function run_model(cfg::ModelConfig)
     arms = Arm[]
     for (label, method, form, u0, alg, Δt, φₘ, φ_ref, dev, has_solve) in (
         ("host emRKC", "emRKC", form32, u32, cpu32_emrkc, Float32(Δt_emrkc), φₘ32, φ_ref_emrkc, false, false),
-        ("host splitting", "splitting", form32, u32, cpu32_split, Float32(Δt_split), φₘ32, φ_ref_split, false, true),
+        ("host splitting", "splitting", form32c, u32, cpu32_split, Float32(Δt_split), φₘ32, φ_ref_split, false, true),
         ("device emRKC", "emRKC", form_dev, ugpu, gpu_emrkc, DT(Δt_emrkc), φₘ_dev, φ_ref_emrkc, true, false),
-        ("device splitting", "splitting", form_dev, ugpu, gpu_split, DT(Δt_split), φₘ_dev, φ_ref_split, true, true),
+        ("device splitting", "splitting", form32c, ugpu, gpu_split, DT(Δt_split), φₘ_dev, φ_ref_split, true, true),
     )
         arm, _ = run_arm(label, method, form, u0, alg, Δt, φₘ, φ_ref, dev, has_solve)
         push!(arms, arm)

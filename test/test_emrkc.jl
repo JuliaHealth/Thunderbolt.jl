@@ -60,7 +60,7 @@ function emrkc_problem(;
     )
     odeform = semidiscretize(
         ReactionDiffusionSplit(model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); mass = LumpedMass()),
         mesh,
     )
     return OperatorSplittingProblem(odeform, emrkc_initial_state(odeform, ion), tspan), odeform
@@ -147,8 +147,8 @@ function RefContext(integrator, ion, gates)
     gsyms = gating_symbols(ion)
     return RefContext(
         ion,
-        FerriteOperators.get_matrix(cache.op.K),
-        collect(cache.op.invM),
+        FerriteOperators.get_matrix(FerriteOperators.rate_form_rhs(cache.op.op)),
+        collect(cache.op.minv),
         cache.source_op,
         integrator.f.solution_indices[1],
         length(integrator.f.solution_indices[1]),
@@ -388,8 +388,8 @@ end
     DiffEqBase.step!(integ)
 
     # ρ_F is the spectral radius of the assembled lumped rate operator Mₗ⁻¹K ...
-    invM = collect(integ.cache.op.invM)
-    K = Matrix(FerriteOperators.get_matrix(integ.cache.op.K))
+    invM = collect(integ.cache.op.minv)
+    K = Matrix(FerriteOperators.get_matrix(FerriteOperators.rate_form_rhs(integ.cache.op.op)))
     ρF_exact = maximum(abs, eigvals(Diagonal(invM) * K))
     @test integ.cache.ρF ≈ ρF_exact rtol = 0.05
 

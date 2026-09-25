@@ -11,10 +11,9 @@ import Thunderbolt:
     EMRKCDivergence,
     _gershgorin_bound,
     _should_reestimate,
-    LumpedMassRateOperator,
+    RateOperator,
     mul_rate!,
     add_source_rate!,
-    compute_lumped_inverse_mass!,
     BilinearMassIntegrator,
     BilinearDiffusionIntegrator,
     setup_operator,
@@ -149,27 +148,30 @@ function assemble_heat_operators(n = 4)
     strategy = AssemblyStrategy(SequentialCPUDevice())
     ctx      = TimeIntegrationContext(0.0, 0.0, 0.0)
 
-    Mop = setup_operator(strategy, BilinearMassIntegrator(ConstantCoefficient(1.0), qrc, :u), dh)
-    Kop = setup_operator(
-        strategy,
-        BilinearDiffusionIntegrator(ConstantCoefficient(one(Tensor{2, 2})), qrc, :u),
-        dh,
-    )
+    mass      = BilinearMassIntegrator(ConstantCoefficient(1.0), qrc, :u)
+    diffusion = BilinearDiffusionIntegrator(ConstantCoefficient(one(Tensor{2, 2})), qrc, :u)
+    Mop = setup_operator(strategy, mass, dh)
+    Kop = setup_operator(strategy, diffusion, dh)
     update_operator!(Mop, nothing, ctx)
     update_operator!(Kop, nothing, ctx)
-    return Mop, Kop, ndofs(dh)
+    # The rate form the discretization's lumped mass gives `EMRKC`.
+    rate = setup_operator(
+        strategy,
+        FerriteOperators.RateFormIntegrator(diffusion, FerriteOperators.RowSumLumped(mass)),
+        dh;
+        initial_context = ctx,
+    )
+    update_operator!(rate, nothing, ctx)
+    return Mop, Kop, ndofs(dh), rate
 end
 
-@testset "Real FE case: heat problem row-sum lumping + ρ_F" begin
-    Mop, Kop, n = assemble_heat_operators()
+@testset "Real FE case: heat problem lumped rate + ρ_F" begin
+    Mop, Kop, n, rate = assemble_heat_operators()
     M = FerriteOperators.get_matrix(Mop)
     K = FerriteOperators.get_matrix(Kop)
 
-    invM = zeros(n)
-    ones_tmp = zeros(n)
-    compute_lumped_inverse_mass!(invM, Mop, ones_tmp)
-
-    # (a) invM is the row-sum lumped inverse mass of the assembled mass matrix.
+    # (a) the lumped mass the discretization builds is the row-sum lumped consistent one.
+    invM = FerriteOperators.rate_form_inverse_mass(rate).diag
     @test invM ≈ 1 ./ vec(sum(M, dims = 2))
 
     dense_rate = Diagonal(invM) * Matrix(K)
@@ -177,30 +179,20 @@ end
 
     # (b) estimate_rho! over mul_rate! agrees with eigen of the dense rate matrix; safety = 1
     # isolates the estimate from the safety margin, covered by the dense-matrix testset above.
-    op = LumpedMassRateOperator(Kop, invM)
+    op = RateOperator(rate, invM, 1)
     ws = SpectralRadiusWorkspace(zeros(n))
     ρ = estimate_rho!(ws, (w, v) -> mul_rate!(w, op, v); maxiters = 300, safety = 1.0)
     @test ρ ≈ λmax_abs rtol = 0.05
 
     # (c) the Gershgorin bound is a genuine upper bound on the same spectral radius.
     @test _gershgorin_bound(K, invM) ≥ λmax_abs
-end
-
-@testset "compute_lumped_inverse_mass!: row-sum positivity guard" begin
-    invM, ones_tmp = zeros(3), zeros(3)
-
-    Mbad = Matrix(Diagonal([1.0, 0.0, 2.0]))
-    @test_throws ErrorException compute_lumped_inverse_mass!(invM, Mbad, ones_tmp)
-
-    Mgood = Matrix(Diagonal([1.0, 2.0, 4.0]))
-    compute_lumped_inverse_mass!(invM, Mgood, ones_tmp)
-    @test invM ≈ [1.0, 0.5, 0.25]
+    @test Thunderbolt._gershgorin_bound(op) ≥ λmax_abs
 end
 
 @testset "mul_rate! / add_source_rate!" begin
-    K = sparse(Diagonal([2.0, -4.0, 6.0]))
     invM = [1.0, 0.5, 1.0 / 3.0]
-    op = LumpedMassRateOperator(K, invM)
+    A = sparse(Diagonal(invM) * Diagonal([2.0, -4.0, 6.0]))   # M⁻¹K, already composed
+    op = RateOperator(A, invM, 1)
 
     y = zeros(3)
     x = [1.0, 1.0, 1.0]
@@ -209,46 +201,19 @@ end
 
     add_source_rate!(y, op, [1.0, 2.0, 3.0])
     @test y ≈ [2.0 + 1.0, -2.0 + 1.0, 2.0 + 1.0]
-end
 
-@testset "FusedInverseMassRateOperator negates, where the lumped one does not" begin
-    # `A` stands in for a fused `M⁻¹K` store: the POSITIVE stiffness convention, which is what the
-    # minus in the rate is for. The same matrix through both operators must come out opposite.
-    A = sparse(Diagonal([2.0, 4.0, 6.0]))
-    fused = Thunderbolt.FusedInverseMassRateOperator(A)
-    lumped = LumpedMassRateOperator(A, ones(3))
+    # `sign = -1` for an element assembling the POSITIVE stiffness convention: the same operator
+    # comes out negated, assigned rather than accumulated into.
+    neg = RateOperator(A, invM, -1)
+    fill!(y, 17.0)
+    mul_rate!(y, neg, x)
+    @test y ≈ -[2.0, -2.0, 2.0]
 
-    x = [1.0, -1.0, 0.5]
-    yf, yl = zeros(3), zeros(3)
-    mul_rate!(yf, fused, x)
-    mul_rate!(yl, lumped, x)
-    @test yf ≈ -yl
-    @test yf ≈ -(A * x)
+    # No inverse mass beside a fused store: a source has no route and says so.
+    @test_throws ErrorException add_source_rate!(zeros(3), RateOperator(A, nothing, 1), ones(3))
 
-    # `y` is assigned, not accumulated into: a stale buffer must not leak through the 5-arg `mul!`.
-    fill!(yf, 17.0)
-    mul_rate!(yf, fused, x)
-    @test yf ≈ -(A * x)
-
-    # A source has no route through a fused store, and says so rather than dropping the inverse mass.
-    @test_throws ErrorException add_source_rate!(zeros(3), fused, ones(3))
-end
-
-@testset "_fuses_inverse_mass reads the storage election" begin
-    mass = Thunderbolt.BilinearMassIntegrator(
-        Thunderbolt.ConstantCoefficient(1.0), FerriteOperators.QuadratureRuleCollection(2), :u,
-    )
-    fuses(form) = Thunderbolt._fuses_inverse_mass(
-        AssemblyStrategy(form, FerriteOperators.SequentialScheduling(), SequentialCPUDevice()),
-    )
-    @test !fuses(FerriteOperators.FullAssembly())
-    @test !fuses(FerriteOperators.MatrixFreeAction())
-    @test !fuses(FerriteOperators.MatrixFreeAction(; storage = FerriteOperators.BlockRowAssembly()))
-    @test fuses(
-        FerriteOperators.MatrixFreeAction(;
-            storage = FerriteOperators.BlockRowAssembly(; premultiply_inverse_mass = mass),
-        ),
-    )
+    @test rate_sign(BilinearDiffusionIntegrator(
+        ConstantCoefficient(one(Tensor{2, 2})), QuadratureRuleCollection(2), :u)) == 1
 end
 
 @testset "_should_reestimate policy shapes" begin
@@ -292,8 +257,7 @@ end
 @testset "Allocation-free after warmup" begin
     n = 40
     K = sparse(random_negdef(MersenneTwister(2), Float64, n))
-    invM = ones(n)
-    op = LumpedMassRateOperator(K, invM)
+    op = RateOperator(K, ones(n), 1)
     y, x = zeros(n), randn(MersenneTwister(3), n)
 
     @test warmup_then_allocated_mul_rate(op, y, x) == 0

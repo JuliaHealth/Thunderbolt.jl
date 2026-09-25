@@ -335,7 +335,7 @@ function setup_element_cache(
     AnalyticalCoefficientElementCache(
         setup_coefficient_cache(protocol.f, qr, sdh),
         protocol.nonzero_intervals,
-        CellValues(element_precision(qr), qr, ip, ip_geo), # TODO something more lightweight
+        CellValues(FerriteOperators.element_value_type(qr), qr, ip, ip_geo), # TODO something more lightweight
     )
 end
 
