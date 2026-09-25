@@ -705,9 +705,9 @@ function semidiscretize(
 
     # The mass integrand `ρ Nᵢ⋅Nⱼ` is of degree `2p` per direction, where the stiffness terms carrying
     # gradients are `2(p-1)`, so the mass matrix is the one that decides whether a rule is rich
-    # enough. Sharing the displacement rule is safe rather than merely convenient: `_extract_qrc`
-    # gives `max(2p-1, 2)` points, exact through degree `3` for `p = 1` and `4p-3` for `p ≥ 2`, both
-    # of which cover `2p`. A rule passed explicitly via `qrcs` is the user's to get right.
+    # enough. The displacement rule covers it: `_extract_qrc` gives `max(2p-1, 2)` points, exact
+    # through degree `3` for `p = 1` and `4p-3` for `p ≥ 2`. A `qrcs[:mass]` entry overrides it, as
+    # for every mass term.
     mass_term = _mass_integrator(discretization, model.ρ, sym)
 
     return _elastodynamics_function(

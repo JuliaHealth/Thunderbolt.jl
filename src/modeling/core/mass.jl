@@ -6,9 +6,8 @@ Represents the integrand of the bilinearform ``a(u,v) = \int \rho(x) v(x) u(x) d
 `qrc` is any collection answering [`getquadraturerule`](@ref), not only a
 [`QuadratureRuleCollection`](@ref): a mass is the one term whose *rule* is a modelling choice rather
 than an accuracy knob, which is why `FiniteElementDiscretization` lets a `:mass` entry override the
-field's rule. A `NodalQuadratureRuleCollection` over a tensor-product Lagrange space is what
-makes the assembled mass diagonal -- the spectral-element mass an explicit integrator can lump for
-free.
+field's rule. The diagonal spectral-element mass is not a rule choice but its own element:
+[`CollocatedMass`](@ref) on the discretization.
 """
 struct BilinearMassIntegrator{CoefficientType, QRC} <: AbstractBilinearIntegrator
     ρ::CoefficientType

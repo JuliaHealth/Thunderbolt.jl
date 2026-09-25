@@ -2,7 +2,7 @@ using Test
 using CUDA
 
 # This suite's device surface (KernelAbstractionsDevice) needs the FerriteOperators the package
-# compat names (0.4.2); this environment's Project.toml nevertheless points `[sources]` at a local
+# compat names (0.5.1); this environment's Project.toml nevertheless points `[sources]` at a local
 # checkout. Run with `julia --project=test/gpu test/gpu/runtests.jl`.
 #
 # This environment doubles as the environment of `benchmarks/`: the benchmarks are CUDA-dependent

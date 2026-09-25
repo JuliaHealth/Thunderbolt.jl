@@ -391,7 +391,6 @@ export
     ConsistentMass,
     LumpedMass,
     CollocatedMass,
-    CollocatedMassIntegrator,
     # Solver
     SchurComplementLinearSolver,
     KrylovMGSolver,

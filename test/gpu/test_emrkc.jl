@@ -14,6 +14,8 @@ function _emrkc_monodomain_form(;
     assembly_strategy = Thunderbolt.default_strategy(),
     qrcs = Dict{Symbol, Any}(),
     stim_until = 2.5,
+    ipc = LagrangeCollection{1}(),
+    mass = LumpedMass(),
 )
     mesh = generate_mesh(Quadrilateral, (n, n), Vec{2}((0.0, 0.0)), Vec{2}((2.5, 2.5)))
     cs = CartesianCoordinateSystem(mesh)
@@ -36,10 +38,10 @@ function _emrkc_monodomain_form(;
     return semidiscretize(
         ReactionDiffusionSplit(ep_model),
         FiniteElementDiscretization(
-            Dict(:φₘ => LagrangeCollection{1}());
+            Dict(:φₘ => ipc);
             qrcs,
             assembly_strategy,
-            mass = LumpedMass(),
+            mass,
         ),
         mesh,
     )
@@ -91,6 +93,7 @@ end
     @test cpu.cache.source_op isa Thunderbolt.LinearFerriteOperator
     @test gpu.cache.op isa Thunderbolt.RateOperator
     @test gpu.cache.op.op isa Thunderbolt.MirroredRateFormOperator
+    @test gpu.cache.op.op.rhs.A isa CuCSR
     @test gpu.cache.op.minv isa CuVector{Float32}
     @test gpu.cache.source_op isa Thunderbolt.MirroredLinearOperator
     @test FerriteOperators.operator_payload(gpu.cache.source_op) isa CuVector{Float32}
@@ -99,6 +102,19 @@ end
         @test FerriteOperators.get_matrix(FerriteOperators.rate_form_rhs(c.op.op)) isa CuCSC
         @test c.op.minv isa CuVector{Float32}
         @test FerriteOperators.operator_payload(c.source_op) isa CuVector{Float32}
+    end
+    # A dense per-cell mass (consistent mass on a discontinuous space) is refused under device
+    # assembly at setup, before anything reaches the GPU compiler.
+    let dgform = _emrkc_monodomain_form(;
+            stim_until,
+            assembly_strategy = device_assembly_strategy(),
+            qrcs = Dict(:φₘ => QuadratureRuleCollection(Float32, 2)),
+            ipc = DiscontinuousLagrangeCollection{1}(),
+            mass = ConsistentMass(),
+        )
+        @test_throws ErrorException build(
+            dgform, CuVector(create_initial_condition(dgform, Float32)), CuVector{Float32}, CuCSC,
+        )
     end
 
     sizing(integ) = Thunderbolt._emrkc_step_sizing(integ.alg, Δt, integ.cache.ρS, integ.cache.ρF)

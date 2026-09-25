@@ -84,7 +84,9 @@ the device the strategy names is the device the action runs on. There is consequ
 for this strategy, on both host and device.
 
 The solver still has to want one: an operator of this kind serves `mul!`, not a linear solve, so it
-reaches only the solvers that step through the operator's action -- [`EMRKC`](@ref) today.
+reaches only the solvers that step through the operator's action -- [`EMRKC`](@ref) today -- and
+only where the element implements `apply_element_action!`; Thunderbolt's diffusion element serves
+the `ElementAssembly()` and `BlockRowAssembly()` storages.
 """
 function setup_operator(
     strategy::AssemblyStrategy{<:MatrixFreeAction},
@@ -259,24 +261,27 @@ mul!(out::AbstractVector, op::MirroredBilinearOperator, in::AbstractVector, α, 
 FerriteOperators.operator_payload(op::MirroredBilinearOperator) = op.A
 
 """
-    MirroredRateFormOperator(host, rhs, minv, scratch)
+    MirroredRateFormOperator(host, rhs, minv, scratch, minvbuffer)
 
 The rate form `M⁻¹K` assembled on the host and mirrored onto a device: `rhs` is the
 [`MirroredBilinearOperator`](@ref) of the rhs, `minv` the device copy of the diagonal inverse mass.
 Only a diagonal mass (`LumpedMass`, `CollocatedMass`) mirrors; a dense per-cell mass has no mirror
 and such a model assembles on the device instead.
 """
-struct MirroredRateFormOperator{HostType, RhsType, VecType} <: AbstractBilinearOperator
+struct MirroredRateFormOperator{HostType, RhsType, VecType, BufferType} <: AbstractBilinearOperator
     host::HostType
     rhs::RhsType
     minv::VecType
     scratch::VecType
+    # Staging buffer in the mirror's value type, as `MirroredBilinearOperator.nzbuffer`.
+    minvbuffer::BufferType
 end
 
 function update_operator!(op::MirroredRateFormOperator, p, ctx = nothing)
     update_operator!(op.host, p, ctx)
     _mirror_nonzeros!(op.rhs)
-    copyto!(op.minv, FerriteOperators.rate_form_inverse_mass(op.host).diag)
+    op.minvbuffer .= FerriteOperators.rate_form_inverse_mass(op.host).diag
+    copyto!(op.minv, op.minvbuffer)
     return nothing
 end
 
@@ -292,7 +297,7 @@ function mul!(y::AbstractVector, op::MirroredRateFormOperator, x::AbstractVector
     return y
 end
 
-FerriteOperators.operator_payload(op::MirroredRateFormOperator) = op.rhs.A
+FerriteOperators.operator_payload(op::MirroredRateFormOperator) = FerriteOperators.operator_payload(op.rhs)
 FerriteOperators.rate_form_rhs(op::MirroredRateFormOperator) = op.rhs
 FerriteOperators.rate_form_inverse_mass(op::MirroredRateFormOperator) = Diagonal(op.minv)
 
@@ -335,11 +340,8 @@ needs_update(op::MirroredLinearOperator, t) = needs_update(op.host_operator, t)
 """
     refresh_source_operator!(op, t)
 
-Re-assemble a source operator for the time `t`, where it says it depends on one.
-
-The single owner of that step: every solver carrying a source term does it once per step -- the
-affine backward Euler stage before it builds its right hand side, [`EMRKC`](@ref) once per outer
-stage -- and a protocol that is stationary in time is skipped rather than reassembled.
+Re-assemble a source operator for the time `t` where it says it depends on one; a protocol that is
+stationary in time is skipped.
 """
 refresh_source_operator!(op, t) =
     needs_update(op, t) &&

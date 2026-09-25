@@ -12,5 +12,5 @@ Thunderbolt.semidiscretize
 ConsistentMass
 LumpedMass
 CollocatedMass
-CollocatedMassIntegrator
+Thunderbolt.CollocatedMassIntegrator
 ```

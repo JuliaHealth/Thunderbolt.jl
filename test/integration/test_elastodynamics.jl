@@ -26,6 +26,7 @@ function elastodynamic_bar(;
     material = PK1Model(Guccione1991PassiveModel(), ORTHO_MS),
     clamped = true,
     facet_models = (),
+    mass = ConsistentMass(),
 )
     mesh = generate_mesh(Hexahedron, ncells, Vec((0.0, 0.0, 0.0)), Vec((1.0, 0.2, 0.2)))
     model = ElastodynamicsModel(:d, :v, material, facet_models, ConstantCoefficient(ρ))
@@ -36,9 +37,15 @@ function elastodynamic_bar(;
     end
     return semidiscretize(
         model,
-        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs, mass),
         mesh,
     )
+end
+
+@testset "Newmark refuses a lumped mass" begin
+    # The stage combines M and K on one sparsity pattern, which a `Diagonal` mass has not.
+    f = elastodynamic_bar(; ncells = (1, 1, 1), mass = LumpedMass())
+    @test_throws ErrorException Thunderbolt.setup_stage_operator(f, NewmarkSolver(), nothing, 0.0)
 end
 
 """

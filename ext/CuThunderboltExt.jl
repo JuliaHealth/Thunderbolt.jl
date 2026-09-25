@@ -148,8 +148,9 @@ function Thunderbolt.setup_assembled_operator(
         Thunderbolt.create_system_matrix(system_matrix_type, dh),
     )
     T = eltype(rhs.A)
+    n = length(minv.diag)
     return Thunderbolt.MirroredRateFormOperator(
-        host, rhs, CuVector{T}(minv.diag), CuVector{T}(undef, length(minv.diag)),
+        host, rhs, CuVector{T}(minv.diag), CuVector{T}(undef, n), Vector{T}(undef, n),
     )
 end
 

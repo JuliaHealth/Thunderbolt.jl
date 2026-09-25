@@ -2,6 +2,8 @@
 #  The rate operator f_F(x) = σ·M⁻¹Kx                                #
 #####################################################################
 
+# TODO(rate_sign composites): a composite or multi-domain integrator takes the default whatever its
+# parts declare; the sign belongs on the term (FerriteOperators ask).
 """
     rate_sign(integrator) -> ±1
 
@@ -13,8 +15,8 @@ negated form `-∫ D∇u·∇v`, so its sign is `+1`, the default; an element as
 rate_sign(::AbstractBilinearIntegrator) = 1
 
 # `op` is `x ↦ M⁻¹Kx`: FerriteOperators' rate-form operator, or its mirrored form
-# (`MirroredRateFormOperator`). `minv` is what a source is scaled by, resolved once at setup
-# (`_rate_source_inverse_mass`): the diagonal's reciprocal, a per-cell inverse operator, or `nothing`.
+# (`MirroredRateFormOperator`). `minv` is what a source is scaled by: the diagonal's reciprocal, a
+# per-cell inverse operator, or `nothing` where a block-row store fused `M⁻¹` away.
 struct RateOperator{OpT, MinvT}
     op::OpT
     minv::MinvT
@@ -32,5 +34,5 @@ _add_inverse_mass!(y, minv::AbstractVector, b) = (y .+= minv .* b; nothing)
 _add_inverse_mass!(y, minv, b) = (mul!(y, minv, b, one(eltype(y)), one(eltype(y))); nothing)
 @noinline _add_inverse_mass!(y, ::Nothing, b) = error(
     "This rate operator carries no inverse mass to scale a source by: `M⁻¹` was fused into the " *
-    "diffusion store at fill time and no per-cell inverse was built beside it.",
+    "block-row diffusion store at fill time, which keeps no inverse beside it.",
 )

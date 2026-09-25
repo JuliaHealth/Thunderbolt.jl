@@ -6,12 +6,8 @@
     EMRKCDivergence(msg)
 
 A stiffness measure [`EMRKC`](@ref) cannot size a sweep against: a runaway spectral radius estimate,
-or a stage count past `max_stages` or past `Int` itself.
-
-Its own exception type rather than a plain `error`, because the step has to tell the two apart: a
-state that diverged mid-run is a step failure the integrator may retry from, while every other error
-raised on the same path -- an unusable option, a bug in an estimate -- must stay loud. The three
-sites that raise it are `_rho_runaway_error`, `_sts_safe_ceil` and `_emrkc_stage_count_error`.
+or a stage count past `max_stages` or past `Int` itself. The step treats it as a step failure;
+every other error on that path stays loud.
 """
 struct EMRKCDivergence <: Exception
     msg::String
@@ -89,7 +85,7 @@ discontinuous space the consistent mass serves. The sign of `K` is the diffusion
 - `gates`: `:all`, or a `Tuple` of `gating_symbols` to integrate exponentially. `()` is the
   degenerate mRKC-without-exponential mode, which runs *any* cell model, including one that declares
   no gates at all.
-- `solution_vector_type`, `system_matrix_type`: what the mass, diffusion and source operators are
+- `solution_vector_type`, `system_matrix_type`: what the rate form and the source operator are
   assembled into, as for [`BackwardEulerSolver`](@ref).
 - `rho_recompute`: `:once` (the default -- see Limitations), `n::Int` for every `n` steps, or a
   callable of the number of steps since the last estimate. A step failure and the first step after
@@ -99,8 +95,9 @@ discontinuous space the consistent mass serves. The sign of `K` is the diffusion
   boundaries of the STS families do not cover.
 - `rho_S_estimate`: `:fd` (Jacobian-free directional finite differences over the slow force) or a
   number to use verbatim.
-- `rho_F_estimate`: `:power` (power iteration over the rate operator), `:gershgorin` (a host-only
-  upper bound, unavailable under device assembly), or a number to use verbatim.
+- `rho_F_estimate`: `:power` (power iteration over the rate operator), `:gershgorin` (an upper
+  bound read off the assembled host matrix; needs a host-resident rhs and a diagonal mass), or a
+  number to use verbatim.
 - `max_stages`: refuse rather than silently truncate a stage count this large.
 - `batch_size_hint`: `Polyester` batch size of the pointwise stages.
 - `inner_algs`: the splitting children, both [`PassiveChildSolver`](@ref)s -- the step is monolithic
@@ -110,10 +107,11 @@ discontinuous space the consistent mass serves. The sign of `K` is the diffusion
 - Single domain only: the split has to be exactly one `AffineODEFunction` over one
   [`PointwiseODEFunction`](@ref), which is what `semidiscretize(ReactionDiffusionSplit(...))`
   produces for a [`MonodomainModel`](@ref).
-- The mass matrix is row-sum lumped (hence P1) and the ionic current enters pointwise at the dofs.
-  That is a different semidiscretization from the consistent-mass one [`BackwardEulerSolver`](@ref)
-  steps, and on a propagating front the O(h²) between the two is what dominates the difference
-  between the schemes -- at every step size, not only at coarse ones.
+- The mass is the discretization's ([`LumpedMass`](@ref)/[`CollocatedMass`](@ref) on a continuous
+  space) and the ionic current enters pointwise at the dofs. That is a different semidiscretization
+  from the consistent-mass one [`BackwardEulerSolver`](@ref) steps, and on a propagating front the
+  O(h²) between the two is what dominates the difference between the schemes -- at every step size,
+  not only at coarse ones.
 - Fixed step size: the stage counts are stability control, not a local error estimate.
 - The stage counts resolve the STS families' real-axis stability boundaries. The complex part of the
   spectrum is a gap in the underlying theory, and `rho_safety` is the only knob against it.
@@ -352,6 +350,7 @@ function OS.init_cache(
     dh              = fheat.dh
     strategy        = get_strategy(fheat)
     ctx₀            = TimeIntegrationContext(zero(T), zero(T), zero(T))
+    _assert_device_invertible_mass(strategy, fheat.mass_term)
     rate_form       = FerriteOperators.RateFormIntegrator(fheat.bilinear_term, fheat.mass_term)
     rate_operator   = setup_operator(strategy, rate_form, spec, dh; initial_context = ctx₀)
     source_operator = setup_operator(strategy, fheat.source_term, spec, dh)
@@ -359,16 +358,12 @@ function OS.init_cache(
         update_operator!(rate_operator, nothing, ctx₀)
         update_operator!(source_operator, nothing, ctx₀)
     end
+    # A source is scaled by the rate form's own `M⁻¹`. A block-row store fuses `M⁻¹` away and keeps
+    # none (`nothing` here), but that storage is matrix free and refuses the source's linear form at
+    # its own `setup_operator` above, so no source ever meets a `nothing`.
     op = RateOperator(
         rate_operator,
-        _rate_source_inverse_mass(
-            rate_operator,
-            source_operator,
-            strategy,
-            fheat.mass_term,
-            dh,
-            ctx₀,
-        ),
+        _inverse_mass_apply(FerriteOperators.rate_form_inverse_mass(rate_operator)),
         rate_sign(fheat.bilinear_term),
     )
 
@@ -419,26 +414,26 @@ function OS.init_cache(
     )
 end
 
-# What a source is scaled by. Nothing where there is none; the rate form's own `M⁻¹` where it keeps
-# one (the diagonal's reciprocal, or the per-cell inverse operator); and where the block-row store
-# fused `M⁻¹` away, a per-cell inverse operator of its own on the same device.
-_rate_source_inverse_mass(rate_operator, ::LinearNullOperator, strategy, mass, dh, ctx₀) = nothing
-function _rate_source_inverse_mass(rate_operator, source_operator, strategy, mass, dh, ctx₀)
-    minv = FerriteOperators.rate_form_inverse_mass(rate_operator)
-    minv === nothing || return _inverse_mass_apply(minv)
-    return setup_operator(
-        AssemblyStrategy(
-            MatrixFreeAction(; storage = FerriteOperators.ElementAssembly()),
-            strategy.scheduling,
-            strategy.device,
-        ),
-        FerriteOperators.ElementInverse(mass),
-        dh;
-        initial_context = ctx₀,
-    )
-end
 _inverse_mass_apply(minv::Diagonal) = minv.diag
 _inverse_mass_apply(minv) = minv
+
+_diagonal_mass_term(mass) = mass isa Union{FerriteOperators.RowSumLumped, CollocatedMassIntegrator}
+_fused_inverse_mass(strategy) =
+    strategy.form isa MatrixFreeAction && strategy.form.storage isa FerriteOperators.BlockRowAssembly
+# A dense per-cell mass on a device needs `FerriteOperators.ElementInverse` compiled for that device,
+# which its device instances do not support yet (the kernel is built over the un-narrowed
+# per-worker cache). Refuse at setup instead of failing inside the GPU compiler.
+function _assert_device_invertible_mass(strategy, mass)
+    strategy.device isa FerriteOperators.AbstractGPUDevice || return nothing
+    _diagonal_mass_term(mass) && return nothing
+    _fused_inverse_mass(strategy) && return nothing
+    error(
+        "Device assembly of `EMRKC`'s rate form needs a diagonal mass (`mass = LumpedMass()` or " *
+        "`CollocatedMass()` on the discretization) or, on a discontinuous space, the " *
+        "`BlockRowAssembly()` storage that fuses the per-cell inverse into the store; the per-cell " *
+        "inverse of a dense mass does not compile on a device yet.",
+    )
+end
 
 # An empty selection collapses to empty tuples rather than an all-false mask, which is what makes
 # `gates = ()` run a model that implements no `gate_coefficients` at all.
@@ -628,10 +623,10 @@ _emrkc_host_matrix(op) = FerriteOperators.get_matrix(op)
 _emrkc_host_matrix(op::MirroredBilinearOperator) = FerriteOperators.get_matrix(op.host_operator)
 
 # The bound needs the assembled diffusion matrix and a diagonal inverse mass, both on the host.
-_gershgorin_bound(r::RateOperator) = _gershgorin_bound(
-    _emrkc_host_matrix(FerriteOperators.rate_form_rhs(r.op)),
-    _host_inverse_mass_diagonal(FerriteOperators.rate_form_inverse_mass(r.op)),
-)
+function _gershgorin_bound(r::RateOperator)
+    minv = _host_inverse_mass_diagonal(FerriteOperators.rate_form_inverse_mass(r.op))
+    return _gershgorin_bound(_emrkc_host_matrix(FerriteOperators.rate_form_rhs(r.op)), minv)
+end
 _host_inverse_mass_diagonal(d::Diagonal) = collect(d.diag)
 @noinline _host_inverse_mass_diagonal(::Any) = error(
     "`rho_F_estimate = :gershgorin` reads the rows of the assembled rate matrix, which needs a " *
