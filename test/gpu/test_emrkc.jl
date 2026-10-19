@@ -103,18 +103,35 @@ end
         @test c.op.minv isa CuVector{Float32}
         @test FerriteOperators.operator_payload(c.source_op) isa CuVector{Float32}
     end
-    # A dense per-cell mass (consistent mass on a discontinuous space) is refused under device
-    # assembly at setup, before anything reaches the GPU compiler.
-    let dgform = _emrkc_monodomain_form(;
+    # A dense per-cell mass -- the consistent mass on a discontinuous space -- under device assembly:
+    # the rate form's inverse is an ElementInverse operator whose Cholesky runs inside the device fill,
+    # and the source is scaled through it.
+    let dgform_host = _emrkc_monodomain_form(;
+            stim_until, ipc = DiscontinuousLagrangeCollection{1}(), mass = ConsistentMass(),
+        ),
+        dgform_dev = _emrkc_monodomain_form(;
             stim_until,
             assembly_strategy = device_assembly_strategy(),
             qrcs = Dict(:φₘ => QuadratureRuleCollection(Float32, 2)),
             ipc = DiscontinuousLagrangeCollection{1}(),
             mass = ConsistentMass(),
         )
-        @test_throws ErrorException build(
-            dgform, CuVector(create_initial_condition(dgform, Float32)), CuVector{Float32}, CuCSC,
-        )
+        u₀dg = create_initial_condition(dgform_host, Float32)
+        setvariable!(u₀dg, dgform_host, :φₘ) do x
+            (x[1] ≤ 1.25 && x[2] ≤ 1.25) ? 1.0f0 : 0.0f0
+        end
+        setvariable!(u₀dg, dgform_host, :s) do x
+            x[2] ≥ 1.25 ? 0.1f0 : 0.0f0
+        end
+        cpu_dg = build(dgform_host, copy(u₀dg), Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
+        gpu_dg = build(dgform_dev, CuVector(u₀dg), CuVector{Float32}, CuCSC)
+        @test gpu_dg.cache.op.minv isa FerriteOperators.MatrixFreeFerriteOperator
+        φdg = solution_variable(dgform_host, :φₘ)
+        for _ = 1:nsteps
+            step!(cpu_dg)
+            step!(gpu_dg)
+            @test getvariable(Array(gpu_dg.u), φdg) ≈ getvariable(cpu_dg.u, φdg) rtol = 1.0f-5
+        end
     end
 
     sizing(integ) = Thunderbolt._emrkc_step_sizing(integ.alg, Δt, integ.cache.ρS, integ.cache.ρF)

@@ -30,7 +30,7 @@ duplicate_for_device(device, cache::AnalyticalCoefficientCache) =
 
 @inline function evaluate_coefficient(
     coeff::F,
-    cell_cache::CellCache,
+    cell_cache,
     qp::QuadraturePoint{<:Any, T},
     t,
 ) where {F <: AnalyticalCoefficientCache, T}
@@ -88,7 +88,7 @@ end
 # We want this to be as fast as possible, so throw away everything unused
 @inline function _assemble_element!(
     bₑ::AbstractVector,
-    geometry_cache::CellCache,
+    geometry_cache,
     coords::AbstractVector{<:Vec{dim, T}},
     element_cache::AnalyticalCoefficientElementCache,
     time,

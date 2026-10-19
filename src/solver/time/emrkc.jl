@@ -350,7 +350,6 @@ function OS.init_cache(
     dh              = fheat.dh
     strategy        = get_strategy(fheat)
     ctx₀            = TimeIntegrationContext(zero(T), zero(T), zero(T))
-    _assert_device_invertible_mass(strategy, fheat.mass_term)
     rate_form       = FerriteOperators.RateFormIntegrator(fheat.bilinear_term, fheat.mass_term)
     rate_operator   = setup_operator(strategy, rate_form, spec, dh; initial_context = ctx₀)
     source_operator = setup_operator(strategy, fheat.source_term, spec, dh)
@@ -416,24 +415,6 @@ end
 
 _inverse_mass_apply(minv::Diagonal) = minv.diag
 _inverse_mass_apply(minv) = minv
-
-_diagonal_mass_term(mass) = mass isa Union{FerriteOperators.RowSumLumped, CollocatedMassIntegrator}
-_fused_inverse_mass(strategy) =
-    strategy.form isa MatrixFreeAction && strategy.form.storage isa FerriteOperators.BlockRowAssembly
-# A dense per-cell mass on a device needs `FerriteOperators.ElementInverse` compiled for that device,
-# which its device instances do not support yet (the kernel is built over the un-narrowed
-# per-worker cache). Refuse at setup instead of failing inside the GPU compiler.
-function _assert_device_invertible_mass(strategy, mass)
-    strategy.device isa FerriteOperators.AbstractGPUDevice || return nothing
-    _diagonal_mass_term(mass) && return nothing
-    _fused_inverse_mass(strategy) && return nothing
-    error(
-        "Device assembly of `EMRKC`'s rate form needs a diagonal mass (`mass = LumpedMass()` or " *
-        "`CollocatedMass()` on the discretization) or, on a discontinuous space, the " *
-        "`BlockRowAssembly()` storage that fuses the per-cell inverse into the store; the per-cell " *
-        "inverse of a dense mass does not compile on a device yet.",
-    )
-end
 
 # An empty selection collapses to empty tuples rather than an all-false mask, which is what makes
 # `gates = ()` run a model that implements no `gate_coefficients` at all.
