@@ -497,7 +497,9 @@ end
     # The implicit solvers combine M and K on one pattern, which a `Diagonal` has not: backward Euler
     # refuses the lumped form at its setup (Newmark's refusal is in the elastodynamics tests).
     f = semidiscretize(
-        model, FiniteElementDiscretization(Dict(:u => LagrangeCollection{2}()); mass = LumpedMass()), mesh,
+        model,
+        FiniteElementDiscretization(Dict(:u => LagrangeCollection{2}()); mass = LumpedMass()),
+        mesh,
     )
     prob = Thunderbolt.ODEProblem(f, zeros(solution_size(f)), (0.0, 1.0))
     @test_throws ErrorException init(prob, BackwardEulerSolver(); dt = 0.1)

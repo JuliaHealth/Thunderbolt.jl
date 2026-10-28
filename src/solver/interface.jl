@@ -297,7 +297,8 @@ function mul!(y::AbstractVector, op::MirroredRateFormOperator, x::AbstractVector
     return y
 end
 
-FerriteOperators.operator_payload(op::MirroredRateFormOperator) = FerriteOperators.operator_payload(op.rhs)
+FerriteOperators.operator_payload(op::MirroredRateFormOperator) =
+    FerriteOperators.operator_payload(op.rhs)
 FerriteOperators.rate_form_rhs(op::MirroredRateFormOperator) = op.rhs
 FerriteOperators.rate_form_inverse_mass(op::MirroredRateFormOperator) = Diagonal(op.minv)
 

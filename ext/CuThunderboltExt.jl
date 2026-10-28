@@ -43,7 +43,11 @@ import SparseArrays: SparseMatrixCSC
 # from the pointwise function, and a launch sized from the cache would tie every pointwise cache in
 # Thunderbolt to one field name.
 function _gpu_pointwise_step_inner_kernel_wrapper!(
-    f, t, Δt, cache::AbstractPointwiseSolverCache, npoints,
+    f,
+    t,
+    Δt,
+    cache::AbstractPointwiseSolverCache,
+    npoints,
 )
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
     i > npoints && return nothing
@@ -60,9 +64,8 @@ function Thunderbolt._pointwise_step_outer_kernel!(
     ::Union{<:CuVector, SubArray{<:Any, 1, <:CuVector}},
 )
     npoints = length(f.associated_states) ÷ num_states(f.ode)
-    kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(
-        f.ode, t, Δt, cache, npoints,
-    )
+    kernel =
+        @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f.ode, t, Δt, cache, npoints)
     config = launch_configuration(kernel.fun)
     threads = min(npoints, config.threads)
     blocks = cld(npoints, threads)
@@ -150,7 +153,11 @@ function Thunderbolt.setup_assembled_operator(
     T = eltype(rhs.A)
     n = length(minv.diag)
     return Thunderbolt.MirroredRateFormOperator(
-        host, rhs, CuVector{T}(minv.diag), CuVector{T}(undef, n), Vector{T}(undef, n),
+        host,
+        rhs,
+        CuVector{T}(minv.diag),
+        CuVector{T}(undef, n),
+        Vector{T}(undef, n),
     )
 end
 

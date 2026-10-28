@@ -251,12 +251,8 @@ duplicate_for_device(device, cache::CellIndexCoordinateSystemCache) = cache
 setup_coefficient_cache(::CellIndexCoordinateSystem, ::QuadratureRule, ::SubDofHandler) =
     CellIndexCoordinateSystemCache()
 
-evaluate_coefficient(
-    ::CellIndexCoordinateSystemCache,
-    geometry_cache,
-    ::QuadraturePoint,
-    t,
-) = cellid(geometry_cache)
+evaluate_coefficient(::CellIndexCoordinateSystemCache, geometry_cache, ::QuadraturePoint, t) =
+    cellid(geometry_cache)
 
 struct CartesianCoordinateSystemCache{CS, CV}
     cs::CS
