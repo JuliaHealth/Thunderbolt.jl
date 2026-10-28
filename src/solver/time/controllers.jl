@@ -134,6 +134,19 @@ set_error_estimate!(controller_cache::PIDControllerCache, EEst) =
 # rather than an error.
 set_error_estimate!(::Union{Nothing, DummyControllerCache}, EEst) = nothing
 
+# Called at every synchronization point of an operator splitting node: the history belongs to a
+# trajectory the parent just overwrote.
+function OrdinaryDiffEqCore.reinit_controller!(
+    ::SciMLBase.DEIntegrator,
+    cache::PIDControllerCache{T},
+) where {T}
+    cache.err = (one(T), one(T), one(T))
+    cache.dt_factor = one(T)
+    cache.dt_factor_valid = false
+    cache.EEst = one(T)
+    return nothing
+end
+
 # `k = order + 1`, i.e. the order of the *local* error the estimate measures.
 _pid_error_order(alg) = adaptive_order(alg) + 1
 

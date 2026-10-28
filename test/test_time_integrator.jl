@@ -345,6 +345,10 @@ g_deuflhard(x) = √(1 + 4x) - 1
         )
     end
 
+    @testset "reinit_controller! is a no-op: $(nameof(typeof(controller)))" for controller in controllers
+        @test OrdinaryDiffEqCore.reinit_controller!(dummy(0.1), controller) === nothing
+    end
+
     @testset "Rejection shrinks dt and rolls u back" begin
         controller = controllers[1]
         (; Θbar, γ, qmin, qmax, p) = controller
@@ -516,5 +520,21 @@ end
         cache = fresh()
         Thunderbolt.set_error_estimate!(cache, 1.05)
         @test Thunderbolt._pid_dt_factor!(cache, alg) ≥ controller.accept_safety
+    end
+
+    @testset "reinit_controller! restores the fresh state" begin
+        cache = fresh()
+        for e in (0.5, 0.8, 0.3)
+            Thunderbolt.set_error_estimate!(cache, e)
+            Thunderbolt._pid_dt_factor!(cache, alg)
+            Thunderbolt._pid_accept!(cache)
+        end
+        integrator = init(scalar_decay_problem(), ScalarForwardEuler(), dt = 0.1, verbose = false)
+        OrdinaryDiffEqCore.reinit_controller!(integrator, cache)
+        ref = fresh()
+        @test cache.err == ref.err
+        @test cache.dt_factor == ref.dt_factor
+        @test cache.dt_factor_valid == ref.dt_factor_valid
+        @test cache.EEst == ref.EEst
     end
 end
