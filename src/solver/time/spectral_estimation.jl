@@ -100,7 +100,7 @@ _rho_is_sane(ρ, ρ_prev, jump_factor) = isfinite(ρ) && (ρ_prev == 0 || ρ ≤
         "a $(round(ρ / ρ_prev, sigdigits = 3))x jump over the previous estimate $(ρ_prev) " *
         "(threshold $(jump_factor)x)" : "a non-finite value"
     throw(
-        EMRKCDivergence(
+        STSDivergence(
             "estimate_rho!: the power iteration produced $ρ -- $cause -- even after retrying once " *
             "from a freshly reseeded iterate.$(describe())",
         ),

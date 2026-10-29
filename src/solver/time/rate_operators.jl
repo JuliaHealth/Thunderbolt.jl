@@ -7,8 +7,9 @@
 """
     rate_sign(integrator) -> ±1
 
-The sign that turns the operator a bilinear diffusion term assembles into the rate
-`du/dt = σ M⁻¹ K u`. Thunderbolt's [`BilinearDiffusionIntegrator`](@ref) assembles the already
+The sign `σ` with which the operator `K` a bilinear diffusion term assembles enters the rate form
+`M u' = σ K u + f`, honoured by every solver of an `AffineODEFunction`. Thunderbolt's
+[`BilinearDiffusionIntegrator`](@ref) assembles the already
 negated form `-∫ D∇u·∇v`, so its sign is `+1`, the default; an element assembling the positive form
 `+∫ D∇u·∇v` declares `-1`. The wrong sign integrates the diffusion backwards in time.
 """

@@ -10,7 +10,7 @@ import FerriteOperators
 
 import Thunderbolt:
     ExponentialMultirateSTSAlgorithm,
-    EMRKCDivergence,
+    STSDivergence,
     PassiveChildSolver,
     PassiveChildCache,
     _emrkc_step_sizing,
@@ -356,8 +356,8 @@ end
 
     # `max_stages` refuses rather than silently truncating the stability it buys. Both refusals are
     # divergences, so a mid-run step can fail on them instead of crashing out.
-    @test_throws EMRKCDivergence _emrkc_step_sizing(EMRKC(max_stages = 3), 1.0, 1.0e4, 1.0)
-    @test_throws EMRKCDivergence _emrkc_step_sizing(alg, 1.0, NaN, 1.0)
+    @test_throws STSDivergence _emrkc_step_sizing(EMRKC(max_stages = 3), 1.0, 1.0e4, 1.0)
+    @test_throws STSDivergence _emrkc_step_sizing(alg, 1.0, NaN, 1.0)
 end
 
 @testset "sts_stage_count inverts sts_stability_boundary" begin
@@ -420,8 +420,7 @@ end
     @test integ.cache.ρF ≥ ρF_exact
 
     for bad in (EMRKC(rho_F_estimate = :nonsense), EMRKC(rho_S_estimate = :nonsense))
-        i = DiffEqBase.init(prob, bad; dt = 0.1, verbose = false)
-        @test_throws ErrorException DiffEqBase.step!(i)
+        @test_throws ErrorException DiffEqBase.init(prob, bad; dt = 0.1, verbose = false)
     end
 end
 
@@ -472,7 +471,13 @@ end
     @test_throws ErrorException OS.init_cache(bogus, EMRKC(); uprev = zeros(3), u = zeros(3))
 
     # A gate the model never declared, and options that are not a partition at all.
-    for bad in (EMRKC(gates = (:nope,)), EMRKC(gates = :some), EMRKC(gates = :s))
+    for bad in (
+        EMRKC(gates = (:nope,)),
+        EMRKC(gates = :some),
+        EMRKC(gates = :s),
+        EMRKC(rho_recompute = :onec),
+        EMRKC(rho_recompute = 5.0),
+    )
         @test_throws ErrorException OS.init_cache(odeform, bad; uprev = copy(u), u = copy(u))
     end
 end
@@ -536,7 +541,7 @@ end
     # A state whose cubic reaction term overflows, so the sweep produces non-finite stage values. The
     # step must be reported as failed with the solution vector left as it was.
     integ.u .= 1.0e120
-    DiffEqBase.solve!(integ)
+    @test_logs (:warn, r"non-finite state") match_mode = :any DiffEqBase.solve!(integ)
     @test integ.sol.retcode != SciMLBase.ReturnCode.Success
     @test integ.t == 0.0 # no step was ever accepted
     @test all(isfinite, integ.u)

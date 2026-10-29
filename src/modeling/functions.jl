@@ -63,6 +63,12 @@ end
 
 solution_size(f::PointwiseMultiODEFunction) = sum(solution_size.(f.functions))
 
+"""
+    AffineODEFunction(mass_term, bilinear_term, source_term, dh, assembly_strategy)
+
+The linear ODE `M u' = σ K u + f`, with `M`, `K` and `f` assembled from the three terms and
+`σ = Thunderbolt.rate_sign(bilinear_term)`.
+"""
 struct AffineODEFunction{MI, BI, ST, DH, AS} <: AbstractSemidiscreteFunction
     mass_term::MI
     bilinear_term::BI

@@ -411,7 +411,6 @@ export
     RKG1,
     # Exponential multirate super-time-stepping for a reaction-diffusion split
     EMRKC,
-    rate_sign,
     # Convergence driven step size control, usable with any solver answering `contraction_rate_cache`
     Deuflhard2004DiscreteContinuationController,
     Deuflhard2004_B_DiscreteContinuationControllerVariant,

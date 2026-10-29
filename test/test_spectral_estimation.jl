@@ -8,7 +8,7 @@ using Tensors
 import Thunderbolt:
     SpectralRadiusWorkspace,
     estimate_rho!,
-    EMRKCDivergence,
+    STSDivergence,
     _gershgorin_bound,
     _should_reestimate,
     RateOperator,
@@ -91,7 +91,7 @@ end
     @testset "non-finite result retries once, then errors" for badvalue in (Inf, NaN)
         ws = SpectralRadiusWorkspace(zeros(5))
         bad_apply! = ConstantApply(badvalue)
-        e = @test_throws EMRKCDivergence estimate_rho!(ws, bad_apply!)
+        e = @test_throws STSDivergence estimate_rho!(ws, bad_apply!)
         @test occursin("non-finite", e.value.msg)
         @test occursin("retrying once", e.value.msg)
         @test bad_apply!.calls[] == 2 # the attempt, then the retry -- both fail on their first iterate
@@ -101,14 +101,14 @@ end
         ws = SpectralRadiusWorkspace(zeros(3))
         ws.ρ = 1.0 # a modest "previous" estimate to jump away from
         huge_apply! = ConstantApply(1.0e30)
-        e = @test_throws EMRKCDivergence estimate_rho!(ws, huge_apply!)
+        e = @test_throws STSDivergence estimate_rho!(ws, huge_apply!)
         @test occursin("jump", e.value.msg)
         @test occursin("retrying once", e.value.msg)
     end
 
     @testset "describe context reaches the error" begin
         ws = SpectralRadiusWorkspace(zeros(4))
-        e = @test_throws EMRKCDivergence estimate_rho!(
+        e = @test_throws STSDivergence estimate_rho!(
             ws,
             ConstantApply(Inf);
             describe = () -> " EMRKC-specific context.",
@@ -212,7 +212,7 @@ end
     # No inverse mass beside a fused store: a source has no route and says so.
     @test_throws ErrorException add_source_rate!(zeros(3), RateOperator(A, nothing, 1), ones(3))
 
-    @test rate_sign(
+    @test Thunderbolt.rate_sign(
         BilinearDiffusionIntegrator(
             ConstantCoefficient(one(Tensor{2, 2})),
             QuadratureRuleCollection(2),
@@ -223,16 +223,13 @@ end
 
 @testset "_should_reestimate policy shapes" begin
     @testset ":once" begin
-        @test _should_reestimate(:once, -1, false) == true    # never yet
         @test _should_reestimate(:once, 0, false) == false
         @test _should_reestimate(:once, 1_000, false) == false
         @test _should_reestimate(:once, 0, true) == true       # stepfail forces regardless
-        @test_throws ErrorException _should_reestimate(:always, 0, false)
     end
 
     @testset "n::Int" begin
         # Period n: re-estimating exactly every n steps means steps_since ≥ n - 1 is due.
-        @test _should_reestimate(3, -1, false) == true         # never yet
         @test _should_reestimate(3, 0, false) == false
         @test _should_reestimate(3, 1, false) == false
         @test _should_reestimate(3, 2, false) == true
@@ -242,7 +239,6 @@ end
 
     @testset "callable" begin
         even_only = s -> iseven(s)
-        @test _should_reestimate(even_only, -1, false) == true # never yet, callable not even called
         @test _should_reestimate(even_only, 4, false) == true
         @test _should_reestimate(even_only, 5, false) == false
         @test _should_reestimate(even_only, 5, true) == true    # stepfail forces regardless

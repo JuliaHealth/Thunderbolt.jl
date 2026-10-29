@@ -859,7 +859,7 @@ function certify_dt(name, mk, point)
         snaps, arrival = try
             transit(f, u0, alg, Δt, sampler)
         catch err
-            err isa Thunderbolt.EMRKCDivergence && occursin("inner stages", err.msg) || rethrow()
+            err isa Thunderbolt.STSDivergence && occursin("inner stages", err.msg) || rethrow()
             @printf("    Δt = %8.6f   UNSTAGEABLE: %s\n", Δt,
                     first(split(err.msg, ". ")))
             flush(stdout)

@@ -3,19 +3,6 @@
 #####################################################################
 
 """
-    EMRKCDivergence(msg)
-
-A stiffness measure [`EMRKC`](@ref) cannot size a sweep against: a runaway spectral radius estimate,
-or a stage count past `max_stages` or past `Int` itself. The step treats it as a step failure;
-every other error on that path stays loud.
-"""
-struct EMRKCDivergence <: Exception
-    msg::String
-end
-
-Base.showerror(io::IO, e::EMRKCDivergence) = print(io, e.msg)
-
-"""
     PassiveChildSolver()
 
 A leaf timestepper that advances its clock and leaves its state untouched.
@@ -78,7 +65,7 @@ The fast force is the rate form `M⁻¹K` of the split's mass and diffusion term
 (`FerriteOperators.RateFormIntegrator`), so the mass must be invertible cell by cell: on a
 continuous space that is a [`LumpedMass`](@ref) or [`CollocatedMass`](@ref) discretization, on a
 discontinuous space the consistent mass serves. The sign of `K` is the diffusion term's
-[`rate_sign`](@ref).
+[`Thunderbolt.rate_sign`](@ref).
 
 # Fields
 - `outer`, `inner`: the STS families of the two sweeps ([`RKC1`](@ref) by default).
@@ -88,8 +75,9 @@ discontinuous space the consistent mass serves. The sign of `K` is the diffusion
 - `solution_vector_type`, `system_matrix_type`: what the rate form and the source operator are
   assembled into, as for [`BackwardEulerSolver`](@ref).
 - `rho_recompute`: `:once` (the default -- see Limitations), `n::Int` for every `n` steps, or a
-  callable of the number of steps since the last estimate. A step failure and the first step after
-  an `init`/`reinit!` always force a re-estimate.
+  callable `k -> Bool` of the number `k` of steps taken strictly between the last estimating step
+  and the current one (`k = 0` right after an estimate, so `n` behaves as `k -> k ≥ n - 1`). A step
+  failure and the first step after an `init`/`reinit!` always force a re-estimate.
 - `rho_safety`: multiplies *every* `ρ` this algorithm uses, estimated or overridden. The default
   `1.1` is the hedge against the complex part of the spectrum, which the real-axis stability
   boundaries of the STS families do not cover.
@@ -365,7 +353,7 @@ function OS.init_cache(
         _inverse_mass_apply(FerriteOperators.rate_form_inverse_mass(rate_operator)),
         rate_sign(fheat.bilinear_term),
     )
-
+    _emrkc_validate_rho_options(alg, rate_operator)
 
     # Zeroed, not merely allocated: a cell model whose `cell_rhs!` leaves a state untouched would
     # otherwise read whatever was in the slow force buffer.
@@ -408,7 +396,7 @@ function OS.init_cache(
         SpectralRadiusWorkspace(Ua),
         zero(real(T)),
         zero(real(T)),
-        -1, # never estimated
+        0,
         Vrange,
     )
 end
@@ -447,6 +435,23 @@ _emrkc_gate_mask(gates, gsyms, ion) = _emrkc_gates_option_error(gates)
     "a gate: `gating_symbols` returns $(gsyms). A state may only be integrated exponentially " *
     "once the model declares it follows the gate normal form.",
 )
+
+function _emrkc_validate_rho_options(alg, rate_operator)
+    p = alg.rho_recompute
+    (p === :once || p isa Integer || (!(p isa Symbol) && hasmethod(p, Tuple{Int}))) || error(
+        "`EMRKC(rho_recompute = $(repr(p)))` is not a re-estimation policy: pass `:once`, an " *
+        "`Int` `n` for every `n` steps, or a callable of the number of steps since the last estimate.",
+    )
+    ρS = alg.rho_S_estimate
+    (ρS === :fd || ρS isa Real) ||
+        error("`EMRKC(rho_S_estimate = $(repr(ρS)))`: pass `:fd` or a number.")
+    ρF = alg.rho_F_estimate
+    (ρF === :power || ρF === :gershgorin || ρF isa Real) ||
+        error("`EMRKC(rho_F_estimate = $(repr(ρF)))`: pass `:power`, `:gershgorin` or a number.")
+    ρF === :gershgorin &&
+        _host_inverse_mass_diagonal(FerriteOperators.rate_form_inverse_mass(rate_operator))
+    return nothing
+end
 
 @noinline _emrkc_function_tree_error(f) = error(
     "`EMRKC` steps a reaction-diffusion split: exactly one `AffineODEFunction` over one " *
@@ -520,16 +525,11 @@ function _emrkc_fd_perturbation(u)
     return nu > 0 ? T(nu * sqrt(eps(T))) : sqrt(eps(T))
 end
 
-# Whether ρ needs re-estimating this step, for the `rho_recompute` policies `EMRKC` documents. A
-# NEGATIVE `steps_since` means none has run yet and, like a step failure, always forces one.
-function _should_reestimate(policy, steps_since, stepfail::Bool)
-    (stepfail || steps_since < 0) && return true
-    return _reestimate_due(policy, steps_since)
-end
+# Whether ρ needs re-estimating this step, for the `rho_recompute` policies `EMRKC` documents.
+_should_reestimate(policy, steps_since, forced::Bool) =
+    forced || _reestimate_due(policy, steps_since)
 
-_reestimate_due(policy::Symbol, steps_since) =
-    policy === :once ? false :
-    error("Unknown rho_recompute policy :$policy -- expected :once, an Int, or a callable.")
+_reestimate_due(::Symbol, steps_since) = false # `:once`, the only `Symbol` `init_cache` admits
 _reestimate_due(n::Integer, steps_since) = steps_since ≥ n - 1
 _reestimate_due(f, steps_since) = f(steps_since)
 
@@ -556,26 +556,19 @@ _emrkc_estimator_options(policy) =
 _emrkc_rho_F!(ρ::Real, cache::EMRKCCache, alg) = _emrkc_rho_type(cache)(alg.rho_safety * ρ)
 
 function _emrkc_rho_F!(mode::Symbol, cache::EMRKCCache, alg)
-    if mode === :power
-        return estimate_rho!(
-            cache.ws_F,
-            _EMRKCRateApply(cache.op);
-            safety = alg.rho_safety,
-            _emrkc_estimator_options(alg.rho_recompute)...,
-        )
-    elseif mode === :gershgorin
+    mode === :gershgorin &&
         return _emrkc_rho_type(cache)(alg.rho_safety * _gershgorin_bound(cache.op))
-    end
-    return error(
-        "Unknown `rho_F_estimate` $(repr(mode)) -- expected `:power`, `:gershgorin`, or a number.",
+    return estimate_rho!(
+        cache.ws_F,
+        _EMRKCRateApply(cache.op);
+        safety = alg.rho_safety,
+        _emrkc_estimator_options(alg.rho_recompute)...,
     )
 end
 
 _emrkc_rho_S!(ρ::Real, cache::EMRKCCache, alg, u, t) = _emrkc_rho_type(cache)(alg.rho_safety * ρ)
 
-function _emrkc_rho_S!(mode::Symbol, cache::EMRKCCache, alg, u, t)
-    mode === :fd ||
-        return error("Unknown `rho_S_estimate` $(repr(mode)) -- expected `:fd` or a number.")
+function _emrkc_rho_S!(::Symbol, cache::EMRKCCache, alg, u, t)
     cache.yE .= u
     _emrkc_slow_force!(cache, t)
     cache.fbar .= cache.fS # the finite difference baseline f_S(u)
@@ -697,20 +690,17 @@ function OS._perform_step!(parent, children::Tuple, cache::EMRKCCache, dt)
     alg = parent.alg
     t   = parent.t
 
-    # An `EMRKCDivergence` caught here (`estimate_rho!`'s runaway guard, or a stage count over
-    # `max_stages` or `Int` itself) is a step failure like the NaN check below -- but only once
-    # there is a step to fail: on the first attempt of a run nothing has been accepted yet, so it
-    # stays loud instead of being swallowed into a silent, immediate `ReturnCode.Failure`. Every
-    # other error on this path is a bug or an unusable option, and is rethrown whatever the step
-    # count.
+    # An `STSDivergence` caught here (`estimate_rho!`'s runaway guard, or a stage count over
+    # `max_stages` or `Int` itself) is a step failure like the NaN check below -- but only once a
+    # step has been accepted: before that it is rethrown, so a run that cannot take its first step
+    # errors instead of ending in an immediate `ReturnCode.Failure`. Every other error on this path
+    # is a bug or an unusable option, and is rethrown whatever the step count.
     s, η, m = try
         @timeit_debug "spectral radii" _emrkc_refresh_rho!(cache, alg, parent, t)
         _emrkc_step_sizing(alg, dt, cache.ρS, cache.ρF)
     catch e
-        (e isa EMRKCDivergence && parent.iter > 1) || rethrow()
-        parent.force_stepfail = true
-        @warn "EMRKC failed the step at t = $t: $(e.msg)" _group = :timeintegration
-        return
+        (e isa STSDivergence && parent.success_iter > 0) || rethrow()
+        return _emrkc_fail_step!(parent, e.msg)
     end
 
     @timeit_debug "outer sweep" Ys = sts_sweep!(
@@ -728,14 +718,18 @@ function OS._perform_step!(parent, children::Tuple, cache::EMRKCCache, dt)
     # Every stage carries its predecessor forward with a nonzero coefficient, per row, so a NaN
     # anywhere in the sweep reaches the final stage: one check here catches a mid-sweep blow-up and
     # leaves `parent.u` -- and with it the rollback anchor `parent.uprev` -- untouched for the retry.
-    if !all(isfinite, Ys)
-        parent.force_stepfail = true
-        return
-    end
+    all(isfinite, Ys) ||
+        return _emrkc_fail_step!(parent, "the outer sweep produced a non-finite state.")
     parent.u .= Ys
 
     _emrkc_advance_children!(parent, children, dt)
     return
+end
+
+function _emrkc_fail_step!(parent, msg)
+    parent.force_stepfail = true
+    @warn "EMRKC failed the step at t = $(parent.t): $msg" _group = :timeintegration
+    return nothing
 end
 
 # The three numbers Algorithm 3 derives from a step size and the two spectral radii (both of which
@@ -766,13 +760,13 @@ end
 @noinline function _emrkc_stage_count_error(which, z, alg, s = nothing)
     what = which === :outer ? "outer (Δt·ρ_S)" : "inner (η·ρ_F)"
     s === nothing && throw(
-        EMRKCDivergence(
+        STSDivergence(
             "`EMRKC` cannot size its $(what) sweep: the stiffness measure came out as $z. The state " *
             "has most likely diverged, or a `rho_*_estimate` override is not a usable spectral radius.",
         ),
     )
     throw(
-        EMRKCDivergence(
+        STSDivergence(
             "`EMRKC` needs $(s) $(which) stages for a stiffness measure of $(what) = $z, above " *
             "`max_stages = $(alg.max_stages)`. Truncating the count would silently drop the " *
             "stability this stage count buys, so reduce `dt` or raise `max_stages`.",

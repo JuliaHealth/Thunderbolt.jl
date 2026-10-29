@@ -40,6 +40,35 @@ transient_diffusion_problem() =
     @test sol.retcode == SciMLBase.ReturnCode.Success
 end
 
+# Makes a `BilinearDiffusionIntegrator` assemble the positive form `+∫ D∇u·∇v`, and declares it.
+struct NegatedCoefficient{C}
+    inner::C
+end
+Thunderbolt.setup_coefficient_cache(c::NegatedCoefficient, qr::QuadratureRule, sdh::SubDofHandler) =
+    ConstantCoefficient(-c.inner.val)
+Thunderbolt.rate_sign(::Thunderbolt.BilinearDiffusionIntegrator{<:NegatedCoefficient}) = -1
+
+@testset "Backward Euler honours rate_sign" begin
+    f = DIFFUSION_FUN
+    K = f.bilinear_term
+    fneg = AffineODEFunction(
+        f.mass_term,
+        Thunderbolt.BilinearDiffusionIntegrator(NegatedCoefficient(K.D), K.qrc, K.sym),
+        f.source_term,
+        f.dh,
+        f.assembly_strategy,
+    )
+    n = solution_size(f)
+    u₀ = [sinpi(i / n) for i = 1:n]
+    function solve_with(g)
+        integrator =
+            init(Thunderbolt.ODEProblem(g, copy(u₀), (0.0, 0.3)), BackwardEulerSolver(), dt = 0.1)
+        SciMLBase.solve!(integrator)
+        return integrator.u
+    end
+    @test solve_with(fneg) ≈ solve_with(f)
+end
+
 @testset "Failures surface as retcodes, verbose = $verbose" for verbose in (true, false, Standard())
     with_logger(NullLogger()) do
         integrator =

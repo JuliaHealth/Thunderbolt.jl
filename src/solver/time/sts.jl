@@ -48,6 +48,18 @@ struct RKG1 <: AbstractSTSFamily end
 # round: its `mu` is our μ̃, its `nu` our μ, its `kappa` our ν.
 
 """
+    STSDivergence(msg)
+
+A stiffness measure no super-time-stepping sweep can be sized against: a non-finite or runaway
+spectral radius estimate, or a stage count past a cap or past `Int` itself.
+"""
+struct STSDivergence <: Exception
+    msg::String
+end
+
+Base.showerror(io::IO, e::STSDivergence) = print(io, e.msg)
+
+"""
     sts_stage_count(fam::AbstractSTSFamily, z) -> Int
 
 The smallest stage count `s` whose real stability interval admits `z = τ·ρ` (`τ` the outer step,
@@ -57,10 +69,10 @@ function sts_stage_count end
 
 @inline function _sts_safe_ceil(z, x)
     x < typemax(Int) || throw(
-        EMRKCDivergence(
+        STSDivergence(
             "sts_stage_count: the stage count for z = $z does not fit in a machine `Int`. This " *
-            "almost always means a diverged state or an unusable `rho_*_estimate` override, not a " *
-            "genuine stiffness measure.",
+            "almost always means a diverged state or an unusable spectral radius, not a genuine " *
+            "stiffness measure.",
         ),
     )
     return ceil(Int, x)

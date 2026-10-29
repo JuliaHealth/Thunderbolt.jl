@@ -44,7 +44,7 @@ Thunderbolt.sts_stage_count
 Thunderbolt.sts_stability_boundary
 Thunderbolt.ExponentialMultirateSTSAlgorithm
 EMRKC
-rate_sign
+Thunderbolt.rate_sign
 Thunderbolt.PassiveChildSolver
 gating_symbols
 gate_coefficients
