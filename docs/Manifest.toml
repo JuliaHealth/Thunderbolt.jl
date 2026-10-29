@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "d2e33f21403abc09e162cd3dca56ec3187090874"
+project_hash = "4a522f70de70c47dc736414c3f28d3f37175ed6b"
 
 [[deps.ADTypes]]
 deps = ["PrecompileTools"]
@@ -999,6 +999,20 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "XML2_jll", "Xorg_libpciaccess_jll"
 git-tree-sha1 = "cbbd99d516990d05c02aa132aa077b2bf50ae323"
 uuid = "e33a78d0-f292-5ffc-b300-72abe9b543c8"
 version = "2.15.0+0"
+
+[[deps.HybridSmoothers]]
+deps = ["Adapt", "KernelAbstractions", "LinearAlgebra", "LinearSolve", "SparseArrays", "SparseMatricesCSR", "TimerOutputs"]
+git-tree-sha1 = "25bac4debb111edeb952e6ade78dbee084ccb75a"
+uuid = "da817a5f-7d49-401a-84b6-75d77c2330d5"
+version = "0.1.4"
+
+    [deps.HybridSmoothers.extensions]
+    HybridSmoothersAMGExt = "AlgebraicMultigrid"
+    HybridSmoothersGPUArraysExt = "GPUArrays"
+
+    [deps.HybridSmoothers.weakdeps]
+    AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
+    GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 
 [[deps.IOCapture]]
 deps = ["Logging", "Random"]
