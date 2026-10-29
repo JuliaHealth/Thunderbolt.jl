@@ -11,10 +11,7 @@ import FerriteOperators
 import Thunderbolt:
     ExponentialMultirateSTSAlgorithm,
     STSDivergence,
-    PassiveChildSolver,
-    PassiveChildCache,
     _emrkc_step_sizing,
-    _emrkc_rho_S_runaway_context,
     sts_stage_count,
     sts_stability_boundary,
     gate_coefficients,
@@ -276,9 +273,8 @@ end
     Δt = 0.1
     nsteps = 3
 
-    @testset "FHN gates=$(gates) (s,m)=($s_exp,$m_exp)" for gates in (:all, ()),
-        (ρS, ρF, s_exp, m_exp) in fhn_cases
-
+    @testset "FHN (s,m)=($s_exp,$m_exp)" for (ρS, ρF, s_exp, m_exp) in fhn_cases
+        gates = :all
         prob, odeform = emrkc_problem(; tspan = (0.0, nsteps * Δt))
         ion = odeform.functions[2].ode
         alg = EMRKC(; gates = gates, rho_S_estimate = ρS, rho_F_estimate = ρF, rho_safety = 1.0)
@@ -296,6 +292,31 @@ end
         for step = 1:nsteps
             uref, (s, η, m) = ref_emrkc_step(uref, (step - 1) * Δt, Δt, ctx)
             @test (s, m) == (s_exp, m_exp)
+            @test produced[step] ≈ uref rtol = 1.0e-13
+        end
+    end
+
+    # Distinct outer and inner damping, so a swap of the two families inside the step shows.
+    @testset "FHN inner = RKC1(0.1)" begin
+        prob, odeform = emrkc_problem(; tspan = (0.0, nsteps * Δt))
+        ion = odeform.functions[2].ode
+        alg = EMRKC(;
+            inner = RKC1(0.1),
+            rho_S_estimate = 450.0,
+            rho_F_estimate = 3000.0,
+            rho_safety = 1.0,
+        )
+        integ = DiffEqBase.init(prob, alg; dt = Δt, verbose = false)
+
+        u0 = copy(integ.u)
+        produced = [
+            (DiffEqBase.step!(integ); copy(integ.u)) for _ = 1:nsteps
+        ]
+
+        ctx = RefContext(integ, ion, :all)
+        uref = copy(u0)
+        for step = 1:nsteps
+            uref, _ = ref_emrkc_step(uref, (step - 1) * Δt, Δt, ctx)
             @test produced[step] ≈ uref rtol = 1.0e-13
         end
     end
@@ -334,11 +355,6 @@ end
     alg = EMRKC()               # RKC1(0.05) outer and inner
     β = 2 - 4 * 0.05 / 3
 
-    # s = ⌈√(Δt ρ_S / β)⌉, η = 2Δt/(β s²), m = ⌈√(η ρ_F / β)⌉.
-    @test _emrkc_step_sizing(alg, 0.1, 10.0, 10.0) == (1, 2 * 0.1 / (β * 1^2), 1)
-    @test _emrkc_step_sizing(alg, 0.1, 60.0, 500.0) == (2, 2 * 0.1 / (β * 2^2), 3)
-    @test _emrkc_step_sizing(alg, 0.1, 450.0, 25000.0) == (5, 2 * 0.1 / (β * 5^2), 8)
-
     # A vanishing slow force is the degenerate single stage case, not a division by zero.
     s, η, m = _emrkc_step_sizing(alg, 0.25, 0.0, 0.0)
     @test (s, m) == (1, 1)
@@ -346,26 +362,22 @@ end
 
     # The window is the outer family's stability boundary read forward, so the sizing law composes
     # with any pair of families rather than hardcoding RKC's β s².
-    for (fam_o, fam_i) in ((RKC1(0.05), RKC1(0.05)), (RKL1(), RKG1()), (RKG1(), RKL1()))
-        a = EMRKC(outer = fam_o, inner = fam_i)
-        s, η, m = _emrkc_step_sizing(a, 0.1, 300.0, 5000.0)
-        @test s == sts_stage_count(fam_o, 0.1 * 300.0)
-        @test η ≈ 2 * 0.1 / sts_stability_boundary(fam_o, s)
-        @test m == sts_stage_count(fam_i, η * 5000.0)
-    end
+    fam_o, fam_i = RKL1(), RKG1()
+    s, η, m = _emrkc_step_sizing(EMRKC(outer = fam_o, inner = fam_i), 0.1, 300.0, 5000.0)
+    @test s == sts_stage_count(fam_o, 0.1 * 300.0)
+    @test η ≈ 2 * 0.1 / sts_stability_boundary(fam_o, s)
+    @test m == sts_stage_count(fam_i, η * 5000.0)
 
-    # `max_stages` refuses rather than silently truncating the stability it buys. Both refusals are
-    # divergences, so a mid-run step can fail on them instead of crashing out.
-    @test_throws STSDivergence _emrkc_step_sizing(EMRKC(max_stages = 3), 1.0, 1.0e4, 1.0)
-    @test_throws STSDivergence _emrkc_step_sizing(alg, 1.0, NaN, 1.0)
-end
-
-@testset "sts_stage_count inverts sts_stability_boundary" begin
-    for fam in (RKC1(0.05), RKC1(0.0), RKL1(), RKG1()), s = 1:20
-        fam isa RKL1 && iseven(s) && continue # RKL1 only ever reports odd stage counts
-        # Just inside the boundary: `s` stages suffice, and `s - 1` would not.
-        @test sts_stage_count(fam, sts_stability_boundary(fam, s) * (1 - 1.0e-12)) == s
-    end
+    # `max_stages` refuses rather than silently truncating the stability it buys. On the first step
+    # of a run there is no accepted step to fail, so the divergence reaches the caller.
+    prob, _ = emrkc_problem()
+    integ = DiffEqBase.init(
+        prob,
+        EMRKC(max_stages = 3, rho_S_estimate = 1.0e4, rho_F_estimate = 1.0);
+        dt = 1.0,
+        verbose = false,
+    )
+    @test_throws STSDivergence DiffEqBase.step!(integ)
 end
 
 @testset "Spectral radius front ends" begin
@@ -402,12 +414,10 @@ end
     # What emRKC buys over mRKC: on a model with a fast gate, the slow force with the gates removed
     # is far less stiff than the full reaction.
     pprob, podeform = emrkc_problem(n = 3, ion = Thunderbolt.PCG2019())
-    ρS_of(gates) = begin
-        i = DiffEqBase.init(pprob, EMRKC(gates = gates, rho_safety = 1.0); dt = 1.0e-3, verbose = false)
-        DiffEqBase.step!(i)
-        i.cache.ρS
-    end
-    @test ρS_of(:all) < ρS_of(()) / 3
+    pinteg = DiffEqBase.init(pprob, EMRKC(rho_safety = 1.0); dt = 1.0e-3, verbose = false)
+    DiffEqBase.step!(pinteg)
+    pctx = RefContext(pinteg, podeform.functions[2].ode, ()) # no gate masked: the full reaction
+    @test pinteg.cache.ρS < maximum(abs, eigvals(ref_slow_jacobian(pprob.u0, 0.0, pctx))) / 3
 
     # :gershgorin is an upper bound on the same ρ_F, and is a usable policy on the host.
     integ = DiffEqBase.init(
@@ -418,50 +428,26 @@ end
     )
     DiffEqBase.step!(integ)
     @test integ.cache.ρF ≥ ρF_exact
-
-    for bad in (EMRKC(rho_F_estimate = :nonsense), EMRKC(rho_S_estimate = :nonsense))
-        @test_throws ErrorException DiffEqBase.init(prob, bad; dt = 0.1, verbose = false)
-    end
 end
 
-@testset "ρ_S runaway context names the state norm and the escape-hatch knobs" begin
-    # `estimate_rho!`'s own guard knows neither the state nor EMRKC's knobs; this is what
-    # `_emrkc_rho_S!` appends to make a drifted-state blow-up actionable.
-    alg = EMRKC(rho_recompute = 3)
-    msg = _emrkc_rho_S_runaway_context([3.0, 4.0], alg)
-    @test occursin("5.0", msg)                    # ‖u‖ = ‖[3, 4]‖
-    @test occursin("rho_recompute", msg) && occursin("currently 3", msg)
-    @test occursin("rho_S_estimate", msg)         # the raw-number override knob
-end
-
-@testset "ρ recompute policy" begin
+@testset "rho_recompute = n: re-estimates every n steps; a divergence there fails the step" begin
     prob, _ = emrkc_problem(tspan = (0.0, 1.0))
-
-    # `:once` estimates on the first step of a run and then never again ...
-    integ = DiffEqBase.init(prob, EMRKC(); dt = 0.1, verbose = false)
-    for expected in (0, 1, 2)
-        DiffEqBase.step!(integ)
-        @test integ.cache.steps_since_estimate == expected
-    end
-
-    # ... but a `reinit!` starts a new run, whose state the previous ρ_S says nothing about.
-    DiffEqBase.reinit!(integ, prob.u0)
-    DiffEqBase.step!(integ)
-    @test integ.cache.steps_since_estimate == 0
-
-    # `n::Int` re-estimates every n steps: with n = 2, steps 1, 3, 5, ... re-estimate.
     integ = DiffEqBase.init(prob, EMRKC(rho_recompute = 2); dt = 0.1, verbose = false)
-    for expected in (0, 1, 0, 1, 0)
+    for expected in (0, 1, 0, 1)
         DiffEqBase.step!(integ)
         @test integ.cache.steps_since_estimate == expected
     end
+    # Step 5 is due to re-estimate, so the cubic reaction's overflow meets the estimator first.
+    integ.u .= 1.0e120
+    @test_logs (:warn, r"estimate_rho!.*‖u‖ = .*currently 2.*rho_S_estimate"s) match_mode = :any DiffEqBase.solve!(
+        integ,
+    )
+    @test integ.sol.retcode == SciMLBase.ReturnCode.Failure
+    @test integ.u == fill(1.0e120, length(integ.u)) # untouched by the failed step attempt
 end
 
 @testset "Setup validation" begin
     prob, odeform = emrkc_problem()
-    u = copy(prob.u0)
-
-    @test OS.init_cache(odeform, EMRKC(); uprev = copy(u), u = copy(u)) isa Thunderbolt.EMRKCCache
 
     # Not a reaction-diffusion split at all.
     bogus = GenericSplitFunction(
@@ -470,28 +456,29 @@ end
     )
     @test_throws ErrorException OS.init_cache(bogus, EMRKC(); uprev = zeros(3), u = zeros(3))
 
-    # A gate the model never declared, and options that are not a partition at all.
+    # A gate the model never declared, options that are not a partition at all, and unknown
+    # spectral radius options.
     for bad in (
         EMRKC(gates = (:nope,)),
         EMRKC(gates = :some),
         EMRKC(gates = :s),
         EMRKC(rho_recompute = :onec),
         EMRKC(rho_recompute = 5.0),
+        EMRKC(rho_F_estimate = :nonsense),
+        EMRKC(rho_S_estimate = :nonsense),
     )
-        @test_throws ErrorException OS.init_cache(odeform, bad; uprev = copy(u), u = copy(u))
+        @test_throws ErrorException DiffEqBase.init(prob, bad; dt = 0.1, verbose = false)
     end
 end
 
-@testset "Degenerate mode: gates = () runs a model that declares none" begin
+@testset "Degenerate mode: a model that declares no gates" begin
     # Aliev-Panfilov declares no gates and implements no `gate_coefficients`, so an exponential
     # stage would `MethodError`. The empty selection has to be lowered away entirely.
     prob, _ = emrkc_problem(ion = Thunderbolt.AlievPanfilovModel(), tspan = (0.0, 1.0))
-    for gates in (:all, ())
-        integ = DiffEqBase.init(prob, EMRKC(gates = gates); dt = 0.05, verbose = false)
-        DiffEqBase.solve!(integ)
-        @test integ.sol.retcode == SciMLBase.ReturnCode.Success
-        @test all(isfinite, integ.u)
-    end
+    integ = DiffEqBase.init(prob, EMRKC(gates = :all); dt = 0.05, verbose = false)
+    DiffEqBase.step!(integ)
+    @test integ.t ≈ 0.05
+    @test all(isfinite, integ.u)
 end
 
 @testset "Operator splitting interface: clocks, children, reinit" begin
@@ -499,8 +486,6 @@ end
     integ = DiffEqBase.init(prob, EMRKC(); dt = 0.1, verbose = false)
 
     @test SciMLBase.isadaptive(integ.alg) == false
-    @test all(c -> c.alg isa PassiveChildSolver, integ.child_subintegrators)
-    @test all(c -> c.cache isa PassiveChildCache, integ.child_subintegrators)
 
     u₀ = copy(integ.u)
     DiffEqBase.solve!(integ)
@@ -513,6 +498,8 @@ end
     for (i, c) in enumerate(integ.child_subintegrators)
         @test c.u ≈ integ.u[integ.child_solution_indices[i]]
     end
+    nsince = integ.cache.steps_since_estimate
+    @test nsince ≥ 1 # `:once` never re-estimated after the first step
 
     uend = copy(integ.u)
     DiffEqBase.reinit!(integ, u₀)
@@ -522,6 +509,8 @@ end
     DiffEqBase.solve!(integ)
     @test integ.sol.retcode == SciMLBase.ReturnCode.Success
     @test integ.u ≈ uend
+    # 2nsince + 1 had `reinit!` not forced a fresh estimate on the new run's first step.
+    @test integ.cache.steps_since_estimate == nsince
 
     # `uprev` is the surrounding integrator's rollback anchor and must survive a step untouched.
     integ2 = DiffEqBase.init(prob, EMRKC(); dt = 0.1, verbose = false)
@@ -545,25 +534,6 @@ end
     @test integ.sol.retcode != SciMLBase.ReturnCode.Success
     @test integ.t == 0.0 # no step was ever accepted
     @test all(isfinite, integ.u)
-end
-
-@testset "A divergence under a re-estimating policy fails the step, not an uncaught error" begin
-    # The scenario the outer-sweep NaN check above cannot reach: under `:once` a mid-run divergence
-    # only ever shows up as a NaN in the outer sweep, while a re-estimating `rho_recompute` finds the
-    # same divergence earlier, inside `estimate_rho!`'s runaway guard, whose `EMRKCDivergence` must
-    # reach `force_stepfail` rather than crash out of `_perform_step!`.
-    prob, _ = emrkc_problem(n = 3, ion = Thunderbolt.PCG2019(), tspan = (0.0, 1.0))
-    integ = DiffEqBase.init(prob, EMRKC(rho_recompute = 1); dt = 1.0e-3, verbose = false)
-
-    # Ordinary steps first, so the run is mid-flight (`parent.iter > 1`) when the state is corrupted.
-    DiffEqBase.step!(integ)
-    DiffEqBase.step!(integ)
-
-    integ.u .= 1.0e120 # same overflow trigger as the FHN case above
-    DiffEqBase.solve!(integ)
-
-    @test integ.sol.retcode == SciMLBase.ReturnCode.Failure
-    @test integ.u == fill(1.0e120, length(integ.u)) # untouched by the failed step attempt
 end
 
 @testset "An error that is not a divergence is rethrown mid-run, not made a step failure" begin

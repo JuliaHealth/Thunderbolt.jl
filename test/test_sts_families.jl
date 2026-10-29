@@ -1,7 +1,12 @@
 using Thunderbolt
 using Test
 
-import Thunderbolt: sts_stage_count, sts_coefficient_state, sts_stage_coefficients, sts_sweep!
+import Thunderbolt:
+    sts_stage_count,
+    sts_stability_boundary,
+    sts_coefficient_state,
+    sts_stage_coefficients,
+    sts_sweep!
 
 # Independent reference polynomials, so the sweep is checked against a closed form rather than
 # against its own recurrence.
@@ -85,47 +90,25 @@ families() = (RKC1(0.05), RKL1(), RKG1())
             # the two independently rounded paths differ sub-ULP in absolute terms, which is a large
             # *relative* disagreement against a tiny R.
             @test Y[1] ≈ R rtol = 1.0e-13 atol = 1.0e-13
+            @test abs(Y[1]) ≤ 1.0 + 1.0e-9 # inside the boundary, so stable
         end
     end
 end
 
-@testset "Stage-count laws" begin
-    @testset "RKC1: minimal and monotone" begin
-        ε = 0.05
-        β = 2 - 4ε / 3
-        for z in (0.5, 3.7, 50.0, 500.0)
-            s = sts_stage_count(RKC1(ε), z)
-            @test z ≤ s^2 * β
-            s > 1 && @test z > (s - 1)^2 * β
-        end
-        zs = (0.1, 1.0, 5.0, 20.0, 100.0, 1000.0)
-        ss = [sts_stage_count(RKC1(ε), z) for z in zs]
-        @test issorted(ss)
-    end
+@testset "Stage-count law: minimal s against the closed-form boundary" begin
+    for (fam, ℓ) in (
+            (RKC1(0.05), s -> (2 - 4 * 0.05 / 3) * s^2),
+            (RKL1(), s -> s^2 + s),
+            (RKG1(), s -> s * (s + 3) / 2),
+        ),
+        s = 1:20
 
-    @testset "RKL1: minimal, monotone, always odd" begin
-        for z in (0.5, 5.0, 30.0, 500.0)
-            s = sts_stage_count(RKL1(), z)
-            @test isodd(s)
-            @test z ≤ s^2 + s
-            s > 1 && @test z > (s - 2)^2 + (s - 2) # previous ODD stage count
-        end
-        zs = (0.1, 1.0, 5.0, 20.0, 100.0, 1000.0)
-        ss = [sts_stage_count(RKL1(), z) for z in zs]
-        @test issorted(ss)
-        @test all(isodd, ss)
+        fam isa RKL1 && iseven(s) && continue # RKL1 only ever reports odd stage counts
+        @test sts_stability_boundary(fam, s) ≈ ℓ(s)
+        # Just inside the boundary: `s` stages suffice, and `s - 1` would not.
+        @test sts_stage_count(fam, ℓ(s) * (1 - 1.0e-12)) == s
     end
-
-    @testset "RKG1: minimal and monotone" begin
-        for z in (0.5, 5.0, 30.0, 500.0)
-            s = sts_stage_count(RKG1(), z)
-            @test z ≤ s * (s + 3) / 2
-            s > 1 && @test z > (s - 1) * (s + 2) / 2
-        end
-        zs = (0.1, 1.0, 5.0, 20.0, 100.0, 1000.0)
-        ss = [sts_stage_count(RKG1(), z) for z in zs]
-        @test issorted(ss)
-    end
+    @test all(isodd, sts_stage_count.(Ref(RKL1()), (0.1, 1.0, 5.0, 20.0, 100.0, 1000.0)))
 end
 
 @testset "Extreme z raises a pointed error, not InexactError" begin
@@ -163,8 +146,16 @@ end
     end
 end
 
-@testset "Float32 state matches Float64 to 1e-5" begin
+@testset "Float32: coefficients and sweep stay Float32 and match Float64 to 1e-5" begin
     for fam in families(), s in (1, 2, 5, 10)
+        # `RKC1(0.05)`'s ε is a Float64 field; the coefficient state must convert it to `T` rather
+        # than let it promote every downstream scalar back to Float64.
+        st = sts_coefficient_state(fam, s, Float32)
+        for j = 1:s
+            (μ, ν, μ̃, c), st = sts_stage_coefficients(fam, st, j)
+            @test μ isa Float32 && ν isa Float32 && μ̃ isa Float32 && c isa Float32
+        end
+
         zmax = boundary_magnitude(fam, s)
         τλ = -0.5 * zmax
 
@@ -183,22 +174,6 @@ end
     end
 end
 
-@testset "Float32 purity: coefficients and sweep stay Float32, not promoted to Float64" begin
-    for fam in families(), s in (1, 2, 5, 10)
-        # `RKC1(0.05)`'s ε is a Float64 field; the coefficient state must convert it to `T` rather
-        # than let it promote every downstream scalar back to Float64.
-        st = sts_coefficient_state(fam, s, Float32)
-        for j = 1:s
-            (μ, ν, μ̃, c), st = sts_stage_coefficients(fam, st, j)
-            @test μ isa Float32 && ν isa Float32 && μ̃ isa Float32 && c isa Float32
-        end
-
-        y0, Ya, Yb, du = Float32[1.0], Float32[0.0], Float32[0.0], Float32[0.0]
-        Y = sts_sweep!(LinearDecay(-1.0f0), Ya, Yb, du, y0, 0.0f0, 0.01f0, s, fam)
-        @test eltype(Y) == Float32
-    end
-end
-
 # A function barrier: `for fam in families()` makes `fam` `Union`-typed at top-level scope, so a
 # direct call would measure the dynamic dispatch rather than the sweep.
 function warmup_then_allocated(rhs, Ya, Yb, du, y0, t0, τ, s, fam)
@@ -213,17 +188,5 @@ end
         y0, Ya, Yb, du = [1.0, 2.0, 3.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
         bytes = warmup_then_allocated(rhs, Ya, Yb, du, y0, 0.0, 0.01, s, fam)
         @test bytes == 0
-    end
-end
-
-@testset "Stability near the boundary" begin
-    for fam in families(), s in (1, 2, 3, 5, 10, 20)
-        zmax = boundary_magnitude(fam, s)
-        for frac in (0.5, 0.9, 0.999)
-            τλ = -frac * zmax
-            y0, Ya, Yb, du = [1.0], [0.0], [0.0], [0.0]
-            Y = sts_sweep!(LinearDecay(τλ), Ya, Yb, du, y0, 0.0, 1.0, s, fam)
-            @test abs(Y[1]) ≤ 1.0 + 1.0e-9
-        end
     end
 end

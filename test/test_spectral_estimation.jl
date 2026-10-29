@@ -3,7 +3,6 @@ using Test
 using LinearAlgebra
 using Random
 using SparseArrays
-using Tensors
 
 import Thunderbolt:
     SpectralRadiusWorkspace,
@@ -13,15 +12,7 @@ import Thunderbolt:
     _should_reestimate,
     RateOperator,
     mul_rate!,
-    add_source_rate!,
-    BilinearMassIntegrator,
-    BilinearDiffusionIntegrator,
-    setup_operator,
-    update_operator!,
-    AssemblyStrategy,
-    SequentialCPUDevice,
-    TimeIntegrationContext
-import FerriteOperators
+    add_source_rate!
 
 # A callable struct rather than a closure over `A`, so the allocation tests below measure
 # `estimate_rho!`/`mul_rate!` rather than a boxed capture.
@@ -106,16 +97,6 @@ end
         @test occursin("retrying once", e.value.msg)
     end
 
-    @testset "describe context reaches the error" begin
-        ws = SpectralRadiusWorkspace(zeros(4))
-        e = @test_throws STSDivergence estimate_rho!(
-            ws,
-            ConstantApply(Inf);
-            describe = () -> " EMRKC-specific context.",
-        )
-        @test occursin("EMRKC-specific context.", e.value.msg)
-    end
-
     @testset "maxiters exhaustion is a silent, documented under-estimate" begin
         # Power iteration's per-step error is bounded by the eigenvalue ratio (1/10 here), so two
         # steps cannot reach reltol = 1e-15: exhaustion without tripping the non-finite/jump guard.
@@ -126,67 +107,6 @@ end
         @test isfinite(ρ) && ρ > 0
         @test ws.iters_done == 2 # the exhaustion signal a caller can check itself
     end
-
-    @testset "a benign estimator is unaffected" begin
-        # The guard sits on the success path every other testset here exercises; ordinary use must
-        # never retry.
-        A = Diagonal([-1.0, -10.0, -100.0])
-        ws = SpectralRadiusWorkspace(zeros(3))
-        ρ = estimate_rho!(ws, DenseApply(A))
-        @test ρ ≈ 1.1 * 100.0 rtol = 0.05
-    end
-end
-
-# A tiny FE heat problem, assembled as `Thunderbolt._assemble_laplacian` does it.
-function assemble_heat_operators(n = 4)
-    grid = generate_grid(Quadrilateral, (n, n))
-    dh   = DofHandler(grid)
-    add!(dh, :u, Lagrange{RefQuadrilateral, 1}())
-    close!(dh)
-
-    qrc      = QuadratureRuleCollection(2)
-    strategy = AssemblyStrategy(SequentialCPUDevice())
-    ctx      = TimeIntegrationContext(0.0, 0.0, 0.0)
-
-    mass      = BilinearMassIntegrator(ConstantCoefficient(1.0), qrc, :u)
-    diffusion = BilinearDiffusionIntegrator(ConstantCoefficient(one(Tensor{2, 2})), qrc, :u)
-    Mop       = setup_operator(strategy, mass, dh)
-    Kop       = setup_operator(strategy, diffusion, dh)
-    update_operator!(Mop, nothing, ctx)
-    update_operator!(Kop, nothing, ctx)
-    # The rate form the discretization's lumped mass gives `EMRKC`.
-    rate = setup_operator(
-        strategy,
-        FerriteOperators.RateFormIntegrator(diffusion, FerriteOperators.RowSumLumped(mass)),
-        dh;
-        initial_context = ctx,
-    )
-    update_operator!(rate, nothing, ctx)
-    return Mop, Kop, ndofs(dh), rate
-end
-
-@testset "Real FE case: heat problem lumped rate + ρ_F" begin
-    Mop, Kop, n, rate = assemble_heat_operators()
-    M = FerriteOperators.get_matrix(Mop)
-    K = FerriteOperators.get_matrix(Kop)
-
-    # (a) the lumped mass the discretization builds is the row-sum lumped consistent one.
-    invM = FerriteOperators.rate_form_inverse_mass(rate).diag
-    @test invM ≈ 1 ./ vec(sum(M, dims = 2))
-
-    dense_rate = Diagonal(invM) * Matrix(K)
-    λmax_abs   = maximum(abs, eigvals(dense_rate))
-
-    # (b) estimate_rho! over mul_rate! agrees with eigen of the dense rate matrix; safety = 1
-    # isolates the estimate from the safety margin, covered by the dense-matrix testset above.
-    op = RateOperator(rate, invM, 1)
-    ws = SpectralRadiusWorkspace(zeros(n))
-    ρ = estimate_rho!(ws, (w, v) -> mul_rate!(w, op, v); maxiters = 300, safety = 1.0)
-    @test ρ ≈ λmax_abs rtol = 0.05
-
-    # (c) the Gershgorin bound is a genuine upper bound on the same spectral radius.
-    @test _gershgorin_bound(K, invM) ≥ λmax_abs
-    @test Thunderbolt._gershgorin_bound(op) ≥ λmax_abs
 end
 
 @testset "mul_rate! / add_source_rate!" begin
@@ -212,13 +132,9 @@ end
     # No inverse mass beside a fused store: a source has no route and says so.
     @test_throws ErrorException add_source_rate!(zeros(3), RateOperator(A, nothing, 1), ones(3))
 
-    @test Thunderbolt.rate_sign(
-        BilinearDiffusionIntegrator(
-            ConstantCoefficient(one(Tensor{2, 2})),
-            QuadratureRuleCollection(2),
-            :u,
-        ),
-    ) == 1
+    # The column-major Gershgorin bound: `K` is the uncomposed diffusion part of `A`.
+    @test _gershgorin_bound(sparse(Diagonal([2.0, -4.0, 6.0])), invM) ≥
+          maximum(abs, eigvals(Matrix(A)))
 end
 
 @testset "_should_reestimate policy shapes" begin

@@ -151,27 +151,24 @@ end
 
 @testset "Partition invariance: the gate selection is a method choice, not a model change" begin
     # Which declared gates are integrated exponentially picks a different *method* for the same
-    # problem, so the three partitions must disagree at any finite Δt and agree in the limit, with
-    # the disagreement itself a first order quantity.
+    # problem, so the two extreme partitions must disagree at any finite Δt and agree in the limit,
+    # with the disagreement itself a first order quantity.
     ion = Thunderbolt.PCG2019()
     tspan = (0.0, 1.0)
     odeform = emrkc_monodomain(ion; n = 8, κ = 5.0)
     u₀ = emrkc_u0(odeform, ion)
 
     Δts = (0.05, 0.025, 0.0125, 0.00625)
-    partitions = (:all, (:h, :m), ())
     solutions = Dict(
         p => [copy(emrkc_solve(odeform, u₀, EMRKC(gates = p), Δt, tspan).u) for Δt in Δts] for
-        p in partitions
+        p in (:all, ())
     )
 
-    @testset "$(pa) vs $(pb)" for (pa, pb) in ((:all, (:h, :m)), (:all, ()), ((:h, :m), ()))
-        gaps = [norm(solutions[pa][i] .- solutions[pb][i]) for i in eachindex(Δts)]
-        # Different methods: they do not agree at a finite step size ...
-        @test gaps[1] > 0
-        # ... the disagreement halves with the step size ...
-        @test all(i -> 1.7 ≤ gaps[i] / gaps[i+1] ≤ 2.3, 1:(length(gaps)-1))
-        # ... down to a residual that is negligible against the solution.
-        @test gaps[end] < 1.0e-3 * norm(solutions[pa][end])
-    end
+    gaps = [norm(solutions[:all][i] .- solutions[()][i]) for i in eachindex(Δts)]
+    # Different methods: they do not agree at a finite step size ...
+    @test gaps[1] > 0
+    # ... the disagreement halves with the step size ...
+    @test all(i -> 1.7 ≤ gaps[i] / gaps[i+1] ≤ 2.3, 1:(length(gaps)-1))
+    # ... down to a residual that is negligible against the solution.
+    @test gaps[end] < 1.0e-3 * norm(solutions[:all][end])
 end

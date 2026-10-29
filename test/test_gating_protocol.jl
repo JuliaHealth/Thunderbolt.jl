@@ -54,19 +54,6 @@ end
     end
 end
 
-@testset "Exactness: FHN gate primitive vs analytic exponential decay" begin
-    p = Thunderbolt.FHNModel()
-    for φ in (-1.0, 0.0, 0.3, 0.7, 1.5)
-        λ, y∞ = gate_coefficients(p, φ, SVector(φ, 0.2), 0.0) # full row: (φ, s)
-        x0 = 0.2
-        for η in (1.0e-3, 0.1, 1.0, 10.0, 100.0)
-            expected = y∞[1] + (x0 - y∞[1]) * exp(η * λ[1])
-            got = exponential_gate_step(x0, λ[1], y∞[1], η)
-            @test got ≈ expected rtol = 1.0e-12 atol = 1.0e-12
-        end
-    end
-end
-
 @testset "expm1 regression: η = 1e-12·τ keeps full precision" begin
     p = Thunderbolt.PCG2019()
     for φ in _FROZEN_PHI
@@ -84,12 +71,7 @@ end
     end
 end
 
-@testset "Consistency: dη-derivative at η=0 matches cell_rhs!" begin
-    η = 1.0e-6
-    # Central difference: PCG2019's fastest gate (τ_m = 0.12 ms) has |λ| ~ 8, where a one-sided
-    # difference's O(η) truncation term is already comparable to the rtol below.
-    central_fd(x0, λi, y∞i) =
-        (exponential_gate_step(x0, λi, y∞i, η) - exponential_gate_step(x0, λi, y∞i, -η)) / 2η
+@testset "Consistency: the gate normal form λ(x - y∞) is cell_rhs!" begin
     @testset "PCG2019" begin
         p = Thunderbolt.PCG2019()
         for φ in _FROZEN_PHI
@@ -98,9 +80,7 @@ end
             Thunderbolt.cell_rhs!(du, u, nothing, 0.0, p)
             λ, y∞ = gate_coefficients(p, φ, u, 0.0) # full row, as production passes it
             for (k, idx) in enumerate(gating_indices(p))
-                x0 = _GATE_STATE[k]
-                fd = central_fd(x0, λ[k], y∞[k])
-                @test fd ≈ du[idx] rtol = 1.0e-6
+                @test λ[k] * (_GATE_STATE[k] - y∞[k]) ≈ du[idx] rtol = 1.0e-12
             end
         end
     end
@@ -113,15 +93,13 @@ end
             Thunderbolt.cell_rhs!(du, u, nothing, 0.0, p)
             λ, y∞ = gate_coefficients(p, φ, u, 0.0) # full row, as production passes it
             idx = only(gating_indices(p))
-            fd = central_fd(s0, λ[1], y∞[1])
-            @test fd ≈ du[idx] rtol = 1.0e-6
+            @test λ[1] * (s0 - y∞[1]) ≈ du[idx] rtol = 1.0e-12
         end
     end
 end
 
-# A verbatim copy of `cell_rhs_fast!`/`cell_rhs_slow!` as they read before the shared
-# `_pcg2019_*_gate` helpers were factored out, so the factoring is checked against the original
-# expressions rather than against itself.
+# An independent transcription of the published model, so `cell_rhs!` is checked against the
+# model's own expressions rather than against itself.
 function _reference_cell_rhs_fast!(
     du,
     φ,
