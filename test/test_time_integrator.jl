@@ -345,7 +345,9 @@ g_deuflhard(x) = √(1 + 4x) - 1
         )
     end
 
-    @testset "reinit_controller! is a no-op: $(nameof(typeof(controller)))" for controller in controllers
+    @testset "reinit_controller! is a no-op: $(nameof(typeof(controller)))" for controller in
+                                                                                controllers
+
         @test OrdinaryDiffEqCore.reinit_controller!(dummy(0.1), controller) === nothing
     end
 
