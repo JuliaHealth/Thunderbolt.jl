@@ -3,7 +3,7 @@ using FerriteMultigrid: FerriteMultigrid, GridHierarchy
 using AlgebraicMultigrid
 using TimerOutputs
 import LinearAlgebra: diag, mul!
-
+using HybridSmoothers
 using FerriteOperators
 
 mesh = generate_ring_mesh(32, 4, 4)
