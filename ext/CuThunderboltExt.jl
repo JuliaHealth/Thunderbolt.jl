@@ -182,13 +182,4 @@ end
 
 Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector} = CuVector(v)
 
-# Adds a source operator's device-resident payload into `b`: direct for a device-assembled
-# source, and via its `MirroredLinearOperator` wrapper's refreshed buffer for a host-assembled
-# one. `LinearNullOperator` stays a no-op.
-Thunderbolt._add_source_term!(b::CuVector, source::FerriteOperators.LinearNullOperator) = b
-function Thunderbolt._add_source_term!(b::CuVector, source::FerriteOperators.AbstractLinearOperator)
-    b .+= FerriteOperators.operator_payload(source)
-    return b
-end
-
 end

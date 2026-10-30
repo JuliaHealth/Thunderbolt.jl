@@ -42,6 +42,6 @@
     # A device-assembled source's payload is already a `CuVector`: adding it into a device right
     # hand side is a direct axpy, with no per-step upload.
     b = CUDA.zeros(Float32, length(device.b))
-    Thunderbolt._add_source_term!(b, device) # warmup
-    @test CUDA.@allocated(Thunderbolt._add_source_term!(b, device)) == 0
+    Thunderbolt._add_source_term!(b, device, 0.1f0) # warmup
+    @test CUDA.@allocated(Thunderbolt._add_source_term!(b, device, 0.1f0)) == 0
 end
