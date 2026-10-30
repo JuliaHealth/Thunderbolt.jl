@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>CM03: 0D Blood Circuit · Thunderbolt.jl</title><meta name="title" content="CM03: 0D Blood Circuit · Thunderbolt.jl"/><meta property="og:title" content="CM03: 0D Blood Circuit · Thunderbolt.jl"/><meta property="twitter:title" content="CM03: 0D Blood Circuit · Thunderbolt.jl"/><meta name="description" content="Documentation for Thunderbolt.jl."/><meta property="og:description" content="Documentation for Thunderbolt.jl."/><meta property="twitter:description" content="Documentation for Thunderbolt.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script><link href="../../assets/documentercitations/citations-hover.css" rel="stylesheet" type="text/css"/><link href="../../assets/documentercitations/citations.css" rel="stylesheet" type="text/css"/><link href="../../assets/custom.css" rel="stylesheet" type="text/css"/><link href="../../assets/citations.css" rel="stylesheet" type="text/css"/><script src="../../assets/documentercitations/citations-data.js"></script><script src="../../assets/documentercitations/citations-hover.js"></script><script src="../../assets/documentercitations/citations-backlinks.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../../"><img src="../../assets/logo.svg" alt="Thunderbolt.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Thunderbolt.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><input class="collapse-toggle" id="menuitem-2" type="checkbox" checked/><label class="tocitem" for="menuitem-2"><span class="docs-label">Tutorials</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../">Overview</a></li><li><input class="collapse-toggle" id="menuitem-2-2" type="checkbox" checked/><label class="tocitem" for="menuitem-2-2"><span class="docs-label">Continuum Mechanics</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../cm01_simple-active-stress/">CM01: Simple Active Stress</a></li><li><a class="tocitem" href="../cm02_prestress/">CM02: Prestressing (WIP)</a></li><li class="is-active"><a class="tocitem" href>CM03: 0D Blood Circuit</a><ul class="internal"><li><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#Commented-Program"><span>Commented Program</span></a></li><li><a class="tocitem" href="#References"><span>References</span></a></li><li><a class="tocitem" href="#mechanics-tutorial_3d0dcoupling-plain-program"><span>Plain program</span></a></li></ul></li><li><a class="tocitem" href="../cm04_pericardium/">CM04: Pericadium (TODO)</a></li><li><a class="tocitem" href="../cm05_fourchambers/">CM05: Four Chamber (TODO)</a></li><li><a class="tocitem" href="../cm06_heartvalves/">CM06: Heart Valves (TODO)</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-2-3" type="checkbox"/><label class="tocitem" for="menuitem-2-3"><span class="docs-label">Electrophysiology</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../ep01_spiral-wave/">EP01: Spiral Wave</a></li><li><a class="tocitem" href="../ep02_purkinje/">EP02: Purkinje Network (TODO)</a></li><li><a class="tocitem" href="../ep03_bidomain/">EP03: Defibrillation (TODO)</a></li><li><a class="tocitem" href="../ep04_geselowitz-ecg/">EP04: Monodomain ECG</a></li><li><a class="tocitem" href="../ep05_eikonal/">EP05: Eikonal Models (WIP)</a></li><li><a class="tocitem" href="../ep06_pacemaker/">EP06: Pacemakers (TODO)</a></li></ul></li></ul></li><li><input class="collapse-toggle" id="menuitem-3" type="checkbox"/><label class="tocitem" for="menuitem-3"><span class="docs-label">Topic Guides</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../topics/">Overview</a></li><li><a class="tocitem" href="../../topics/operators/">Operators</a></li><li><a class="tocitem" href="../../topics/couplers/">Couplers</a></li><li><a class="tocitem" href="../../topics/time-integration/">Time Integration</a></li><li><a class="tocitem" href="../../topics/nonlinear-solver/">Nonlinear Solver</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-4" type="checkbox"/><label class="tocitem" for="menuitem-4"><span class="docs-label">How-to guides</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../howto/">Overview</a></li><li><a class="tocitem" href="../../howto/benchmarking/">Benchmarking</a></li><li><a class="tocitem" href="../../howto/custom-ep-cell-model/">Adding EP Cell Models</a></li><li><a class="tocitem" href="../../howto/custom-stimulation-protocols/">Custom Stimulation Protocols</a></li><li><a class="tocitem" href="../../howto/custom-energies/">Adding Energies</a></li><li><a class="tocitem" href="../../howto/custom-sarcomere/">Adding Sarcomeres</a></li><li><a class="tocitem" href="../../howto/multigrid/">-</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-5" type="checkbox"/><label class="tocitem" for="menuitem-5"><span class="docs-label">API Reference</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../api-reference/">Overview</a></li><li><a class="tocitem" href="../../api-reference/models/">Models</a></li><li><a class="tocitem" href="../../api-reference/mesh/">Mesh</a></li><li><a class="tocitem" href="../../api-reference/functions/">Functions</a></li><li><a class="tocitem" href="../../api-reference/problems/">Problems</a></li><li><a class="tocitem" href="../../api-reference/discretization/">Discretization</a></li><li><a class="tocitem" href="../../api-reference/solver/">Solver</a></li><li><a class="tocitem" href="../../api-reference/utility/">Utility</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-6" type="checkbox"/><label class="tocitem" for="menuitem-6"><span class="docs-label">Developer Documentation</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../../devdocs/">Overview</a></li><li><a class="tocitem" href="../../devdocs/model_interface/">Model Interface</a></li><li><a class="tocitem" href="../../devdocs/elements/">Element Interface</a></li><li><a class="tocitem" href="../../devdocs/domain_management/">Domain management</a></li></ul></li><li><a class="tocitem" href="../../vroom/">Performance Tips</a></li><li><a class="tocitem" href="../../references/">References</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li><a class="is-disabled">Continuum Mechanics</a></li><li class="is-active"><a href>CM03: 0D Blood Circuit</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>CM03: 0D Blood Circuit</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaHealth/Thunderbolt.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaHealth/Thunderbolt.jl/blob/main/docs/src/literate-tutorials/cm03_3d0d-coupling.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="mechanics-tutorial_3d0dcoupling"><a class="docs-heading-anchor" href="#mechanics-tutorial_3d0dcoupling">Mechanics Tutorial 3: Coupling with Lumped Blood Circuits</a><a id="mechanics-tutorial_3d0dcoupling-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_3d0dcoupling" title="Permalink"></a></h1><p><img src="3d0d-pv-loop.gif" alt="Pressure Volume Loop"/></p><p>This tutorial shows how to couple 3d chamber models with 0d fluid models.</p><h2 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h2><p>In this tutorial we will reproduce a simplified version of the model presented by <a href="../../references/#RegSalAfrFedDedQar_2022_cem" id="RegSalAfrFedDedQar_2022_cem-cite-1">Regazzoni <em>et al.</em> [3]</a>.</p><div class="admonition is-warning" id="Warning-2a35b62fcaadfa6f"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-2a35b62fcaadfa6f" title="Permalink"></a></header><div class="admonition-body"><p>The API for 3D-0D coupling is work in progress and is hence subject to potential breaking changes.</p></div></div><h2 id="Commented-Program"><a class="docs-heading-anchor" href="#Commented-Program">Commented Program</a><a id="Commented-Program-1"></a><a class="docs-heading-anchor-permalink" href="#Commented-Program" title="Permalink"></a></h2><p>We start by loading Thunderbolt and LinearSolve to use a custom direct solver of our choice.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve</code></pre><p>Finally, we try to approach a valid initial state by solving a simpler model first.</p><pre><code class="language-julia hljs">using OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
+
+fluid_model_init = RSAFDQ2022LumpedCicuitModel()
+u0 = zeros(Thunderbolt.num_states(fluid_model_init))
+Thunderbolt.default_initial_state!(u0, fluid_model_init)
+prob = ODEProblem((du, u, p, t) -&gt; Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 100*fluid_model_init.THB), fluid_model_init)
+sol = solve(prob, Tsit5())</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">retcode: Success
+Interpolation: specialized 4th order &quot;free&quot; interpolation
+t: 11931-element Vector{Float64}:
+     0.0
+     0.04838838098003728
+     0.2792640643984848
+     0.7267523496016612
+     1.3438604381655068
+     2.1442588892106365
+     3.1555531172939957
+     4.39824640576444
+     5.90526888675417
+     7.7164024194879755
+     ⋮
+ 79949.53913317
+ 79956.29767348843
+ 79963.05655804648
+ 79969.81586426416
+ 79976.57547167127
+ 79983.33520206198
+ 79990.09491709921
+ 79996.85455341336
+ 80000.0
+u: 11931-element Vector{Vector{Float64}}:
+ [65.0, 120.0, 65.0, 145.0, 10.66, 4.0, 4.67, 3.2, 0.0, 0.0, 0.0, 0.0]
+ [64.99775599207983, 120.00227770768569, 64.99411468494874, 145.00593718603966, 10.659998698778578, 3.9999999665140544, 4.669999657362968, 3.199999933568232, 0.0004815730430550299, 0.002134255662419863, 0.001058704949551402, 0.0013873724257603324]
+ [64.98801864146336, 120.01307519006716, 64.96751009486455, 145.03415042166324, 10.65995732473332, 3.9999989362827226, 4.66998887341767, 3.1999978409188183, 0.0027286563340648087, 0.011610931373988172, 0.005887067909681074, 0.007715375293357945]
+ [64.97343673901082, 120.03362955227148, 64.92214626693816, 145.08829571065598, 10.659717831193655, 3.9999934149906573, 4.6699281242379485, 3.1999860448630866, 0.006854505222657548, 0.027039465541638375, 0.014273965931167643, 0.018710194902465015]
+ [64.96169085679992, 120.06099336358118, 64.87058951967002, 145.161795531686, 10.659065710108699, 3.9999800212165577, 4.669769295052095, 3.19995517731026, 0.012080360027470986, 0.04321395651129821, 0.024009535416236127, 0.03147877059461846]
+ [64.9590422884215, 120.0943385463058, 64.81815518830922, 145.25505063752837, 10.657716529478249, 3.999956125179102, 4.669457198522932, 3.1998944573339676, 0.01813229885912068, 0.05778148703642834, 0.03404823736490991, 0.04465303829829223]
+ [64.97315242052815, 120.13201303356213, 64.76867906196281, 145.36931403553868, 10.655297467403598, 3.99992028271473, 4.668930854853903, 3.199791923888736, 0.024747263721687698, 0.06934017382066814, 0.04350883191102038, 0.05707863744246782]
+ [65.01361095019732, 120.16952228339345, 64.72592307611659, 145.50371995376398, 10.651396546185397, 3.999873170375802, 4.668138641692197, 3.1996373849033297, 0.03153312463200298, 0.07731247060104394, 0.05157901116291945, 0.06768823773954884]
+ [65.09351105121917, 120.1983518552788, 64.6935907758836, 145.65663985325492, 10.645541833828794, 3.9998165986079437, 4.667034206177342, 3.1994216580901362, 0.038132755971079714, 0.08210581363088908, 0.05784520570133699, 0.07593295740565026]
+ [65.2293722454306, 120.20576277678236, 64.67799794660367, 145.8235332540356, 10.637227798674608, 3.9997528795818074, 4.665579203954888, 3.1991372068563617, 0.044204830626444966, 0.08459208670758404, 0.062235034081437934, 0.08170522703141482]
+ ⋮
+ [63.19245173406938, 114.00371514596382, 60.49794925120591, 146.64494755135252, 11.691940067475711, 3.991035931246552, 4.880464538385124, 3.1695386759469564, 0.07267751435740341, 0.08702603659181793, 0.07911181176203573, 0.08824143699780278]
+ [63.18396185785114, 114.60895145583883, 60.68074474758715, 147.05077347504803, 11.637559297848753, 3.9909533058271407, 4.873349786593931, 3.1690129546257175, 0.07216504506279564, 0.08699932344374241, 0.0788065889474653, 0.08833834238957641]
+ [63.2288530292612, 115.16132970589379, 60.87624061306663, 147.44375852210644, 11.583559228832831, 3.990867942261441, 4.866262071798954, 3.168465977025434, 0.07165619453919117, 0.08697571891672787, 0.07850366389040586, 0.08838907707019687]
+ [63.31817570635545, 115.6695294642859, 61.08462140241303, 147.8237458553039, 11.529936579319013, 3.990779842061237, 4.8592011153144385, 3.1679001669260365, 0.07115093180800239, 0.08695515968129654, 0.07820289815903624, 0.08840369078465633]
+ [63.44477137321968, 116.14048269969945, 61.30604667128051, 148.1905860316814, 11.476689657238726, 3.9906890094901657, 4.852166856101416, 3.167317450218449, 0.07064924086199798, 0.08693760613333736, 0.07790418908357559, 0.08839024359462104]
+ [63.60291499323747, 116.5797316626729, 61.540656586978024, 148.54414367390444, 11.423817211999559, 3.9905954499360963, 4.845159299639008, 3.166719346572839, 0.07015110984973073, 0.08692302980027104, 0.07760745799469985, 0.08835519920661161]
+ [63.78803169613252, 116.99171116204626, 61.78857710514073, 148.8843008399809, 11.37131766360209, 3.990499168571289, 4.838178414468443, 3.1661070427360745, 0.06965652381244397, 0.08691140449566989, 0.07731264162506657, 0.08830373848920782]
+ [63.996469953764425, 117.37997070900589, 62.049923440619935, 149.2109566369313, 11.319188844368192, 3.990400169719155, 4.831224095574397, 3.165481454416743, 0.06916546225245832, 0.08690270254776918, 0.0770196872157332, 0.08824001107138765]
+ [64.10057493987944, 117.55337177271954, 62.17601635268374, 149.358336440275, 11.29505730115981, 3.9903532794781227, 4.827997040718486, 3.1651860197319515, 0.06893815073993763, 0.0869635891603554, 0.07688398795118481, 0.08820706325468233]</code></pre><p>#plot(sol, idxs=[1,2,3,4], tspan=(99<em>fluid<em>model</em>init.THB, 100</em>fluid<em>model</em>init.THB))</p><pre><code class="language-julia hljs"># Precomputed initial guess
+u₀fluid = sol.u[end]
+@info &quot;Total blood volume: $(sum(u₀fluid[1:4])) + $(fluid_model_init.Csysₐᵣ*u₀fluid[5]) + $(fluid_model_init.Csysᵥₑₙ*u₀fluid[6]) + $(fluid_model_init.Cpulₐᵣ*u₀fluid[7]) + $(fluid_model_init.Cpulᵥₑₙ*u₀fluid[8])&quot;</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">[ Info: Total blood volume: 393.1882995055577 + 101.66387622657534 + 4788.817752623138 + 362.129558445206 + 379.8535603250976</code></pre><p>We now generate the mechanical subproblem as in the <a href="../cm01_simple-active-stress/#mechanics-tutorial_simple-active-stress">first tutorial</a></p><pre><code class="language-julia hljs">scaling_factor = 3.7;</code></pre><div class="admonition is-warning" id="Warning-bb85afebae32f343"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-bb85afebae32f343" title="Permalink"></a></header><div class="admonition-body"><p>Tuning parameter until all bugs are fixed in this tutorial :)</p></div></div><pre><code class="language-julia hljs">mesh = generate_ideal_lv_mesh(16,4,19;
+    inner_radius = scaling_factor*0.7,
+    outer_radius = scaling_factor*1.0,
+    longitudinal_upper = 0.4,
+    apex_inner = scaling_factor* 1.3,
+    apex_outer = scaling_factor*1.5,
+    with_valvular_plane = true,
+)
+
+coordinate_system = compute_lv_coordinate_system(mesh; subdomains = [&quot;myocardium&quot;])
+microstructure    = create_microstructure_model(
+    coordinate_system,
+    LagrangeCollection{1}()^3,
+    ODB25LTMicrostructureParameters();
+    subdomains = [&quot;myocardium&quot;],
+);
+passive_material_model = Guccione1991PassiveModel()
+active_material_model  = Guccione1993ActiveModel()
+function calcium_profile_function(x::LVCoordinate,t_global)
+    linear_interpolation(t,y1,y2,t1,t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
+    ca_peak(x)                          = 1.0
+    t = t_global % 800.0
+    if 0 ≤ t ≤ 120.0
+        return linear_interpolation(t,        0.0, ca_peak(x),   0.0, 120.0)
+    elseif t ≤ 272.0
+        return linear_interpolation(t, ca_peak(x),        0.0, 120.0, 272.0)
+    else
+        return 0.0
+    end
+end
+calcium_field = AnalyticalCoefficient(
+    calcium_profile_function,
+    coordinate_system,
+)
+sarcomere_model = CaDrivenInternalSarcomereModel(ConstantStretchModel(), calcium_field)
+active_stress_model = ActiveStressModel(
+    passive_material_model,
+    active_material_model,
+    sarcomere_model,
+    microstructure,
+)
+weak_boundary_conditions = (RobinBC(1.0, &quot;Epicardium&quot;),NormalSpringBC(100.0, &quot;Base&quot;))
+solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);</code></pre><p>The mesh was generated with a valvular plane, a meshed cap closing the basal orifice, so that the chamber volume is the divergence-theorem integral over a <em>closed</em> surface and stays the cavity volume however the base moves. The cap stands for the closed mitral valve together with its annulus, and the chamber pressure of the coupler below acts on its ventricular face, so it has to carry that pressure without bulging: it is a <em>stiff</em> isotropic closure, <code>α = 16000</code> giving a Young&#39;s modulus of about 80 MPa, four orders of magnitude above the myocardial small-strain shear modulus – a fibrous rather than a muscular structure. At peak systolic pressure (≈ 14.6 kPa here) that holds the cap&#39;s deflection relative to the annulus ring to ≈ 1.3 % of the cavity radius.</p><p><code>mpU</code> is set equal to <code>α</code>, i.e. a Poisson ratio of ≈ 0.29: the cap is a closure and not tissue, so there is no reason to make it nearly incompressible, and a compressible one spares the single element the plate is thick from volumetric locking. There is no active stress and no microstructure.</p><div class="admonition is-warning" id="Warning-b572be6d8a85a0da"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-b572be6d8a85a0da" title="Permalink"></a></header><div class="admonition-body"><p>A cap at tissue stiffness is by far the most compliant part of the chamber. It then takes up the volume change that the wall should be doing, and the ventricle never builds systolic pressure at all – the mitral valve of the 0D circuit stays open and the chamber just fills.</p></div></div><pre><code class="language-julia hljs">valvular_plane_model = QuasiStaticModel(
+    :displacement,
+    PK1Model(
+        BioNeoHookean(; α = 16000.0, mpU = SimpleCompressionPenalty(16000.0)),
+        NoMicrostructureModel(),
+    ),
+);</code></pre><p>The solid model is now couple with the circuit model by adding a Lagrange multipliers constraining the 3D chamber volume to match the chamber volume in the 0D model.</p><pre><code class="language-julia hljs">fluid_model = RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false)
+coupler = LumpedFluidSolidCoupler(
+    [
+        ChamberVolumeCoupling(
+            &quot;LVChamberSurface&quot;,
+            :Vₗᵥ,
+            :pₗᵥ,
+            :pₗᵥ,
+        )
+    ],
+    :displacement,
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">LumpedFluidSolidCoupler(ChamberVolumeCoupling[ChamberVolumeCoupling(&quot;LVChamberSurface&quot;, :Vₗᵥ, :pₗᵥ, :pₗᵥ)], :displacement)</code></pre><p>The structural model is keyed by the subdomain it lives on, exactly as for an uncoupled mechanics problem. Note that the subdomain map goes <em>inside</em> the coupled model: <code>RSAFDQ2022Split</code> annotates the whole 3D-0D problem, so it is not itself something that lives on a subdomain. The cap is a subdomain of the coupled problem like the wall is: the tying facets are the whole closed surface, so the chamber pressure acts on the cap too and the coupler is added to both models.</p><pre><code class="language-julia hljs">coupled_model = RSAFDQ2022Model(
+    Dict(&quot;myocardium&quot; =&gt; solid_model, &quot;valvular-plane&quot; =&gt; valvular_plane_model),
+    fluid_model,
+    coupler,
+);</code></pre><div class="admonition is-todo" id="Todo-2f2b6935f89640f"><header class="admonition-header">Todo<a class="admonition-anchor" href="#Todo-2f2b6935f89640f" title="Permalink"></a></header><div class="admonition-body"><p>Once we figure out a nicer way to do this we should add more detailed docs here.</p></div></div><p>Now we semidiscretize the model spatially as usual with finite elements and annotate the model with a stable split. There is no Dirichlet condition: the epicardial Robin spring already pins every rigid body mode, and the base is left to the pericardial spring above rather than clamped, because the cap is what makes the chamber volume well defined while the base moves.</p><pre><code class="language-julia hljs">spatial_discretization_method = FiniteElementDiscretization(
+    Dict(:displacement =&gt; LagrangeCollection{1}()^3),
+)
+splitform = semidiscretize(
+    RSAFDQ2022Split(coupled_model),
+    spatial_discretization_method,
+    mesh,
+)
+
+dt₀ = 1.0
+dtvis = 10.0
+tspan = (0.0, 3*800.0)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(0.0, 2400.0)</code></pre><p>This speeds up the CI #hide</p><p>The remaining code is very similar to how we use SciML solvers. The 3D-0D operator assembles into a block matrix, structural block and chamber-pressure block, so the inner solver is a Schur complement solve around a factorization of the structural block.</p><pre><code class="language-julia hljs">chamber_solver = HomotopyPathSolver(
+    NewtonRaphsonSolver(;
+        max_iter=10,
+        tol=1e-2,
+        inner_solver=SchurComplementLinearSolver(LinearSolve.UMFPACKFactorization())
+    )
+)
+blood_circuit_solver = Tsit5()
+timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">LTG (HomotopyPathSolver{Thunderbolt.GenericLocalNonlinearSolver}(NewtonRaphsonSolver{Float64}(0.01, 10, SchurComplementLinearSolver{LinearSolve.UMFPACKFactorization{@NamedTuple{}}}(LinearSolve.UMFPACKFactorization{@NamedTuple{}}(true, true, NamedTuple())), Thunderbolt.DefaultProgressMonitor(), true, nothing, false), Thunderbolt.GenericLocalNonlinearSolver(10, 0.0001)) -&gt; OrdinaryDiffEqTsit5.Tsit5{typeof(OrdinaryDiffEqCore.trivial_limiter!), typeof(OrdinaryDiffEqCore.trivial_limiter!), FastBroadcast.Serial}(OrdinaryDiffEqCore.trivial_limiter!, OrdinaryDiffEqCore.trivial_limiter!, FastBroadcast.Serial()))</code></pre><p>The coupled problem publishes every quantity it holds by name, so the pre-paced circuit state can be transferred one state at a time instead of by slicing the solution vector.</p><pre><code class="language-julia hljs">u₀ = create_initial_condition(splitform)
+for (sym, val) in zip(Thunderbolt.state_symbols(fluid_model), u₀fluid)
+    setvariable!(u₀, splitform, sym, val)
+end</code></pre><div class="admonition is-success" id="Tip-42652a6799af775b"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-42652a6799af775b" title="Permalink"></a></header><div class="admonition-body"><p><code>solution_variable_names(splitform)</code> lists what is available here: the displacement field, the chamber pressure <code>:pₗᵥ</code> introduced by the coupler, and the twelve circuit states.</p></div></div><pre><code class="language-julia hljs">problem = OperatorSplittingProblem(splitform, u₀, tspan)
+integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
+
+# f2 = Figure()
+# axs = [
+#     Axis(f2[1, 1], title=&quot;LV&quot;),
+#     Axis(f2[1, 2], title=&quot;RV&quot;),
+#     Axis(f2[2, 1], title=&quot;LA&quot;),
+#     Axis(f2[2, 2], title=&quot;RA&quot;)
+# ]
+
+# vlv = Observable(Float64[])
+# plv = Observable(Float64[])
+
+# vrv = Observable(Float64[])
+# prv = Observable(Float64[])
+
+# vla = Observable(Float64[])
+# pla = Observable(Float64[])
+
+# vra = Observable(Float64[])
+# pra = Observable(Float64[])
+
+# lines!(axs[1], vlv, plv)
+# lines!(axs[2], vrv, prv)
+# lines!(axs[3], vla, pla)
+# lines!(axs[4], vra, pra)
+# for i in 1:4
+#     xlims!(axs[1], 0.0, 180.0)
+#     ylims!(axs[1], 0.0, 180.0)
+# end
+# display(f2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">t: 0.0
+u: 5026-element Vector{Float64}:
+   0.0
+   0.0
+   0.0
+   0.0
+   0.0
+   0.0
+   0.0
+   0.0
+   0.0
+   0.0
+   ⋮
+ 149.358336440275
+  11.29505730115981
+   3.9903532794781227
+   4.827997040718486
+   3.1651860197319515
+   0.06893815073993763
+   0.0869635891603554
+   0.07688398795118481
+   0.08820706325468233</code></pre><div class="admonition is-todo" id="Todo-e1d380a8f4b5d0a4"><header class="admonition-header">Todo<a class="admonition-anchor" href="#Todo-e1d380a8f4b5d0a4" title="Permalink"></a></header><div class="admonition-body"><p>recover online visualization of the pressure volume loop</p></div></div><p>Now we can finally solve the coupled problem in time. The displacement field and the chamber quantities are all reached by name, so the loop never touches the internals of the split. The descriptor is looked up once, outside the loop.</p><pre><code class="language-julia hljs">io = ParaViewWriter(&quot;CM03_3d0d-coupling&quot;);
+displacement = solution_variable(splitform, :displacement)
+for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    store_timestep!(io, t, mesh) do file
+        Thunderbolt.store_timestep_field!(file, t, u, displacement)
+    end
+
+    # The chamber pressure is a genuine unknown of the coupled problem, and the chamber volume is a
+    # state of the 0D circuit, so both can simply be read out by name.
+    # Note that `:Vₗᵥ` is the *0D* volume; the tying constrains it to match the 3D chamber volume at
+    # convergence, but the two differ along the homotopy path.
+    @info &quot;$t: pₗᵥ = $(getvariable(u, splitform, :pₗᵥ)), Vₗᵥ = $(getvariable(u, splitform, :Vₗᵥ))&quot;
+    # if t &gt; 0.0
+    #     append!(vlv.val, getvariable(u, splitform, :Vₗᵥ))
+    #     append!(plv.val, getvariable(u, splitform, :pₗᵥ))
+    #     notify(vlv)
+    #     notify(plv)
+    # end
+    # TODO plot other chambers
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">[ Info: 0.0: pₗᵥ = 0.0, Vₗᵥ = 117.55337177271954
+[ Info: 10.0: pₗᵥ = 2.142376718164134, Vₗᵥ = 120.60756803957963</code></pre><div class="admonition is-success" id="Tip-5e3aff734d18349a"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-5e3aff734d18349a" title="Permalink"></a></header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[3]</dt><dd><div>F. Regazzoni, M. Salvador, P. C. Africa, M. Fedele, L. Dedè and A. Quarteroni. <em>A cardiac electromechanical model coupled with a lumped-parameter model for closed-loop blood circulation</em>. <a href="https://doi.org/10.1016/j.jcp.2022.111083">Journal of Computational Physics <strong>457</strong>, 111083</a> (2022).</div></dd></dl></div><h2 id="mechanics-tutorial_3d0dcoupling-plain-program"><a class="docs-heading-anchor" href="#mechanics-tutorial_3d0dcoupling-plain-program">Plain program</a><a id="mechanics-tutorial_3d0dcoupling-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#mechanics-tutorial_3d0dcoupling-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="../cm03_3d0d-coupling.jl"><code>cm03_3d0d-coupling.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
+
+using OrdinaryDiffEqTsit5, OrdinaryDiffEqOperatorSplitting
+
+fluid_model_init = RSAFDQ2022LumpedCicuitModel()
+u0 = zeros(Thunderbolt.num_states(fluid_model_init))
+Thunderbolt.default_initial_state!(u0, fluid_model_init)
+prob = ODEProblem((du, u, p, t) -&gt; Thunderbolt.lumped_driver!(du, u, t, [], p), u0, (0.0, 100*fluid_model_init.THB), fluid_model_init)
+sol = solve(prob, Tsit5())
+
+# Precomputed initial guess
+u₀fluid = sol.u[end]
+@info &quot;Total blood volume: $(sum(u₀fluid[1:4])) + $(fluid_model_init.Csysₐᵣ*u₀fluid[5]) + $(fluid_model_init.Csysᵥₑₙ*u₀fluid[6]) + $(fluid_model_init.Cpulₐᵣ*u₀fluid[7]) + $(fluid_model_init.Cpulᵥₑₙ*u₀fluid[8])&quot;
+
+scaling_factor = 3.7;
+
+mesh = generate_ideal_lv_mesh(16,4,19;
+    inner_radius = scaling_factor*0.7,
+    outer_radius = scaling_factor*1.0,
+    longitudinal_upper = 0.4,
+    apex_inner = scaling_factor* 1.3,
+    apex_outer = scaling_factor*1.5,
+    with_valvular_plane = true,
+)
+
+coordinate_system = compute_lv_coordinate_system(mesh; subdomains = [&quot;myocardium&quot;])
+microstructure    = create_microstructure_model(
+    coordinate_system,
+    LagrangeCollection{1}()^3,
+    ODB25LTMicrostructureParameters();
+    subdomains = [&quot;myocardium&quot;],
+);
+passive_material_model = Guccione1991PassiveModel()
+active_material_model  = Guccione1993ActiveModel()
+function calcium_profile_function(x::LVCoordinate,t_global)
+    linear_interpolation(t,y1,y2,t1,t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
+    ca_peak(x)                          = 1.0
+    t = t_global % 800.0
+    if 0 ≤ t ≤ 120.0
+        return linear_interpolation(t,        0.0, ca_peak(x),   0.0, 120.0)
+    elseif t ≤ 272.0
+        return linear_interpolation(t, ca_peak(x),        0.0, 120.0, 272.0)
+    else
+        return 0.0
+    end
+end
+calcium_field = AnalyticalCoefficient(
+    calcium_profile_function,
+    coordinate_system,
+)
+sarcomere_model = CaDrivenInternalSarcomereModel(ConstantStretchModel(), calcium_field)
+active_stress_model = ActiveStressModel(
+    passive_material_model,
+    active_material_model,
+    sarcomere_model,
+    microstructure,
+)
+weak_boundary_conditions = (RobinBC(1.0, &quot;Epicardium&quot;),NormalSpringBC(100.0, &quot;Base&quot;))
+solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
+
+valvular_plane_model = QuasiStaticModel(
+    :displacement,
+    PK1Model(
+        BioNeoHookean(; α = 16000.0, mpU = SimpleCompressionPenalty(16000.0)),
+        NoMicrostructureModel(),
+    ),
+);
+
+fluid_model = RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false)
+coupler = LumpedFluidSolidCoupler(
+    [
+        ChamberVolumeCoupling(
+            &quot;LVChamberSurface&quot;,
+            :Vₗᵥ,
+            :pₗᵥ,
+            :pₗᵥ,
+        )
+    ],
+    :displacement,
+)
+
+coupled_model = RSAFDQ2022Model(
+    Dict(&quot;myocardium&quot; =&gt; solid_model, &quot;valvular-plane&quot; =&gt; valvular_plane_model),
+    fluid_model,
+    coupler,
+);
+
+spatial_discretization_method = FiniteElementDiscretization(
+    Dict(:displacement =&gt; LagrangeCollection{1}()^3),
+)
+splitform = semidiscretize(
+    RSAFDQ2022Split(coupled_model),
+    spatial_discretization_method,
+    mesh,
+)
+
+dt₀ = 1.0
+dtvis = 10.0
+tspan = (0.0, 3*800.0)
+
+
+chamber_solver = HomotopyPathSolver(
+    NewtonRaphsonSolver(;
+        max_iter=10,
+        tol=1e-2,
+        inner_solver=SchurComplementLinearSolver(LinearSolve.UMFPACKFactorization())
+    )
+)
+blood_circuit_solver = Tsit5()
+timestepper = LieTrotterGodunov((chamber_solver, blood_circuit_solver))
+
+u₀ = create_initial_condition(splitform)
+for (sym, val) in zip(Thunderbolt.state_symbols(fluid_model), u₀fluid)
+    setvariable!(u₀, splitform, sym, val)
+end
+
+problem = OperatorSplittingProblem(splitform, u₀, tspan)
+integrator = init(problem, timestepper, dt=dt₀, verbose=true; dtmax=10.0);
+
+# f2 = Figure()
+# axs = [
+#     Axis(f2[1, 1], title=&quot;LV&quot;),
+#     Axis(f2[1, 2], title=&quot;RV&quot;),
+#     Axis(f2[2, 1], title=&quot;LA&quot;),
+#     Axis(f2[2, 2], title=&quot;RA&quot;)
+# ]
+
+# vlv = Observable(Float64[])
+# plv = Observable(Float64[])
+
+# vrv = Observable(Float64[])
+# prv = Observable(Float64[])
+
+# vla = Observable(Float64[])
+# pla = Observable(Float64[])
+
+# vra = Observable(Float64[])
+# pra = Observable(Float64[])
+
+# lines!(axs[1], vlv, plv)
+# lines!(axs[2], vrv, prv)
+# lines!(axs[3], vla, pla)
+# lines!(axs[4], vra, pra)
+# for i in 1:4
+#     xlims!(axs[1], 0.0, 180.0)
+#     ylims!(axs[1], 0.0, 180.0)
+# end
+# display(f2)
+
+io = ParaViewWriter(&quot;CM03_3d0d-coupling&quot;);
+displacement = solution_variable(splitform, :displacement)
+for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    store_timestep!(io, t, mesh) do file
+        Thunderbolt.store_timestep_field!(file, t, u, displacement)
+    end
+
+    # The chamber pressure is a genuine unknown of the coupled problem, and the chamber volume is a
+    # state of the 0D circuit, so both can simply be read out by name.
+    # Note that `:Vₗᵥ` is the *0D* volume; the tying constrains it to match the 3D chamber volume at
+    # convergence, but the two differ along the homotopy path.
+    @info &quot;$t: pₗᵥ = $(getvariable(u, splitform, :pₗᵥ)), Vₗᵥ = $(getvariable(u, splitform, :Vₗᵥ))&quot;
+    # if t &gt; 0.0
+    #     append!(vlv.val, getvariable(u, splitform, :Vₗᵥ))
+    #     append!(plv.val, getvariable(u, splitform, :pₗᵥ))
+    #     notify(vlv)
+    #     notify(plv)
+    # end
+    # TODO plot other chambers
+end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../cm02_prestress/">« CM02: Prestressing (WIP)</a><a class="docs-footer-nextpage" href="../cm04_pericardium/">CM04: Pericadium (TODO) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Friday 30 October 2026 13:02">Friday 30 October 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
