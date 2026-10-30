@@ -99,8 +99,8 @@ end
     @test source isa Thunderbolt.MirroredLinearOperator
 
     b = gpu.cache.stage.linear_solver.b
-    Thunderbolt._add_source_term!(b, source) # warmup
-    @test CUDA.@allocated(Thunderbolt._add_source_term!(b, source)) == 0
+    Thunderbolt._add_source_term!(b, source, 0.1f0) # warmup
+    @test CUDA.@allocated(Thunderbolt._add_source_term!(b, source, 0.1f0)) == 0
 
     ctx = TimeIntegrationContext(0.3f0, 0.0f0, 0.0f0)
     Thunderbolt.update_operator!(source, nothing, ctx) # warmup

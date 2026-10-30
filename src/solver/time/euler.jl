@@ -80,7 +80,7 @@ mutable struct BackwardEulerAffineODEStage{
     σ::Int
     # Helper for possible source terms
     source_term::SourceTermType
-    # Linear solver for (M - σΔtₙ₋₁ K) uₙ = M uₙ₋₁  + f
+    # Linear solver for (M - σΔtₙ₋₁ K) uₙ = M uₙ₋₁ + Δtₙ₋₁ f
     linear_solver::SolverCacheType
     # Last time step length as a check if we have to update A
     Δt_last::T
@@ -126,7 +126,7 @@ function perform_backward_euler_step!(
     # Update source term
     @timeit_debug "update source term" begin
         refresh_source_operator!(stage.source_term, t + Δt)
-        _add_source_term!(linear_solver.b, stage.source_term)
+        _add_source_term!(linear_solver.b, stage.source_term, Δt)
     end
 
     # Solve linear problem, where sol.u === uₙ
@@ -158,10 +158,13 @@ function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, σΔt)
     @inbounds @.. Anz = Mnz - σΔt * Knz
 end
 
-# Generic (same-device) path: adds in place through `Ferrite.add!`. `ext/CuThunderboltExt.jl`
-# overrides this for a device-resident `b` -- direct for a device-assembled source, through a
-# persistent mirrored buffer for a host-assembled one.
-_add_source_term!(b::AbstractVector, source) = add!(b, source)
+# `b += Δt f` from the source's payload, which already lives on `b`'s device (a host-assembled
+# source behind a device `b` is a `MirroredLinearOperator`).
+_add_source_term!(b::AbstractVector, ::LinearNullOperator, Δt) = b
+function _add_source_term!(b::AbstractVector, source, Δt)
+    b .+= Δt .* FerriteOperators.operator_payload(source)
+    return b
+end
 
 function setup_solver_cache(
     f::AffineODEFunction,

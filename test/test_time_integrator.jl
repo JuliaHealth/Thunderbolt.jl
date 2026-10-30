@@ -2,6 +2,7 @@ using Thunderbolt
 using DiffEqBase, SciMLBase
 using LinearAlgebra
 using Logging
+using StaticArrays
 using Test
 
 import Thunderbolt: solution_size, ThunderboltTimeIntegrator
@@ -38,6 +39,35 @@ transient_diffusion_problem() =
     sol = SciMLBase.solve!(integrator)
     @test integrator.u ≈ u₀ atol = 1.0e-4
     @test sol.retcode == SciMLBase.ReturnCode.Success
+end
+
+# A spatially constant source c on the same pure-Neumann problem gives M⁻¹f = c·1, so the exact
+# solution u = u₀ + c t is linear in t and backward Euler reproduces it step for step. A right
+# hand side missing the Δt factor on the source advances by c instead of c Δt per step.
+@testset "Backward Euler integrates a constant source exactly" begin
+    c = 2.0
+    mesh = generate_mesh(Quadrilateral, (4, 4), Vec{2}((0.0, 0.0)), Vec{2}((1.0, 1.0)))
+    fun = semidiscretize(
+        TransientDiffusionModel(
+            ConstantCoefficient(SymmetricTensor{2, 2, Float64}((1.0, 0.0, 1.0))),
+            AnalyticalTransmembraneStimulationProtocol(
+                AnalyticalCoefficient((x, t) -> c, CartesianCoordinateSystem(mesh)),
+                [SVector((0.0, 1.0))],
+            ),
+            :u,
+        ),
+        FiniteElementDiscretization(Dict(:u => LagrangeCollection{1}())),
+        mesh,
+    )
+    u₀ = ones(Float64, solution_size(fun))
+    integrator =
+        init(Thunderbolt.ODEProblem(fun, copy(u₀), (0.0, 1.0)), BackwardEulerSolver(), dt = 0.1)
+
+    SciMLBase.step!(integrator)
+    @test integrator.u ≈ u₀ .+ c * 0.1 rtol = 1.0e-8
+    sol = SciMLBase.solve!(integrator)
+    @test sol.retcode == SciMLBase.ReturnCode.Success
+    @test integrator.u ≈ u₀ .+ c * 1.0 rtol = 1.0e-8
 end
 
 # Makes a `BilinearDiffusionIntegrator` assemble the positive form `+∫ D∇u·∇v`, and declares it.
