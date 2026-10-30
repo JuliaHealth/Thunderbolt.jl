@@ -51,7 +51,7 @@ function OS._build_child(
     dt = abs(config.values.dt)
     # Since we do not have control over the adaptivity setting yet, this toggles adaptivity off for inner algs.
     adaptive = config.values.adaptive & SciMLBase.isadaptive(alg)
-    verbose = normalize_verbosity(config.values.verbose)
+    verbose = normalize_verbosity(OS.inner_verbosity(config.values.verbose))
     controller = config.values.controller
     inner = OS.inner_values(config.values)
     internalnorm = get(inner, :internalnorm, OrdinaryDiffEqCore.ODE_DEFAULT_NORM)

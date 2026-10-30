@@ -6,55 +6,6 @@ function FerriteOperators.getquadraturerule(
 end
 
 """
-    element_precision(qr) -> Type
-
-The scalar type an element built on `qr` evaluates in — the precision the
-integrator elected through its quadrature collection, read off the rule that
-collection produced. `CellValues(qr, ip, ip_geo)` is `Float64` whatever the rule
-carries, so every cache built here spells `CellValues(element_precision(qr), qr,
-ip, ip_geo)`.
-
-Read off the RULE rather than the collection so `src/` keeps loading against
-FerriteOperators versions whose collections are `Float64` only.
-"""
-# TODO(FO floor >= 0.5): once the FerriteOperators floor carries `element_value_type`
-# unconditionally, collapse this whole precision-plumbing seam:
-#   (1) delete `element_precision`/`element_matrix_buffer`/`element_vector_buffer` (collections.jl:8-39);
-#   (2) delete the nine `allocate_element_matrix`/`allocate_element_unknown_vector`/
-#       `allocate_element_residual_vector` overrides (mass.jl:85-90, diffusion.jl:87-92,
-#       analytical_coefficient.jl:67-72) — FO's own defaults already read `element_value_type`;
-#   (3) add three `FerriteOperators.element_value_type` methods instead (`BilinearMassElementCache`
-#       and `BilinearDiffusionElementCache` via `.cellvalues`, `AnalyticalCoefficientElementCache`
-#       via `.cv`);
-#   (4) `element_precision` → `element_value_type` at mass.jl:100, diffusion.jl:100,
-#       electrophysiology.jl:281;
-#   (5) bump the FerriteOperators compat bound in Project.toml.
-# Padding is NOT part of that collapse. FO's `allocate_element_*` contract (element_interface.jl:56-57)
-# is that a declaration states the FIELD-space size and the ENGINE pads it at the call sites where a
-# `global_dofs` declaration asks for the augmented system -- so the overrides above are already
-# correct as written, and an override that padded itself would be padded twice.
-element_precision(qr::QuadratureRule) = eltype(Ferrite.getweights(qr))
-element_precision(cv::Ferrite.AbstractValues) = eltype(Ferrite.shape_value_type(cv))
-
-"""
-    element_matrix_buffer(cv, sdh)
-    element_vector_buffer(cv, sdh)
-
-The element-local buffers of a cache evaluating through `cv`, in that values
-object's own precision — `Float32` values must not accumulate into `Float64`
-buffers.
-
-Spelled on FerriteOperators' `allocate_element_*` hooks rather than on its
-element precision trait, which `src/` cannot name while it also loads against
-FerriteOperators 0.4; against that version these return exactly the default they
-replace.
-"""
-element_matrix_buffer(cv, sdh) =
-    zeros(element_precision(cv), ndofs_per_cell(sdh), ndofs_per_cell(sdh))
-@doc (@doc element_matrix_buffer) element_vector_buffer(cv, sdh) =
-    zeros(element_precision(cv), ndofs_per_cell(sdh))
-
-"""
     InterpolationCollection
 
 A collection of compatible interpolations over some (possilby different) cells.
@@ -164,10 +115,19 @@ getinterpolation(
 """
     NodalQuadratureRuleCollection(::InterpolationCollection)
 
-A collection of nodal quadrature rules across different cell types.
+A collection of nodal (collocated) quadrature rules across different cell types: the rule whose
+points are the interpolation's own dof locations.
+
+On a **hypercube** carrying a `Lagrange` or `DiscontinuousLagrange` interpolation of order `p` the
+nodes are the tensor product of the `p+1` Gauss-Lobatto points, so this rule is Ferrite's own
+`:lobatto` rule reordered into the interpolation's node order, and its weights are exact. That is
+what makes the mass matrix assembled through it *diagonal* — the spectral-element mass — while the
+same space under a Gauss rule is not.
 
 !!! warning
-    The computation for the weights is not implemented yet and hence they default to NaN.
+    On any other reference shape the collocated weights are not implemented and default to `NaN`.
+    Such a rule still positions correctly, which is all the field-evaluation callers need, but it
+    cannot integrate.
 """
 struct NodalQuadratureRuleCollection{IPC <: InterpolationCollection}
     ipc::IPC
@@ -179,10 +139,45 @@ function getquadraturerule(
 ) where {ref_shape}
     ip = getinterpolation(nqr.ipc, cell)
     positions = Ferrite.reference_coordinates(ip)
-    return QuadratureRule{ref_shape}([NaN for _ = 1:length(positions)], positions)
+    return QuadratureRule{ref_shape}(_nodal_quadrature_weights(ip, positions), positions)
 end
 getquadraturerule(qrc::NodalQuadratureRuleCollection, sdh::SubDofHandler) =
     getquadraturerule(qrc, get_first_cell(sdh))
+
+_nodal_quadrature_weights(ip, positions) = [NaN for _ = 1:length(positions)]
+
+const _TensorProductLagrange{dim, order} = Union{
+    Lagrange{Ferrite.RefHypercube{dim}, order},
+    DiscontinuousLagrange{Ferrite.RefHypercube{dim}, order},
+}
+
+# Ferrite orders hypercube Lagrange nodes by entity (vertices, then edges, ...) and its `:lobatto`
+# rule lexicographically, so the weights are matched by POSITION rather than by index. The matching
+# is asserted to be a bijection: a node the rule does not carry would otherwise silently take a
+# neighbour's weight, and the mass matrix would come out diagonal and wrong.
+function _nodal_quadrature_weights(
+    ::_TensorProductLagrange{dim, order},
+    positions,
+) where {dim, order}
+    qr = QuadratureRule{Ferrite.RefHypercube{dim}}(Float64, :lobatto, order + 1)
+    points, weights = Ferrite.getpoints(qr), Ferrite.getweights(qr)
+    length(points) == length(positions) || error(
+        "The collocated Gauss-Lobatto rule of order $order on RefHypercube{$dim} has " *
+        "$(length(points)) points but the interpolation has $(length(positions)) nodes.",
+    )
+    taken = falses(length(points))
+    out = Vector{Float64}(undef, length(positions))
+    for (i, x) in pairs(positions)
+        j = argmin(k -> maximum(abs, points[k] - x), eachindex(points))
+        (maximum(abs, points[j] - x) < 1.0e-10 && !taken[j]) || error(
+            "Node $i of the interpolation sits at $x, which is not an unmatched point of the " *
+            "collocated Gauss-Lobatto rule. The two are meant to be the same point set.",
+        )
+        taken[j] = true
+        out[i] = weights[j]
+    end
+    return out
+end
 
 
 """

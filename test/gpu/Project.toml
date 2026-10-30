@@ -3,10 +3,12 @@ Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 FerriteOperators = "27d9367a-5072-424e-9c5f-fe582399bac3"
+FerriteOperatorsExampleElements = "465fd1ee-fdf1-4c5c-a097-38ab1ffcf927"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 OrdinaryDiffEqOperatorSplitting = "760fc936-9fa0-4281-9c1a-468957eedc89"
+Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 SparseMatricesCSR = "a0a7dd2c-ebf4-11e9-1f05-cf50bc540ca1"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
@@ -15,3 +17,4 @@ Thunderbolt = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
 [sources]
 Thunderbolt = {path = "../.."}
 FerriteOperators = {path = "../../../FerriteOperators.jl"}
+FerriteOperatorsExampleElements = {path = "../../../FerriteOperators.jl/lib/FerriteOperatorsExampleElements"}

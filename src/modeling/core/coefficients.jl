@@ -7,7 +7,7 @@ Build the cache that [`evaluate_coefficient`](@ref) reads `coefficient` from on 
 function setup_coefficient_cache end
 
 """
-    evaluate_coefficient(cache, geometry_cache::CellCache, qp::QuadraturePoint, t)
+    evaluate_coefficient(cache, geometry_cache, qp::QuadraturePoint, t)
 
 Value of the cached coefficient at quadrature point `qp` of the cell in `geometry_cache`, at time
 `t`. `cache` comes from [`setup_coefficient_cache`](@ref).
@@ -84,7 +84,7 @@ end
 
 function evaluate_coefficient(
     cache::FieldCoefficientCache{T},
-    geometry_cache::CellCache,
+    geometry_cache,
     qp::QuadraturePoint,
     t,
 ) where {T}
@@ -117,7 +117,7 @@ function setup_coefficient_cache(
     return coefficient
 end
 
-evaluate_coefficient(coeff::ConstantCoefficient, ::CellCache, qp, t) = coeff.val
+evaluate_coefficient(coeff::ConstantCoefficient, cell, qp, t) = coeff.val
 
 
 """
@@ -151,7 +151,7 @@ end
 
 function evaluate_coefficient(
     coeff::ConductivityToDiffusivityCoefficientCache,
-    cell_cache::CellCache,
+    cell_cache,
     qp::QuadraturePoint,
     t,
 )
@@ -251,12 +251,8 @@ duplicate_for_device(device, cache::CellIndexCoordinateSystemCache) = cache
 setup_coefficient_cache(::CellIndexCoordinateSystem, ::QuadratureRule, ::SubDofHandler) =
     CellIndexCoordinateSystemCache()
 
-evaluate_coefficient(
-    ::CellIndexCoordinateSystemCache,
-    geometry_cache::CellCache,
-    ::QuadraturePoint,
-    t,
-) = cellid(geometry_cache)
+evaluate_coefficient(::CellIndexCoordinateSystemCache, geometry_cache, ::QuadraturePoint, t) =
+    cellid(geometry_cache)
 
 struct CartesianCoordinateSystemCache{CS, CV}
     cs::CS
@@ -278,7 +274,7 @@ end
 
 function evaluate_coefficient(
     coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}},
-    geometry_cache::CellCache,
+    geometry_cache,
     qp::QuadraturePoint{<:Any, T},
     t,
 ) where {sdim, T}
@@ -316,7 +312,7 @@ end
 
 function evaluate_coefficient(
     coeff::LVCoordinateSystemCache,
-    geometry_cache::CellCache,
+    geometry_cache,
     qp::QuadraturePoint{ref_shape, T},
     t,
 ) where {ref_shape, T}
@@ -358,7 +354,7 @@ end
 
 function evaluate_coefficient(
     cc::BiVCoordinateSystemCache,
-    cell_cache::CellCache,
+    cell_cache,
     qp::QuadraturePoint{<:Any, T},
     t,
 ) where {T}
@@ -419,14 +415,14 @@ function setup_coordinate_axes_cache(
 end
 
 """
-    evaluate_coordinate_axes(cache, geometry_cache::CellCache, qp::QuadraturePoint, t)
+    evaluate_coordinate_axes(cache, geometry_cache, qp::QuadraturePoint, t)
 
 The local orthonormal frame of the coordinate system at `qp`, as a [`LocalCoordinateAxes`](@ref).
 The counterpart of [`evaluate_coefficient`](@ref), which gives the coordinate values at that point.
 """
 function evaluate_coordinate_axes(
     cache::LocalCoordinateAxesCache,
-    geometry_cache::CellCache,
+    geometry_cache,
     qp::QuadraturePoint{<:Any, T},
     t,
 ) where {T}
@@ -478,7 +474,7 @@ end
 
 function evaluate_coefficient(
     coeff::SpectralTensorCoefficientCache,
-    cell_cache::CellCache,
+    cell_cache,
     qp::QuadraturePoint,
     t,
 )
@@ -513,7 +509,7 @@ function setup_coefficient_cache(
     return coefficient
 end
 
-evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::CellCache, ::QuadraturePoint, t) =
+evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, cell, ::QuadraturePoint, t) =
     _evaluate_coefficient(coeff, t)
 
 function _evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, t)

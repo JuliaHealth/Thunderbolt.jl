@@ -30,7 +30,7 @@ duplicate_for_device(device, cache::AnalyticalCoefficientCache) =
 
 @inline function evaluate_coefficient(
     coeff::F,
-    cell_cache::CellCache,
+    cell_cache,
     qp::QuadraturePoint{<:Any, T},
     t,
 ) where {F <: AnalyticalCoefficientCache, T}
@@ -64,12 +64,8 @@ duplicate_for_device(device, ec::AnalyticalCoefficientElementCache) =
 Ferrite.getnquadpoints(element_cache::AnalyticalCoefficientElementCache) =
     getnquadpoints(element_cache.cv)
 
-FerriteOperators.allocate_element_matrix(c::AnalyticalCoefficientElementCache, sdh) =
-    element_matrix_buffer(c.cv, sdh)
-FerriteOperators.allocate_element_unknown_vector(c::AnalyticalCoefficientElementCache, sdh) =
-    element_vector_buffer(c.cv, sdh)
-FerriteOperators.allocate_element_residual_vector(c::AnalyticalCoefficientElementCache, sdh) =
-    element_vector_buffer(c.cv, sdh)
+FerriteOperators.element_value_type(c::AnalyticalCoefficientElementCache) =
+    FerriteOperators.element_value_type(c.cv)
 # The kernel maps the reference quadrature points itself, out of the geometry cache's coordinates,
 # and reads only the reference shape values of `cv`. Nothing in the cache is per-cell state.
 FerriteOperators.reinit_values!(::AnalyticalCoefficientElementCache, cell) = nothing
@@ -92,7 +88,7 @@ end
 # We want this to be as fast as possible, so throw away everything unused
 @inline function _assemble_element!(
     bₑ::AbstractVector,
-    geometry_cache::CellCache,
+    geometry_cache,
     coords::AbstractVector{<:Vec{dim, T}},
     element_cache::AnalyticalCoefficientElementCache,
     time,

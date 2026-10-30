@@ -40,6 +40,35 @@ transient_diffusion_problem() =
     @test sol.retcode == SciMLBase.ReturnCode.Success
 end
 
+# Makes a `BilinearDiffusionIntegrator` assemble the positive form `+∫ D∇u·∇v`, and declares it.
+struct NegatedCoefficient{C}
+    inner::C
+end
+Thunderbolt.setup_coefficient_cache(c::NegatedCoefficient, qr::QuadratureRule, sdh::SubDofHandler) =
+    ConstantCoefficient(-c.inner.val)
+Thunderbolt.rate_sign(::Thunderbolt.BilinearDiffusionIntegrator{<:NegatedCoefficient}) = -1
+
+@testset "Backward Euler honours rate_sign" begin
+    f = DIFFUSION_FUN
+    K = f.bilinear_term
+    fneg = AffineODEFunction(
+        f.mass_term,
+        Thunderbolt.BilinearDiffusionIntegrator(NegatedCoefficient(K.D), K.qrc, K.sym),
+        f.source_term,
+        f.dh,
+        f.assembly_strategy,
+    )
+    n = solution_size(f)
+    u₀ = [sinpi(i / n) for i = 1:n]
+    function solve_with(g)
+        integrator =
+            init(Thunderbolt.ODEProblem(g, copy(u₀), (0.0, 0.3)), BackwardEulerSolver(), dt = 0.1)
+        SciMLBase.solve!(integrator)
+        return integrator.u
+    end
+    @test solve_with(fneg) ≈ solve_with(f)
+end
+
 @testset "Failures surface as retcodes, verbose = $verbose" for verbose in (true, false, Standard())
     with_logger(NullLogger()) do
         integrator =
@@ -345,6 +374,12 @@ g_deuflhard(x) = √(1 + 4x) - 1
         )
     end
 
+    @testset "reinit_controller! is a no-op: $(nameof(typeof(controller)))" for controller in
+                                                                                controllers
+
+        @test OrdinaryDiffEqCore.reinit_controller!(dummy(0.1), controller) === nothing
+    end
+
     @testset "Rejection shrinks dt and rolls u back" begin
         controller = controllers[1]
         (; Θbar, γ, qmin, qmax, p) = controller
@@ -516,5 +551,21 @@ end
         cache = fresh()
         Thunderbolt.set_error_estimate!(cache, 1.05)
         @test Thunderbolt._pid_dt_factor!(cache, alg) ≥ controller.accept_safety
+    end
+
+    @testset "reinit_controller! restores the fresh state" begin
+        cache = fresh()
+        for e in (0.5, 0.8, 0.3)
+            Thunderbolt.set_error_estimate!(cache, e)
+            Thunderbolt._pid_dt_factor!(cache, alg)
+            Thunderbolt._pid_accept!(cache)
+        end
+        integrator = init(scalar_decay_problem(), ScalarForwardEuler(), dt = 0.1, verbose = false)
+        OrdinaryDiffEqCore.reinit_controller!(integrator, cache)
+        ref = fresh()
+        @test cache.err == ref.err
+        @test cache.dt_factor == ref.dt_factor
+        @test cache.dt_factor_valid == ref.dt_factor_valid
+        @test cache.EEst == ref.EEst
     end
 end

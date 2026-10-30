@@ -418,6 +418,7 @@ function setup_stage_operator(
         slots = THUNDERBOLT_STAGE_SLOTS,
     )
     mass_operator = setup_operator(get_strategy(f), f.mass_term, solver, dh)
+    _assert_combinable_mass(mass_operator)
     @timeit_debug "mass assembly" update_operator!(
         mass_operator,
         nothing,

@@ -456,3 +456,13 @@ OrdinaryDiffEqCore.setup_controller_cache(
     EEstT,
     disco_probs,
 ) = controller
+
+# The controller is its own cache and holds no history; the contraction rates live in the solver cache.
+OrdinaryDiffEqCore.reinit_controller!(
+    ::SciMLBase.DEIntegrator,
+    ::Union{
+        Deuflhard2004DiscreteContinuationController,
+        Deuflhard2004_B_DiscreteContinuationControllerVariant,
+        ExperimentalDiscreteContinuationController,
+    },
+) = nothing

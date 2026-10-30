@@ -379,6 +379,21 @@ end
         end
     end
 
+    @testset "Leaves run with the node's inner verbosity" begin
+        timestepper = LieTrotterGodunov((DummyForwardEuler(), DummyForwardEuler()))
+        integ = DiffEqBase.init(prob1, timestepper, dt = dt, verbose = true, alias_u0 = false)
+        for child in integ.child_subintegrators
+            @test child.opts.verbose isa DiffEqBase.DEVerbosity
+        end
+        v = OrdinaryDiffEqOperatorSplitting.OperatorSplittingVerbosity(
+            OrdinaryDiffEqOperatorSplitting.SciMLLogging.Standard(),
+        )
+        integ = DiffEqBase.init(prob1, timestepper, dt = dt, verbose = v, alias_u0 = false)
+        for child in integ.child_subintegrators
+            @test child.opts.verbose == DiffEqBase.DEVerbosity(v.inner_verbosity)
+        end
+    end
+
     @testset "OrdinaryDiffEqLowOrderRK compat" failfast=true begin
         for TimeStepperType in (LieTrotterGodunov,)
             timestepper = TimeStepperType((DummyForwardEuler(), Euler()))

@@ -8,6 +8,7 @@ DocTestSetup = :(using Thunderbolt)
 Thunderbolt.AbstractSemidiscreteFunction
 Thunderbolt.AbstractSolidMechanicsFunction
 PointwiseODEFunction
+AffineODEFunction
 QuasiStaticFunction
 Thunderbolt.RSAFDQ20223DFunction
 ElastodynamicsFunction

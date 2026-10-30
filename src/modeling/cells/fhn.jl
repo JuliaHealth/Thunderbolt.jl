@@ -18,6 +18,8 @@ num_states(::Type{<:ParametrizedFHNModel}) = 2
 state_symbols(::Type{<:ParametrizedFHNModel}) = (:φₘ, :s)
 default_initial_state(::ParametrizedFHNModel) = [0.0, 0.0]
 
+gating_symbols(::Type{<:ParametrizedFHNModel}) = (:s,)
+
 function cell_rhs!(
     du::TD,
     u::TU,
@@ -31,6 +33,14 @@ function cell_rhs!(
     du[1] = f*(φₘ*(1-φₘ)*(φₘ-a) - s)
     du[2] = e*(b*φₘ - c*s - d)
     return nothing
+end
+
+# ds/dt = e(bφ - cs - d) = -ce(s - (bφ-d)/c), so λ = -ce and y∞ = (bφ-d)/c.
+function gate_coefficients(p::ParametrizedFHNModel{T}, φ, x, t) where {T}
+    @unpack b, c, d, e = p
+    λ = SVector{1, T}(-c*e)
+    y∞ = SVector{1, T}((b*φ - d)/c)
+    return λ, y∞
 end
 
 @inline function reaction_rhs!(
