@@ -5,7 +5,7 @@ using FerriteMultigrid: FerriteMultigrid, GridHierarchy
 using AlgebraicMultigrid
 using TimerOutputs
 import LinearAlgebra: diag, mul!
-# using HybridSmoothers
+using HybridSmoothers
 using FerriteOperators
 
 TimerOutputs.enable_debug_timings(AlgebraicMultigrid)  #src

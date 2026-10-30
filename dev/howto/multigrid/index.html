@@ -3,7 +3,9 @@
 using FerriteMultigrid: FerriteMultigrid, GridHierarchy
 using AlgebraicMultigrid
 using TimerOutputs
-import LinearAlgebra: diag, mul!</code></pre><p>using HybridSmoothers</p><pre><code class="language-julia hljs">using FerriteOperators</code></pre><p>mesh = generate<em>ring</em>mesh(40, 6, 6) # 300000 dof example</p><pre><code class="language-julia hljs">mesh = generate_ring_mesh(32, 4, 4)
+import LinearAlgebra: diag, mul!
+using HybridSmoothers
+using FerriteOperators</code></pre><p>mesh = generate<em>ring</em>mesh(40, 6, 6) # 300000 dof example</p><pre><code class="language-julia hljs">mesh = generate_ring_mesh(32, 4, 4)
 gh = GridHierarchy(mesh.grid, 1)
 fine_mesh = to_mesh(gh.grids[end])
 coordinate_system = compute_midmyocardial_section_coordinate_system(fine_mesh)
@@ -98,7 +100,7 @@ using FerriteMultigrid: FerriteMultigrid, GridHierarchy
 using AlgebraicMultigrid
 using TimerOutputs
 import LinearAlgebra: diag, mul!
-
+using HybridSmoothers
 using FerriteOperators
 
 mesh = generate_ring_mesh(32, 4, 4)
@@ -199,4 +201,4 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     Thunderbolt.store_timestep!(io, t, dh.grid) do file
     Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
     end
-end;</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../custom-sarcomere/">« Adding Sarcomeres</a><a class="docs-footer-nextpage" href="../../api-reference/">Overview »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Saturday 12 September 2026 19:50">Saturday 12 September 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end;</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../custom-sarcomere/">« Adding Sarcomeres</a><a class="docs-footer-nextpage" href="../../api-reference/">Overview »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Friday 30 October 2026 09:07">Friday 30 October 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
