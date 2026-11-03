@@ -38,6 +38,35 @@ function rotational_values_at_nodes(cs)
     return values
 end
 
+# Volume share of the wall in which the rotational coordinate increases in the left-handed sense about
+# `axis`, i.e. counterclockwise seen from the apex when `axis` points from the apex to the base: its
+# gradient against the left-handed tangent `r̂ × axis`, with `r̂` pointing away from the axis. Elements
+# touching the axis, where the coordinate has no value, and elements across its jump are skipped.
+function left_handed_share(cs, axis, origin)
+    l = axis / norm(axis)
+    radial(x) = (x - origin) - ((x - origin) ⋅ l) * l
+    agree = 0.0
+    total = 0.0
+    for sdh in cs.dh_rotational.subdofhandlers
+        ip = Ferrite.geometric_interpolation(Thunderbolt.get_first_cell(sdh))
+        cv = CellValues(QuadratureRule{Ferrite.getrefshape(ip)}(2), ip, ip)
+        for cell in CellIterator(sdh)
+            coords = getcoordinates(cell)
+            ρ = cs.u_rotational[celldofs(cell)]
+            minimum(norm(radial(x)) for x in coords) < 1.0e-9 && continue
+            maximum(ρ) - minimum(ρ) > 0.5 && continue
+            reinit!(cv, cell)
+            for qp = 1:getnquadpoints(cv)
+                r = radial(spatial_coordinate(cv, qp, coords))
+                dV = getdetJdV(cv, qp)
+                agree += (function_gradient(cv, qp, ρ) ⋅ (r / norm(r) × l) > 0) * dV
+                total += dV
+            end
+        end
+    end
+    return agree / total
+end
+
 @testset "Coordinate systems" begin
 
     @testset "LV axes" begin
@@ -207,9 +236,10 @@ end
         @testset "rotational is the same chart on differently resolved meshes" begin
             # An idealized ventricle is a surface of revolution whose ridges cut it into a third and
             # two thirds, so the Cobiveco coordinate has a closed form there: it is the azimuth,
-            # running the opposite way to φ because it increases right-handed about the long axis,
-            # and the long axis points at the base. A mesh independent ground truth is the sharpest
-            # statement of "two meshes of the same heart agree".
+            # running the same way as φ because it increases left-handed about the long axis, which
+            # points from the apex at +z to the base, and starting from the posterior ridge at
+            # φ = 2π/3. A mesh independent ground truth is the sharpest statement of "two meshes of
+            # the same heart agree".
             function azimuth_error(nc, nr, nl; apical_cutoff)
                 m = generate_ideal_lv_mesh(nc, nr, nl)
                 c = compute_lv_coordinate_system(m)
@@ -218,7 +248,7 @@ end
                     for (dof, x) in zip(celldofs(cell), getcoordinates(cell))
                         hypot(x[1], x[2]) > 1.0e-9 || continue
                         x[3] < apical_cutoff || continue
-                        exact = 1 - mod(atan(x[2], x[1]), 2π) / (2π)
+                        exact = mod(atan(x[2], x[1]) / (2π) - 1 / 3, 1)
                         d = abs(Thunderbolt.wrap_rotational(c.u_rotational[dof]) - exact)
                         worst = max(worst, min(d, 1 - d))
                     end
@@ -230,6 +260,38 @@ end
             for nc in (12, 24)
                 @test azimuth_error(nc, 2, 8; apical_cutoff = 1.0) < 5.0e-3
             end
+        end
+
+        @testset "rotational runs left-handed about apex -> base, ridges and fallback alike" begin
+            # The Cobiveco sense: from the posterior ridge across the free wall to the anterior one,
+            # which on an anatomical heart is counterclockwise seen from the apex. The generator puts
+            # its ridges so that the chart does the same, and the plain azimuth that meshes without
+            # ridges fall back to has to run the same way, or a ridged and an unridged mesh of the
+            # same ventricle would be mirror images of each other.
+            axes = compute_lv_axes(mesh)
+            l = Vec{3, Float64}(axes.longitudinal)
+            origin = Vec{3, Float64}(axes.base_center)
+            fallback = compute_lv_coordinate_system(
+                mesh;
+                ridge_anterior = nothing,
+                ridge_posterior = nothing,
+            )
+            @test left_handed_share(cs, l, origin) == 1.0
+            @test left_handed_share(fallback, l, origin) == 1.0
+            # Zeroed on the posterior ridge, the fallback is the ridge chart itself on a surface of
+            # revolution whose septum is exactly a third, up to the closed-form tolerance above.
+            m = generate_ideal_lv_mesh(12, 2, 8)
+            ridges = compute_lv_coordinate_system(m)
+            zeroed = compute_lv_coordinate_system(m; ridge_anterior = nothing)
+            worst = 0.0
+            for sdh in ridges.dh_rotational.subdofhandlers, cell in CellIterator(sdh)
+                for (dof, x) in zip(celldofs(cell), getcoordinates(cell))
+                    (hypot(x[1], x[2]) > 1.0e-9 && x[3] < 1.0) || continue
+                    d = ridges.u_rotational[dof] - zeroed.u_rotational[dof]
+                    worst = max(worst, abs(rem(d, 1, RoundNearest)))
+                end
+            end
+            @test worst < 5.0e-3
         end
 
         @testset "assembly strategy keyword" begin
@@ -307,6 +369,23 @@ end
         @test count(septal) / getncells(mesh) ≈ 1 / 3 atol = 0.02
         for name in ("SRidgeAnt", "SRidgePost"), (cellid, _) in getfacetset(mesh, name)
             @test septal[cellid]
+        end
+        # The generator puts the septum on φ ∈ [0, 2π/3], the anterior ridge at φ = 0 and the
+        # posterior one at φ = 2π/3, so that the chart covers it with [2/3, 1] in the left-handed
+        # sense about the long axis.
+        @test Thunderbolt._sheet_direction(mesh, "SRidgeAnt", frame) ⋅ Vec((1.0, 0.0, 0.0)) ≈ 1
+        @test Thunderbolt._sheet_direction(mesh, "SRidgePost", frame) ⋅
+              Vec((cos(2π / 3), sin(2π / 3), 0.0)) ≈ 1
+        cs = compute_lv_coordinate_system(mesh)
+        for cellid = 1:getncells(mesh)
+            x = Thunderbolt._cell_centroid(mesh, cellid)
+            hypot(x[1], x[2]) > 1.0e-9 || continue
+            @test septal[cellid] == (mod(atan(x[2], x[1]), 2π) < 2π / 3)
+            r = Thunderbolt.wrap_rotational(
+                sum(cs.u_rotational[celldofs(cs.dh_rotational, cellid)]) /
+                length(celldofs(cs.dh_rotational, cellid)),
+            )
+            @test septal[cellid] == (r > 2 / 3)
         end
 
         # The O-grid cap has no facet sheet continuing the ridges through its core, so there is no
@@ -432,11 +511,13 @@ end
 
         @test all(isfinite, cs.u_rotational)
         @test max_element_rotational_spread(cs) ≈ 1 / num_c atol = 1.0e-8
-        # `up` is +z here, so the coordinate runs the same way as φ.
+        # `up` is +z here and the coordinate increases left-handed about it, so it runs against φ,
+        # from the seam at φ = 0.
+        @test left_handed_share(cs, Vec((0.0, 0.0, 1.0)), Vec((0.0, 0.0, 0.0))) == 1.0
         @test maximum(
             let d = abs(
                     Thunderbolt.wrap_rotational(cs.u_rotational[dof]) -
-                    mod(atan(x[2], x[1]), 2π) / (2π),
+                    mod(-atan(x[2], x[1]), 2π) / (2π),
                 )
                 min(d, 1 - d)
             end for sdh in cs.dh_rotational.subdofhandlers for cell in CellIterator(sdh) for
