@@ -301,7 +301,10 @@ _has_facetset(grid, name::String) = haskey(Ferrite.getfacetsets(grid), name)
 
 """
 Cylindrical frame around the long axis of a ventricle. `e₁` is the direction of azimuth 0 and
-`e₁ × e₂ = axis`, so the azimuth increases in the right-handed sense around the long axis.
+`e₂ = e₁ × axis`, so the azimuth increases in the left-handed sense about the long axis: with the
+axis pointing from the apex to the base, counterclockwise seen from the apex. That is the sense of
+the Cobiveco chart, which increases along `transmural × apicobasal` (Schuler et al. 2021, eq. 38),
+so the fallback runs the same way as the ridge based chart on an anatomically oriented heart.
 """
 struct AzimuthalFrame
     origin::Vec{3, Float64}
@@ -321,7 +324,7 @@ function AzimuthalFrame(
         ArgumentError("The azimuth reference direction must not be collinear with the long axis."),
     )
     e₁ /= norm(e₁)
-    return AzimuthalFrame(origin, l, e₁, l × e₁)
+    return AzimuthalFrame(origin, l, e₁, e₁ × l)
 end
 
 "Azimuth of `x` in `[0, 2π)`, or `nothing` if `x` sits on the long axis where it does not exist."
@@ -477,6 +480,10 @@ monotonically from one ridge to the other on both. The mapping stitches the halv
 chart around the ventricle: it is continuous across the anterior ridge, where both branches give
 2/3, and jumps by a full turn across the posterior ridge, where the free wall gives 0 and the septum
 gives 1. Since the region is a property of the cell, the discontinuous dofs carry the jump exactly.
+
+Its sense is the ridges' placement: from the posterior ridge across the free wall to the anterior
+one, which on an anatomically placed pair is left-handed about the long axis from the apex to the
+base -- the sense of the azimuthal fallback, see [`AzimuthalFrame`](@ref).
 """
 function _compute_rotational_from_ridges!(
     u::Vector{Float64},
@@ -539,7 +546,8 @@ function _unwrap_cell_angles!(angles::Vector{Float64}, defined::Vector{Bool})
 end
 
 """
-Rotational coordinate as the plain azimuth around the long axis, `r = θ/2π`.
+Rotational coordinate as the plain azimuth around the long axis, `r = θ/2π`, increasing in the
+left-handed sense of [`AzimuthalFrame`](@ref) from `frame.e₁`.
 
 This is the fallback for meshes that carry no ridge annotation. It is *not* the same chart as the
 ridge based one: it distributes the coordinate by angle rather than by
@@ -874,12 +882,17 @@ The coordinates are
     [`apicobasal_from_laplace`](@ref).
   * `rotational`: the Cobiveco chart, 0 on the posterior ridge, 2/3 on the anterior ridge and back
     to 1 at the posterior ridge through the septum. Anchored on the ridges rather than on the
-    orientation of the mesh in space, which is what makes it comparable between hearts.
+    orientation of the mesh in space, which is what makes it comparable between hearts. On an
+    anatomically placed pair of ridges it increases left-handed about the long axis from the apex
+    to the base, i.e. counterclockwise seen from the apex, along `transmural × apicobasal`.
 
 Meshes without ridges fall back to the plain azimuth around the long axis. That is *not* the same
 chart -- it distributes the coordinate by angle rather than by the position of the right ventricular
 insertions -- so two hearts only agree under it if they are aligned the same way in space. Pass
-`ridge_anterior = ridge_posterior = nothing` to ask for it deliberately.
+`ridge_anterior = ridge_posterior = nothing` to ask for it deliberately. It runs in the same
+left-handed sense, starting from `rotational_zero_direction` (projected onto the plane normal to the
+long axis) or, without one, from a `RotationalSeam` or posterior ridge facetset the mesh carries,
+or else from an arbitrary direction orthogonal to the long axis.
 
 `strategy` is the FerriteOperators assembly strategy for the underlying Laplacian solve
 (`_assemble_laplacian`); it defaults to `FerriteOperators.default_strategy`.
@@ -965,7 +978,8 @@ Unlike [`compute_lv_coordinate_system`](@ref) this is a ring section with no ape
 cannot be derived from the geometry and is given by `up` instead. The apicobasal coordinate is the
 height along `up`, rescaled into `[apicobasal_lower, apicobasal_upper]`. The rotational coordinate
 is built exactly as in the LV case: from the two ridges when the section carries them, and from the
-plain azimuth around `up` otherwise, which is what a plain ring gets. Either way it is stored
+plain azimuth around `up` otherwise, which is what a plain ring gets. `up` plays the long axis from
+the apex to the base, so the azimuth increases left-handed about it. Either way it is stored
 discontinuously, so its jump sits on an element interface instead of being smeared across a layer of
 elements.
 

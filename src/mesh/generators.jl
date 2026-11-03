@@ -673,9 +673,13 @@ keyword is an axial extent.
 Facetsets `"Endocardium"`, `"Epicardium"` and `"Base"`, the annular top face of the wall, plus the
 two internal sheets `"SRidgePost"` and `"SRidgeAnt"` that [`compute_lv_coordinate_system`](@ref)
 needs. An idealized ventricle has no right ventricle to attach to, so the ridges are placed by
-convention: `SRidgePost` at `φ = 0` and `SRidgeAnt` such that the septum between them covers
-`septum_fraction` of the circumference. They snap to the nearest element interface, so the split is
-exact only when `num_elements_circumferential * septum_fraction` is an integer.
+convention: the septum covers `septum_fraction` of the circumference from `φ = 0`, with `SRidgeAnt`
+at `φ = 0` and `SRidgePost` at its other end. The Cobiveco chart rises from the posterior ridge
+across the free wall to the anterior one, so it increases with `φ`, which with the apex on `+z` is
+left-handed about the long axis from the apex to the base -- counterclockwise seen from the apex, as
+on an anatomical heart and as the azimuthal fallback runs. The ridges snap to the nearest element
+interface, so the split is exact only when `num_elements_circumferential * septum_fraction` is an
+integer.
 
 Nodesets `"Apex"`, `"ApexInOut"` and `"MyocardialAnchor1"`-`"MyocardialAnchor4"`, four basal nodes
 that pin the rigid body modes of a free-floating ventricle. Cellset `"myocardium"`.
@@ -795,13 +799,14 @@ function generate_ideal_lv_mesh(
     offset                   += length(cell_array[:, :, end][:])
     # The two internal sheets that stand in for the right ventricular insertions. Both run from the
     # base down to the singular apex edge, where the azimuth stops existing, so together they cut
-    # the ventricle into a septum (circumferential index below `i_ant`) and a free wall. Each facet
+    # the ventricle into a septum (circumferential index below `i_post`) and a free wall. Each facet
     # is stored on its *septal* cell, which is the orientation the coordinate system reads the two
     # regions off -- hence facet 5, the low-angle side, on the first septal cell and facet 3, the
-    # high-angle side, on the last one.
-    i_ant                   = clamp(round(Int, num_elements_circumferential*septum_fraction), 1, num_elements_circumferential-1) + 1
-    facetsets["SRidgePost"] = OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1, :, :][:]);
-    facetsets["SRidgeAnt"]  = OrderedSet{FacetIndex}(FacetIndex(cl, 3) for cl in cell_array[i_ant-1, :, :][:]);
+    # high-angle side, on the last one. The anterior ridge is the low-angle one, so that the chart
+    # increases with φ: left-handed about the long axis from the apex at +z to the base.
+    i_post                  = clamp(round(Int, num_elements_circumferential*septum_fraction), 1, num_elements_circumferential-1) + 1
+    facetsets["SRidgeAnt"]  = OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1, :, :][:]);
+    facetsets["SRidgePost"] = OrderedSet{FacetIndex}(FacetIndex(cl, 3) for cl in cell_array[i_post-1, :, :][:]);
     nodesets["Apex"]        = OrderedSet{Int}()
     nodesets["ApexInOut"]   = OrderedSet{Int}()
 
@@ -828,8 +833,8 @@ function generate_ideal_lv_mesh(
         j == 1 && push!(facetsets["Endocardium"], FacetIndex(cl, 1))
         j == num_elements_radial && push!(facetsets["Epicardium"], FacetIndex(cl, 5))
         j == num_elements_radial && push!(nodesets["Apex"], apex_nodes[j+1])
-        i == 1 && push!(facetsets["SRidgePost"], FacetIndex(cl, 2))
-        i == i_ant-1 && push!(facetsets["SRidgeAnt"], FacetIndex(cl, 3))
+        i == 1 && push!(facetsets["SRidgeAnt"], FacetIndex(cl, 2))
+        i == i_post-1 && push!(facetsets["SRidgePost"], FacetIndex(cl, 3))
     end
 
     cellsets = Dict{String, OrderedSet{Int}}("myocardium" => OrderedSet(1:length(cells)))
@@ -1132,19 +1137,20 @@ function generate_ideal_lh_mesh(
     facetsets["MitralAnnulus"] =
         OrderedSet{FacetIndex}(FacetIndex(cl, 6) for cl in ventricle_hex[:, :, end][:])
 
-    # As on the single ventricle: the ridges are placed by convention, they run from the rim down to
-    # the singular apex edge, and each facet is stored on its septal cell.
-    i_ant = clamp(round(Int, nc*septum_fraction), 1, nc-1) + 1
-    facetsets["SRidgePost"] = OrderedSet{FacetIndex}(
+    # As on the single ventricle: the ridges are placed by convention, the anterior one at φ = 0 so
+    # that the chart increases with φ, they run from the rim down to the singular apex edge, and each
+    # facet is stored on its septal cell.
+    i_post = clamp(round(Int, nc*septum_fraction), 1, nc-1) + 1
+    facetsets["SRidgeAnt"] = OrderedSet{FacetIndex}(
         [
             [FacetIndex(cl, 5) for cl in ventricle_hex[1, :, :][:]];
             [FacetIndex(cl, 2) for cl in apex_fan[1, :][:]]
         ],
     )
-    facetsets["SRidgeAnt"] = OrderedSet{FacetIndex}(
+    facetsets["SRidgePost"] = OrderedSet{FacetIndex}(
         [
-            [FacetIndex(cl, 3) for cl in ventricle_hex[i_ant-1, :, :][:]];
-            [FacetIndex(cl, 3) for cl in apex_fan[i_ant-1, :][:]]
+            [FacetIndex(cl, 3) for cl in ventricle_hex[i_post-1, :, :][:]];
+            [FacetIndex(cl, 3) for cl in apex_fan[i_post-1, :][:]]
         ],
     )
 
@@ -1281,7 +1287,7 @@ function generate_ideal_lv_mesh_hex(
         ),
     )
     m = num_elements_circumferential ÷ 4
-    i_ant =
+    i_post =
         clamp(
             round(Int, num_elements_circumferential*septum_fraction),
             1,
@@ -1367,13 +1373,14 @@ function generate_ideal_lv_mesh_hex(
             OrderedSet{FacetIndex}(FacetIndex(cl, 4) for cl in cell_array[:, end, :][:]),
         "Base" => OrderedSet{FacetIndex}(FacetIndex(cl, 6) for cl in cell_array[:, :, end][:]),
         # The two internal sheets standing in for the right ventricular insertions, see
-        # [`compute_lv_coordinate_system`](@ref). Unlike the fan variant they stop at the O-grid
-        # core: the core is a regular patch covering the apex, so no facet sheet inside it separates
-        # the two sides, and the rotational coordinate is smeared over the core instead.
-        "SRidgePost" =>
-            OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1, :, :][:]),
+        # [`compute_lv_coordinate_system`](@ref), placed as on the fan variant. Unlike the fan
+        # variant they stop at the O-grid core: the core is a regular patch covering the apex, so no
+        # facet sheet inside it separates the two sides, and the rotational coordinate is smeared
+        # over the core instead.
         "SRidgeAnt" =>
-            OrderedSet{FacetIndex}(FacetIndex(cl, 3) for cl in cell_array[i_ant-1, :, :][:]),
+            OrderedSet{FacetIndex}(FacetIndex(cl, 5) for cl in cell_array[1, :, :][:]),
+        "SRidgePost" =>
+            OrderedSet{FacetIndex}(FacetIndex(cl, 3) for cl in cell_array[i_post-1, :, :][:]),
     )
 
     # Apex cells are extruded transmurally rather than longitudinally, so their
@@ -1397,8 +1404,8 @@ function generate_ideal_lv_mesh_hex(
         )
         j == 1 && push!(facetsets["Endocardium"], FacetIndex(length(cells), 1))
         j == num_elements_radial && push!(facetsets["Epicardium"], FacetIndex(length(cells), 6))
-        i == 1 && push!(facetsets["SRidgePost"], FacetIndex(length(cells), 5))
-        i == i_ant-1 && push!(facetsets["SRidgeAnt"], FacetIndex(length(cells), 3))
+        i == 1 && push!(facetsets["SRidgeAnt"], FacetIndex(length(cells), 5))
+        i == i_post-1 && push!(facetsets["SRidgePost"], FacetIndex(length(cells), 3))
     end
     for j = 1:num_elements_radial, b = 1:m, a = 1:m
         push!(
