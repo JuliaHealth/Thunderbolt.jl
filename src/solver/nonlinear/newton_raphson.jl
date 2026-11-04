@@ -53,6 +53,9 @@ If `simplified_newton = true`, the Jacobian (and preconditioner) assembled at th
 Newton iteration is reused for all subsequent iterations. Only the residual is recomputed
 via [`evaluate_stage_residual!`](@ref) each step. This saves Jacobian assembly and factorization
 cost per step at the expense of slower outer convergence.
+
+Either way the Jacobian is assembled only for a step that is taken, so after a solve it belongs to the
+iterate before the converged one.
 """
 Base.@kwdef struct NewtonRaphsonSolver{T} <: AbstractNonlinearSolver
     # Convergence tolerance
@@ -222,6 +225,22 @@ function _newton_increment_step!(u, sf, cache, linear_solver_cache, t, f, reset_
 end
 
 """
+    _update_newton_linearization!(cache, sf, u) -> Bool
+
+Assemble the residual and the Jacobian at `u`, eliminate the constraints from both and notify the
+linear solver that its matrix and preconditioner are out of date. `false` if the stage failed.
+"""
+function _update_newton_linearization!(cache::NewtonRaphsonSolverCache, sf, u)
+    (; residual, linear_solver_cache) = cache
+    fill!(residual, 0.0)
+    @timeit_debug "update operator" update_stage_linearization!(sf, residual, u) || return false
+    @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, sf)
+    linear_solver_cache.isfresh = true
+    linear_solver_cache.precsisfresh = true
+    return true
+end
+
+"""
     nlsolve!(z, sf::AbstractStageFunction, cache, t)
 
 Solve the stage `sf` for its unknowns `z`.
@@ -257,19 +276,15 @@ function nlsolve!(
     resize!(Θks, 0)
     while true
         cache.iter += 1
-        fill!(residual, 0.0)
-        if simplified && cache.iter > 0
-            # Simplified Newton: reuse Jacobian and preconditioner from iter 0.
+        # Iteration 0 always takes a step. After that the residual alone decides whether another one
+        # follows, so the converged iterate costs no Jacobian assembly and factorization.
+        if cache.iter == 0
+            _update_newton_linearization!(cache, sf, u) || return false
+        else
+            fill!(residual, 0.0)
             @timeit_debug "update residual" evaluate_stage_residual!(sf, residual, u) ||
                                             return false
             @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, sf)
-            # Leave isfresh / precsisfresh false → reuse existing factorization.
-        else
-            @timeit_debug "update operator" update_stage_linearization!(sf, residual, u) ||
-                                            return false
-            @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, sf)
-            linear_solver_cache.isfresh = true        # Notify linear solver that both the matrix and the preconditioner need to be updated.
-            linear_solver_cache.precsisfresh = true
         end
 
         residualnorm = residual_norm(cache, sf)
@@ -284,6 +299,11 @@ function nlsolve!(
             push!(Θks, Inf)
             @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve
             return false
+        end
+
+        # Simplified Newton: reuse Jacobian and preconditioner from iter 0.
+        if cache.iter > 0 && !simplified
+            _update_newton_linearization!(cache, sf, u) || return false
         end
 
         _ew_prestep!(cache.forcing_cache, linear_solver_cache, residualnorm, cache.iter)
