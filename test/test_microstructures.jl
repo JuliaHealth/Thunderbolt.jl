@@ -40,6 +40,25 @@ using Test, Thunderbolt, Tensors
         end
     end
 
+    @testset "orthogonalize_system" begin
+        v₁, v₂, v₃ = Vec((1.0, 0.0, 0.0)), Vec((1.0, 1.0, 0.0)), Vec((1.0, 1.0, 1.0))
+        w₁, w₂, w₃ = Thunderbolt.orthogonalize_system(v₁, v₂, v₃)
+        @test w₁ ≈ v₁
+        @test w₂ ≈ Vec((0.0, 1.0, 0.0))
+        @test w₃ ≈ Vec((0.0, 0.0, 1.0))
+        u₁, u₂ = Thunderbolt.orthogonalize_system(Vec((2.0, 0.0)), Vec((1.0, 1.0)))
+        @test u₁ ≈ Vec((1.0, 0.0))
+        @test u₂ ≈ Vec((0.0, 1.0))
+    end
+
+    @testset "TransverselyIsotropicMicrostructureModel" begin
+        ms = TransverselyIsotropicMicrostructureModel(ConstantCoefficient(Vec((0.0, 3.0, 4.0))))
+        cache = setup_test_cache(ms, qr, sdh)
+        cellcache = first(CellIterator(ring_grid))
+        qp = first(QuadratureIterator(qr))
+        @test evaluate_coefficient(cache, cellcache, qp, 0.0).f ≈ Vec((0.0, 0.6, 0.8))
+    end
+
     @testset "OrthotropicMicrostructureModel" begin
         ms = create_microstructure_model(
             ring_cs,

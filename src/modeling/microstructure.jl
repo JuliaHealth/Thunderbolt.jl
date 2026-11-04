@@ -115,7 +115,7 @@ function setup_coefficient_cache(
     qr::QuadratureRule,
     sdh::SubDofHandler,
 )
-    return AnisotropicPlanarMicrostructureCache(
+    return TransverselyIsotropicMicrostructureCache(
         setup_coefficient_cache(coefficient.fiber_coefficient, qr, sdh),
     )
 end
@@ -127,7 +127,7 @@ function evaluate_coefficient(
     t,
 )
     f = evaluate_coefficient(fsn.fiber_cache, cell_cache, qp, t)
-    return TransverselyIsotropicMicrostructure(f)
+    return TransverselyIsotropicMicrostructure(f/norm(f))
 end
 
 

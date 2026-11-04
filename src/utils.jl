@@ -113,12 +113,12 @@ end
 """
     orthogonalize_normal_system(v₁::Vec{dim,T}, v₂::Vec{dim,T})
 
-Returns new vectors which are orthogonal to each other.
+Returns an orthonormal system from the unit vectors `v₁` and `v₂` (Gram-Schmidt, `v₁` kept).
 """
 @inline function orthogonalize_normal_system(v₁::Vec{2, T}, v₂::Vec{2, T}) where {T}
     w₁ = v₁
     w₂ = v₂ - (w₁ ⋅ v₂)*w₁
-    return w₁, w₂
+    return w₁, w₂/norm(w₂)
 end
 
 orthogonalize_system(v₁::Vec{2}, v₂::Vec{2}) = orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂))
@@ -126,13 +126,14 @@ orthogonalize_system(v₁::Vec{2}, v₂::Vec{2}) = orthogonalize_normal_system(v
 """
     orthogonalize_normal_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
 
-Returns new vectors which are orthogonal to each other.
+Returns an orthonormal system from the unit vectors `v₁`, `v₂` and `v₃` (Gram-Schmidt in this order, `v₁` kept).
 """
 @inline function orthogonalize_normal_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
     w₁ = v₁
     w₂ = v₂ - (w₁ ⋅ v₂)*w₁
+    w₂ /= norm(w₂)
     w₃ = v₃ - (w₁ ⋅ v₃)*w₁ - (w₂ ⋅ v₃)*w₂
-    return w₁, w₂, w₃
+    return w₁, w₂, w₃/norm(w₃)
 end
 
 orthogonalize_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3}) =
