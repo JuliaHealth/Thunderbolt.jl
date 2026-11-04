@@ -230,6 +230,9 @@ function FerriteOperators.setup_facet_item_cache(
     return SimpleFacetCache(facet_model, FacetValues(qr, ip, ip_geo), dof_range)
 end
 
+# The kernels below visit every shape function of the cell, but on a facet those of the other nodes
+# vanish. Their rows and columns are exactly zero, so they are skipped: `iszero(δuᵢ) && continue`.
+
 function FerriteOperators.assemble_facet!(
     req::FerriteOperators.JacobianResidualRequest,
     cache::SimpleFacetCache{<:RobinBC},
@@ -252,12 +255,15 @@ function FerriteOperators.assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
             req.r[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
 
+            δuᵢ∂²Ψ∂u² = δuᵢ ⋅ ∂²Ψ∂u² # Hoisted computation
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
+                iszero(δuⱼ) && continue
                 # Add contribution to the tangent
-                req.K[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
@@ -293,11 +299,14 @@ function _assemble_robin_jacobian!(req, cache::SimpleFacetCache{<:RobinBC}, args
 
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
 
+            δuᵢ∂²Ψ∂u² = δuᵢ ⋅ ∂²Ψ∂u² # Hoisted computation
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
+                iszero(δuⱼ) && continue
                 # Add contribution to the tangent
-                req.K[cache.dof_range[i], cache.dof_range[j]] += w * (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += w * (δuᵢ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
@@ -325,6 +334,7 @@ function FerriteOperators.assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
             req.r[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
         end
     end
@@ -355,12 +365,15 @@ function FerriteOperators.assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
             req.r[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
 
+            δuᵢ∂²Ψ∂u² = δuᵢ ⋅ ∂²Ψ∂u² # Hoisted computation
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
+                iszero(δuⱼ) && continue
                 # Add contribution to the tangent
-                req.K[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
@@ -403,11 +416,14 @@ function _assemble_normal_spring_jacobian!(
 
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
 
+            δuᵢ∂²Ψ∂u² = δuᵢ ⋅ ∂²Ψ∂u² # Hoisted computation
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
+                iszero(δuⱼ) && continue
                 # Add contribution to the tangent
-                req.K[cache.dof_range[i], cache.dof_range[j]] += w * (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += w * (δuᵢ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
@@ -436,6 +452,7 @@ function FerriteOperators.assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
             req.r[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
         end
     end
@@ -595,18 +612,29 @@ function assemble_facet_pressure_qp!(
     # neumann_term = p * n₀
     for i = 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
+        iszero(δuᵢ) && continue
         req.r[dof_range[i]] += neumann_term ⋅ δuᵢ * dΓ
+    end
+    _assemble_facet_pressure_tangent_qp!(req, invF, cofF, J, n₀, p * dΓ, qp, fv, dof_range)
+end
 
-        for j = 1:ndofs_facet
-            ∇δuⱼ = shape_gradient(fv, qp, j)
-            # Add contribution to the tangent
-            #   δF^-1 = -F^-1 δF F^-1
-            #   δJ = J tr(δF F^-1)
-            # Product rule
-            δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
-            δJ = J * tr(∇δuⱼ ⋅ invF)
-            δJcofF = δJ * cofF + J * δcofF
-            req.K[dof_range[i], dof_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+# The term depends on the trial function alone, up to the test function it is multiplied with last.
+function _assemble_facet_pressure_tangent_qp!(req, invF, cofF, J, n₀, pdΓ, qp, fv, dof_range)
+    ndofs_facet = getnbasefunctions(fv)
+    for j = 1:ndofs_facet
+        ∇δuⱼ = shape_gradient(fv, qp, j)
+        # Add contribution to the tangent
+        #   δF^-1 = -F^-1 δF F^-1
+        #   δJ = J tr(δF F^-1)
+        # Product rule
+        δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+        δJ = J * tr(∇δuⱼ ⋅ invF)
+        δJcofF = δJ * cofF + J * δcofF
+        tangent_term = pdΓ * (δJcofF ⋅ n₀) # Hoisted computation
+        for i = 1:ndofs_facet
+            δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
+            req.K[dof_range[i], dof_range[j]] += tangent_term ⋅ δuᵢ
         end
     end
 end
@@ -620,8 +648,6 @@ function assemble_facet_pressure_jacobian_qp!(
     dof_range,
     w,
 )
-    ndofs_facet = getnbasefunctions(fv)
-
     dΓ = getdetJdV(fv, qp)
     n₀ = getnormal(fv, qp)
 
@@ -631,21 +657,7 @@ function assemble_facet_pressure_jacobian_qp!(
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    for i = 1:ndofs_facet
-        δuᵢ = shape_value(fv, qp, i)
-
-        for j = 1:ndofs_facet
-            ∇δuⱼ = shape_gradient(fv, qp, j)
-            # Add contribution to the tangent
-            #   δF^-1 = -F^-1 δF F^-1
-            #   δJ = J tr(δF F^-1)
-            # Product rule
-            δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
-            δJ = J * tr(∇δuⱼ ⋅ invF)
-            δJcofF = δJ * cofF + J * δcofF
-            req.K[dof_range[i], dof_range[j]] += w * (p * (δJcofF ⋅ n₀) ⋅ δuᵢ) * dΓ
-        end
-    end
+    _assemble_facet_pressure_tangent_qp!(req, invF, cofF, J, n₀, w * p * dΓ, qp, fv, dof_range)
 end
 
 function assemble_facet_pressure_qp!(
@@ -671,6 +683,7 @@ function assemble_facet_pressure_qp!(
     # neumann_term = p * n₀
     for i = 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
+        iszero(δuᵢ) && continue
         req.r[dof_range[i]] += neumann_term ⋅ δuᵢ * dΓ
     end
 end
@@ -892,6 +905,7 @@ function FerriteOperators.assemble_facet!(
 
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
             req.r[cache.dof_range[i]] += δuᵢ ⋅ traction * dΓ
         end
     end
@@ -936,9 +950,12 @@ function FerriteOperators.assemble_facet!(
         D  = damping_tensor(mp, getnormal(fv, qp))
 
         for i = 1:ndofs_facet
-            δuᵢD = shape_value(fv, qp, i) ⋅ D # Hoisted computation
+            δuᵢ = shape_value(fv, qp, i)
+            iszero(δuᵢ) && continue
+            δuᵢD = δuᵢ ⋅ D # Hoisted computation
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
+                iszero(δuⱼ) && continue
                 req.K[cache.dof_range[i], cache.dof_range[j]] += wv * (δuᵢD ⋅ δuⱼ) * dΓ
             end
         end
