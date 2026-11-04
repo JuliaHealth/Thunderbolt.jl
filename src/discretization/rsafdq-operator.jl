@@ -13,6 +13,9 @@ _chamber_coupling(displacement_symbol, chamber) = FacetCoupling(
     algebraic_coupling = ((displacement_symbol, chamber.pressure_symbol),),
 )
 
+setup_local_solver_cache(f::RSAFDQ20223DFunction, solver::HomotopyPathSolver) =
+    setup_local_solver_cache(f.structural_function, solver)
+
 function setup_stage_operator(
     f::RSAFDQ20223DFunction,
     solver::HomotopyPathSolver,
@@ -45,5 +48,10 @@ function setup_stage_operator(
         get_strategy(f).device,
     )
 
-    return setup_operator(strategy, integrator, dh; slots = THUNDERBOLT_STAGE_SLOTS)
+    return setup_operator(
+        strategy,
+        _annotate_with_local_solver_cache(integrator, local_solver_cache),
+        dh;
+        slots = THUNDERBOLT_STAGE_SLOTS,
+    )
 end

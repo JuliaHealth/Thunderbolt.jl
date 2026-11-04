@@ -56,14 +56,23 @@ end
 """
     DummyLumpedCircuitModel(volume_fun)
 
-Lock the volume at a certain value.
+Prescribe the volume of a chamber as a function of time. Coupled to a 3D model through
+[`RSAFDQ2022Split`](@ref), the chamber pressure is then what the 3D problem answers with.
+
+The one state integrates the rate of `volume_fun`, from `volume_fun(0)` on, rather than relaxing
+towards its value, which would make it lag by a whole relaxation time. So `volume_fun` must be
+differentiable with `ForwardDiff`, and a kink in it costs an integration error of the jump of the rate
+times the step straddling the kink, which stays in the state. A prescribed ramp should start and end
+with zero rate.
 """
 struct DummyLumpedCircuitModel{F} <: AbstractLumpedCirculatoryModel
     volume_fun::F
 end
 
-# Deliberately permissive: the single state *is* the chamber volume, whatever the coupling calls it.
+# Deliberately permissive: the single state *is* the chamber volume and the single parameter its
+# pressure, whatever the coupling calls them.
 get_variable_symbol_index(model::DummyLumpedCircuitModel, symbol::Symbol) = 1
+get_parameter_symbol_index(model::DummyLumpedCircuitModel, symbol::Symbol) = 1
 
 state_symbols(::DummyLumpedCircuitModel) = (:V,)
 num_states(::DummyLumpedCircuitModel) = 1
@@ -73,8 +82,9 @@ function default_initial_state!(u, model::DummyLumpedCircuitModel)
     u[1] = model.volume_fun(0.0)
 end
 
-function (model::DummyLumpedCircuitModel)(du, u, p, t)
-    du[1] = model.volume_fun(t)-u[1]
+# The pressure in `external_input` is an output here, a prescribed volume does not read it.
+function lumped_driver!(du, u, t, external_input::AbstractVector, model::DummyLumpedCircuitModel)
+    du[1] = ForwardDiff.derivative(model.volume_fun, t)
 end
 
 """

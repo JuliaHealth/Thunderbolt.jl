@@ -110,8 +110,9 @@ end
 # `ChamberBalanceCache`): copied into a plain vector here, once per step, rather than aliased, so an
 # assembly worker never sees a write racing its own sweep.
 _homotopy_stage_evaluation(f::RSAFDQ20223DFunction, t) = StageEvaluation(;
-    p   = (V⁰ᴰ = [chamber.V⁰ᴰval for chamber in f.tying_info.chambers],),
-    ctx = TimeIntegrationContext(t, zero(t), zero(t)),
+    p         = (V⁰ᴰ = [chamber.V⁰ᴰval for chamber in f.tying_info.chambers],),
+    ctx       = TimeIntegrationContext(t, zero(t), zero(t)),
+    condensed = has_internal_variables(f.structural_function),
 )
 
 ##########################################################################
@@ -137,24 +138,6 @@ struct RSAFDQ2022Split{MODEL <: RSAFDQ2022Model}
 end
 
 #################################################################################
-
-"""
-    _check_rsafdq_internal_variables(structural_problem)
-
-The 3D-0D coupling does not support materials carrying internal variables yet: `RSAFDQ2022Split` is
-solved through `HomotopyPathSolver`, which never routes through `BackwardEulerStageAnnotation`, so
-internal variables would never be advanced in time. Silently freezing them is a worse failure mode
-than an error, which is why this is a check rather than a caveat.
-"""
-function _check_rsafdq_internal_variables(structural_problem)
-    niv = ndofs(structural_problem.lvh)
-    niv == 0 || error(
-        "The RSAFDQ2022 3D-0D coupling does not support materials with internal variables yet " *
-        "(got $niv internal variable dofs). See `_check_rsafdq_internal_variables` for why. " *
-        "Use a material without internal variables, e.g. a plain `PK1Model`.",
-    )
-    return nothing
-end
 
 function create_chamber_tyings(coupler::LumpedFluidSolidCoupler, structural_problem, circuit_model)
     num_unknowns_structure = solution_size(structural_problem)
@@ -233,7 +216,9 @@ function semidiscretize(
     # enter its `DofHandler` as algebraic variables rather than being appended to the solution vector.
     structural_problem =
         semidiscretize(_with_chamber_couplers(structural_model, coupler), discretization, mesh)
-    _check_rsafdq_internal_variables(structural_problem)
+    # The 3D half is stepped by `HomotopyPathSolver`. Refused here rather than at `init`, so that the
+    # message names the material before anything else is set up.
+    check_internal_variables_are_rate_free(structural_problem)
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
     # ODE problem for blood circuit
