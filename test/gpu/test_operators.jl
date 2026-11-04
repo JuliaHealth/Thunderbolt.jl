@@ -45,3 +45,27 @@
     Thunderbolt._add_source_term!(b, device, 0.1f0) # warmup
     @test CUDA.@allocated(Thunderbolt._add_source_term!(b, device, 0.1f0)) == 0
 end
+
+@testset "Linear operator with a cellwise coefficient, host versus device assembly" begin
+    # The coefficient captures a host vector, which the device assembly has to move with the cache.
+    grid = generate_grid(Quadrilateral, (7, 5))
+    dh = DofHandler(grid)
+    add!(dh, :u, Lagrange{RefQuadrilateral, 1}())
+    close!(dh)
+    amplitude = Float32.(1:getncells(grid))
+    linint = Thunderbolt.LinearIntegrator(
+        AnalyticalTransmembraneStimulationProtocol(
+            AnalyticalCoefficient((c, t) -> amplitude[c] * t, CellIndexCoordinateSystem()),
+            [SVector((0.0f0, 1.0f0))],
+        ),
+        QuadratureRuleCollection(Float32, 2),
+    )
+    ctx = TimeIntegrationContext(0.5f0, 0.0f0, 0.0f0)
+
+    host = Thunderbolt.setup_operator(host_assembly_strategy(), linint, dh)
+    Thunderbolt.update_operator!(host, nothing, ctx)
+    device = Thunderbolt.setup_operator(device_assembly_strategy(), linint, dh)
+    Thunderbolt.update_operator!(device, nothing, ctx)
+
+    @test Array(device.b) ≈ host.b rtol = 1.0f-5
+end

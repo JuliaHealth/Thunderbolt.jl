@@ -88,6 +88,44 @@ end
     end
 end
 
+@testset "Diffusion through a fibre field, host versus device assembly" begin
+    # The fibre field's data are host arrays, which the device assembly has to move with the cache.
+    grid = generate_grid(
+        Tetrahedron,
+        (3, 3, 3),
+        Vec((0.0f0, 0.0f0, 0.0f0)),
+        Vec((1.0f0, 1.0f0, 1.0f0)),
+    )
+    dh = DofHandler(grid)
+    add!(dh, :φₘ, Lagrange{RefTetrahedron, 1}())
+    close!(dh)
+    ncells = getncells(grid)
+    fibres = [Vec((1.0f0, grid.nodes[n].x[1], 0.5f0)) for c in grid.cells for n in c.nodes]
+    data = Thunderbolt.ElementwiseData(fibres, collect(1:4:4ncells), fill(4, ncells))
+    integrator = Thunderbolt.BilinearDiffusionIntegrator(
+        SpectralTensorCoefficient(
+            TransverselyIsotropicMicrostructureModel(
+                FieldCoefficient(data, LagrangeCollection{1}()^3),
+            ),
+            ConstantCoefficient(SVector((2.0f0, 0.5f0))),
+        ),
+        QuadratureRuleCollection(Float32, 2),
+        :φₘ,
+    )
+    ctx = TimeIntegrationContext(0.0f0, 0.0f0, 0.0f0)
+
+    host = Thunderbolt.setup_operator(host_assembly_strategy(), integrator, dh)
+    Thunderbolt.update_operator!(host, nothing, ctx)
+    device = Thunderbolt.setup_operator(
+        device_assembly_strategy(; matrix_type = CuCSC),
+        integrator,
+        dh,
+    )
+    Thunderbolt.update_operator!(device, nothing, ctx)
+
+    @test SparseMatrixCSC(device.A) ≈ host.A rtol = 1.0f-5
+end
+
 @testset "Device assembled operators share the stage matrix pattern" begin
     dh  = _ep_testbed((8, 8))
     qrc = QuadratureRuleCollection(Float32, 2)
