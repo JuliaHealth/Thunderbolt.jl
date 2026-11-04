@@ -179,6 +179,80 @@ end
 # A weighted sweep that does not name `:u` must contribute nothing from a displacement-only term.
 @inline _qs_state_weight(weights::NamedTuple) = haskey(weights, :u) ? weights.u : false
 
+# --- quadrature point kernels ---------------------------------------------------------------------
+
+"""
+    _qs_assemble_qp!(req, ip, cv, qp, P, tangent, dΩ)
+
+Add one quadrature point's `∫ ∇δu ⊡ tangent ⊡ ∇δu dΩ` to the element matrix of `req` and, if `req`
+carries a residual, its `∫ ∇δu ⊡ P dΩ`. `ip` is the interpolation `cv` holds.
+
+This is also the function barrier of the element kernels: a material whose routine cannot be inferred
+costs one dynamic dispatch per quadrature point here, not one per matrix entry.
+"""
+function _qs_assemble_qp!(req, ip, cv, qp, P, tangent, dΩ)
+    ndofs = getnbasefunctions(cv)
+    @inbounds for i = 1:ndofs
+        ∇δui = shape_gradient(cv, qp, i)
+        _qs_accumulate_residual!(req, i, ∇δui ⊡ P * dΩ)
+
+        ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
+        for j = 1:ndofs
+            ∇δuj = shape_gradient(cv, qp, j)
+            req.K[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
+        end
+    end
+end
+
+# The gradient of the shape function `3(I-1) + a` of a vectorized scalar interpolation is `eₐ ⊗ ∇N_I`.
+# Contracting by node needs 3 instead of 9 products per matrix entry.
+@inline function _nodal_shape_gradient(cv, qp, I)
+    e₁∇N = shape_gradient(cv, qp, 3I - 2)
+    return Vec{3}((e₁∇N[1, 1], e₁∇N[1, 2], e₁∇N[1, 3]))
+end
+
+function _qs_assemble_qp!(
+    req,
+    ::VectorizedInterpolation{3},
+    cv,
+    qp,
+    P::Tensor{2, 3},
+    tangent::Tensor{4, 3},
+    dΩ,
+)
+    nnodes = getnbasefunctions(cv) ÷ 3
+    @inbounds for I = 1:nnodes
+        ∇Nᵢ = _nodal_shape_gradient(cv, qp, I)
+        Pᵢ = P ⋅ ∇Nᵢ
+        for a = 1:3
+            i = 3(I - 1) + a
+            _qs_accumulate_residual!(req, i, Pᵢ[a] * dΩ)
+
+            aᵢ = Tensor{2, 3}(
+                (b, l) ->
+                    (
+                        ∇Nᵢ[1] * tangent[a, 1, b, l] +
+                        ∇Nᵢ[2] * tangent[a, 2, b, l] +
+                        ∇Nᵢ[3] * tangent[a, 3, b, l]
+                    ) * dΩ,
+            ) # Hoisted computation
+            for J = 1:nnodes
+                v              = aᵢ ⋅ _nodal_shape_gradient(cv, qp, J)
+                req.K[i, 3J-2] += v[1]
+                req.K[i, 3J-1] += v[2]
+                req.K[i, 3J]   += v[3]
+            end
+        end
+    end
+end
+
+@inline _qs_assemble_qp!(req, cv, qp, P, tangent, dΩ) =
+    _qs_assemble_qp!(req, Ferrite.function_interpolation(cv), cv, qp, P, tangent, dΩ)
+
+@inline _qs_accumulate_residual!(req::FerriteOperators.JacobianResidualRequest, i, value) =
+    (req.r[i] += value)
+@inline _qs_accumulate_residual!(req, i, value) = nothing
+
 # --- rate-free elements --------------------------------------------------------------------------
 
 FerriteOperators.provides_analytic(
@@ -198,7 +272,6 @@ function FerriteOperators.assemble_cell!(
     args::FerriteOperators.CellArgs,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs = getnbasefunctions(cv)
     dₑ = args.states.u
     time = FerriteOperators.evaluation_time(args.ctx)
 
@@ -219,28 +292,12 @@ function FerriteOperators.assemble_cell!(
             qp,
             time,
         )
-        tangent = consistent_tangent(sensitivities)
-
-        # Loop over test functions
-        for i = 1:ndofs
-            ∇δui = shape_gradient(cv, qp, i)
-
-            # Add contribution to the residual from this test function
-            req.r[i] += ∇δui ⊡ P * dΩ
-
-            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
-            for j = 1:ndofs
-                ∇δuj = shape_gradient(cv, qp, j)
-                # Add contribution to the tangent
-                req.K[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
-            end
-        end
+        _qs_assemble_qp!(req, cv, qp, P, consistent_tangent(sensitivities), dΩ)
     end
 end
 
 function _assemble_quasistatic_jacobian!(req, element_cache::QuasiStaticElementCache, args, w)
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs = getnbasefunctions(cv)
     dₑ = args.states.u
     time = FerriteOperators.evaluation_time(args.ctx)
 
@@ -251,7 +308,7 @@ function _assemble_quasistatic_jacobian!(req, element_cache::QuasiStaticElementC
         kinematics = DeformationGradient(one(∇u) + ∇u)
 
         # Compute "tangent only"
-        _, sensitivities = material_routine(
+        P, sensitivities = material_routine(
             constitutive_model,
             kinematics,
             coefficient_cache,
@@ -260,17 +317,7 @@ function _assemble_quasistatic_jacobian!(req, element_cache::QuasiStaticElementC
             qp,
             time,
         )
-        tangent = consistent_tangent(sensitivities)
-
-        for i = 1:ndofs
-            ∇δui = shape_gradient(cv, qp, i)
-
-            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
-            for j = 1:ndofs
-                ∇δuj = shape_gradient(cv, qp, j)
-                req.K[i, j] += w * (∇δui_tangent ⊡ ∇δuj) * dΩ
-            end
-        end
+        _qs_assemble_qp!(req, cv, qp, P, consistent_tangent(sensitivities), w * dΩ)
     end
 end
 
@@ -537,7 +584,6 @@ function _assemble_condensed_cell!(
     linearization,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs = getnbasefunctions(cv)
     dₑ = args.states.u
     Qₑ = _qs_internal_block(element_cache, args.states.q)
     correctors = _qs_correctors(element_cache, args)
@@ -559,23 +605,9 @@ function _assemble_condensed_cell!(
             @view(Qₑ[:, qp.i]),
         )
         tangent = consistent_tangent(sensitivities + correctors[qp.i], linearization)
-
-        for i = 1:ndofs
-            ∇δui = shape_gradient(cv, qp, i)
-            _qs_accumulate_residual!(req, i, ∇δui ⊡ P * dΩ)
-
-            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
-            for j = 1:ndofs
-                ∇δuj = shape_gradient(cv, qp, j)
-                req.K[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
-            end
-        end
+        _qs_assemble_qp!(req, cv, qp, P, tangent, dΩ)
     end
 end
-
-@inline _qs_accumulate_residual!(req::FerriteOperators.JacobianResidualRequest, i, value) =
-    (req.r[i] += value)
-@inline _qs_accumulate_residual!(req, i, value) = nothing
 
 FerriteOperators.assemble_cell!(
     req::FerriteOperators.JacobianResidualRequest,
@@ -754,7 +786,6 @@ function _assemble_steady_condensed_cell!(
     linearization,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs = getnbasefunctions(cv)
     dₑ = args.states.u
     Qₑ = _qs_internal_block(element_cache, args.states.q)
     correctors = _qs_correctors(element_cache, args)
@@ -776,17 +807,7 @@ function _assemble_steady_condensed_cell!(
             @view(Qₑ[:, qp.i]),
         )
         tangent = consistent_tangent(sensitivities + correctors[qp.i], linearization)
-
-        for i = 1:ndofs
-            ∇δui = shape_gradient(cv, qp, i)
-            _qs_accumulate_residual!(req, i, ∇δui ⊡ P * dΩ)
-
-            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
-            for j = 1:ndofs
-                ∇δuj = shape_gradient(cv, qp, j)
-                req.K[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
-            end
-        end
+        _qs_assemble_qp!(req, cv, qp, P, tangent, dΩ)
     end
 end
 
