@@ -8,6 +8,7 @@ using DynamicQuantities
 # cannot become ambiguous with it.
 import BlockArrays: BlockMatrix, blocklengths, blocks
 import SparseArrays: SparseMatrixCSC, nnz, nzrange
+import Tensors: Tensors, Tensor, det, tdot, tr, ⊗
 include(joinpath(@__DIR__, "..", "testfixtures.jl"))
 
 # The 3D-0D coupled path, whole and in pieces.
@@ -62,19 +63,17 @@ ideal_lv_constitutive_model = ActiveStressModel(
 )
 
 """
-    ideal_lv_3d0d_splitform(fluid_model, coupler)
+    ideal_lv_3d0d_splitform(fluid_model, coupler; material = ideal_lv_constitutive_model)
 
-The semidiscretized 3D-0D problem on `ideal_lv_mesh`. The solid half is fixed; the circuit and the
-coupling that ties it to the chamber surface are what vary between call sites.
+The semidiscretized 3D-0D problem on `ideal_lv_mesh`. The boundary conditions and the valvular plane
+are fixed; the material, the circuit and the coupling that ties it to the chamber surface are what
+vary between call sites.
 """
-function ideal_lv_3d0d_splitform(fluid_model, coupler)
+function ideal_lv_3d0d_splitform(fluid_model, coupler; material = ideal_lv_constitutive_model)
     # No Dirichlet condition: the epicardial Robin spring pins the rigid body modes, and the base is
     # left free to move -- the valvular plane is what keeps the chamber volume well defined then.
-    solid_model = QuasiStaticModel(
-        :d,
-        ideal_lv_constitutive_model,
-        (RobinBC(0.1, "Epicardium"), NormalSpringBC(0.1, "Base")),
-    )
+    solid_model =
+        QuasiStaticModel(:d, material, (RobinBC(0.1, "Epicardium"), NormalSpringBC(0.1, "Base")))
     # The cap closing the basal orifice: a stiff isotropic closure that carries the chamber pressure
     # on its ventricular face without bulging, compressible so the single element it is thick does
     # not lock. Same parameters as the `cm03_3d0d-coupling` tutorial, which states the contract.
@@ -183,6 +182,199 @@ end
     )
 end
 
+@testset "3D0D prescribed chamber volume" begin
+    coupler = LumpedFluidSolidCoupler([ChamberVolumeCoupling("LVChamberSurface", :V, :p, :pₗᵥ)], :d)
+    probe = ideal_lv_3d0d_splitform(Thunderbolt.DummyLumpedCircuitModel(t -> 0.0), coupler)
+    V₀ = only(probe.functions[1].tying_info.chambers).V⁰ᴰval
+
+    T, Δt = 4.0, 1.0
+    smoothstep(τ) = (τ = clamp(τ, 0.0, 1.0); τ * τ * (3 - 2τ))
+    V(t) = V₀ * (1 - 0.01 * smoothstep(t / T))
+
+    tmax = T + 2Δt
+    integrator = test_solve_contractile_ideal_lv_3D0D(
+        [V(0.0)],
+        Thunderbolt.DummyLumpedCircuitModel(V),
+        coupler,
+        tmax,
+        Δt,
+    )
+
+    f = probe.functions[1]
+    chamber = only(f.tying_info.chambers)
+    # The 0D state is the prescribed volume itself, not an approximation chasing it.
+    @test integrator.u[chamber.V⁰ᴰidx_global] ≈ V(tmax) rtol = 1e-12
+    # The 3D problem follows it, within the tolerance of its Newton solve, and the pressure is its answer.
+    u₃ᴰ = integrator.u[1:Thunderbolt.solution_size(f)]
+    V³ᴰ = Thunderbolt.compute_chamber_volume(
+        f.structural_function.dh,
+        u₃ᴰ,
+        "LVChamberSurface",
+        chamber,
+    )
+    @test V³ᴰ ≈ V(tmax) atol = 1e-2
+    @test integrator.u[chamber.pressure_dof_index] != 0.0
+end
+
+# A material with an internal variable on the 3D-0D coupled path. Its local problem has a closed form,
+#
+#   W(F, Q) = a/2 (I₁ - 3) + μ/2 (I₁ - 3 - Q)² + c/2 Q² + κ/2 (J - 1)² - a ln J,
+#   0 = ∂W/∂Q  ⇒  Q = μ/(μ + c) (I₁ - 3),
+#
+# and condensing it leaves the hyperelastic energy with `μc/(μ + c)/2 (I₁ - 3)²` in place of the two
+# terms in `Q`. So the condensed solve has a reference that shares none of its machinery.
+Base.@kwdef struct CondensedEnergy
+    a::Float64 = 2.0
+    μ::Float64 = 8.0
+    c::Float64 = 4.0
+    κ::Float64 = 100.0
+end
+struct ReducedEnergy
+    m::CondensedEnergy
+end
+
+function Thunderbolt.Ψ(F, coefficients, e::ReducedEnergy)
+    (; a, μ, c, κ) = e.m
+    I₁ = tr(tdot(F))
+    J = det(F)
+    return a / 2 * (I₁ - 3) + μ * c / (μ + c) / 2 * (I₁ - 3)^2 + κ / 2 * (J - 1)^2 - a * log(J)
+end
+
+_frozen_energy(F, Q, (; a, μ, c, κ)) =
+    a / 2 * (tr(tdot(F)) - 3) +
+    μ / 2 * (tr(tdot(F)) - 3 - Q)^2 +
+    c / 2 * Q^2 +
+    κ / 2 * (det(F) - 1)^2 - a * log(det(F))
+
+const CondensedPK1 = PK1Model{<:CondensedEnergy}
+
+Thunderbolt.internal_variable_evolution(::CondensedPK1) = Thunderbolt.SteadyStateEvolution()
+Thunderbolt.default_initial_state!(uq, ::CondensedPK1) = fill!(uq, 0.0)
+Thunderbolt.gather_internal_variable_infos(::CondensedPK1) =
+    (Thunderbolt.InternalVariableInfo(:Q, 1),)
+
+function Thunderbolt.solve_local_state!(
+    F,
+    coefficients,
+    m::CondensedPK1,
+    state_cache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+)
+    (; μ, c) = m.material
+    Qflat[1] = μ / (μ + c) * (tr(tdot(F)) - 3)
+    return nothing
+end
+
+function Thunderbolt.solve_local_constraint(
+    F,
+    coefficients,
+    m::CondensedPK1,
+    state_cache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+)
+    Thunderbolt.solve_local_state!(F, coefficients, m, state_cache, geometry_cache, qp, time, Qflat)
+    # ∂P/∂Q = -2μF and dQ/dF = 2μ/(μ + c) F
+    (; μ, c) = m.material
+    return Qflat, -4μ^2 / (μ + c) * (F ⊗ F)
+end
+
+Thunderbolt.stress_function(m::CondensedPK1, F::Tensor{2}, coefficients, Q::AbstractVector) =
+    Tensors.gradient(X -> _frozen_energy(X, Q[1], m.material), F)
+function Thunderbolt.stress_and_tangent(
+    m::CondensedPK1,
+    F::Tensor{2},
+    coefficients,
+    Q::AbstractVector,
+)
+    ∂²W∂F², ∂W∂F = Tensors.hessian(X -> _frozen_energy(X, Q[1], m.material), F, :all)
+    return ∂W∂F, ∂²W∂F²
+end
+
+coupled_splitform(material) = ideal_lv_3d0d_splitform(
+    RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false),
+    LumpedFluidSolidCoupler([ChamberVolumeCoupling("LVChamberSurface", :Vₗᵥ, :pₗᵥ, :pₗᵥ)], :d);
+    material,
+)
+
+function solve_coupled(material)
+    splitform = coupled_splitform(material)
+    f = splitform.functions[1]
+    chamber = only(f.tying_info.chambers)
+
+    u₀ = zeros(solution_size(splitform))
+    circuit = @view u₀[OS.get_solution_indices(splitform, 2)]
+    Thunderbolt.default_initial_state!(circuit, RSAFDQ2022LumpedCicuitModel())
+    # Start the chamber a little below the mesh's own volume.
+    u₀[chamber.V⁰ᴰidx_global] = 0.995 * chamber.V⁰ᴰval
+
+    timestepper = LieTrotterGodunov((
+        HomotopyPathSolver(
+            NewtonRaphsonSolver(;
+                max_iter = 15,
+                tol = 1e-9,
+                inner_solver = SchurComplementLinearSolver(LinearSolve.UMFPACKFactorization()),
+            ),
+        ),
+        Tsit5(),
+    ))
+    integrator = init(
+        OperatorSplittingProblem(splitform, u₀, (0.0, 2.0)),
+        timestepper;
+        dt = 1.0,
+        verbose = false,
+        dtmax = 10.0,
+    )
+    solve!(integrator)
+    return (; f, chamber, u = copy(integrator.u), retcode = integrator.sol.retcode)
+end
+
+@testset "3D0D coupling of a material with internal variables" begin
+    m = CondensedEnergy()
+    condensed = solve_coupled(PK1Model(m, NoMicrostructureModel()))
+    reduced = solve_coupled(PK1Model(ReducedEnergy(m), NoMicrostructureModel()))
+    @test condensed.retcode == ReturnCode.Success
+    @test reduced.retcode == ReturnCode.Success
+
+    # The condensed state follows the displacement block, the circuit follows it.
+    f = condensed.f
+    nu = Thunderbolt.ndofs(f.structural_function.dh)
+    nq = length(Thunderbolt.internal_variable_range(f.structural_function))
+    @test nq > 0
+    @test solution_size(f) == nu + nq
+    @test condensed.chamber.V⁰ᴰidx_global > nu + nq
+
+    # What the coupling sees is the material the condensation reduces to.
+    @test condensed.u[1:nu] ≈ reduced.u[1:nu] rtol = 1e-6
+    @test condensed.u[condensed.chamber.pressure_dof_index] ≈
+          reduced.u[reduced.chamber.pressure_dof_index] rtol = 1e-6
+    @test condensed.u[(nu+nq+1):end] ≈ reduced.u[(nu+1):end] rtol = 1e-6
+
+    # And the local problem was solved at the last state, not left at the initial one.
+    @test any(!iszero, condensed.u[(nu+1):(nu+nq)])
+end
+
+@testset "3D0D coupling refuses a material with an evolving internal variable" begin
+    microstructure = ConstantCoefficient(
+        OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
+    )
+    material = ActiveStressModel(
+        Guccione1991PassiveModel(),
+        SimpleActiveStress(),
+        Thunderbolt.CaDrivenInternalSarcomereModel(
+            Thunderbolt.RDQ20MFModel(),
+            ConstantCoefficient(1.0),
+        ),
+        microstructure,
+    )
+    @test_throws "RateCoupledEvolution" coupled_splitform(material)
+end
+
 # Pinned solver-supplied data for the operator testsets below. Within one 3D solve `V⁰ᴰ` is a
 # constant, not an unknown; pinning it here rather than taking it from a transfer keeps the operator
 # testsets independent of the 0D solve.
@@ -242,7 +434,12 @@ function single_chamber_state(; seed = 42)
     f = splitform.functions[1]
 
     solver = HomotopyPathSolver(NewtonRaphsonSolver(; max_iter = 10, tol = 1e-2))
-    op = Thunderbolt.setup_stage_operator(f, solver, nothing, PINNED_T)
+    op = Thunderbolt.setup_stage_operator(
+        f,
+        solver,
+        Thunderbolt.setup_local_solver_cache(f, solver),
+        PINNED_T,
+    )
 
     n = Thunderbolt.solution_size(f)
     n_chambers = length(f.tying_info.chambers)
