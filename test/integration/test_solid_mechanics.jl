@@ -1092,10 +1092,9 @@ end
     # Both change how the iteration is run, not what it converges to, so the assertion throughout is
     # that the solution is the one the ordinary Newton finds.
     #
-    # They are also the only thing that exercises the residual-only assembly path: with a full Newton
-    # `nlsolve!` never asks for a residual without a tangent. That path is not a subset of the
-    # linearization -- it re-solves the local problems and it reaches the materials through
-    # `stress_function` rather than `stress_and_tangent`.
+    # The residual-only assembly path they lean on is not a subset of the linearization -- it re-solves
+    # the local problems and it reaches the materials through `stress_function` rather than
+    # `stress_and_tangent`.
     direct = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 20, tol = 1e-8)
 
     # Both sarcomere variants, because the rate-coupled and the rate-free local problem reach the
