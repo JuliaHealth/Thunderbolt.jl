@@ -32,6 +32,7 @@ include("simple_meshes.jl")
 include("tools.jl")
 include("generators.jl")
 include("long_axis.jl")
+include("reorder.jl")
 
 Ferrite.PointEvalHandler(
     mesh::SimpleMesh{sdim},
