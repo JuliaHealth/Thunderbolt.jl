@@ -12,6 +12,7 @@
 
 using Thunderbolt
 import Thunderbolt: OrderedSet
+using Random
 
 """
 Mixed-dimensional 3D grid: one `Hexahedron` ("Ventricle") plus one `Line` ("Purkinje"), with the six

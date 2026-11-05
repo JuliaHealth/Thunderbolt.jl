@@ -277,6 +277,8 @@ export
     hexahedralize,
     separate_chamber_surfaces,
     to_mesh,
+    reorder_cells!,
+    compute_sfc_ordering,
     # Generic models
     TransientDiffusionModel,
     InterfaceDiffusionModel,
