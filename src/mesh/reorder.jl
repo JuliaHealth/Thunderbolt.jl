@@ -65,8 +65,8 @@ The returned permutation `perm` satisfies `perm[new_pos] = old_cell_id`, so that
 function compute_sfc_ordering(grid::AbstractGrid)
     n = getncells(grid)
     n == 0 && return Int[]
-    centers = [cellcenter(grid, i) for i in 1:n]
-    lo, hi = bounding_box(grid)
+    centers = [cellcenter(grid, i) for i = 1:n]
+    lo, hi = Ferrite.bounding_box(grid)
     ordering = Int[]
     sizehint!(ordering, n)
     compute_morton_ordering!(ordering, centers, lo, hi, collect(1:n), 0)
@@ -75,8 +75,8 @@ end
 
 # Compute the centroid of cell `cell_id` as the mean of its node coordinates.
 function cellcenter(grid::AbstractGrid, cell_id::Int)
-    node_ids = get_node_ids(getcells(grid, cell_id))
-    s = sum(get_node_coordinate(grid, nid) for nid in node_ids)
+    node_ids = Ferrite.get_node_ids(getcells(grid, cell_id))
+    s = sum(Ferrite.get_node_coordinate(grid, nid) for nid in node_ids)
     return s / length(node_ids)
 end
 
@@ -86,13 +86,13 @@ end
 # `cell_ids` is the set of element IDs assigned to this box.
 # `depth` is used as a safety guard against infinite recursion.
 function compute_morton_ordering!(
-        ordering::Vector{Int},
-        centers::Vector{Vec{dim, T}},
-        lo::Vec{dim, T},
-        hi::Vec{dim, T},
-        cell_ids::Vector{Int},
-        depth::Int,
-    ) where {dim, T}
+    ordering::Vector{Int},
+    centers::Vector{Vec{dim, T}},
+    lo::Vec{dim, T},
+    hi::Vec{dim, T},
+    cell_ids::Vector{Int},
+    depth::Int,
+) where {dim, T}
     if length(cell_ids) <= 1
         append!(ordering, cell_ids)
         return
@@ -100,17 +100,17 @@ function compute_morton_ordering!(
 
     mid = (lo + hi) / 2
     n_children = 1 << dim  # 2^dim
-    children = [Int[] for _ in 1:n_children]
+    children = [Int[] for _ = 1:n_children]
 
     for id in cell_ids
         c = centers[id]
         octant = 0
-        for d in 1:dim
+        for d = 1:dim
             if c[d] >= mid[d]
                 octant += 1 << (d - 1)
             end
         end
-        push!(children[octant + 1], id)
+        push!(children[octant+1], id)
     end
 
     # Detect degenerate split: if all elements fall in one child (e.g. coincident
@@ -123,11 +123,18 @@ function compute_morton_ordering!(
 
     # Visit children in Morton (Z-curve) order: child index i encodes which side of
     # mid each dimension is on via bit (d-1) of (i-1).
-    for child_idx in 1:n_children
+    for child_idx = 1:n_children
         isempty(children[child_idx]) && continue
         child_lo = Vec{dim}(d -> isodd((child_idx - 1) >> (d - 1)) ? mid[d] : lo[d])
         child_hi = Vec{dim}(d -> isodd((child_idx - 1) >> (d - 1)) ? hi[d] : mid[d])
-        compute_morton_ordering!(ordering, centers, child_lo, child_hi, children[child_idx], depth + 1)
+        compute_morton_ordering!(
+            ordering,
+            centers,
+            child_lo,
+            child_hi,
+            children[child_idx],
+            depth + 1,
+        )
     end
     return
 end
