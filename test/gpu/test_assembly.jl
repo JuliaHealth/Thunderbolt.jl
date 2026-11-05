@@ -116,11 +116,8 @@ end
 
     host = Thunderbolt.setup_operator(host_assembly_strategy(), integrator, dh)
     Thunderbolt.update_operator!(host, nothing, ctx)
-    device = Thunderbolt.setup_operator(
-        device_assembly_strategy(; matrix_type = CuCSC),
-        integrator,
-        dh,
-    )
+    device =
+        Thunderbolt.setup_operator(device_assembly_strategy(; matrix_type = CuCSC), integrator, dh)
     Thunderbolt.update_operator!(device, nothing, ctx)
 
     @test SparseMatrixCSC(device.A) ≈ host.A rtol = 1.0f-5
