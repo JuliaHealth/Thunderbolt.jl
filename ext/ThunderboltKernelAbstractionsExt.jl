@@ -33,14 +33,17 @@ import FerriteOperators
 
 if isdefined(FerriteOperators, :device_worker_view)
 
-    import FerriteOperators: AbstractGPUDevice, setup_device_instances, device_worker_view
+    import FerriteOperators:
+        AbstractGPUDevice, setup_device_instances, device_worker_view, adapt_shared
 
-    # The coefficient caches the electrophysiology path reaches a device with are `isbits` -- constant
-    # coefficients, the conductivity-to-diffusivity quotient over them, and the Cartesian coordinate
-    # system, whose interpolation values are static matrices -- so they are shared read-only across
-    # workers. Only the values object carries per-cell state, and it batches.
+    # The coefficient caches are shared read-only across workers and moved to the device once, since
+    # some carry host arrays (a `FieldCoefficient`'s data, an analytical coefficient's captures).
+    # Only the values object carries per-cell state, and it batches.
     setup_device_instances(device::AbstractGPUDevice, cache::BilinearMassElementCache, n::Int) =
-        BilinearMassElementCache(cache.ρcache, setup_device_instances(device, cache.cellvalues, n))
+        BilinearMassElementCache(
+            adapt_shared(device, cache.ρcache),
+            setup_device_instances(device, cache.cellvalues, n),
+        )
     device_worker_view(cache::BilinearMassElementCache, worker) =
         BilinearMassElementCache(cache.ρcache, device_worker_view(cache.cellvalues, worker))
 
@@ -49,7 +52,7 @@ if isdefined(FerriteOperators, :device_worker_view)
         cache::BilinearDiffusionElementCache,
         n::Int,
     ) = BilinearDiffusionElementCache(
-        cache.Dcache,
+        adapt_shared(device, cache.Dcache),
         setup_device_instances(device, cache.cellvalues, n),
     )
     device_worker_view(cache::BilinearDiffusionElementCache, worker) =
@@ -69,7 +72,7 @@ if isdefined(FerriteOperators, :device_worker_view)
         n::Int,
     )
         return AnalyticalCoefficientElementCache(
-            cache.cc,
+            adapt_shared(device, cache.cc),
             SVector{length(cache.nonzero_intervals)}(cache.nonzero_intervals),
             setup_device_instances(device, cache.cv, n),
         )
