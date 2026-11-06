@@ -263,7 +263,7 @@ end
                     unstable_check = counting,
                     alias_u0 = false,
                 )
-                for _ in 1:5
+                for _ = 1:5
                     DiffEqBase.step!(integrator)
                 end
                 @test scans[] == 2 * 5

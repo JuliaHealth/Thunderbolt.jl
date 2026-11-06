@@ -372,8 +372,7 @@ function check_stability!(integrator::ThunderboltTimeIntegrator)
     (; unstable_check, verbose) = integrator.opts
     unstable_check(integrator.dt, integrator.u, integrator.p, integrator.t) || return nothing
     @SciMLMessage("Instability detected. Aborting", verbose, :instability)
-    integrator.sol =
-        SciMLBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Unstable)
+    integrator.sol = SciMLBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Unstable)
     return nothing
 end
 

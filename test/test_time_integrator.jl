@@ -216,8 +216,7 @@ end
 end
 
 @testset "An unstable state is flagged by the step that produced it" begin
-    integrator =
-        init(scalar_decay_problem(NaN), ScalarForwardEuler(), dt = 0.1, verbose = false)
+    integrator = init(scalar_decay_problem(NaN), ScalarForwardEuler(), dt = 0.1, verbose = false)
     SciMLBase.step!(integrator)
     @test isnan(integrator.u[1])
     @test SciMLBase.check_error(integrator) == SciMLBase.ReturnCode.Unstable
@@ -233,7 +232,7 @@ end
     counting = (dt, u, p, t) -> (scans[] += 1; any(isnan, u))
     integrator =
         init(scalar_decay_problem(), ScalarForwardEuler(), dt = 0.1, unstable_check = counting)
-    for _ in 1:3
+    for _ = 1:3
         SciMLBase.step!(integrator)
     end
     @test scans[] == 3
