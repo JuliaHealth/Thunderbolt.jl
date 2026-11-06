@@ -215,6 +215,31 @@ end
     @test SciMLBase.check_error(integrator) == SciMLBase.ReturnCode.ConvergenceFailure
 end
 
+@testset "An unstable state is flagged by the step that produced it" begin
+    integrator = init(scalar_decay_problem(NaN), ScalarForwardEuler(), dt = 0.1, verbose = false)
+    SciMLBase.step!(integrator)
+    @test isnan(integrator.u[1])
+    @test SciMLBase.check_error(integrator) == SciMLBase.ReturnCode.Unstable
+
+    sol = SciMLBase.solve!(
+        init(scalar_decay_problem(NaN), ScalarForwardEuler(), dt = 0.1, verbose = false),
+    )
+    @test sol.retcode == SciMLBase.ReturnCode.Unstable
+end
+
+@testset "unstable_check is taken from init and runs once per accepted step" begin
+    scans = Ref(0)
+    counting = (dt, u, p, t) -> (scans[] += 1; any(isnan, u))
+    integrator =
+        init(scalar_decay_problem(), ScalarForwardEuler(), dt = 0.1, unstable_check = counting)
+    for _ = 1:3
+        SciMLBase.step!(integrator)
+    end
+    @test scans[] == 3
+    @test SciMLBase.check_error(integrator) == SciMLBase.ReturnCode.Success
+    @test scans[] == 3
+end
+
 @testset "tstops" begin
     tf = 1.0
 

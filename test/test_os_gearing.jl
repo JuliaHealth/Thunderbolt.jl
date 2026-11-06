@@ -5,6 +5,7 @@ using OrdinaryDiffEqLowOrderRK
 using UnPack
 using Test
 import SciMLIterators: TimeChoiceIterator, intervals
+import SciMLBase
 
 # For testing purposes
 struct DummyForwardEuler <: Thunderbolt.AbstractSolver end
@@ -236,6 +237,38 @@ end
                 DiffEqBase.solve!(integrator_NaN)
                 @test integrator_NaN.sol.retcode ∈
                       (DiffEqBase.ReturnCode.Unstable, DiffEqBase.ReturnCode.DtNaN)
+            end
+
+            @testset "A child NaN is caught before the step is accepted" begin
+                integrator = DiffEqBase.init(
+                    prob_NaN,
+                    timestepper1,
+                    dt = dt,
+                    verbose = false,
+                    alias_u0 = false,
+                )
+                DiffEqBase.step!(integrator)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Unstable
+                @test integrator.t == tspan[1]
+                @test integrator.u == u0
+            end
+
+            @testset "unstable_check reaches the children and runs once per child step" begin
+                scans = Ref(0)
+                counting = (dt, u, p, t) -> (scans[] += 1; any(isnan, u))
+                integrator = DiffEqBase.init(
+                    prob1,
+                    timestepper1,
+                    dt = dt,
+                    unstable_check = counting,
+                    alias_u0 = false,
+                )
+                for _ = 1:5
+                    DiffEqBase.step!(integrator)
+                end
+                @test scans[] == 2 * 5
+                @test SciMLBase.check_error(integrator) == DiffEqBase.ReturnCode.Default
+                @test scans[] == 2 * 5
             end
 
             integrator =
