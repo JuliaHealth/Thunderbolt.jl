@@ -1,6 +1,6 @@
 name = "Thunderbolt"
 uuid = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
-version = "0.0.8"
+version = "0.0.9"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -93,9 +93,6 @@ SymbolicUtils = "~4.45"
 UnPack = "1"
 julia = "1.10"
 
-# FerriteMultigrid is a weak dependency and a test extra, so `Pkg.develop` cannot record its path
-# without promoting it to a hard dependency. Registered FerriteMultigrid 0.2.1/0.2.2 both carry
-# FerriteOperators 0.4 compat, so a registry resolve is not blocked on FerriteOperators here.
 [extras]
 AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
