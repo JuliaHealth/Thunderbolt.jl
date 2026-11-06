@@ -311,15 +311,11 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
 
     # The last part:
     # Bail out if we take a step with dt less than the minimum value (which may be time dependent)
-    # except if we are successfully taking such a small timestep is to hit a tstop exactly
-    # We also exit if the ODE is unstable according to a user chosen callback
-    # but only if we accepted the step to prevent from bailing out as unstable
-    # when we just took way too big a step)
-    # `step_header!` has already cleared `force_stepfail` for the attempt about to be
-    # made, so `should_accept_step` cannot see a rejection here; `last_step_failed`
-    # survives the header.
+    # except if we are successfully taking such a small timestep is to hit a tstop exactly.
+    # The stability of the state is not re-examined here: `check_stability!` scans every
+    # accepted state once, in the footer of the step that produced it, and leaves its
+    # verdict in the retcode returned above.
     step_rejected = SciMLBase.last_step_failed(integrator)
-    step_accepted = should_accept_step(integrator)
     force_dtmin   = hasproperty(integrator, :force_dtmin) && integrator.force_dtmin
     if !force_dtmin && SciMLBase.isadaptive(integrator)
         dt_below_min      = abs(integrator.dt) ≤ abs(opts.dtmin)
@@ -341,13 +337,6 @@ function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
             )
             return SciMLBase.ReturnCode.Unstable
         end
-    end
-    if step_accepted && (
-        hasproperty(opts, :unstable_check) &&
-        opts.unstable_check(integrator.dt, integrator.u, integrator.p, integrator.t)
-    )
-        @SciMLMessage("Instability detected. Aborting", verbose, :instability)
-        return SciMLBase.ReturnCode.Unstable
     end
     if SciMLBase.last_step_failed(integrator) && !SciMLBase.isadaptive(integrator)
         @SciMLMessage(
@@ -376,6 +365,18 @@ function setup_validity_flags!(integrator, t_next)
     integrator.isout = integrator.opts.isoutofdomain(integrator.u, integrator.p, t_next)
 end
 
+# The one pass of `unstable_check` over an accepted state. Its verdict is stored in the
+# retcode, which `check_error` returns first, so that neither the next step header nor a
+# parent integrator nesting this one has to scan the same state again.
+function check_stability!(integrator::ThunderboltTimeIntegrator)
+    (; unstable_check, verbose) = integrator.opts
+    unstable_check(integrator.dt, integrator.u, integrator.p, integrator.t) || return nothing
+    @SciMLMessage("Instability detected. Aborting", verbose, :instability)
+    integrator.sol =
+        SciMLBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Unstable)
+    return nothing
+end
+
 function step_footer!(integrator::ThunderboltTimeIntegrator)
     t_start = integrator.t
     dt_step = integrator.dt
@@ -392,6 +393,7 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
         integrator.t = OrdinaryDiffEqCore.fixed_t_for_tstop_error!(integrator, ttmp)
         OrdinaryDiffEqCore.handle_callbacks!(integrator)
         adapt_dt!(integrator) # Noop for non-adaptive algorithms
+        check_stability!(integrator)
     elseif integrator.force_stepfail
         if SciMLBase.isadaptive(integrator)
             OrdinaryDiffEqCore.post_newton_controller!(integrator, integrator.alg)

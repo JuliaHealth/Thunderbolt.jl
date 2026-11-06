@@ -62,7 +62,8 @@ function OS._build_child(
     # `u` aliases the parent's solution slice -- the point of this integrator. `uprev`
     # must be a private copy: `update_uprev!` writes it from `u` on every internal step,
     # and through a view that write would corrupt the parent's rollback anchor mid-step.
-    # `forward_sync_internal!` refreshes the copy at the start of every sub-solve.
+    # `step_header!` refreshes the copy before every step, including the first of a
+    # sub-solve, which the forward sync announces through `derivative_discontinuity!`.
     uprev = uprevouter[solution_indices]
     u = @view uouter[solution_indices]
 
@@ -204,6 +205,9 @@ function OS._build_child(
             tstops_cache = tstops,
             saveat_cache = saveat,
             d_discontinuities_cache = d_discontinuities,
+            internalnorm = internalnorm,
+            unstable_check = get(inner, :unstable_check, DiffEqBase.ODE_DEFAULT_UNSTABLE_CHECK),
+            isoutofdomain = get(inner, :isoutofdomain, DiffEqBase.ODE_DEFAULT_ISOUTOFDOMAIN),
         ),
         false,
         0,

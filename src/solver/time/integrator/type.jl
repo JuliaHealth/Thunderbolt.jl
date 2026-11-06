@@ -278,6 +278,8 @@ function SciMLBase.__init(
     reltol = 1.0e-3,
     abstol = 1.0e-6,
     internalnorm = OrdinaryDiffEqCore.ODE_DEFAULT_NORM,
+    unstable_check = DiffEqBase.ODE_DEFAULT_UNSTABLE_CHECK,
+    isoutofdomain = DiffEqBase.ODE_DEFAULT_ISOUTOFDOMAIN,
     kwargs...,
 )
     (; f, u0, p, tspan) = prob
@@ -443,6 +445,8 @@ function SciMLBase.__init(
             saveat_cache = saveat,
             d_discontinuities_cache = d_discontinuities,
             internalnorm = internalnorm,
+            unstable_check = unstable_check,
+            isoutofdomain = isoutofdomain,
         ),
         false,
         0,
