@@ -701,11 +701,13 @@ function _newmark_report_error!(integrator, cache::NewmarkSolverCache, Δt, β)
 
     (; uₙ, uₙ₋₁, aₙ, aₙ₋₁, stage) = cache
     # The first step has no previous acceleration to compare against -- `aₙ₋₁` still holds the initial
-    # acceleration, which belongs to the same step. An estimate of zero leaves `dt` to the controller's
-    # own first-step growth bound.
+    # acceleration, which belongs to the same step. `one` is the neutral report: the step is accepted
+    # at the step size given and the controller's history stays at its seed. A zero would enter that
+    # history as `1/eps` and, through the negative integral coefficient, reject every following step
+    # until its estimate fell below ~1e-5 -- a rejection cascade down to `dtmin`.
     if stage.first_step[]
         stage.first_step[] = false
-        set_error_estimate!(controller_cache, zero(eltype(uₙ)))
+        set_error_estimate!(controller_cache, one(eltype(uₙ)))
         return nothing
     end
 

@@ -246,6 +246,31 @@ end
         end
     end
 
+    @testset "The first step does not poison the step size controller" begin
+        # The first step has no error estimate, and whatever it reports instead enters the
+        # controller's history. A zero made the controller reject the second step over and over,
+        # until the step size had collapsed by two orders of magnitude.
+        f = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
+        Δt = 0.5 / 2^9 # a step size the tolerance below is content with
+        u0 = zeros(solution_size(f))
+        Thunderbolt.default_initial_condition!(u0, f)
+        problem = ElastodynamicsProblem(f, u0, bending_velocity(f, 0.2), (0.0, 0.5))
+        integrator = init(
+            problem,
+            NewmarkSolver(),
+            dt = Δt;
+            adaptive = true,
+            verbose = false,
+            reltol = 1.0e-4,
+            abstol = 1.0e-7,
+        )
+        step!(integrator)
+        step!(integrator)
+        @test integrator.stats.nreject == 0
+        @test integrator.t ≈ 2Δt
+        @test integrator.dt ≥ Δt
+    end
+
     @testset "An adaptive run lands where a fine fixed step run does" begin
         # A single tolerance, because the *global* error is not monotone in `reltol` on an oscillatory
         # problem at fixed `tend` -- it is dominated by phase error, which the local estimate does not
