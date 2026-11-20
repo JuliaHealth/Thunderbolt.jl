@@ -58,7 +58,7 @@ inertia contribution `M a(u)`, with the acceleration affine in the stage unknown
     a(u) = (u - ũ) / c .
 
 The scheme writes `ũ` and `c` once per step -- Newmark `ũ = uₙ + Δt vₙ + (½ - β)Δt² aₙ`,
-`c = βΔt²` -- and this is the only place that reads them. It delegates to the wrapped operator for
+`c = βΔt²`. The operator delegates to the wrapped one for
 `f_int`/`K` and then adds `M a(u)` to the residual and `M/c` to the linearization, so the nonlinear
 solver keeps seeing a plain operator.
 
@@ -213,8 +213,6 @@ struct NewmarkStageCache{StageType, SolverType, T}
     zprev::Vector{Float64}
     β::T
     γ::T
-    # The estimator straddles a step, so it is not computable on the first one.
-    first_step::Base.RefValue{Bool}
 end
 
 mutable struct NewmarkSolverCache{
@@ -505,7 +503,6 @@ function setup_solver_cache(
             zeros(solution_size(structural)),
             solver.β,
             solver.γ,
-            Ref(true),
         ),
         solver.monitor,
     )
@@ -692,6 +689,8 @@ scheme, which is what makes `alg_adaptive_order = 2` correct.
     An estimator formed from the solved acceleration and a fresh right hand side evaluation at the
     same state is identically zero, so the estimate has to straddle the step.
 
+The first step is estimated like any other: `aₙ₋₁` then holds the consistent initial acceleration.
+
 `β = 1/6` makes the estimator vanish identically, which is correct — that is the member of the family
 the estimate is taken against — but it leaves the scheme with no error estimate.
 """
@@ -699,18 +698,7 @@ function _newmark_report_error!(integrator, cache::NewmarkSolverCache, Δt, β)
     controller_cache = integrator.controller_cache
     controller_cache === nothing && return nothing # fixed step size, nothing to report to
 
-    (; uₙ, uₙ₋₁, aₙ, aₙ₋₁, stage) = cache
-    # The first step has no previous acceleration to compare against -- `aₙ₋₁` still holds the initial
-    # acceleration, which belongs to the same step. `one` is the neutral report: the step is accepted
-    # at the step size given and the controller's history stays at its seed. A zero would enter that
-    # history as `1/eps` and, through the negative integral coefficient, reject every following step
-    # until its estimate fell below ~1e-5 -- a rejection cascade down to `dtmin`.
-    if stage.first_step[]
-        stage.first_step[] = false
-        set_error_estimate!(controller_cache, one(eltype(uₙ)))
-        return nothing
-    end
-
+    (; uₙ, uₙ₋₁, aₙ, aₙ₋₁) = cache
     reltol = integrator.opts.reltol
     abstol = integrator.opts.abstol
     udofs = integrator.f.state_mapping.dofs

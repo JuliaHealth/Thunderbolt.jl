@@ -246,29 +246,35 @@ end
         end
     end
 
-    @testset "The first step does not poison the step size controller" begin
-        # The first step has no error estimate, and whatever it reports instead enters the
-        # controller's history. A zero made the controller reject the second step over and over,
-        # until the step size had collapsed by two orders of magnitude.
+    @testset "The first step is error controlled" begin
+        # The initial acceleration is consistent, so the estimate exists from the first step on.
         f = elastodynamic_bar(ncells = (2, 1, 1), ρ = 1.0e-2)
-        Δt = 0.5 / 2^9 # a step size the tolerance below is content with
-        u0 = zeros(solution_size(f))
-        Thunderbolt.default_initial_condition!(u0, f)
-        problem = ElastodynamicsProblem(f, u0, bending_velocity(f, 0.2), (0.0, 0.5))
-        integrator = init(
-            problem,
-            NewmarkSolver(),
-            dt = Δt;
-            adaptive = true,
-            verbose = false,
-            reltol = 1.0e-4,
-            abstol = 1.0e-7,
-        )
-        step!(integrator)
-        step!(integrator)
-        @test integrator.stats.nreject == 0
-        @test integrator.t ≈ 2Δt
-        @test integrator.dt ≥ Δt
+        first_steps(Δt, n) = begin
+            u0 = zeros(solution_size(f))
+            Thunderbolt.default_initial_condition!(u0, f)
+            problem = ElastodynamicsProblem(f, u0, bending_velocity(f, 0.2), (0.0, 0.5))
+            integrator = init(
+                problem,
+                NewmarkSolver(),
+                dt = Δt;
+                adaptive = true,
+                verbose = false,
+                reltol = 1.0e-4,
+                abstol = 1.0e-7,
+            )
+            foreach(_ -> step!(integrator), 1:n)
+            integrator
+        end
+
+        Δt = 0.5 / 2^9 # a step size the tolerance is content with
+        content = first_steps(Δt, 2)
+        @test content.stats.nreject == 0
+        @test content.t ≥ 2Δt
+
+        Δt = 0.5 / 2^6 # and one it is not
+        too_long = first_steps(Δt, 1)
+        @test too_long.stats.nreject ≥ 1
+        @test too_long.t < Δt
     end
 
     @testset "An adaptive run lands where a fine fixed step run does" begin
@@ -851,7 +857,8 @@ end
         return u
     end
     free_bar(material; kwargs...) = elastodynamic_bar(; material, clamped = false, kwargs...)
-    stored(f) = Thunderbolt.strain_energy(f, state(f, homogeneous), 0.0)
+    spinning(X) = Vec((0.4, 1.0, -0.7)) × X
+    stored(f) = Thunderbolt.strain_energy(f, state(f, homogeneous, spinning), 0.0)
 
     @testset "Strain energy of a homogeneous deformation, $(nameof(typeof(energy)))" for energy in (
         Guccione1991PassiveModel(),
@@ -925,17 +932,16 @@ end
     @testset "A functional of the operator, on any strategy" begin
         # The energies are reductions over an operator's cells, so they come out of whichever
         # operator carries the integrator -- one that only evaluates, or the one a solver assembles
-        # with -- and of a threaded sweep as of a sequential one.
+        # with -- and of a threaded sweep as of a sequential one. One item per worker, so that the
+        # four cells are shared among the threads there are.
         ρ = 3.0
         f = free_bar(PK1Model(Guccione1991PassiveModel(), ORTHO_MS); ρ)
         structural = f.structural
-        d, v = nodal(f, homogeneous), nodal(f, X -> Vec((0.4, 1.0, -0.7)) × X)
-        ctx = FerriteOperators.TimeIntegrationContext(0.0, 0.0, 0.0)
+        d, v = nodal(f, homogeneous), nodal(f, spinning)
         stored_energy = Thunderbolt.strain_energy(f, state(f, homogeneous), 0.0)
-        kinetic_energy =
-            Thunderbolt.kinetic_energy(f, state(f, at_rest, X -> Vec((0.4, 1.0, -0.7)) × X), 0.0)
+        kinetic_energy = Thunderbolt.kinetic_energy(f, state(f, at_rest, spinning), 0.0)
 
-        for device in (Thunderbolt.SequentialCPUDevice(), PolyesterDevice())
+        for device in (Thunderbolt.SequentialCPUDevice(), PolyesterDevice(min_items_per_worker = 1))
             strategy = Thunderbolt.AssemblyStrategy(device)
             solid = FerriteOperators.setup_evaluation_operator(
                 strategy,
@@ -943,9 +949,9 @@ end
                 structural.dh;
                 slots = (:u, :q),
             )
-            @test Thunderbolt.strain_energy(solid, (u = d,), nothing, ctx) ≈ stored_energy
+            @test Thunderbolt.strain_energy(solid, (u = d,), 0.0) ≈ stored_energy
             mass = FerriteOperators.setup_evaluation_operator(strategy, f.mass_term, structural.dh)
-            @test Thunderbolt.kinetic_energy(mass, (u = v,), nothing, ctx) ≈ kinetic_energy
+            @test Thunderbolt.kinetic_energy(mass, (u = v,), 0.0) ≈ kinetic_energy
         end
 
         assembling = Thunderbolt.setup_operator(
@@ -954,7 +960,9 @@ end
             structural.dh;
             slots = Thunderbolt.THUNDERBOLT_STAGE_SLOTS,
         )
-        @test Thunderbolt.strain_energy(assembling, (u = d,), nothing, ctx) ≈ stored_energy
+        @test Thunderbolt.strain_energy(assembling, (u = d,), 0.0) ≈ stored_energy
+        # The condensed state comes through an `InternalSource`, never as a plain vector.
+        @test_throws ArgumentError Thunderbolt.strain_energy(assembling, (u = d, q = d), 0.0)
     end
 
     @testset "Refusals" begin
@@ -967,7 +975,7 @@ end
             fsn,
             nothing,
         )
-        # A row-sum lumped mass is not the quadrature of anything.
+        # For a row-sum lumped mass the functional would report the consistent mass.
         lumped = free_bar(PK1Model(Guccione1991PassiveModel(), ORTHO_MS); mass = LumpedMass())
         @test_throws "ConsistentMass" Thunderbolt.kinetic_energy(
             lumped,

@@ -93,14 +93,14 @@ function FerriteOperators.evaluate_cell_functional(
 end
 
 # A decorator forwards a functional to the element it wraps, which for a row-sum lumped mass would
-# report the energy of the consistent one.
+# report the energy of the consistent one instead of `½ vᵀ M_L v`.
 FerriteOperators.evaluate_cell_functional(
     ::KineticEnergyFunctional,
     ::FerriteOperators.RowSumLumpedElementCache,
     args::FerriteOperators.CellArgs,
 ) = error(
-    "The kinetic energy of a row-sum lumped mass is not the integral `KineticEnergyFunctional` " *
-    "reduces: lumping is not a quadrature. Elect `mass = ConsistentMass()`.",
+    "`KineticEnergyFunctional` integrates the consistent mass, which is not the kinetic energy of " *
+    "a row-sum lumped one. Elect `mass = ConsistentMass()`.",
 )
 
 # The bilinear form induces a linear operator, so its residual is the element mass matrix acting on

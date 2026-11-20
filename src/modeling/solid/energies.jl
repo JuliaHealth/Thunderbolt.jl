@@ -1,19 +1,14 @@
 # This file contains some common energies.
 #
-# Every energy here is objective, so it is a function of the right Cauchy-Green tensor `C = FᵀF`
-# alone. The two forms an energy model implements are
+# Every energy here is objective, so it is defined in the right Cauchy-Green tensor `C = FᵀF`:
 #
-#     Ψᶜ(C::SymmetricTensor{2}, coefficients, model)   # the definition, in C
-#     Ψ(F::Tensor{2}, coefficients, model)             # = Ψᶜ(tdot(F), coefficients, model), what the stress AD paths call
+#     Ψᶜ(C::SymmetricTensor{2}, coefficients, model)   # the definition
+#     Ψ(F::Tensor{2}, coefficients, model)             # = Ψᶜ(tdot(F), coefficients, model)
 #
-# The two tensor types are what keeps them apart: `tdot` returns a symmetric tensor and a deformation
-# gradient is never one, so handing either function the other's argument is a `MethodError` rather
-# than the energy of `C²`.
-#
-# The C form is the one to differentiate where a symmetric second Piola-Kirchhoff stress is wanted,
-# `S = 2 ∂Ψᶜ/∂C`. The F form is deliberately spelled out per model rather than as one generic
-# `Ψ(F::Tensor{2}, …)` fallback, which would be ambiguous with any `Ψ(F, coefficients, ::MyModel)` a
-# user has written without a type on `F`.
+# The tensor types keep the two apart: handing either function the other's argument is a
+# `MethodError` rather than the energy of `C²`. The F form is what the stress routines differentiate.
+# The C form is there for schemes that need a symmetric second Piola-Kirchhoff stress,
+# `S = 2 ∂Ψᶜ/∂C`. A model outside this file may implement the F form alone.
 
 @doc raw"""
 A simple dummy energy with $\Psi = 0$.

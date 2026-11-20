@@ -988,10 +988,11 @@ function FerriteOperators.evaluate_cell_functional(
     dₑ = args.states.u
     time = FerriteOperators.evaluation_time(args.ctx)
 
+    Qₑ = _qs_energy_block(element_cache, args.states)
     E = 0.0
     @inbounds for qp ∈ QuadratureIterator(cv)
         ∇u = function_gradient(cv, qp, dₑ)
-        Q = _qs_energy_state(element_cache, args, qp, time)
+        Q = _qs_energy_state(element_cache, Qₑ, args.cell, qp, time)
         Ψ = strain_energy_density_at(
             constitutive_model,
             coefficient_cache,
@@ -1006,12 +1007,19 @@ function FerriteOperators.evaluate_cell_functional(
     return E
 end
 
-# The state the energy of a material reads: none, a given function of time, or the condensed block
-# the operator gathers into the `q` slot.
-_qs_energy_state(e::QuasiStaticElementCache, args, qp, time) =
-    _qs_given_state(e.internal_cache, args.cell, qp, time)
-_qs_energy_state(e::AnyQuasiStaticCondensedElementCache, args, qp, time) =
-    condensed_state(e.constitutive_model, @view _qs_internal_block(e, args.states.q)[:, qp.i])
+# The state the energy of a material reads: none, a given function of time, or a column of the
+# condensed block the operator gathers into the `q` slot, which is shaped once per cell.
+_qs_energy_block(::QuasiStaticElementCache, states) = nothing
+function _qs_energy_block(e::AnyQuasiStaticCondensedElementCache, states)
+    haskey(states, :q) || error(
+        "This material has condensed internal state: pass `q = InternalSource(u)` among the states.",
+    )
+    return _qs_internal_block(e, states.q)
+end
+_qs_energy_state(e::QuasiStaticElementCache, ::Nothing, cell, qp, time) =
+    _qs_given_state(e.internal_cache, cell, qp, time)
+_qs_energy_state(e::AnyQuasiStaticCondensedElementCache, Qₑ, cell, qp, time) =
+    condensed_state(e.constitutive_model, @view Qₑ[:, qp.i])
 _qs_given_state(::EmptyInternalCache, cell, qp, time) = EmptyInternalModel()
 _qs_given_state(cache::TrivialCondensationMaterialStateCache, cell, qp, time) =
     state(cache, cell, qp, time)
