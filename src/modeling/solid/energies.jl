@@ -1,10 +1,26 @@
 # This file contains some common energies.
+#
+# Every energy here is objective, so it is a function of the right Cauchy-Green tensor `C = FᵀF`
+# alone. The two forms an energy model implements are
+#
+#     Ψᶜ(C::SymmetricTensor{2}, coefficients, model)   # the definition, in C
+#     Ψ(F::Tensor{2}, coefficients, model)             # = Ψᶜ(tdot(F), coefficients, model), what the stress AD paths call
+#
+# The two tensor types are what keeps them apart: `tdot` returns a symmetric tensor and a deformation
+# gradient is never one, so handing either function the other's argument is a `MethodError` rather
+# than the energy of `C²`.
+#
+# The C form is the one to differentiate where a symmetric second Piola-Kirchhoff stress is wanted,
+# `S = 2 ∂Ψᶜ/∂C`. The F form is deliberately spelled out per model rather than as one generic
+# `Ψ(F::Tensor{2}, …)` fallback, which would be ambiguous with any `Ψ(F, coefficients, ::MyModel)` a
+# user has written without a type on `F`.
 
 @doc raw"""
 A simple dummy energy with $\Psi = 0$.
 """
 struct NullEnergyModel end
-Ψ(F, coefficients, mp::NullEnergyModel) = 0.0
+Ψᶜ(C::SymmetricTensor{2}, coefficients, mp::NullEnergyModel) = 0.0
+Ψ(F::Tensor{2}, coefficients, mp::NullEnergyModel) = Ψᶜ(tdot(F), coefficients, mp)
 
 
 @doc raw"""
@@ -98,15 +114,19 @@ Base.@kwdef struct TransverseIsotopicNeoHookeanModel{TD1, TD2, TU}
 
     mpU::TU = HartmannNeffCompressionPenalty1()
 end
-function Ψ(
-    F,
+Ψ(
+    F::Tensor{2},
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+    mp::TransverseIsotopicNeoHookeanModel,
+) = Ψᶜ(tdot(F), coeff, mp)
+function Ψᶜ(
+    C::SymmetricTensor{2},
     coeff::AbstractTransverselyIsotropicMicrostructure,
     mp::TransverseIsotopicNeoHookeanModel,
 )
     @unpack a₁, a₂, α₁, α₂, mpU = mp
     f₀ = coeff.f
 
-    C = tdot(F)
     I₁ = tr(C)
     I₃ = det(C)
 
@@ -144,12 +164,17 @@ Base.@kwdef struct HolzapfelOgden2009Model{TD, TU} #<: OrthotropicMaterialModel
     bᶠˢ::TD = 11.436
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::HolzapfelOgden2009Model)
+Ψ(F::Tensor{2}, coeff::AbstractOrthotropicMicrostructure, mp::HolzapfelOgden2009Model) =
+    Ψᶜ(tdot(F), coeff, mp)
+function Ψᶜ(
+    C::SymmetricTensor{2},
+    coeff::AbstractOrthotropicMicrostructure,
+    mp::HolzapfelOgden2009Model,
+)
     # Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack a, b, aᶠ, bᶠ, aˢ, bˢ, aᶠˢ, bᶠˢ, mpU = mp
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
 
-    C = tdot(F)
     I₃ = det(C)
     I₁ = tr(C/cbrt(I₃))
     I₄ᶠ = f₀ ⋅ C ⋅ f₀
@@ -182,11 +207,15 @@ Base.@kwdef struct LinYinPassiveModel{TD, TU} #<: TransverseIsotropicMaterialMod
     C₄::TD = 0.08
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYinPassiveModel)
+Ψ(F::Tensor{2}, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYinPassiveModel) =
+    Ψᶜ(tdot(F), coeff, model)
+function Ψᶜ(
+    C::SymmetricTensor{2},
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+    model::LinYinPassiveModel,
+)
     @unpack C₁, C₂, C₃, C₄, mpU = model
     f₀ = coeff.f
-
-    C = tdot(F) # = FᵀF
 
     # Invariants
     I₁ = tr(C)
@@ -213,10 +242,15 @@ Base.@kwdef struct LinYinActiveModel{TD, TU} #<: TransverseIsotropicMaterialMode
     C₅::TD = 1.62
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYinActiveModel)
+Ψ(F::Tensor{2}, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYinActiveModel) =
+    Ψᶜ(tdot(F), coeff, model)
+function Ψᶜ(
+    C::SymmetricTensor{2},
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+    model::LinYinActiveModel,
+)
     @unpack C₀, C₁, C₂, C₃, C₄, C₅, mpU = model
     f₀ = coeff.f
-    C = tdot(F) # = FᵀF
 
     # Invariants
     I₁ = tr(C)
@@ -239,10 +273,18 @@ Base.@kwdef struct HumphreyStrumpfYinModel{TD, TU} #<: TransverseIsotropicMateri
     C₄::TD = 30.21
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::HumphreyStrumpfYinModel)
+Ψ(
+    F::Tensor{2},
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+    model::HumphreyStrumpfYinModel,
+) = Ψᶜ(tdot(F), coeff, model)
+function Ψᶜ(
+    C::SymmetricTensor{2},
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+    model::HumphreyStrumpfYinModel,
+)
     @unpack C₁, C₂, C₃, C₄, mpU = model
     f₀ = coeff.f
-    C = tdot(F) # = FᵀF
 
     # Invariants
     I₁ = tr(C)
@@ -262,13 +304,17 @@ Base.@kwdef struct LinearSpringModel{TD, TU}
     η::TD = 10.0
     mpU::TU = NullCompressionPenalty()
 end
-function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, mp::LinearSpringModel)
+Ψ(F::Tensor{2}, coeff::AbstractTransverselyIsotropicMicrostructure, mp::LinearSpringModel) =
+    Ψᶜ(tdot(F), coeff, mp)
+function Ψᶜ(
+    C::SymmetricTensor{2},
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+    mp::LinearSpringModel,
+)
     @unpack η = mp
     f₀ = coeff.f
 
-    M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
-    FMF = Tensors.unsafe_symmetric(F ⋅ M ⋅ transpose(F))
-    I₄ = tr(FMF)
+    I₄ = f₀ ⋅ C ⋅ f₀
 
     return η / 2.0 * (I₄ - 1)^2.0
 end
@@ -291,14 +337,19 @@ Base.@kwdef struct Guccione1991PassiveModel{CPT}
     Bᶠⁿ::Float64 = 14.4
     mpU::CPT = SimpleCompressionPenalty(50.0)
 end
-function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991PassiveModel)
+Ψ(F::Tensor{2}, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991PassiveModel) =
+    Ψᶜ(tdot(F), coeff, mp)
+function Ψᶜ(
+    C::SymmetricTensor{2},
+    coeff::AbstractOrthotropicMicrostructure,
+    mp::Guccione1991PassiveModel,
+)
     @unpack C₀, Bᶠᶠ, Bˢˢ, Bⁿⁿ, Bⁿˢ, Bᶠˢ, Bᶠⁿ, mpU = mp
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
 
-    C = tdot(F)
     I₃ = det(C)
 
-    E = (C-one(F))/2.0
+    E = (C-one(C))/2.0
 
     Eᶠᶠ = f₀ ⋅ E ⋅ f₀
     Eˢˢ = s₀ ⋅ E ⋅ s₀
@@ -335,15 +386,33 @@ Base.@kwdef struct SimpleActiveSpring
     aᶠ::Float64 = 1.0
 end
 
-function Ψ(F, Fᵃ, coeff::AbstractTransverselyIsotropicMicrostructure, mp::SimpleActiveSpring)
+Ψ(F::Tensor{2}, Fᵃ, coeff::AbstractTransverselyIsotropicMicrostructure, mp::SimpleActiveSpring) =
+    Ψᶜ(tdot(F), Fᵃ, coeff, mp)
+function Ψᶜ(
+    C::SymmetricTensor{2},
+    Fᵃ,
+    coeff::AbstractTransverselyIsotropicMicrostructure,
+    mp::SimpleActiveSpring,
+)
     @unpack aᶠ = mp
     f₀ = coeff.f
 
-    Fᵉ = F ⋅ inv(Fᵃ)
-    Cᵉ = tdot(Fᵉ)
+    Cᵉ = elastic_right_cauchy_green(C, Fᵃ)
     Iᵉ₄ᶠ = f₀ ⋅ Cᵉ ⋅ f₀
 
     return aᶠ/2.0*(Iᵉ₄ᶠ-1.0)^2
+end
+
+"""
+    elastic_right_cauchy_green(C, Fᵃ)
+
+The elastic right Cauchy-Green tensor ``Cᵉ = Fᵃ⁻ᵀ C Fᵃ⁻¹`` of the multiplicative split
+``F = Fᵉ Fᵃ``, i.e. `tdot(F ⋅ inv(Fᵃ))` expressed in `C` so that an energy written in `C` can take
+it. The product is symmetric by construction, hence the unchecked symmetrization.
+"""
+@inline function elastic_right_cauchy_green(C, Fᵃ)
+    Fᵃinv = inv(Fᵃ)
+    return Tensors.unsafe_symmetric(transpose(Fᵃinv) ⋅ C ⋅ Fᵃinv)
 end
 
 # """
@@ -462,10 +531,10 @@ Base.@kwdef struct BioNeoHookean{TD, TU} #<: IsotropicMaterialModel
     α::TD = 1.0
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, coeff, mp::BioNeoHookean)
+Ψ(F::Tensor{2}, coeff, mp::BioNeoHookean) = Ψᶜ(tdot(F), coeff, mp)
+function Ψᶜ(C::SymmetricTensor{2}, coeff, mp::BioNeoHookean)
     # Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack α, mpU = mp
-    C = tdot(F)
     I₁ = tr(C)
     I₃ = det(C)
 

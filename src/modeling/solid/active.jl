@@ -7,18 +7,24 @@ end
 
 """
 """
-function Ψ(F, Fᵃ, coeff::AbstractOrthotropicMicrostructure, adapter::ActiveMaterialAdapter)
+Ψ(F::Tensor{2}, Fᵃ, coeff::AbstractOrthotropicMicrostructure, adapter::ActiveMaterialAdapter) =
+    Ψᶜ(tdot(F), Fᵃ, coeff, adapter)
+function Ψᶜ(
+    C::SymmetricTensor{2},
+    Fᵃ,
+    coeff::AbstractOrthotropicMicrostructure,
+    adapter::ActiveMaterialAdapter,
+)
     f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
     f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
     s̃ = Fᵃ ⋅ s₀ / norm(Fᵃ ⋅ s₀)
     ñ = Fᵃ ⋅ n₀ / norm(Fᵃ ⋅ n₀)
 
-    Fᵉ = F⋅inv(Fᵃ)
+    Cᵉ = elastic_right_cauchy_green(C, Fᵃ)
     coeff = OrthotropicMicrostructure(f̃, s̃, ñ)
-    Ψᵃ = Ψ(Fᵉ, coeff, adapter.mat)
+    Ψᵃ = Ψᶜ(Cᵉ, coeff, adapter.mat)
     return Ψᵃ
 end
-
 @doc raw"""
 The active deformation gradient formulation by [GokMenKuh:2014:ghm](@citet).
 

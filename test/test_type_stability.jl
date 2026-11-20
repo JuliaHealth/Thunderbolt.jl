@@ -29,6 +29,11 @@ using JET: @test_opt, @test_call
     @testset "Energies $material_model" for material_model ∈ material_model_set
         @test_opt Thunderbolt.Ψ(F, fsneval, material_model)
         @test Thunderbolt.Ψ(F, fsneval, material_model) == 0.0
+        @test_opt Thunderbolt.Ψᶜ(tdot(F), fsneval, material_model)
+        @test Thunderbolt.Ψᶜ(tdot(F), fsneval, material_model) == 0.0
+        # Neither form accepts the other's argument: that would be the energy of `C²`, silently.
+        @test_throws MethodError Thunderbolt.Ψ(tdot(F), fsneval, material_model)
+        @test_throws MethodError Thunderbolt.Ψᶜ(F, fsneval, material_model)
     end
 
     @testset "Compression $compression_model" for compression_model ∈ compression_model_set

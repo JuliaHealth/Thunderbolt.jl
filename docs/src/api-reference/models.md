@@ -77,6 +77,11 @@ PrestressedMechanicalModel
 
 ### Passive Energies
 
+Every energy is implemented in the right Cauchy-Green tensor, `Ψᶜ(C, coefficients, model)`, with
+`Ψ(F, coefficients, model) = Ψᶜ(tdot(F), coefficients, model)` the form the stress paths call. `C`
+is typed `SymmetricTensor{2}` and `F` `Tensor{2}`, so passing one function the other's argument is a
+`MethodError`.
+
 ```@docs
 NullEnergyModel
 LinearSpringModel
