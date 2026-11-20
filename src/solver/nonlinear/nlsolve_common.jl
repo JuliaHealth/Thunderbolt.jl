@@ -6,7 +6,7 @@ residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction, i::Block) = 
 residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction) = 0.0
 
 # Through `getJ` rather than `op.J`, so that an operator which contributes terms of its own --
-# `NewmarkStageOperator` adds the inertia -- can forward to the matrix it shares with the assembly.
+# `InertiaStageOperator` adds the inertia -- can forward to the matrix it shares with the assembly.
 # The operator is passed in rather than read off the cache: it belongs to the stage, which is the one
 # thing that knows which nonlinear problem is being solved.
 eliminate_constraints_from_linearization!(
