@@ -50,70 +50,73 @@ end
 SciMLBase.isadaptive(::NewmarkSolver) = true
 
 """
-    NewmarkStageOperator
+    InertiaStageOperator
 
-The nonlinear operator of one Newmark stage: the internal force operator plus the inertia
-contribution the time scheme adds on top of it.
+The nonlinear operator of one stage of a second order scheme: the internal force operator plus the
+inertia contribution `M a(u)`, with the acceleration affine in the stage unknown,
 
-This is the only place that knows the scheme's coefficients. It delegates to the wrapped operator for
-`f_int`/`K` and then adds `M a(u)` to the residual and `M/(βΔt²)` to the linearization, so the
-nonlinear solver keeps seeing a plain operator.
+    a(u) = (u - ũ) / c .
+
+The scheme writes `ũ` and `c` once per step -- Newmark `ũ = uₙ + Δt vₙ + (½ - β)Δt² aₙ`,
+`c = βΔt²`. The operator delegates to the wrapped one for
+`f_int`/`K` and then adds `M a(u)` to the residual and `M/c` to the linearization, so the nonlinear
+solver keeps seeing a plain operator.
 
 `M` and `K` are assembled separately and recombined rather than fused into one element loop. That is
 the same choice [`BackwardEulerAffineODEStage`](@ref) makes, and it is what keeps a change of `Δt`
 cheap — the mass matrix is constant, only its scalar weight moves.
 """
-mutable struct NewmarkStageOperator{OpType, MassOpType, VectorType, T} <: AbstractNonlinearOperator
+mutable struct InertiaStageOperator{OpType, MassOpType, VectorType, T} <: AbstractNonlinearOperator
     const op::OpType
     const M::MassOpType
-    # Displacement predictor ũ of the current step, written once per step
+    # Displacement at which the acceleration vanishes, written once per step
     const ũ::VectorType
     # Scratch for a(u)
     const aₜₘₚ::VectorType
-    # βΔt² of the current step
-    βΔt²::T
+    # The scale of the current step: `a(u) = (u - ũ)/c`
+    c::T
 end
 
-getJ(op::NewmarkStageOperator) = getJ(op.op)
-condensed_operator(op::NewmarkStageOperator) = condensed_operator(op.op)
-Base.eltype(sop::NewmarkStageOperator) = eltype(getJ(sop))
-Base.size(sop::NewmarkStageOperator, args...) = size(getJ(sop), args...)
+getJ(op::InertiaStageOperator) = getJ(op.op)
+condensed_operator(op::InertiaStageOperator) = condensed_operator(op.op)
+Base.eltype(sop::InertiaStageOperator) = eltype(getJ(sop))
+Base.size(sop::InertiaStageOperator, args...) = size(getJ(sop), args...)
 
 # The inertia is part of the operator, so it is part of its action too. Forwarding to `sop.op` alone
-# would return the internal force product and silently drop `M/(βΔt²)`.
-function LinearAlgebra.mul!(out::AbstractVector, sop::NewmarkStageOperator, x::AbstractVector)
+# would return the internal force product and silently drop `M/c`.
+function LinearAlgebra.mul!(out::AbstractVector, sop::InertiaStageOperator, x::AbstractVector)
     mul!(out, sop.op, x)
-    mul!(out, sop.M, x, inv(sop.βΔt²), true)
+    mul!(out, sop.M, x, inv(sop.c), true)
     return out
 end
 
-# a(u) = (u - ũ)/(βΔt²), on the displacement dofs. `u` carries the condensed internal variables in its
+# a(u) = (u - ũ)/c, on the displacement dofs. `u` carries the condensed internal variables in its
 # tail, which have no acceleration, so the view is not optional.
-function _newmark_acceleration!(a, sop::NewmarkStageOperator, u::AbstractVector)
+function _newmark_acceleration!(a, sop::InertiaStageOperator, u::AbstractVector)
     ndofs = length(a)
-    @inbounds @views @.. a = (u[1:ndofs] - sop.ũ) / sop.βΔt²
+    @inbounds @views @.. a = (u[1:ndofs] - sop.ũ) / sop.c
     return a
 end
 
-function _add_inertia_residual!(residual, sop::NewmarkStageOperator, u::AbstractVector)
+function _add_inertia_residual!(residual, sop::InertiaStageOperator, u::AbstractVector)
     a = _newmark_acceleration!(sop.aₜₘₚ, sop, u)
     mul!(residual, sop.M, a, true, true)
     return nothing
 end
 
-# J ← K + M/(βΔt²). Both matrices come from the same `DofHandler` and therefore share a sparsity
+# J ← K + M/c. Both matrices come from the same `DofHandler` and therefore share a sparsity
 # pattern, which is what makes the nonzero-wise update valid.
-function _add_inertia_linearization!(sop::NewmarkStageOperator)
+function _add_inertia_linearization!(sop::InertiaStageOperator)
     Jnz = nonzeros(getJ(sop))
     Mnz = nonzeros(sop.M.A)
-    @inbounds @.. Jnz = Jnz + Mnz / sop.βΔt²
+    @inbounds @.. Jnz = Jnz + Mnz / sop.c
     return nothing
 end
 
 # The inertia is the scheme's own term, so every entry point of the wrapped operator gains it. `u` is
 # read out of the `:u` slot: the acceleration is a function of the displacement alone.
 function FerriteOperators.update_linearization!(
-    sop::NewmarkStageOperator,
+    sop::InertiaStageOperator,
     residual::AbstractVector,
     states::NamedTuple,
     p,
@@ -126,7 +129,7 @@ function FerriteOperators.update_linearization!(
 end
 
 function FerriteOperators.evaluate!(
-    sop::NewmarkStageOperator,
+    sop::InertiaStageOperator,
     residual::AbstractVector,
     states::NamedTuple,
     p,
@@ -139,7 +142,7 @@ end
 
 function FerriteOperators.assemble_weighted_jacobian!(
     W::AbstractMatrix,
-    sop::NewmarkStageOperator,
+    sop::InertiaStageOperator,
     weights::NamedTuple,
     states::NamedTuple,
     p,
@@ -151,7 +154,7 @@ function FerriteOperators.assemble_weighted_jacobian!(
 end
 
 FerriteOperators.condense_internal!(
-    sop::NewmarkStageOperator,
+    sop::InertiaStageOperator,
     weights::Union{NamedTuple, Nothing},
     states::NamedTuple,
     p,
@@ -210,8 +213,6 @@ struct NewmarkStageCache{StageType, SolverType, T}
     zprev::Vector{Float64}
     β::T
     γ::T
-    # The estimator straddles a step, so it is not computable on the first one.
-    first_step::Base.RefValue{Bool}
 end
 
 mutable struct NewmarkSolverCache{
@@ -426,7 +427,7 @@ function setup_stage_operator(
     )
 
     nfe = ndofs(dh)
-    return NewmarkStageOperator(
+    return InertiaStageOperator(
         op,
         mass_operator,
         zeros(nfe),
@@ -502,7 +503,6 @@ function setup_solver_cache(
             zeros(solution_size(structural)),
             solver.β,
             solver.γ,
-            Ref(true),
         ),
         solver.monitor,
     )
@@ -638,7 +638,7 @@ function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, 
     # Predictors, in the same shape as the Ferrite reference implementation.
     @inbounds @views @.. stage_op.ũ = zprev[fe] + Δt * vₙ + (1 / 2 - β) * Δt^2 * aₙ
     @inbounds @.. ṽ = vₙ + (1 - γ) * Δt * aₙ
-    stage_op.βΔt² = β * Δt^2
+    stage_op.c = β * Δt^2
 
     # The two time quantities backward Euler conflates. `Δt` is what the *internal variable* integrates
     # over: `dₜQ = L(F, Q)` stays first order whatever the global scheme does with `u`, so its local
@@ -689,6 +689,8 @@ scheme, which is what makes `alg_adaptive_order = 2` correct.
     An estimator formed from the solved acceleration and a fresh right hand side evaluation at the
     same state is identically zero, so the estimate has to straddle the step.
 
+The first step is estimated like any other: `aₙ₋₁` then holds the consistent initial acceleration.
+
 `β = 1/6` makes the estimator vanish identically, which is correct — that is the member of the family
 the estimate is taken against — but it leaves the scheme with no error estimate.
 """
@@ -696,16 +698,7 @@ function _newmark_report_error!(integrator, cache::NewmarkSolverCache, Δt, β)
     controller_cache = integrator.controller_cache
     controller_cache === nothing && return nothing # fixed step size, nothing to report to
 
-    (; uₙ, uₙ₋₁, aₙ, aₙ₋₁, stage) = cache
-    # The first step has no previous acceleration to compare against -- `aₙ₋₁` still holds the initial
-    # acceleration, which belongs to the same step. An estimate of zero leaves `dt` to the controller's
-    # own first-step growth bound.
-    if stage.first_step[]
-        stage.first_step[] = false
-        set_error_estimate!(controller_cache, zero(eltype(uₙ)))
-        return nothing
-    end
-
+    (; uₙ, uₙ₋₁, aₙ, aₙ₋₁) = cache
     reltol = integrator.opts.reltol
     abstol = integrator.opts.abstol
     udofs = integrator.f.state_mapping.dofs

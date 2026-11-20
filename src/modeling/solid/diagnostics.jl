@@ -249,3 +249,88 @@ end
 
 nonlinear_finalize_monitor(nlcache, time, f, monitor::DeformationMonitor) =
     nonlinear_finalize_monitor(nlcache, time, f, monitor.inner_monitor)
+
+# --- energies ----------------------------------------------------------------------------------------
+#
+# Both are functionals of an operator, reduced by `FerriteOperators.evaluate_functional` with the
+# strategy and the element caches the operator was set up with. The kernels live with the elements:
+# `StrainEnergyFunctional` in `elements.jl`, `KineticEnergyFunctional` in `core/mass.jl`.
+
+"""
+    strain_energy(op, states, t) -> Float64
+    strain_energy(f, u, t) -> Float64
+
+The strain energy ``\\int_{\\Omega_0} \\Psi \\, \\mathrm{d}V`` at time `t`, reduced over the cells of
+a solid mechanics operator with [`StrainEnergyFunctional`](@ref). Only the energetic part of each
+material counts -- see [`strain_energy_density`](@ref) -- and boundary terms such as a `RobinBC` do
+not, so for a model with elastic supports this is not the whole stored energy.
+
+`op` is an operator over the integrator of a `QuasiStaticFunction` `f`, e.g. one from
+`setup_evaluation_operator`, which holds no matrix. `states` carries its slots: `(u = u,)` with `u`
+in the numbering of `f.dh`, and `q = InternalSource(u)` on top where a material has condensed
+state. Nothing is written into `op`.
+
+The second form takes a `QuasiStaticFunction` or an `ElastodynamicsFunction` with its
+solution vector, and sets an evaluation operator up for the one call. Where the energy is wanted
+repeatedly, hold the operator instead:
+
+    op = Thunderbolt.setup_evaluation_operator(
+        Thunderbolt.get_strategy(f), f.integrator, f.dh; slots = (:u, :q),
+    )
+
+For an `ElastodynamicsFunction` these are the fields of `f.structural`. The structural operator
+of a Newmark stage is `stage_op.op`, its mass operator `stage_op.M`.
+"""
+function strain_energy(op, states::NamedTuple, t)
+    !haskey(states, :q) ||
+        states.q isa InternalSource ||
+        throw(ArgumentError("the `q` slot takes `InternalSource(u)`, got a $(typeof(states.q))"))
+    return FerriteOperators.evaluate_functional(
+        op,
+        StrainEnergyFunctional(),
+        states,
+        nothing,
+        TimeIntegrationContext(t, zero(t), zero(t)),
+    )
+end
+
+function strain_energy(f::QuasiStaticFunction, u::AbstractVector, t)
+    op = setup_evaluation_operator(get_strategy(f), f.integrator, f.dh; slots = (:u, :q))
+    states = has_internal_variables(f) ? (u = u, q = InternalSource(u)) : (u = u,)
+    return strain_energy(op, states, t)
+end
+
+# The state carries the velocity next to the displacement; the energy is a functional of the
+# structural problem's numbering.
+function strain_energy(f::ElastodynamicsFunction, u::AbstractVector, t)
+    z = zeros(eltype(u), solution_size(f.structural))
+    gather!(z, u, f.state_mapping)
+    return strain_energy(f.structural, z, t)
+end
+
+"""
+    kinetic_energy(op, states, t) -> Float64
+    kinetic_energy(f::ElastodynamicsFunction, u, t) -> Float64
+
+The kinetic energy ``\\tfrac12 \\int_{\\Omega_0} \\rho \\, v \\cdot v \\, \\mathrm{d}V`` at time `t`,
+reduced over the cells of a mass operator with [`KineticEnergyFunctional`](@ref). The mass element
+integrates it with its own quadrature, so this is exactly ``\\tfrac12 v^{\\mathrm{T}} M v`` of the
+consistent mass.
+
+`op` is an operator over a consistent mass integrator, and `states = (u = v,)` carries the velocity
+in its `u` slot, in the numbering of the operator's dof handler. The second form reads the velocity
+out of the state `u` and sets an evaluation operator up for the one call, as [`strain_energy`](@ref)
+does.
+"""
+kinetic_energy(op, states::NamedTuple, t) = FerriteOperators.evaluate_functional(
+    op,
+    KineticEnergyFunctional(),
+    states,
+    nothing,
+    TimeIntegrationContext(t, zero(t), zero(t)),
+)
+
+function kinetic_energy(f::ElastodynamicsFunction, u::AbstractVector, t)
+    op = setup_evaluation_operator(get_strategy(f), f.mass_term, f.structural.dh)
+    return kinetic_energy(op, (u = u[f.velocity_dofs],), t)
+end
