@@ -75,6 +75,12 @@ PK1Model
 PrestressedMechanicalModel
 ```
 
+The energetic part of a material, for the energy diagnostics:
+
+```@docs
+Thunderbolt.strain_energy_density
+```
+
 ### Passive Energies
 
 Every energy is implemented in the right Cauchy-Green tensor, `Ψᶜ(C, coefficients, model)`, with

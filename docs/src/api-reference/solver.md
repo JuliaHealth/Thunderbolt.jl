@@ -66,3 +66,14 @@ Thunderbolt.set_error_estimate!
 Thunderbolt.velocity
 Thunderbolt.acceleration
 ```
+
+## Energy diagnostics
+
+Both energies are functionals of an operator, reduced over its cells by `FerriteOperators.evaluate_functional`.
+
+```@docs
+Thunderbolt.strain_energy
+Thunderbolt.kinetic_energy
+Thunderbolt.StrainEnergyFunctional
+Thunderbolt.KineticEnergyFunctional
+```

@@ -818,3 +818,161 @@ end
         verbose = false,
     )
 end
+
+@testset "Energy diagnostics" begin
+    # Both energies are integrals over the reference body, so on fields a trilinear element carries
+    # exactly -- a homogeneous deformation, a rigid motion -- they have to match the closed forms.
+    fsn =
+        OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0)))
+    fsn_model = OrthotropicMicrostructureModel(
+        ConstantCoefficient(fsn.f),
+        ConstantCoefficient(fsn.s),
+        ConstantCoefficient(fsn.n),
+    )
+    volume = 1.0 * 0.2 * 0.2 # of `elastodynamic_bar`
+    F̄ = Tensor{2, 3}((1.1, 0.05, 0.0, -0.02, 0.95, 0.03, 0.01, 0.0, 1.02))
+    homogeneous(X) = (F̄ - one(F̄)) ⋅ X
+    at_rest(X) = zero(Vec{3})
+
+    # Nodal values of a vector field given over the reference coordinate.
+    function nodal(f, field)
+        dh = f.structural.dh
+        values = zeros(ndofs(dh))
+        for cell in CellIterator(dh), (i, X) in enumerate(getcoordinates(cell))
+            values[celldofs(cell)[(3(i-1)+1):(3i)]] .= field(X)
+        end
+        return values
+    end
+    function state(f, displacement, velocity = at_rest)
+        u = zeros(solution_size(f))
+        Thunderbolt.default_initial_condition!(u, f)
+        u[solution_indices_of_displacement(f)] .= nodal(f, displacement)
+        u[solution_indices_of_velocity(f)] .= nodal(f, velocity)
+        return u
+    end
+    free_bar(material; kwargs...) = elastodynamic_bar(; material, clamped = false, kwargs...)
+    stored(f) = Thunderbolt.strain_energy(f, state(f, homogeneous), 0.0)
+
+    @testset "Strain energy of a homogeneous deformation, $(nameof(typeof(energy)))" for energy in (
+        Guccione1991PassiveModel(),
+        HolzapfelOgden2009Model(),
+    )
+        @test stored(free_bar(PK1Model(energy, ORTHO_MS))) ≈ Thunderbolt.Ψ(F̄, fsn, energy) * volume
+    end
+
+    @testset "Kinetic energy of a rigid motion" begin
+        ρ = 3.0
+        f = free_bar(PK1Model(Guccione1991PassiveModel(), ORTHO_MS); ρ)
+        kinetic(displacement, velocity) =
+            Thunderbolt.kinetic_energy(f, state(f, displacement, velocity), 0.0)
+
+        w = Vec((0.3, -0.2, 0.5))
+        @test kinetic(at_rest, X -> w) ≈ ρ * volume * (w ⋅ w) / 2
+        # Spin about the centroid of the 1 × 0.2 × 0.2 box, with its principal moments of inertia.
+        ω, centroid = Vec((0.4, 1.0, -0.7)), Vec((0.5, 0.1, 0.1))
+        moments = ρ * volume / 12 * Vec((0.2^2 + 0.2^2, 1.0^2 + 0.2^2, 1.0^2 + 0.2^2))
+        @test kinetic(at_rest, X -> ω × (X - centroid)) ≈ sum(moments .* ω .^ 2) / 2
+        # The integral runs over the reference body: deforming it changes nothing.
+        @test kinetic(homogeneous, X -> w) ≈ ρ * volume * (w ⋅ w) / 2
+    end
+
+    @testset "An active tension stores nothing" begin
+        # It is not derived from an energy, so a contracting material stores what its passive part
+        # stores, whether its sarcomere is a function of time or a state in the solution vector.
+        passive = stored(free_bar(PK1Model(Guccione1991PassiveModel(), ORTHO_MS)))
+        for sarcomere in (Thunderbolt.ConstantStretchModel(), Thunderbolt.RDQ20MFModel())
+            contraction =
+                Thunderbolt.CaDrivenInternalSarcomereModel(sarcomere, ConstantCoefficient(1.0))
+            active = ActiveStressModel(
+                Guccione1991PassiveModel(),
+                SimpleActiveStress(; Tmax = 10.0),
+                contraction,
+                fsn_model,
+            )
+            @test stored(free_bar(active)) ≈ passive
+        end
+    end
+
+    @testset "A Hill model stores energy in its active spring" begin
+        Ca = 0.4
+        sarcomere, split =
+            PelceSunLangeveld1995Model(), GMKIncompressibleActiveDeformationGradientModel()
+        passive_spring, active_spring =
+            LinYinPassiveModel(), ActiveMaterialAdapter(LinYinActiveModel())
+        hill = GeneralizedHillModel(
+            passive_spring,
+            active_spring,
+            split,
+            Thunderbolt.CaDrivenInternalSarcomereModel(sarcomere, ConstantCoefficient(Ca)),
+            fsn_model,
+        )
+        Fᵃ = Thunderbolt.compute_Fᵃ(Ca, fsn, sarcomere, split)
+        in_active_spring = Thunderbolt.Ψ(F̄, Fᵃ, fsn, active_spring)
+        @test abs(in_active_spring) > 1.0e-3
+        @test stored(free_bar(hill)) ≈
+              (Thunderbolt.Ψ(F̄, fsn, passive_spring) + in_active_spring) * volume
+    end
+
+    @testset "A prestressed material stores energy against its own stress-free configuration" begin
+        F₀inv = Tensor{2, 3}((1.1, 0.1, 0.0, 0.2, 0.9, 0.1, -0.1, 0.0, 1.0))
+        energy = Guccione1991PassiveModel()
+        prestressed =
+            PrestressedMechanicalModel(PK1Model(energy, ORTHO_MS), ConstantCoefficient(F₀inv))
+        @test stored(free_bar(prestressed)) ≈
+              Thunderbolt.Ψ(F̄ ⋅ F₀inv, fsn, energy) / det(F₀inv) * volume
+    end
+
+    @testset "A functional of the operator, on any strategy" begin
+        # The energies are reductions over an operator's cells, so they come out of whichever
+        # operator carries the integrator -- one that only evaluates, or the one a solver assembles
+        # with -- and of a threaded sweep as of a sequential one.
+        ρ = 3.0
+        f = free_bar(PK1Model(Guccione1991PassiveModel(), ORTHO_MS); ρ)
+        structural = f.structural
+        d, v = nodal(f, homogeneous), nodal(f, X -> Vec((0.4, 1.0, -0.7)) × X)
+        ctx = FerriteOperators.TimeIntegrationContext(0.0, 0.0, 0.0)
+        stored_energy = Thunderbolt.strain_energy(f, state(f, homogeneous), 0.0)
+        kinetic_energy =
+            Thunderbolt.kinetic_energy(f, state(f, at_rest, X -> Vec((0.4, 1.0, -0.7)) × X), 0.0)
+
+        for device in (Thunderbolt.SequentialCPUDevice(), PolyesterDevice())
+            strategy = Thunderbolt.AssemblyStrategy(device)
+            solid = FerriteOperators.setup_evaluation_operator(
+                strategy,
+                structural.integrator,
+                structural.dh;
+                slots = (:u, :q),
+            )
+            @test Thunderbolt.strain_energy(solid, (u = d,), nothing, ctx) ≈ stored_energy
+            mass = FerriteOperators.setup_evaluation_operator(strategy, f.mass_term, structural.dh)
+            @test Thunderbolt.kinetic_energy(mass, (u = v,), nothing, ctx) ≈ kinetic_energy
+        end
+
+        assembling = Thunderbolt.setup_operator(
+            Thunderbolt.get_strategy(f),
+            structural.integrator,
+            structural.dh;
+            slots = Thunderbolt.THUNDERBOLT_STAGE_SLOTS,
+        )
+        @test Thunderbolt.strain_energy(assembling, (u = d,), nothing, ctx) ≈ stored_energy
+    end
+
+    @testset "Refusals" begin
+        # A material that has not said what its energy is gets named, not integrated as zero.
+        maxwell =
+            Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+        @test_throws "LinearMaxwellMaterial does not implement `strain_energy_density" Thunderbolt.strain_energy_density(
+            maxwell,
+            F̄,
+            fsn,
+            nothing,
+        )
+        # A row-sum lumped mass is not the quadrature of anything.
+        lumped = free_bar(PK1Model(Guccione1991PassiveModel(), ORTHO_MS); mass = LumpedMass())
+        @test_throws "ConsistentMass" Thunderbolt.kinetic_energy(
+            lumped,
+            zeros(solution_size(lumped)),
+            0.0,
+        )
+    end
+end
