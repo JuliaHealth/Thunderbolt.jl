@@ -5,20 +5,24 @@ struct ActiveMaterialAdapter{Mat}
     mat::Mat
 end
 
-"""
-"""
-function Ψ(F, Fᵃ, coeff::AbstractOrthotropicMicrostructure, adapter::ActiveMaterialAdapter)
-    f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
-    f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
-    s̃ = Fᵃ ⋅ s₀ / norm(Fᵃ ⋅ s₀)
-    ñ = Fᵃ ⋅ n₀ / norm(Fᵃ ⋅ n₀)
+# Each form evaluates the same form of the wrapped energy, on the elastic part of the deformation
+# and with the microstructure the active deformation leaves behind. An energy that implements
+# `Ψ(F, coefficients, model)` alone therefore still works under the adapter.
+Ψ(F::Tensor{2}, Fᵃ, coeff::AbstractOrthotropicMicrostructure, adapter::ActiveMaterialAdapter) =
+    Ψ(F ⋅ inv(Fᵃ), _active_microstructure(Fᵃ, coeff), adapter.mat)
+Ψᶜ(
+    C::SymmetricTensor{2},
+    Fᵃ,
+    coeff::AbstractOrthotropicMicrostructure,
+    adapter::ActiveMaterialAdapter,
+) = Ψᶜ(elastic_right_cauchy_green(C, Fᵃ), _active_microstructure(Fᵃ, coeff), adapter.mat)
 
-    Fᵉ = F⋅inv(Fᵃ)
-    coeff = OrthotropicMicrostructure(f̃, s̃, ñ)
-    Ψᵃ = Ψ(Fᵉ, coeff, adapter.mat)
-    return Ψᵃ
+function _active_microstructure(Fᵃ, coeff::AbstractOrthotropicMicrostructure)
+    f̃ = Fᵃ ⋅ coeff.f / norm(Fᵃ ⋅ coeff.f)
+    s̃ = Fᵃ ⋅ coeff.s / norm(Fᵃ ⋅ coeff.s)
+    ñ = Fᵃ ⋅ coeff.n / norm(Fᵃ ⋅ coeff.n)
+    return OrthotropicMicrostructure(f̃, s̃, ñ)
 end
-
 @doc raw"""
 The active deformation gradient formulation by [GokMenKuh:2014:ghm](@citet).
 

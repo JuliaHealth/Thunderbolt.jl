@@ -2166,3 +2166,71 @@ function gather_internal_variable_infos(model::LinearMaxwellMaterial{T, sdim}) w
         return (InternalVariableInfo(:εᵛ, 4),)
     end
 end
+
+# --- strain energy density, for the energy diagnostics -----------------------------------------------
+
+"""
+    strain_energy_density(model, F, coefficients, Q)
+
+The energetic part of a material's response at `(F, Q)`, per unit reference volume -- what
+[`strain_energy`](@ref) integrates. Parts of the stress that are not derived from an energy, such as
+the active tension of an [`ActiveStressModel`](@ref), contribute nothing.
+"""
+strain_energy_density(model::AbstractMaterialModel, F, coefficients, Q) = error(
+    "$(typeof(model).name.name) does not implement `strain_energy_density(model, F, coefficients, Q)`.",
+)
+strain_energy_density(model::PK1Model, F, coefficients, ::EmptyInternalModel) =
+    Ψ(F, coefficients, model.material)
+strain_energy_density(model::ActiveStressModel, F, coefficients, Q) =
+    Ψ(F, coefficients, model.material_model)
+function strain_energy_density(model::GeneralizedHillModel, F, coefficients, state)
+    Fᵃ = compute_Fᵃ(
+        state,
+        coefficients,
+        model.contraction_model,
+        model.active_deformation_gradient_model,
+    )
+    return Ψ(F, coefficients, model.passive_spring) + Ψ(F, Fᵃ, coefficients, model.active_spring)
+end
+function strain_energy_density(model::ExtendedHillModel, F, coefficients, state)
+    Fᵃ = compute_Fᵃ(
+        state,
+        coefficients,
+        model.contraction_model,
+        model.active_deformation_gradient_model,
+    )
+    N = 𝓝(state, F, coefficients, model.contraction_model)
+    return Ψ(F, coefficients, model.passive_spring) +
+           N * Ψ(F, Fᵃ, coefficients, model.active_spring)
+end
+
+
+# The density at a quadrature point: what the element's energy kernel calls, as `material_routine` is
+# what its residual kernel calls.
+function strain_energy_density_at(model, coefficient_cache, F, Q, cell, qp, time)
+    coefficients = evaluate_coefficient(coefficient_cache, cell, qp, time)
+    return strain_energy_density(model, F, coefficients, Q)
+end
+
+# The prestressed model's coefficient cache is a pair, and its energy is the inner one's per unit
+# volume of the intermediate configuration -- see `PrestressedMechanicalModel`.
+function strain_energy_density_at(
+    model::PrestressedMechanicalModel,
+    coefficient_cache::PrestressedMechanicalModelCoefficientCache,
+    F,
+    Q,
+    cell,
+    qp,
+    time,
+)
+    F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, cell, qp, time)
+    return strain_energy_density_at(
+        model.inner_model,
+        coefficient_cache.inner_cache,
+        F ⋅ F₀inv,
+        Q,
+        cell,
+        qp,
+        time,
+    ) / det(F₀inv)
+end

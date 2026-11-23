@@ -63,6 +63,46 @@ function FerriteOperators.assemble_cell!(
     end
 end
 
+"""
+    KineticEnergyFunctional()
+
+The kinetic energy ``\\tfrac12 \\int_{\\Omega_0} \\rho \\, v \\cdot v \\, \\mathrm{d}V`` as a functional
+of a mass operator, with the velocity in the operator's `u` slot: `FerriteOperators.evaluate_functional`
+reduces it over the operator's cells. Reached through [`kinetic_energy`](@ref).
+"""
+struct KineticEnergyFunctional end
+FerriteOperators.reduction_families(::Type{KineticEnergyFunctional}) = (:cells,)
+FerriteOperators.functional_value_type(::KineticEnergyFunctional) = Float64
+
+function FerriteOperators.evaluate_cell_functional(
+    ::KineticEnergyFunctional,
+    element_cache::BilinearMassElementCache,
+    args::FerriteOperators.CellArgs,
+)
+    @unpack ρcache, cellvalues = element_cache
+    vₑ = args.states.u
+    time = FerriteOperators.evaluation_time(args.ctx)
+
+    K = 0.0
+    for qp in QuadratureIterator(cellvalues)
+        ρ = evaluate_coefficient(ρcache, args.cell, qp, time)
+        v = function_value(cellvalues, qp, vₑ)
+        K += ρ / 2 * (v ⋅ v) * getdetJdV(cellvalues, qp)
+    end
+    return K
+end
+
+# A decorator forwards a functional to the element it wraps, which for a row-sum lumped mass would
+# report the energy of the consistent one instead of `½ vᵀ M_L v`.
+FerriteOperators.evaluate_cell_functional(
+    ::KineticEnergyFunctional,
+    ::FerriteOperators.RowSumLumpedElementCache,
+    args::FerriteOperators.CellArgs,
+) = error(
+    "`KineticEnergyFunctional` integrates the consistent mass, which is not the kinetic energy of " *
+    "a row-sum lumped one. Elect `mass = ConsistentMass()`.",
+)
+
 # The bilinear form induces a linear operator, so its residual is the element mass matrix acting on
 # the element vector -- mandatory, so the element composes into nonlinear operators and AD-based
 # sensitivities.

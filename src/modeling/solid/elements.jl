@@ -964,3 +964,62 @@ end
 
 _qs_corrector_stores(cache::QuasiStaticElementCache) = ()
 _qs_corrector_stores(cache::AnyQuasiStaticCondensedElementCache) = (cache.correctors,)
+
+
+# --- strain energy ------------------------------------------------------------------------------------
+
+"""
+    StrainEnergyFunctional()
+
+The strain energy ``\\int_{\\Omega_0} \\Psi \\, \\mathrm{d}V`` as a functional of a solid mechanics
+operator: `FerriteOperators.evaluate_functional` reduces it over the operator's cells. Reached through
+[`strain_energy`](@ref).
+"""
+struct StrainEnergyFunctional end
+FerriteOperators.reduction_families(::Type{StrainEnergyFunctional}) = (:cells,)
+FerriteOperators.functional_value_type(::StrainEnergyFunctional) = Float64
+
+function FerriteOperators.evaluate_cell_functional(
+    ::StrainEnergyFunctional,
+    element_cache::AnyQuasiStaticElementCache,
+    args::FerriteOperators.CellArgs,
+)
+    @unpack constitutive_model, coefficient_cache, cv = element_cache
+    dₑ = args.states.u
+    time = FerriteOperators.evaluation_time(args.ctx)
+
+    Qₑ = _qs_energy_block(element_cache, args.states)
+    E = 0.0
+    @inbounds for qp ∈ QuadratureIterator(cv)
+        ∇u = function_gradient(cv, qp, dₑ)
+        Q = _qs_energy_state(element_cache, Qₑ, args.cell, qp, time)
+        Ψ = strain_energy_density_at(
+            constitutive_model,
+            coefficient_cache,
+            one(∇u) + ∇u,
+            Q,
+            args.cell,
+            qp,
+            time,
+        )
+        E += Ψ * getdetJdV(cv, qp)
+    end
+    return E
+end
+
+# The state the energy of a material reads: none, a given function of time, or a column of the
+# condensed block the operator gathers into the `q` slot, which is shaped once per cell.
+_qs_energy_block(::QuasiStaticElementCache, states) = nothing
+function _qs_energy_block(e::AnyQuasiStaticCondensedElementCache, states)
+    haskey(states, :q) || error(
+        "This material has condensed internal state: pass `q = InternalSource(u)` among the states.",
+    )
+    return _qs_internal_block(e, states.q)
+end
+_qs_energy_state(e::QuasiStaticElementCache, ::Nothing, cell, qp, time) =
+    _qs_given_state(e.internal_cache, cell, qp, time)
+_qs_energy_state(e::AnyQuasiStaticCondensedElementCache, Qₑ, cell, qp, time) =
+    condensed_state(e.constitutive_model, @view Qₑ[:, qp.i])
+_qs_given_state(::EmptyInternalCache, cell, qp, time) = EmptyInternalModel()
+_qs_given_state(cache::TrivialCondensationMaterialStateCache, cell, qp, time) =
+    state(cache, cell, qp, time)

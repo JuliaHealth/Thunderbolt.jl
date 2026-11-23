@@ -450,7 +450,7 @@ Wrap an already built stage into a [`MultiLevelNewtonRaphsonSolverCache`](@ref).
 
 The operator the stage carries is the only thing that differs between time schemes: backward Euler
 hands over the assembled linearization directly, Newmark hands over the same operator wrapped in a
-[`NewmarkStageOperator`](@ref) that adds the inertia contribution.
+[`InertiaStageOperator`](@ref) that adds the inertia contribution.
 
 `ndofs` sizes the linear system, which for a condensed function is shorter than the stage's unknowns
 -- the internal variables are condensed at quadrature point level and never enter it.

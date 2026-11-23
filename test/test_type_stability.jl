@@ -1,5 +1,9 @@
 using Test, Thunderbolt, Tensors
 using JET: @test_opt, @test_call
+
+struct EnergyInFAlone end
+Thunderbolt.Ψ(F, coefficients, ::EnergyInFAlone) = tr(tdot(F)) - 3
+
 @testset "Type Stability" begin
     f₀       = Tensors.Vec{3, Float64}((1.0, 0.0, 0.0))
     s₀       = Tensors.Vec{3, Float64}((0.0, 1.0, 0.0))
@@ -29,6 +33,19 @@ using JET: @test_opt, @test_call
     @testset "Energies $material_model" for material_model ∈ material_model_set
         @test_opt Thunderbolt.Ψ(F, fsneval, material_model)
         @test Thunderbolt.Ψ(F, fsneval, material_model) == 0.0
+        @test_opt Thunderbolt.Ψᶜ(tdot(F), fsneval, material_model)
+        @test Thunderbolt.Ψᶜ(tdot(F), fsneval, material_model) == 0.0
+        # Neither form accepts the other's argument: that would be the energy of `C²`, silently.
+        @test_throws MethodError Thunderbolt.Ψ(tdot(F), fsneval, material_model)
+        @test_throws MethodError Thunderbolt.Ψᶜ(F, fsneval, material_model)
+    end
+
+    @testset "An energy in F alone under the adapter" begin
+        # What a user energy implements. The adapter must not ask it for the C form.
+        F̄ = Tensor{2, 3}((1.1, 0.05, 0.0, -0.02, 0.95, 0.03, 0.01, 0.0, 1.02))
+        Fᵃ = Tensor{2, 3}((0.8, 0.0, 0.0, 0.0, 1.1, 0.0, 0.0, 0.0, 1.1))
+        adapter = ActiveMaterialAdapter(EnergyInFAlone())
+        @test Thunderbolt.Ψ(F̄, Fᵃ, fsneval, adapter) ≈ tr(tdot(F̄ ⋅ inv(Fᵃ))) - 3
     end
 
     @testset "Compression $compression_model" for compression_model ∈ compression_model_set
